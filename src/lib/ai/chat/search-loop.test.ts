@@ -43,6 +43,138 @@ describe("searchLoopDirective", () => {
     expect(searchLoopDirective([step(["search_documents"], 3)])).toBe("read");
   });
 
+  it("keeps search open after an identifier-only DQ protocol hit so IQ can still be grepped", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [
+            { toolName: "search_documents", input: { query: "URS-41" } },
+          ],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                seenPages: [
+                  {
+                    attachmentId: "dq",
+                    pageNumber: 13,
+                    filename: "Design Qualification.PDF",
+                  },
+                ],
+                results: [
+                  {
+                    filename: "Design Qualification.PDF",
+                    pageNumber: 13,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
+  it("keeps search open after reading that DQ page until higher protocol families are queried", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [
+            { toolName: "search_documents", input: { query: "URS-41" } },
+          ],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                seenPages: [
+                  {
+                    attachmentId: "dq",
+                    pageNumber: 13,
+                    filename: "Design Qualification.PDF",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          toolCalls: [{ toolName: "read_document_page" }],
+          toolResults: [
+            {
+              toolName: "read_document_page",
+              output: {
+                status: "found",
+                filename: "Design Qualification.PDF",
+                pageNumber: 13,
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [
+            {
+              toolName: "search_documents",
+              input: { queries: ["installation qualification gaskets"] },
+            },
+          ],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                seenPages: [
+                  {
+                    attachmentId: "iq",
+                    pageNumber: 42,
+                    filename: "Installation Qualification.PDF",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [
+            {
+              toolName: "search_documents",
+              input: {
+                queries: [
+                  "operational qualification gaskets",
+                  "performance qualification gaskets",
+                ],
+              },
+            },
+          ],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                seenPages: [
+                  {
+                    attachmentId: "pq",
+                    pageNumber: 8,
+                    filename: "Performance Qualification.PDF",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("read");
+  });
+
   it("hides search after a page read, scan, outline, or extract", () => {
     expect(searchLoopDirective([step(["read_document_page"])])).toBe("read");
     expect(searchLoopDirective([step(["scan_attachments"])])).toBe("read");

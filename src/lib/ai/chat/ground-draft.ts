@@ -6,7 +6,11 @@ import {
   trailingIsCitationBlock,
 } from "@/lib/suggestions/citations-at-end";
 import { citationSiteOffset, splitSentences } from "@/lib/citations/citation-site";
-import type { TableOperation } from "@/lib/suggestions/table-operation";
+import type { JSONContent } from "@tiptap/core";
+import {
+  isLeftoverPlaceholderCellText,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 import {
   citedPagesFromText,
   extractHardFacts,
@@ -37,6 +41,25 @@ import {
   isExemptFrameFact,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
+import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
+import {
+  attachLiveTableRowContext,
+  dateSupportedAsLabeledField,
+  documentFamilyFromContext,
+  extraQsrUnsupported,
+  factIsRowKey,
+  factSupportedForRowKey,
+  filenameMatchesFamily,
+  isClearOnlyOptionalRtmEdit,
+  isLabeledDateColumnLabel,
+  isQsrRtmOptionalReferenceColumn,
+  qsrFailClosedReason,
+  qsrTableColumnLabel,
+  rankRtmReferenceOperation,
+  rowKeyFromContext,
+  editCellsGroupKey,
+  syntheticUnsupportedFact,
+} from "@/lib/ai/chat/qsr-row-grounding";
 import {
   citationNumbersFromMarker,
   formatNumericCitationMarker,
@@ -172,6 +195,35 @@ function rankMoveTarget(input: {
   return matches[0]!;
 }
 
+function resolveTableColumnLabel(input: {
+  section?: string;
+  col?: number;
+  override?: string;
+}): string | undefined {
+  const override = input.override?.trim();
+  if (override) return override;
+  const qsr = qsrTableColumnLabel(input.section, input.col);
+  if (qsr) return qsr;
+  if (!input.section || input.col == null || input.col < 0) return undefined;
+  return elrTableHeadersForSection(input.section)[input.col];
+}
+
+function pageSupportsFact(
+  quote: string,
+  fact: HardFact,
+  rowKey: string | null,
+  columnLabel?: string
+): boolean {
+  if (columnLabel && isLabeledDateColumnLabel(columnLabel)) {
+    const labeled = dateSupportedAsLabeledField(quote, fact, columnLabel);
+    if (labeled != null) return labeled;
+  }
+  if (rowKey && !factIsRowKey(fact, rowKey)) {
+    return factSupportedForRowKey(quote, fact, rowKey);
+  }
+  return evidenceContainsFact(quote, fact);
+}
+
 function resolveFact(
   fact: HardFact,
   ledger: CitationPageLedger,
@@ -179,9 +231,18 @@ function resolveFact(
     sentence: string;
     context?: string;
     analyses?: readonly AnalysisEvidence[];
+    section?: string;
+    columnLabel?: string;
   }
 ): ClaimProvenanceRecord {
   const pages = ledger.recordedPages();
+  const rowKey = rowKeyFromContext(extras.context ?? extras.sentence);
+  const columnLabel = extras.columnLabel?.trim() || undefined;
+  const docFamily =
+    extras.section === "qsr_qualification_documents" ||
+    extras.section === "qsr_references"
+      ? documentFamilyFromContext(extras.context ?? extras.sentence)
+      : null;
   const cited = uniqueCited([
     ...fact.cited,
     ...citedPagesFromText(extras.context ?? ""),
@@ -189,8 +250,10 @@ function resolveFact(
   const citedPages = cited
     .map((cite) => findCitedLedgerPage(cite, pages))
     .filter((row): row is RecordedCitationPage => row != null);
-  const citedHit = citedPages.find((row) =>
-    evidenceContainsFact(row.quote, fact)
+  const citedHit = citedPages.find(
+    (row) =>
+      (!docFamily || filenameMatchesFamily(row.filename, docFamily)) &&
+      pageSupportsFact(row.quote, fact, rowKey, columnLabel)
   );
   const primaryCited = citedPages[0] ?? null;
   const identifiers = extractHardFacts(
@@ -211,7 +274,12 @@ function resolveFact(
     };
   }
 
-  const matches = pages.filter((row) => evidenceContainsFact(row.quote, fact));
+  const matches = pages.filter((row) => {
+    if (docFamily && !filenameMatchesFamily(row.filename, docFamily)) {
+      return false;
+    }
+    return pageSupportsFact(row.quote, fact, rowKey, columnLabel);
+  });
   const quotedPageCount = pages.filter((row) => row.quote.trim()).length;
   const ranked = rankMoveTarget({
     matches,
@@ -221,7 +289,22 @@ function resolveFact(
     quotedPageCount,
   });
 
-  if (primaryCited && !primaryCited.quote.trim() && fact.kind === "date") {
+  const labeledDateRejected =
+    Boolean(columnLabel) &&
+    dateSupportedAsLabeledField(
+      primaryCited?.quote ?? "",
+      fact,
+      columnLabel ?? ""
+    ) === false;
+
+  const lenientDate =
+    !rowKey &&
+    !docFamily &&
+    primaryCited &&
+    fact.kind === "date" &&
+    !labeledDateRejected;
+
+  if (lenientDate && !primaryCited.quote.trim()) {
     return {
       text: fact.text,
       kind: fact.kind,
@@ -257,7 +340,7 @@ function resolveFact(
     };
   }
 
-  if (primaryCited && fact.kind === "date") {
+  if (lenientDate) {
     return {
       text: fact.text,
       kind: fact.kind,
@@ -463,6 +546,19 @@ export function groundDraftText(input: {
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
+  const failClosed = qsrFailClosedReason({
+    section: input.grounding?.section,
+    attachedFilenames: input.grounding?.attachedFilenames,
+    ledger: input.ledger,
+  });
+  if (failClosed) {
+    return {
+      text: cited,
+      provenance: { claims: [], policy: input.policy },
+      unsupported: [syntheticUnsupportedFact(failClosed)],
+      blocked: input.policy === "block",
+    };
+  }
   if (!input.ledger.hasQuotedPages() || mode === "skip") {
     return {
       text: cited,
@@ -494,18 +590,37 @@ export function groundDraftText(input: {
       sentence: sentenceAround(cited, fact.start, fact.end),
       context: input.context,
       analyses: input.analyses,
+      section: input.grounding?.section,
+      columnLabel: resolveTableColumnLabel({
+        section: input.grounding?.section,
+        col: input.grounding?.tableCol,
+        override: input.grounding?.tableColumnLabel,
+      }),
     });
   });
   const withMoved = applyMovedCitations(cited, facts, records);
-  const unsupportedFacts = facts.filter(
+  const unsourcedFacts = facts.filter(
     (_, index) => records[index]?.status === "unsourced"
   );
+  const extraUnsupported = extraQsrUnsupported({
+    cell: cited,
+    context: input.context ?? cited,
+    section: input.grounding?.section,
+    tableCol: input.grounding?.tableCol,
+    tableColumnLabel: resolveTableColumnLabel({
+      section: input.grounding?.section,
+      col: input.grounding?.tableCol,
+      override: input.grounding?.tableColumnLabel,
+    }),
+    ledger: input.ledger,
+  });
+  const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;
   const text = blocked
     ? replaceFactsWithPlaceholders(
         withMoved,
-        unsupportedFacts.map((fact) => {
+        unsourcedFacts.map((fact) => {
           const shifted = extractHardFacts(withMoved).find(
             (candidate) =>
               candidate.kind === fact.kind && candidate.text === fact.text
@@ -539,13 +654,48 @@ export function groundTableOperation(input: {
   grounding?: GroundDraftGrounding;
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
+  /**
+   * After repair, empty unsupported RTM Stage / Section / Remarks
+   * instead of blocking the URS copy.
+   */
+  clearOptionalOnBlock?: boolean;
+  /**
+   * Live field JSON so `edit_cells` can topic-match protocol pages from
+   * Parameters / User requirements when the model omitted `rowContext`.
+   */
+  fieldDoc?: JSONContent | null;
 }): {
   operation: TableOperation;
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
 } {
-  const cited = rewriteTableOperationCitations(input.operation, input.ledger);
+  const cited = rankRtmReferenceOperation(
+    rewriteTableOperationCitations(
+      attachLiveTableRowContext(input.operation, input.fieldDoc),
+      input.ledger
+    ),
+    input.ledger,
+    input.grounding?.section
+  );
+  const failClosed = isClearOnlyOptionalRtmEdit(
+    cited,
+    input.grounding?.section
+  )
+    ? null
+    : qsrFailClosedReason({
+        section: input.grounding?.section,
+        attachedFilenames: input.grounding?.attachedFilenames,
+        ledger: input.ledger,
+      });
+  if (failClosed) {
+    return {
+      operation: cited,
+      provenance: { claims: [], policy: input.policy },
+      unsupported: [syntheticUnsupportedFact(failClosed)],
+      blocked: input.policy === "block",
+    };
+  }
   if (!input.ledger.hasQuotedPages()) {
     return {
       operation: cited,
@@ -558,15 +708,43 @@ export function groundTableOperation(input: {
   const claims: ClaimProvenanceRecord[] = [];
   const unsupported: HardFact[] = [];
   let blocked = false;
-  const groundValue = (value: string, context?: string): string => {
+  const groundValue = (
+    value: string,
+    context: string | undefined,
+    col?: number,
+    columnLabel?: string
+  ): string => {
+    if (
+      col != null &&
+      isQsrRtmOptionalReferenceColumn(input.grounding?.section, col) &&
+      !value.trim()
+    ) {
+      return "";
+    }
     const grounded = groundDraftText({
       text: value,
       ledger: input.ledger,
       policy: input.policy,
-      grounding: input.grounding,
+      grounding: {
+        ...input.grounding,
+        tableCol: col,
+        tableColumnLabel: resolveTableColumnLabel({
+          section: input.grounding?.section,
+          col,
+          override: columnLabel ?? input.grounding?.tableColumnLabel,
+        }),
+      },
       context,
       analyses: input.analyses,
     });
+    const clearOptional =
+      Boolean(input.clearOptionalOnBlock) &&
+      grounded.blocked &&
+      col != null &&
+      isQsrRtmOptionalReferenceColumn(input.grounding?.section, col);
+    if (clearOptional) {
+      return "";
+    }
     claims.push(...grounded.provenance.claims);
     unsupported.push(...grounded.unsupported);
     if (grounded.blocked) blocked = true;
@@ -580,24 +758,77 @@ export function groundTableOperation(input: {
         ...cited,
         cells: cited.cells.map((cell) => {
           const context = cited.cells
-            .filter((rowCell) => rowCell.row === cell.row)
+            .filter(
+              (rowCell) => editCellsGroupKey(rowCell) === editCellsGroupKey(cell)
+            )
             .flatMap((rowCell) => [
+              rowCell.rowKey,
               rowCell.insertText,
               rowCell.expectedText,
               rowCell.rowContext,
             ])
             .filter((part): part is string => Boolean(part?.trim()))
             .join("\n");
-          return { ...cell, insertText: groundValue(cell.insertText, context) };
+          return {
+            ...cell,
+            insertText: groundValue(
+              cell.insertText,
+              context,
+              cell.col,
+              resolveTableColumnLabel({
+                section: input.grounding?.section,
+                col: cell.col,
+              })
+            ),
+          };
         }),
       };
+      if (input.clearOptionalOnBlock) {
+        const explicitClears = new Set(
+          cited.cells
+            .filter(
+              (cell) =>
+                isQsrRtmOptionalReferenceColumn(
+                  input.grounding?.section,
+                  cell.col
+                ) && !cell.insertText.trim()
+            )
+            .map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
+        );
+        const kept = operation.cells.filter((cell) => {
+          if (
+            isQsrRtmOptionalReferenceColumn(
+              input.grounding?.section,
+              cell.col
+            ) &&
+            !cell.insertText.trim()
+          ) {
+            return explicitClears.has(
+              `${editCellsGroupKey(cell)}:${cell.col}`
+            );
+          }
+          return true;
+        });
+        operation = { ...operation, cells: kept };
+        if (kept.length === 0 && cited.cells.length > 0) blocked = true;
+      }
       break;
     case "insert_rows":
       operation = {
         ...cited,
         rows: cited.rows.map((row) => {
           const context = row.join("\n");
-          return row.map((cell) => groundValue(cell, context));
+          return row.map((cell, col) =>
+            groundValue(
+              cell,
+              context,
+              col,
+              resolveTableColumnLabel({
+                section: input.grounding?.section,
+                col,
+              })
+            )
+          );
         }),
       };
       break;
@@ -606,17 +837,21 @@ export function groundTableOperation(input: {
         ...cited,
         header: groundValue(cited.header, cited.header),
         values: cited.values?.map((value) =>
-          groundValue(value, `${cited.header}\n${value}`)
+          groundValue(value, `${cited.header}\n${value}`, undefined, cited.header)
         ),
       };
       break;
     case "create_table":
       operation = {
         ...cited,
-        headers: cited.headers.map((header) => groundValue(header)),
+        headers: cited.headers.map((header) =>
+          groundValue(header, cited.headers.join("\n"))
+        ),
         rows: cited.rows?.map((row) => {
           const context = [...cited.headers, ...row].join("\n");
-          return row.map((cell) => groundValue(cell, context));
+          return row.map((cell, col) =>
+            groundValue(cell, context, col, cited.headers[col])
+          );
         }),
       };
       break;
@@ -687,6 +922,38 @@ export function tablePlaceholderLabels(operation: TableOperation): string[] {
     }
     return value;
   });
+  return labels;
+}
+
+/**
+ * Leftover lookup tokens, including HTML-shaped labels such as `<section>`
+ * that live-scan skips.
+ */
+export function tableLookupPlaceholderLabels(
+  operation: TableOperation
+): string[] {
+  const labels = tablePlaceholderLabels(operation);
+  const seen = new Set(labels.map((label) => label.toLowerCase()));
+  const add = (text: string) => {
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    labels.push(text);
+  };
+  if (operation.kind === "edit_cells") {
+    for (const cell of operation.cells) {
+      const trimmed = cell.insertText.trim();
+      if (isLeftoverPlaceholderCellText(trimmed)) add(trimmed);
+    }
+  }
+  if (operation.kind === "insert_rows") {
+    for (const row of operation.rows) {
+      for (const value of row) {
+        const trimmed = (value ?? "").trim();
+        if (isLeftoverPlaceholderCellText(trimmed)) add(trimmed);
+      }
+    }
+  }
   return labels;
 }
 

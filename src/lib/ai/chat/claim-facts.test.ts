@@ -55,6 +55,14 @@ describe("extractHardFacts", () => {
     const facts = extractHardFacts("See [PQR-24-PR-102.pdf, p. 2].");
     expect(facts).toEqual([]);
   });
+
+  it("extracts URS-N identifiers that the old SOP/ID pattern missed", () => {
+    const facts = extractHardFacts("Copy URS-44 Emergency Stop and URS-5 jacket range.");
+    expect(facts.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["URS-44", "URS-5"])
+    );
+    expect(facts.filter((fact) => fact.kind === "identifier")).toHaveLength(2);
+  });
 });
 
 describe("replaceFactsWithPlaceholders", () => {
@@ -102,7 +110,69 @@ describe("instrument quantities", () => {
     expect(kinds("2 hours later")).toContainEqual(["duration", "2 hours"]);
   });
 
+  it("sees a kg/cm² operating-range pressure", () => {
+    expect(kinds("Full Vacuum to 3.5 kg/cm²")).toContainEqual([
+      "number",
+      "3.5 kg/cm²",
+    ]);
+    expect(kinds("held at 3.5 kg/cm2")).toContainEqual(["number", "3.5 kg/cm2"]);
+  });
+
+  it("does not treat the trailing 0 in 25.0 as a measured zero", () => {
+    expect(extractHardFacts("NLT 25.0 m²").map((fact) => fact.text)).not.toContain(
+      "0"
+    );
+    expect(extractHardFacts("0.5 bar").map((fact) => fact.text)).not.toContain("0");
+    expect(
+      extractHardFacts("contaminated units 0").map((fact) => `${fact.kind}:${fact.text}`)
+    ).toContain("number:0");
+  });
+
+  it("keeps the leading minus on a URS operating-range temperature", () => {
+    expect(
+      extractHardFacts("Shell operating temperature −15 °C to 130 °C").map(
+        (fact) => `${fact.kind}:${fact.text}`
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        "temperature:−15 °C to 130 °C",
+      ])
+    );
+    expect(
+      extractHardFacts("Minimum −15 °C").map((fact) => fact.text)
+    ).toContain("−15 °C");
+    expect(
+      extractHardFacts("Minimum -15 °C").map((fact) => fact.normalized)
+    ).toContain("-15c");
+    expect(
+      extractHardFacts(
+        "URS-37 Temperature To measure the temperature - 20 °C to 150 °C"
+      ).map((fact) => fact.text)
+    ).toContain("- 20 °C to 150 °C");
+  });
+
+  it("keeps the leading minus on a URS RPM ± window", () => {
+    expect(
+      extractHardFacts("URS-10 RPM requirement –50 ± 10 RPM").map(
+        (fact) => `${fact.kind}:${fact.text}`
+      )
+    ).toEqual(expect.arrayContaining(["number:–50 ± 10 RPM"]));
+    expect(
+      extractHardFacts("Agitator speed 50 ± 10 RPM").map((fact) => fact.text)
+    ).toContain("50 ± 10 RPM");
+    expect(
+      extractHardFacts("50+-10 RPM").map((fact) => fact.normalized)
+    ).toContain("50+-10rpm");
+  });
+
   it("does not turn a section number into a quantity", () => {
     expect(extractHardFacts("5.1 System Trends")).toEqual([]);
+  });
+
+  it("does not treat stainless 316L as a litre quantity", () => {
+    expect(extractHardFacts("Glass lined / SS 316L").map((fact) => fact.text)).not.toContain(
+      "316L"
+    );
+    expect(extractHardFacts("Capacity 8000 L").map((fact) => fact.text)).toContain("8000 L");
   });
 });

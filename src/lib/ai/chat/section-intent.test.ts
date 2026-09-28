@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { chatEditableSections } from "./fields";
-import { detectSectionIntentFromText } from "./section-intent";
+import {
+  detectSectionIntentFromText,
+  detectSectionIntentsFromText,
+} from "./section-intent";
 
 describe("detectSectionIntentFromText", () => {
   it("detects analyze intent from root cause phrasing", () => {
@@ -78,6 +81,24 @@ describe("detectSectionIntentFromText", () => {
     ).toBe("elr_access_control");
     expect(
       detectSectionIntentFromText(
+        "edit section 3.12",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_preventive_maintenance");
+    expect(
+      detectSectionIntentFromText(
+        "section 3.12 is preventive maintenance",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_preventive_maintenance");
+    expect(
+      detectSectionIntentFromText(
+        "update section 3.10",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_monitoring");
+    expect(
+      detectSectionIntentFromText(
         "Identify system trends across the evidence tables",
         "equipment_lifecycle_report"
       )
@@ -88,5 +109,47 @@ describe("detectSectionIntentFromText", () => {
         "equipment_lifecycle_report"
       )
     ).toBe("elr_risk_actions");
+    expect(
+      detectSectionIntentFromText(
+        "Fill the process validation review from PPQ and CPV reports",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_process_validation");
+    expect(
+      detectSectionIntentFromText(
+        "Compile the cleaning validation review",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_cleaning_validation");
+    expect(
+      detectSectionIntentFromText(
+        "Review the quality risk assessment documents for this equipment",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_qra_review");
+    expect(
+      detectSectionIntentFromText(
+        "Fill the 5.2 risk assessment and prioritized actions",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_risk_actions");
+  });
+
+  it("maps QSR Contents numbers 5.2–5.4 to Control / GMP / Safety", () => {
+    expect(
+      detectSectionIntentFromText(
+        "perfect now draft 5.2,5.3, 5.4",
+        "qualification_summary_report"
+      )
+    ).toBe("qsr_rtm_control");
+    expect(
+      detectSectionIntentsFromText(
+        "perfect now draft 5.2,5.3, 5.4",
+        "qualification_summary_report"
+      )
+    ).toEqual(["qsr_rtm_control", "qsr_rtm_gmp", "qsr_rtm_safety"]);
+    expect(
+      detectSectionIntentFromText("5.2", "equipment_lifecycle_report")
+    ).toBeNull();
   });
 });

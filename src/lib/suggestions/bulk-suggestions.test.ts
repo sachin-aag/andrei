@@ -499,6 +499,46 @@ describe("acceptAllSuggestions", () => {
     expect(text).not.toContain(suggestionInsertMarkName);
   });
 
+  it("dismisses identity edit_cells as already_present instead of applying a no-op", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const identity = comment("t1", "", "URS-13 Stage", "elr_responsibilities");
+    identity.contentPath = "table";
+    identity.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "already empty",
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 0,
+            rowKey: "",
+            expectedText: "",
+            insertText: "",
+          },
+        ],
+      },
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [identity],
+      sectionContent: { table: seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]) },
+    });
+
+    expect(result.appliedIds).toEqual([]);
+    expect(result.skippedIds).toEqual([]);
+    expect(result.dismissedIds).toEqual(["t1"]);
+    expect(result.dismissedContent.t1).toContain("already_present");
+  });
+
   it("dismisses a same-table leftover invalidated by an earlier apply", async () => {
     const urls: string[] = [];
     vi.stubGlobal(

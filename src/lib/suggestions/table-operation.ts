@@ -7,6 +7,7 @@ import {
   elrTableHeadersForSection,
 } from "@/lib/document-types/elr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
+import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
 import {
@@ -27,8 +28,14 @@ export type TableOperation =
   | {
       kind: "insert_rows";
       tableIndex: number;
-      /** Omit to append after the last existing row. */
+      /** Omit to append after the last existing row. Ignored when afterRowKey matches. */
       afterRow?: number;
+      /**
+       * First-cell text of the live row to insert after (URS-16, a banner
+       * label, …). Prefer this over afterRow — numeric indexes shift after
+       * earlier inserts in the same batch.
+       */
+      afterRowKey?: string;
       rows: string[][];
       expectedRowAtAfter?: string[];
     }
@@ -80,8 +87,14 @@ export type TableCellEdit = {
   expectedText?: string;
   insertText: string;
   /**
+   * First-cell text of the live row (URS-13, a banner label, …). Prefer this
+   * over `row` — numeric indexes shift after banners or earlier inserts.
+   */
+  rowKey?: string;
+  /**
    * Live sibling cells on this row (documentRef, system id, …). Grounding
    * uses this to keep a date on the cited file instead of a colliding SOP.
+   * Apply also reads a URS-N / first-cell key from this when `rowKey` is omitted.
    */
   rowContext?: string;
 };
@@ -119,7 +132,8 @@ export type TableOperationStatus =
   | "bad_scope"
   | "stale"
   | "fixed_schema"
-  | "invalid";
+  | "invalid"
+  | "already_present";
 
 export type TableOperationResult =
   | { ok: true; status: "ok"; doc: JSONContent; tableNumber?: number }
@@ -589,6 +603,410 @@ function tableRows(table: JSONContent): JSONContent[] {
   return (table.content ?? []).filter((n) => n.type === "tableRow");
 }
 
+function cellColspan(cell: JSONContent): number {
+  const raw = cell.attrs?.colspan;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : 1;
+}
+
+function visualColumnCount(row: JSONContent): number {
+  return rowCells(row).reduce((sum, cell) => sum + cellColspan(cell), 0);
+}
+
+/** One physical cell that spans the full header width. */
+export function isBannerTableRow(row: JSONContent): boolean {
+  const cells = rowCells(row);
+  return cells.length === 1 && cellColspan(cells[0]!) > 1;
+}
+
+function headerColumnCount(table: JSONContent): number {
+  const header = tableRows(table)[0];
+  if (!header) return 0;
+  return Math.max(visualColumnCount(header), rowCells(header).length);
+}
+
+function firstCellText(row: JSONContent): string {
+  const cell = rowCells(row)[0];
+  return cell ? cellPlainText(cell) : "";
+}
+
+function rowsMatchingAfterKey(
+  rows: readonly JSONContent[],
+  key: string
+): number[] {
+  const wanted = normalizeTableCellText(key);
+  if (!wanted) return [];
+  const hits: number[] = [];
+  rows.forEach((row, index) => {
+    if (firstCellText(row) === wanted) hits.push(index);
+  });
+  return hits;
+}
+
+export type ResolveInsertAfterRowResult =
+  | { ok: true; afterRow: number }
+  | { ok: false; status: "bad_scope" | "invalid"; hint: string };
+
+/** Resolve insert_rows afterRowKey (preferred) or afterRow against live rows. */
+export function resolveInsertAfterRow(
+  rows: readonly JSONContent[],
+  operation: Extract<TableOperation, { kind: "insert_rows" }>
+): ResolveInsertAfterRowResult {
+  const key = operation.afterRowKey?.trim() ?? "";
+  if (key) {
+    const hits = rowsMatchingAfterKey(rows, key);
+    if (hits.length === 0) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint: `afterRowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`,
+      };
+    }
+    if (hits.length > 1) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint: `afterRowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`,
+      };
+    }
+    return { ok: true, afterRow: hits[0]! };
+  }
+  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
+  if (afterRow < 0 || afterRow >= rows.length) {
+    return {
+      ok: false,
+      status: "bad_scope",
+      hint: `afterRow ${afterRow} does not exist. Re-read with read_section.`,
+    };
+  }
+  return { ok: true, afterRow };
+}
+
+const URS_ROW_KEY_RE = /\bURS-\d+\b/i;
+
+function firstContextLine(context: string): string {
+  return normalizeTableCellText(context.split(/\n/)[0] ?? "");
+}
+
+/**
+ * Live first-cell identity for an edit_cells target. URS-N wins over a stale
+ * numeric row so a targeted URS-13 edit still lands after banners or inserts.
+ */
+export function inferEditCellRowKey(
+  cell: TableCellEdit,
+  rows: readonly JSONContent[]
+): string {
+  const explicit = normalizeTableCellText(cell.rowKey ?? "");
+  if (explicit) return explicit;
+  const context = cell.rowContext ?? "";
+  const urs = context.match(URS_ROW_KEY_RE);
+  if (urs) return normalizeTableCellText(urs[0]!);
+  // Only when the numeric row exists — an out-of-range row with col-0
+  // expectedText "a" must stay bad_scope, not rematch onto the "a" row.
+  if (cell.col === 0 && cell.row >= 0 && cell.row < rows.length) {
+    for (const candidate of [cell.expectedText, cell.insertText]) {
+      const key = normalizeTableCellText(candidate ?? "");
+      if (key && rowsMatchingAfterKey(rows, key).length === 1) return key;
+    }
+  }
+  const firstLine = firstContextLine(context);
+  if (firstLine && rowsMatchingAfterKey(rows, firstLine).length === 1) {
+    return firstLine;
+  }
+  return "";
+}
+
+export type ResolveEditCellsResult =
+  | { ok: true; cells: TableCellEdit[] }
+  | {
+      ok: false;
+      status: "bad_scope" | "stale" | "invalid" | "already_present" | "fixed_schema";
+      hint: string;
+    };
+
+function nextCellText(cell: TableCellEdit): string {
+  return normalizeTableCellText(normalizeSuggestionInsertText(cell.insertText));
+}
+
+/**
+ * Whole-cell leftover tokens, including HTML-shaped labels such as
+ * `<section>` that live placeholder scanning skips.
+ */
+export function isLeftoverPlaceholderCellText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^<[^<>]+>$/.test(trimmed)) return true;
+  return collectPlaceholderSpans(trimmed).length > 0;
+}
+
+function liveCellIsEmpty(text: string): boolean {
+  const live = normalizeTableCellText(text);
+  return !live || isLeftoverPlaceholderCellText(live);
+}
+
+/** After a table-placeholder lookup bounce, these three may persist. */
+const PERSISTED_TABLE_LOOKUP_PLACEHOLDERS = new Set([
+  "<date>",
+  "<identifier>",
+  "<number>",
+]);
+
+function isPersistedLookupPlaceholder(text: string): boolean {
+  return PERSISTED_TABLE_LOOKUP_PLACEHOLDERS.has(text.trim().toLowerCase());
+}
+
+function isDroppableLeftoverPlaceholderCell(text: string): boolean {
+  return (
+    isLeftoverPlaceholderCellText(text) && !isPersistedLookupPlaceholder(text)
+  );
+}
+
+function blankLeftoverPlaceholderCells(values: readonly string[]): string[] {
+  return values.map((value) =>
+    isDroppableLeftoverPlaceholderCell(value) ? "" : value
+  );
+}
+
+/** Drop leftover `<…>` cells so they never persist, except gated lookup tokens. */
+export function dropLeftoverPlaceholderCells(
+  operation: TableOperation
+): TableOperation {
+  switch (operation.kind) {
+    case "edit_cells":
+      return {
+        ...operation,
+        cells: operation.cells.filter(
+          (cell) => !isDroppableLeftoverPlaceholderCell(cell.insertText)
+        ),
+      };
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map(blankLeftoverPlaceholderCells),
+      };
+    case "create_table":
+      return {
+        ...operation,
+        rows: operation.rows?.map(blankLeftoverPlaceholderCells),
+      };
+    case "insert_column":
+      return {
+        ...operation,
+        values: operation.values
+          ? blankLeftoverPlaceholderCells(operation.values)
+          : operation.values,
+      };
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
+function agreedSiblingRowKey(
+  keysByOriginalRow: Map<number, Set<string>>,
+  originalRow: number
+): string {
+  const keys = keysByOriginalRow.get(originalRow);
+  if (!keys || keys.size !== 1) return "";
+  return [...keys][0] ?? "";
+}
+
+/**
+ * Rematch each edit_cells cell onto its own live URS / first-cell row, then
+ * drop cells whose insertText already equals the live cell (identity). Empty
+ * leftover → already_present.
+ *
+ * Do not group by the numeric `row` and reuse the first inferred key: the
+ * model often repeats one dummy row for every URS while `rowKey` differs.
+ * An unkeyed sibling on the same numeric row inherits a key only when every
+ * keyed sibling on that dummy row agrees.
+ *
+ * One already-filled or stale cell must not fail the whole batch: a 23-cell
+ * "fill missing" card that hits two live Stage values would otherwise mark
+ * the suggestion stale and skip inline preview for the empty remainder.
+ * A mixed fill-empty batch also skips rewriting filled cells so the empty
+ * remainder still lands; a batch that only rewrites filled cells still applies.
+ */
+export function resolveEditCells(
+  rows: readonly JSONContent[],
+  cells: readonly TableCellEdit[],
+  options?: { fixedColumns?: boolean }
+): ResolveEditCellsResult {
+  if (cells.length === 0) {
+    return {
+      ok: false,
+      status: "invalid",
+      hint: "edit_cells requires at least one cell.",
+    };
+  }
+
+  const inferredKeys = cells.map((cell) => inferEditCellRowKey(cell, rows));
+  const keysByOriginalRow = new Map<number, Set<string>>();
+  cells.forEach((cell, index) => {
+    const inferred = inferredKeys[index];
+    if (!inferred) return;
+    const group = keysByOriginalRow.get(cell.row) ?? new Set<string>();
+    group.add(inferred);
+    keysByOriginalRow.set(cell.row, group);
+  });
+
+  const remapped: TableCellEdit[] = [];
+  const skipExpectedFor = new Set<string>();
+  let lastScopeHint = "";
+  for (let index = 0; index < cells.length; index += 1) {
+    const cell = cells[index]!;
+    const key =
+      inferredKeys[index] || agreedSiblingRowKey(keysByOriginalRow, cell.row);
+    let liveRow = cell.row;
+    if (key) {
+      const hits = rowsMatchingAfterKey(rows, key);
+      if (hits.length === 0) {
+        lastScopeHint = `rowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`;
+        continue;
+      }
+      if (hits.length > 1) {
+        lastScopeHint = `rowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`;
+        continue;
+      }
+      liveRow = hits[0]!;
+    }
+    if (liveRow < 0 || liveRow >= rows.length) {
+      lastScopeHint = `Row ${liveRow} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`;
+      continue;
+    }
+    const rematchedAway = Boolean(key) && liveRow !== cell.row;
+    remapped.push({
+      ...cell,
+      row: liveRow,
+      ...(key ? { rowKey: key } : {}),
+    });
+    if (rematchedAway) skipExpectedFor.add(`${liveRow},${cell.col}`);
+  }
+
+  if (remapped.length === 0) {
+    return {
+      ok: false,
+      status: "bad_scope",
+      hint:
+        lastScopeHint ||
+        "No edit_cells target resolved to a live row. Copy the first-cell text from read_section.",
+    };
+  }
+
+  const firstNextByCoord = new Map<string, string>();
+  const changing: TableCellEdit[] = [];
+  const headers = rows[0] ? rowSnapshot(rows[0]) : [];
+  let sawIdentity = false;
+  let sawStale = false;
+  let sawMissing = false;
+  for (const cell of remapped) {
+    const coord = `${cell.row},${cell.col}`;
+    const row = rows[cell.row];
+    if (!row) {
+      sawMissing = true;
+      lastScopeHint = `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`;
+      continue;
+    }
+    const node = rowCells(row)[cell.col];
+    if (!node) {
+      sawMissing = true;
+      lastScopeHint = `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headers)}`;
+      continue;
+    }
+    if (options?.fixedColumns && cell.row === 0) {
+      const nextText = nextCellText(cell);
+      const current = cellPlainText(node);
+      if (nextText !== current) {
+        return {
+          ok: false,
+          status: "fixed_schema",
+          hint: "This matrix has a fixed column schema. Do not rename header cells.",
+        };
+      }
+    }
+    const live = cellPlainText(node);
+    const next = nextCellText(cell);
+    const firstNext = firstNextByCoord.get(coord);
+    if (firstNext !== undefined) {
+      if (firstNext === next) continue;
+      return {
+        ok: false,
+        status: "invalid",
+        hint: `Duplicate cell target [${cell.row},${cell.col}].`,
+      };
+    }
+    firstNextByCoord.set(coord, next);
+    if (next === live) {
+      sawIdentity = true;
+      continue;
+    }
+    const rematchedAway = skipExpectedFor.has(coord);
+    // When rowKey rematched onto a different live row, expectedText was
+    // snapshotted from the stale numeric index — the row key is the
+    // concurrency token, not that leftover cell text.
+    if (cell.expectedText !== undefined && !rematchedAway) {
+      const expected = normalizeTableCellText(cell.expectedText);
+      if (live !== expected) {
+        sawStale = true;
+        continue;
+      }
+    }
+    // Dummy-row fill (expectedText "") rematched onto a cell that already
+    // has different text — drop it; do not overwrite, and do not fail the
+    // rest of the batch.
+    if (rematchedAway) {
+      const expected = normalizeTableCellText(cell.expectedText ?? "");
+      if (expected === "" && live !== "") {
+        sawStale = true;
+        continue;
+      }
+    }
+    changing.push(cell);
+  }
+  const fillsEmpty: TableCellEdit[] = [];
+  const rewritesFilled: TableCellEdit[] = [];
+  for (const cell of changing) {
+    const node = rowCells(rows[cell.row]!)[cell.col];
+    const live = node ? cellPlainText(node) : "";
+    if (liveCellIsEmpty(live)) fillsEmpty.push(cell);
+    else rewritesFilled.push(cell);
+  }
+  const applied =
+    fillsEmpty.length > 0 && rewritesFilled.length > 0
+      ? fillsEmpty
+      : changing;
+  if (applied.length === 0) {
+    if (sawStale && !sawIdentity) {
+      return {
+        ok: false,
+        status: "stale",
+        hint: "Cell values no longer match expectedText. Re-read with read_section.",
+      };
+    }
+    if (!sawIdentity && sawMissing) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint:
+          lastScopeHint ||
+          "No edit_cells target resolved to a live cell. Re-read with read_section.",
+      };
+    }
+    return {
+      ok: false,
+      status: "already_present",
+      hint: "Those cells already have the proposed text. Re-read with read_section and edit a cell that still needs a change.",
+    };
+  }
+  return { ok: true, cells: applied };
+}
+
 type TableLocation = {
   table: JSONContent;
   parent: JSONContent;
@@ -690,7 +1108,14 @@ function expectedRowAtAfterStillValid(
   expected: readonly string[] | undefined
 ): boolean {
   if (!expected) return true;
-  if (actual.length !== expected.length) return false;
+  const exp0 = normalizeTableCellText(expected[0] ?? "");
+  if (exp0.length > 0 && (actual[0] ?? "") !== exp0) return false;
+  if (actual.length !== expected.length) {
+    const restEmpty = expected
+      .slice(1)
+      .every((cell) => normalizeTableCellText(cell).length === 0);
+    return exp0.length > 0 && restEmpty;
+  }
   if (cellsMatch(actual, expected)) return true;
   for (let i = 0; i < expected.length; i++) {
     const exp = normalizeTableCellText(expected[i] ?? "");
@@ -737,6 +1162,26 @@ function templateAttrs(cells: JSONContent[], index: number): JSONContent["attrs"
   return template?.attrs ? structuredClone(template.attrs) : { ...DEFAULT_CELL_ATTRS };
 }
 
+/** Copy paint attrs from a data row; never inherit a banner colspan/rowspan. */
+function dataCellAttrs(
+  templateCells: JSONContent[],
+  index: number
+): JSONContent["attrs"] {
+  const attrs = templateAttrs(templateCells, index) ?? { ...DEFAULT_CELL_ATTRS };
+  return { ...attrs, colspan: 1, rowspan: 1 };
+}
+
+function dataTemplateCells(
+  rows: readonly JSONContent[],
+  afterRow: number
+): JSONContent[] {
+  for (let i = afterRow; i >= 1; i -= 1) {
+    const cells = rowCells(rows[i]!);
+    if (cells.length > 1 && !isBannerTableRow(rows[i]!)) return cells;
+  }
+  return rowCells(rows[0] ?? { type: "tableRow", content: [] });
+}
+
 /**
  * Fill optional concurrency snapshots from the current table before a proposal
  * is persisted. This keeps model input concise while preserving stale-edit
@@ -755,34 +1200,44 @@ export function captureTableOperationSnapshots(
   const headers = headersOf(table);
 
   switch (captured.kind) {
-    case "edit_cells":
-      captured.cells = captured.cells.map((cell) => {
+    case "edit_cells": {
+      const resolved = resolveEditCells(rows, captured.cells);
+      const cells = resolved.ok ? resolved.cells : captured.cells;
+      captured.cells = cells.map((cell) => {
         const row = rows[cell.row];
         const node = row ? rowCells(row)[cell.col] : undefined;
         const rowContext =
           cell.rowContext ??
           (row ? rowSnapshot(row).filter(Boolean).join("\n") : undefined);
-        if (cell.expectedText !== undefined) {
-          return rowContext ? { ...cell, rowContext } : cell;
-        }
-        return node
-          ? {
-              ...cell,
-              expectedText: cellPlainText(node),
-              ...(rowContext ? { rowContext } : {}),
-            }
-          : rowContext
-            ? { ...cell, rowContext }
-            : cell;
+        const rowKey =
+          cell.rowKey ??
+          (row ? inferEditCellRowKey(cell, rows) || firstCellText(row) : undefined);
+        return {
+          ...cell,
+          ...(rowKey ? { rowKey } : {}),
+          ...(rowContext ? { rowContext } : {}),
+          ...(node ? { expectedText: cellPlainText(node) } : {}),
+        };
       });
       return captured;
+    }
     case "insert_rows": {
-      if (captured.afterRow === undefined) {
+      const resolved = resolveInsertAfterRow(rows, captured);
+      if (resolved.ok) {
+        captured.afterRow = resolved.afterRow;
+        if (captured.expectedRowAtAfter === undefined) {
+          const anchor = rows[resolved.afterRow];
+          if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        }
+      } else if (
+        captured.afterRow === undefined &&
+        !captured.afterRowKey?.trim()
+      ) {
         captured.afterRow = Math.max(0, rows.length - 1);
-      }
-      if (captured.expectedRowAtAfter === undefined) {
-        const anchor = rows[captured.afterRow];
-        if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        if (captured.expectedRowAtAfter === undefined) {
+          const anchor = rows[captured.afterRow];
+          if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        }
       }
       return captured;
     }
@@ -973,55 +1428,12 @@ function applyEditCells(
   operation: Extract<TableOperation, { kind: "edit_cells" }>,
   fixedColumns: boolean
 ): TableOperationResult {
-  if (operation.cells.length === 0) {
-    return fail("invalid", "edit_cells requires at least one cell.");
-  }
-  const seen = new Set<string>();
   const rows = tableRows(table);
-  for (const cell of operation.cells) {
-    const key = `${cell.row},${cell.col}`;
-    if (seen.has(key)) {
-      return fail("invalid", `Duplicate cell target [${cell.row},${cell.col}].`);
-    }
-    seen.add(key);
-    const row = rows[cell.row];
-    if (!row) {
-      return fail(
-        "bad_scope",
-        `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`
-      );
-    }
-    const cells = rowCells(row);
-    const node = cells[cell.col];
-    if (!node) {
-      return fail(
-        "bad_scope",
-        `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headersOf(table))}`
-      );
-    }
-    if (fixedColumns && cell.row === 0) {
-      const nextText = normalizeTableCellText(
-        normalizeSuggestionInsertText(cell.insertText)
-      );
-      const current = cellPlainText(node);
-      if (nextText !== current) {
-        return fail(
-          "fixed_schema",
-          "This matrix has a fixed column schema. Do not rename header cells."
-        );
-      }
-    }
-    if (cell.expectedText !== undefined) {
-      const expected = normalizeTableCellText(cell.expectedText);
-      if (cellPlainText(node) !== expected) {
-        return fail(
-          "stale",
-          `Cell [${cell.row},${cell.col}] no longer matches expectedText. Re-read with read_section.`
-        );
-      }
-    }
+  const resolved = resolveEditCells(rows, operation.cells, { fixedColumns });
+  if (!resolved.ok) {
+    return fail(resolved.status, resolved.hint);
   }
-  for (const cell of operation.cells) {
+  for (const cell of resolved.cells) {
     const node = rowCells(rows[cell.row]!)[cell.col]!;
     setCellText(node, cell.insertText);
   }
@@ -1037,37 +1449,40 @@ function applyInsertRows(
     return fail("invalid", "insert_rows requires at least one row.");
   }
   const rows = tableRows(table);
-  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
-  if (afterRow < 0 || afterRow >= rows.length) {
-    return fail(
-      "bad_scope",
-      `afterRow ${afterRow} does not exist. Re-read with read_section.`
-    );
+  const resolved = resolveInsertAfterRow(rows, operation);
+  if (!resolved.ok) {
+    return fail(resolved.status, resolved.hint);
   }
+  const afterRow = resolved.afterRow;
   const anchor = rows[afterRow]!;
   if (!expectedRowAtAfterStillValid(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
-      `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`
+      `Row ${afterRow} no longer matches the expected snapshot. Re-read with read_section.`
     );
   }
-  const headerCols = rows[0] ? rowCells(rows[0]).length : 0;
-  const colCount = Math.max(rowCells(anchor).length, headerCols);
-  if (colCount === 0) {
+  const visualCols = headerColumnCount(table);
+  const templateCells = dataTemplateCells(rows, afterRow);
+  const headerPhysical = rows[0] ? rowCells(rows[0]).length : 0;
+  const dataCols =
+    visualCols === headerPhysical
+      ? visualCols
+      : templateCells.length || headerPhysical;
+  if (visualCols === 0 && dataCols === 0) {
     return fail("invalid", "Cannot insert into a table with no columns.");
   }
   for (const [i, row] of operation.rows.entries()) {
-    if (row.length !== colCount) {
+    if (row.length !== dataCols) {
       return fail(
         "invalid",
-        `Inserted row ${i} has ${row.length} cell(s); the table has ${colCount} column(s). ${liveHeadersHint(headersOf(table))}`
+        `Inserted row ${i} has ${row.length} cell(s); the table has ${dataCols} column(s). ${liveHeadersHint(headersOf(table))}`
       );
     }
   }
-  const newRows = operation.rows.map((cells) => ({
+  const newRows = operation.rows.map((row) => ({
     type: "tableRow" as const,
-    content: cells.map((text, col) =>
-      makeCell("tableCell", text, templateAttrs(rowCells(anchor), col))
+    content: row.map((text, col) =>
+      makeCell("tableCell", text, dataCellAttrs(templateCells, col))
     ),
   }));
   const content = [...(table.content ?? [])];
@@ -1334,6 +1749,33 @@ function nestedKindPayload(
   return null;
 }
 
+/** `{ insert_rows: [row, row] }` — an array, not `{ insert_rows: { rows } }`. */
+function nestedInsertRowsAlias(
+  raw: Record<string, unknown>
+): unknown[] | null {
+  if (Array.isArray(raw.insert_rows) && raw.insert_rows.length > 0) {
+    return raw.insert_rows;
+  }
+  for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
+    if (mapped !== "insert_rows") continue;
+    const nested = raw[alias];
+    if (Array.isArray(nested) && nested.length > 0) return nested;
+  }
+  return null;
+}
+
+function stripNestedKindKeys(
+  raw: Record<string, unknown>,
+  kind: TableOperationKind
+): Record<string, unknown> {
+  const rest = { ...raw };
+  delete rest[kind];
+  for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
+    if (mapped === kind) delete rest[alias];
+  }
+  return rest;
+}
+
 /**
  * Models often nest the op: `{ create_table: { headers, rows } }` instead of
  * `{ kind: "create_table", headers, rows }`. Hoist that object onto the root.
@@ -1355,12 +1797,17 @@ function hoistNestedTableKind(
   if (existingKind) {
     const nested = nestedKindPayload(current, existingKind);
     if (nested) {
-      const rest = { ...current };
-      delete rest[existingKind];
-      for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
-        if (mapped === existingKind) delete rest[alias];
+      return { ...nested, ...stripNestedKindKeys(current, existingKind), kind: existingKind };
+    }
+    if (existingKind === "insert_rows") {
+      const nestedRows = nestedInsertRowsAlias(current);
+      if (nestedRows && (!Array.isArray(current.rows) || current.rows.length === 0)) {
+        return {
+          ...stripNestedKindKeys(current, existingKind),
+          kind: existingKind,
+          rows: nestedRows,
+        };
       }
-      return { ...nested, ...rest, kind: existingKind };
     }
     return { ...current, kind: existingKind };
   }
@@ -1368,12 +1815,15 @@ function hoistNestedTableKind(
   for (const kind of TABLE_OPERATION_KINDS) {
     const nested = nestedKindPayload(current, kind);
     if (!nested) continue;
-    const rest = { ...current };
-    delete rest[kind];
-    for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
-      if (mapped === kind) delete rest[alias];
-    }
-    return { ...rest, ...nested, kind };
+    return { ...stripNestedKindKeys(current, kind), ...nested, kind };
+  }
+  const nestedRows = nestedInsertRowsAlias(current);
+  if (nestedRows) {
+    return {
+      ...stripNestedKindKeys(current, "insert_rows"),
+      kind: "insert_rows",
+      rows: nestedRows,
+    };
   }
   return current;
 }
@@ -1439,6 +1889,47 @@ function asStringMatrix(value: unknown, headers?: string[]): string[][] | null {
   return rows;
 }
 
+function cellsFromInsertRowObject(item: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(item.cells)) {
+    return coerceMatrixRow(item.cells);
+  }
+  const single = asCellString(item.cells);
+  if (single !== null && single.trim()) return [single];
+  return undefined;
+}
+
+/** Model aliases for a merged group row — skip these; insert_rows is data cells only. */
+function isBannerInsertItem(item: unknown): boolean {
+  if (!isRecord(item)) return false;
+  if (typeof item.banner === "string" && item.banner.trim()) return true;
+  return item.isBanner === true || item.banner === true;
+}
+
+/** One insert_rows item: string[] or `{ cells }` — `{ banner }` / `{ isBanner }` are skipped. */
+function asInsertTableRow(item: unknown): string[] | undefined {
+  if (isBannerInsertItem(item)) return undefined;
+  if (isRecord(item)) {
+    const fromCells = cellsFromInsertRowObject(item);
+    if (fromCells && fromCells.length > 0) return fromCells;
+  }
+  const cells = coerceMatrixRow(item);
+  if (!cells || cells.length === 0) return undefined;
+  return cells;
+}
+
+function asInsertTableRows(value: unknown): string[][] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const rows: string[][] = [];
+  for (const item of value) {
+    if (isBannerInsertItem(item)) continue;
+    const row = asInsertTableRow(item);
+    if (!row) return undefined;
+    rows.push(row);
+  }
+  if (rows.length === 0) return undefined;
+  return rows;
+}
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string") return value;
@@ -1480,10 +1971,12 @@ function coerceEditCellsShape(next: Record<string, unknown>): void {
         : typeof item.expected === "string"
           ? item.expected
           : undefined;
+    const rowKey = firstString(item.rowKey, item.afterRowKey);
     return {
       ...item,
       ...(insertText !== undefined ? { insertText } : {}),
       ...(expectedText !== undefined ? { expectedText } : {}),
+      ...(rowKey !== undefined ? { rowKey } : {}),
     };
   });
 }
@@ -1510,6 +2003,35 @@ function coerceInsertColumnShape(next: Record<string, unknown>): void {
   }
 }
 
+function looksLikeCellEdits(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every(
+    (item) =>
+      isRecord(item) &&
+      asInt(item.row) !== null &&
+      asInt(item.col) !== null &&
+      firstString(item.insertText, item.value, item.text, item.content) !==
+        undefined
+  );
+}
+
+function coerceInsertRowsShape(next: Record<string, unknown>): void {
+  if (!(Array.isArray(next.rows) && next.rows.length > 0)) {
+    const nestedRows = nestedInsertRowsAlias(next);
+    if (nestedRows) {
+      next.rows = nestedRows;
+    } else if (
+      Array.isArray(next.cells) &&
+      next.cells.length > 0 &&
+      !looksLikeCellEdits(next.cells)
+    ) {
+      next.rows = next.cells;
+    }
+  }
+  const dataRows = asInsertTableRows(next.rows);
+  if (dataRows) next.rows = dataRows;
+}
+
 /**
  * Repair common model mistakes so `edit_table` can return a hint (or succeed)
  * instead of throwing at the tool schema. Does not invent cell text.
@@ -1523,6 +2045,7 @@ export function coerceTableOperationInput(raw: unknown): unknown {
 
   if (next.kind === "edit_cells") coerceEditCellsShape(next);
   if (next.kind === "insert_column") coerceInsertColumnShape(next);
+  if (next.kind === "insert_rows") coerceInsertRowsShape(next);
 
   if (next.kind !== "delete_rows") return next;
 
@@ -1580,6 +2103,10 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
           expectedText:
             typeof item.expectedText === "string" ? item.expectedText : undefined,
           insertText: item.insertText,
+          rowKey:
+            typeof item.rowKey === "string" && item.rowKey.trim()
+              ? item.rowKey
+              : undefined,
           rowContext:
             typeof item.rowContext === "string" ? item.rowContext : undefined,
         });
@@ -1591,8 +2118,16 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         coerced.afterRow === undefined || coerced.afterRow === null
           ? undefined
           : asInt(coerced.afterRow);
-      const rows = asStringMatrix(coerced.rows);
-      if (afterRow === null || (afterRow !== undefined && afterRow < 0) || !rows) {
+      const afterRowKey =
+        typeof coerced.afterRowKey === "string" && coerced.afterRowKey.trim()
+          ? coerced.afterRowKey
+          : undefined;
+      const rowsFromField = asInsertTableRows(coerced.rows);
+      if (
+        afterRow === null ||
+        (afterRow !== undefined && afterRow < 0) ||
+        !rowsFromField
+      ) {
         return undefined;
       }
       const expectedRowAtAfter = coerced.expectedRowAtAfter
@@ -1603,7 +2138,8 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         kind: "insert_rows",
         tableIndex,
         afterRow,
-        rows,
+        ...(afterRowKey ? { afterRowKey } : {}),
+        rows: rowsFromField,
         expectedRowAtAfter,
       };
     }
@@ -1713,10 +2249,13 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `create_table needs kind: "create_table" with headers (and optional rows, title, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "edit_cells") {
-    return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
+    return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. Prefer rowKey (first-cell text, e.g. URS-13) over row. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "insert_column") {
     return `insert_column needs kind: "insert_column" with header (and optional afterCol, values). Omit afterCol to append as the last column. ${TABLE_EDIT_RECOVERY}`;
+  }
+  if (kind === "insert_rows") {
+    return `insert_rows needs kind: "insert_rows" with rows: [["col1","col2"], ...]. Do not pass cells, { banner }, or nest insert_rows: [...]. Prefer afterRowKey (first-cell text) over afterRow. ${TABLE_EDIT_RECOVERY}`;
   }
   return `The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. Put kind at the top of operation (kind: edit_cells, tableIndex, cells) — not nested as { edit_cells: { cells } }. ${TABLE_EDIT_RECOVERY}`;
 }
@@ -1735,6 +2274,8 @@ export function tableOperationHint(
       return "This matrix has a fixed column schema. Edit cells or add/delete rows — do not add, delete, or rename columns, and do not remove the table.";
     case "invalid":
       return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table with kind at the top of operation. Call read_section and copy tableIndex plus [row,col] from tables[] / structuredText. Do not recover with propose_edit or draft_field.";
+    case "already_present":
+      return "Those cells already have the proposed text. Re-read with read_section and edit a cell that still needs a change.";
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -1752,9 +2293,12 @@ export function summarizeTableOperation(operation: TableOperation): string {
     }
     case "insert_rows": {
       const n = operation.rows.length;
+      const where = operation.afterRowKey
+        ? `"${operation.afterRowKey}"`
+        : `row ${operation.afterRow ?? "last"}`;
       return n === 1
-        ? `Insert 1 row after row ${operation.afterRow ?? "last"}`
-        : `Insert ${n} rows after row ${operation.afterRow ?? "last"}`;
+        ? `Insert 1 row after ${where}`
+        : `Insert ${n} rows after ${where}`;
     }
     case "delete_rows": {
       const n = operation.rows.length;
@@ -1801,7 +2345,8 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
       });
     case "insert_rows":
       return operation.rows.map(
-        (row, i) => `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
+        (row, i) =>
+          `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
       );
     case "delete_rows":
       return operation.rows.map(

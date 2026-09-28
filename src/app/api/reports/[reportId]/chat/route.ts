@@ -60,7 +60,10 @@ import {
   documentIntentFocus,
   resolveChatUserIntent,
 } from "@/lib/ai/chat/resolve-user-intent";
-import { alreadyDraftedGapHints } from "@/lib/ai/chat/already-drafted";
+import {
+  alreadyDraftedGapHints,
+  isExplicitDocumentEdit,
+} from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
   findChatSession,
@@ -739,6 +742,7 @@ async function handleChatPost(
           forceFinishReview:
             reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
           registeredWriteTools,
+          explicitDocumentEdit: isExplicitDocumentEdit(userText),
         });
         return {
           ...decision,

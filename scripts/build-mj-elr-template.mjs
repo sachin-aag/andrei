@@ -43,6 +43,12 @@ const DROP_EXACT = new Set([
   "{@systemTrendsTableXml}",
   "{@riskAssessmentXml}",
   "{@riskActionsTableXml}",
+  "{@processValidationXml}",
+  "{@processValidationTableXml}",
+  "{@cleaningValidationXml}",
+  "{@cleaningValidationTableXml}",
+  "{@qraReviewXml}",
+  "{@qraReviewTableXml}",
 ]);
 
 function rPr({ bold = false, italic = false, sz = 20 } = {}) {
@@ -160,15 +166,36 @@ function rewriteBlocks(blocks) {
       continue;
     }
 
-    if (text === "3.12 ACCESS CONTROL") {
+    if (text === "3.12 ACCESS CONTROL" || text === "3.15 ACCESS CONTROL") {
       out.push(block);
       out.push(field("{@accessControlXml}"));
       continue;
     }
 
-    if (text === "3.13 AUDIT TRAIL REVIEW") {
+    if (text === "3.13 AUDIT TRAIL REVIEW" || text === "3.16 AUDIT TRAIL REVIEW") {
       out.push(block);
       out.push(field("{@auditTrailXml}"));
+      continue;
+    }
+
+    if (text === "3.5 PROCESS VALIDATION REVIEW") {
+      out.push(block);
+      out.push(field("{@processValidationXml}"));
+      out.push(field("{@processValidationTableXml}"));
+      continue;
+    }
+
+    if (text === "3.6 CLEANING VALIDATION REVIEW") {
+      out.push(block);
+      out.push(field("{@cleaningValidationXml}"));
+      out.push(field("{@cleaningValidationTableXml}"));
+      continue;
+    }
+
+    if (text === "3.7 QUALITY RISK ASSESSMENT REVIEW") {
+      out.push(block);
+      out.push(field("{@qraReviewXml}"));
+      out.push(field("{@qraReviewTableXml}"));
       continue;
     }
 
@@ -230,9 +257,10 @@ function renameHeadingSlice(blocks, pairs = HEADING_RENAMES) {
   return blocks.map((block) => renameHeadingText(block, pairs));
 }
 
-/** Alarm Trends (3.9) sits above Breakdowns (3.10) so remaining-section can cite that table. */
+/** Alarm Trends (3.9) sits above Breakdowns (3.13) so remaining-section can cite that table. */
 function reorderAlarmTrendsAboveBreakdowns(blocks) {
   if (
+    headingIndex(blocks, "3.5 PROCESS VALIDATION REVIEW") >= 0 ||
     headingIndex(blocks, "3.9 ALARM TRENDS") >= 0 ||
     headingIndex(blocks, "3.6 ALARM TRENDS") >= 0
   ) {
@@ -272,9 +300,15 @@ const HEADING_RENAMES_ABOVE_MONITORING = [
   ["3.8 PREVENTIVE MAINTENANCE", "3.9 PREVENTIVE MAINTENANCE"],
 ];
 
-/** Alarm Trends (3.6) sits above Monitoring (3.7) so remaining-section can cite that table. */
+/** Alarm Trends (3.9) sits above Monitoring (3.10) so remaining-section can cite that table. */
 function reorderAlarmTrendsAboveMonitoring(blocks) {
-  if (headingIndex(blocks, "3.6 ALARM TRENDS") >= 0) return blocks;
+  if (
+    headingIndex(blocks, "3.5 PROCESS VALIDATION REVIEW") >= 0 ||
+    headingIndex(blocks, "3.9 ALARM TRENDS") >= 0 ||
+    headingIndex(blocks, "3.6 ALARM TRENDS") >= 0
+  ) {
+    return blocks;
+  }
 
   const monitoringStart = headingIndex(blocks, "3.6 MONITORING");
   const alarmStart = headingIndex(blocks, "3.9 ALARM TRENDS");
@@ -303,6 +337,72 @@ function reorderAlarmTrendsAboveMonitoring(blocks) {
   return [...before, ...alarms, ...monitoringThroughPm, ...after];
 }
 
+const HEADING_RENAMES_AFTER_VALIDATION_INSERT = [
+  [
+    "3.14 COMPUTERIZED SYSTEM VALIDATION STATUS",
+    "3.17 COMPUTERIZED SYSTEM VALIDATION STATUS",
+  ],
+  ["3.13 AUDIT TRAIL REVIEW", "3.16 AUDIT TRAIL REVIEW"],
+  ["3.12 ACCESS CONTROL", "3.15 ACCESS CONTROL"],
+  [
+    "3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION",
+    "3.14 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION",
+  ],
+  ["3.10.1 BREAKDOWN TREND SUMMARY", "3.13.1 BREAKDOWN TREND SUMMARY"],
+  ["3.10 BREAKDOWNS AND TRENDS", "3.13 BREAKDOWNS AND TRENDS"],
+  ["3.9 PREVENTIVE MAINTENANCE", "3.12 PREVENTIVE MAINTENANCE"],
+  [
+    "3.8 CALIBRATION OF ASSOCIATED INSTRUMENTS",
+    "3.11 CALIBRATION OF ASSOCIATED INSTRUMENTS",
+  ],
+  ["3.7 MONITORING", "3.10 MONITORING"],
+  ["3.6.1 ALARM TREND SUMMARY", "3.9.1 ALARM TREND SUMMARY"],
+  ["3.6 ALARM TRENDS", "3.9 ALARM TRENDS"],
+  [
+    "3.5 MEDIA FILL / ASEPTIC PROCESS SIMULATION",
+    "3.8 MEDIA FILL / ASEPTIC PROCESS SIMULATION",
+  ],
+];
+
+function validationReviewSlice() {
+  return [
+    heading2("3.5 PROCESS VALIDATION REVIEW"),
+    field("{@processValidationXml}"),
+    field("{@processValidationTableXml}"),
+    heading2("3.6 CLEANING VALIDATION REVIEW"),
+    field("{@cleaningValidationXml}"),
+    field("{@cleaningValidationTableXml}"),
+    heading2("3.7 QUALITY RISK ASSESSMENT REVIEW"),
+    field("{@qraReviewXml}"),
+    field("{@qraReviewTableXml}"),
+  ];
+}
+
+/**
+ * Insert PV / CV / QRA reviews after Qualification (3.4) and bump later
+ * Observations headings. Rename high-to-low so 3.10 does not collide.
+ */
+function insertValidationReviews(blocks) {
+  if (headingIndex(blocks, "3.5 PROCESS VALIDATION REVIEW") >= 0) {
+    return blocks;
+  }
+  const mediaFillStart = headingIndex(
+    blocks,
+    "3.5 MEDIA FILL / ASEPTIC PROCESS SIMULATION"
+  );
+  if (mediaFillStart < 0) {
+    throw new Error(
+      "ELR template is missing 3.5 MEDIA FILL / ASEPTIC PROCESS SIMULATION"
+    );
+  }
+  const before = blocks.slice(0, mediaFillStart);
+  const after = renameHeadingSlice(
+    blocks.slice(mediaFillStart),
+    HEADING_RENAMES_AFTER_VALIDATION_INSERT
+  );
+  return [...before, ...validationReviewSlice(), ...after];
+}
+
 const zip = new PizZip(fs.readFileSync(DEST));
 const documentXml = zip.file("word/document.xml").asText();
 const bodyMatch = documentXml.match(/<w:body>([\s\S]*)<\/w:body>/);
@@ -310,7 +410,9 @@ if (!bodyMatch) {
   throw new Error("ELR template has no w:body");
 }
 
-const rewritten = rewriteBlocks(splitBodyBlocks(bodyMatch[1]));
+const rewritten = insertValidationReviews(
+  rewriteBlocks(splitBodyBlocks(bodyMatch[1]))
+);
 const next = documentXml.replace(
   /<w:body>[\s\S]*<\/w:body>/,
   `<w:body>${rewritten.join("")}</w:body>`
@@ -332,6 +434,12 @@ const required = [
   "@systemTrendsTableXml",
   "@riskAssessmentXml",
   "@riskActionsTableXml",
+  "@processValidationXml",
+  "@processValidationTableXml",
+  "@cleaningValidationXml",
+  "@cleaningValidationTableXml",
+  "@qraReviewXml",
+  "@qraReviewTableXml",
   "overallRiskGrade",
 ];
 const missing = required.filter((tag) => !tags.includes(tag));
@@ -344,29 +452,47 @@ for (const prefix of INSTRUCTION_PREFIXES) {
   }
 }
 
-const alarmAt = next.indexOf("3.6 ALARM TRENDS");
-const monitoringAt = next.indexOf("3.7 MONITORING");
-const pmAt = next.indexOf("3.9 PREVENTIVE MAINTENANCE");
-const breakdownAt = next.indexOf("3.10 BREAKDOWNS AND TRENDS");
-const qmsAt = next.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
+const pvAt = next.indexOf("3.5 PROCESS VALIDATION REVIEW");
+const cvAt = next.indexOf("3.6 CLEANING VALIDATION REVIEW");
+const qraAt = next.indexOf("3.7 QUALITY RISK ASSESSMENT REVIEW");
+const mediaAt = next.indexOf("3.8 MEDIA FILL / ASEPTIC PROCESS SIMULATION");
+const alarmAt = next.indexOf("3.9 ALARM TRENDS");
+const monitoringAt = next.indexOf("3.10 MONITORING");
+const pmAt = next.indexOf("3.12 PREVENTIVE MAINTENANCE");
+const breakdownAt = next.indexOf("3.13 BREAKDOWNS AND TRENDS");
+const qmsAt = next.indexOf(
+  "3.14 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION"
+);
+const accessAt = next.indexOf("3.15 ACCESS CONTROL");
+const csvAt = next.indexOf("3.17 COMPUTERIZED SYSTEM VALIDATION STATUS");
 if (
   !(
-    alarmAt >= 0 &&
+    pvAt >= 0 &&
+    cvAt > pvAt &&
+    qraAt > cvAt &&
+    mediaAt > qraAt &&
+    alarmAt > mediaAt &&
     monitoringAt > alarmAt &&
     pmAt > monitoringAt &&
     breakdownAt > pmAt &&
-    qmsAt > breakdownAt
+    qmsAt > breakdownAt &&
+    accessAt > qmsAt &&
+    csvAt > accessAt
   )
 ) {
-  throw new Error("ELR template did not place Alarm Trends above Monitoring");
+  throw new Error(
+    "ELR template did not place Process / Cleaning / QRA reviews after Qualification"
+  );
 }
 if (
-  next.includes("3.6 MONITORING") ||
-  next.includes("3.9 ALARM") ||
-  next.includes("3.9 BREAKDOWNS") ||
-  next.includes("3.11 ALARM")
+  next.includes("3.5 MEDIA FILL") ||
+  next.includes("3.6 ALARM") ||
+  next.includes("3.7 MONITORING") ||
+  next.includes("3.10 BREAKDOWNS") ||
+  next.includes("3.12 ACCESS CONTROL") ||
+  next.includes("3.14 COMPUTERIZED")
 ) {
-  throw new Error("ELR template still uses the old 3.6–3.9 numbering");
+  throw new Error("ELR template still uses the old 3.5–3.14 numbering");
 }
 
 console.log(`Wrote ${path.relative(ROOT, DEST)} (${tags.length} tags)`);

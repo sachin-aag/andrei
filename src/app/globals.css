@@ -249,7 +249,10 @@ html[data-customer="3xper"] {
   background-size: 200% auto;
   background-clip: text;
   -webkit-background-clip: text;
-  color: transparent;
+  /* Keep `color` so currentColor in the gradient stays the muted/warn
+     tone. `color: transparent` made the whole label (Thinking…) vanish
+     and left a lone chevron. */
+  -webkit-text-fill-color: transparent;
   animation: chat-activity-glimmer 2.2s linear infinite;
 }
 
@@ -258,6 +261,7 @@ html[data-customer="3xper"] {
     animation: none;
     background-image: none;
     color: inherit;
+    -webkit-text-fill-color: inherit;
     -webkit-background-clip: unset;
     background-clip: unset;
   }
@@ -459,18 +463,6 @@ html[data-customer="3xper"] {
   color: rgb(20 83 45);
   background-color: rgb(22 101 52 / 0.12);
   border-radius: 2px;
-}
-
-/*
- * In-section suggestion card. Hidden only when the Comments gutter is on
- * *and* wide enough that the margin column is actually showing (@[480px]).
- * Agent chrome and Comments-off keep the card so table edits are not
- * Apply-all-only.
- */
-@container (min-width: 480px) {
-  [data-review-gutter] .section-suggestion-card-inline {
-    display: none;
-  }
 }
 
 .suggestion-preview-placeholder {
@@ -714,6 +706,15 @@ body:has([data-suggestion-preview-held]) {
 [data-suggestion-preview-held] .suggestion-delete-ai::after {
   opacity: 0;
   transition: opacity 200ms ease;
+}
+
+/* Agent chrome and a closed Comments switch have no review margin.
+   The in-section card is the Apply / Dismiss handle. Hide it only while
+   the margin column is actually on screen. */
+@container (min-width: 480px) {
+  .review-gutter-open .section-suggestion-slot {
+    display: none;
+  }
 }
 
 .suggestion-card-stack {
@@ -989,24 +990,6 @@ body:has([data-suggestion-preview-held]) {
 
 .ProseMirror td {
   background-color: var(--input);
-}
-
-/* Cell fills hide the 15% green/red span tint. Paint the cell itself. */
-.ProseMirror td:has(.suggestion-insert-ai),
-.ProseMirror th:has(.suggestion-insert-ai) {
-  background-color: rgb(22 101 52 / 0.14);
-  box-shadow: inset 0 0 0 2px rgb(22 101 52 / 0.5);
-}
-
-.ProseMirror td:has(.suggestion-delete-ai),
-.ProseMirror th:has(.suggestion-delete-ai) {
-  background-color: rgb(220 38 38 / 0.12);
-  box-shadow: inset 0 0 0 2px rgb(220 38 38 / 0.45);
-}
-
-.ProseMirror td .suggestion-action-widget,
-.ProseMirror th .suggestion-action-widget {
-  white-space: nowrap;
 }
 
 .ProseMirror tr:first-child th,

@@ -238,6 +238,7 @@ export class DocumentReviewSession {
   private lastBudgetExhausted = false;
   private skippedAttachmentIds: string[] = [];
   private queuedFilenames: string[] = [];
+  private queuedDocuments: { attachmentId: string; filename: string }[] = [];
   private skippedFilenames: string[] = [];
   private coverageObjective = "";
   private lastFinishTruncated = false;
@@ -294,6 +295,7 @@ export class DocumentReviewSession {
     this.objective = "";
     this.skippedAttachmentIds = [];
     this.queuedFilenames = [];
+    this.queuedDocuments = [];
     this.skippedFilenames = [];
     this.coverageObjective = "";
     this.lastFinishTruncated = false;
@@ -378,6 +380,8 @@ export class DocumentReviewSession {
     if (pages.length === 0) {
       this.phaseState = "idle";
       this.totalPages = 0;
+      this.queuedFilenames = [];
+      this.queuedDocuments = [];
       return {
         status: "no_pages",
         totalPages: 0,
@@ -416,6 +420,7 @@ export class DocumentReviewSession {
     this.queuedFilenames = [
       ...new Set(pages.map((page) => page.filename).filter(Boolean)),
     ];
+    this.queuedDocuments = uniqueQueuedDocuments(pages);
     const skippedIdSet = new Set(this.skippedAttachmentIds);
     this.skippedFilenames = [
       ...new Set(
@@ -573,6 +578,7 @@ export class DocumentReviewSession {
     coverageSummary: string;
     reviewedEvidence: ReviewedEvidencePage[];
     truncated: boolean;
+    documents: { attachmentId: string; filename: string }[];
   } {
     if (this.phaseState === "idle" || this.queue.length > 0) {
       this.lastRecommended = null;
@@ -597,6 +603,7 @@ export class DocumentReviewSession {
         coverageSummary: `Review incomplete: ${this.reviewedPageKeys.size}/${this.totalPages} pages, ${this.queue.length} batches remaining.`,
         reviewedEvidence: this.reviewedEvidencePages(),
         truncated: true,
+        documents: this.queuedDocuments,
       };
     }
 
@@ -642,6 +649,7 @@ export class DocumentReviewSession {
         : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s)${skipNote}; do not claim completeness.${inventoryNote}`,
       reviewedEvidence: this.reviewedEvidencePages(),
       truncated,
+      documents: this.queuedDocuments,
     };
   }
 
@@ -662,6 +670,7 @@ export class DocumentReviewSession {
         : 0,
       budgetExhausted: this.lastBudgetExhausted,
       byAttachment: this.attachmentProgress(),
+      documents: this.queuedDocuments,
     };
   }
 
@@ -1355,6 +1364,19 @@ function pageKey(page: Pick<ReviewPageSource, "attachmentId" | "pageNumber">): s
 
 function uniqueDocuments(pages: readonly ReviewPageSource[]): number {
   return new Set(pages.map((page) => page.attachmentId)).size;
+}
+
+function uniqueQueuedDocuments(
+  pages: readonly ReviewPageSource[]
+): { attachmentId: string; filename: string }[] {
+  const seen = new Set<string>();
+  const out: { attachmentId: string; filename: string }[] = [];
+  for (const page of pages) {
+    if (seen.has(page.attachmentId)) continue;
+    seen.add(page.attachmentId);
+    out.push({ attachmentId: page.attachmentId, filename: page.filename });
+  }
+  return out;
 }
 
 function uniqueIdentifiers(findings: readonly DocumentReviewFinding[]): string[] {

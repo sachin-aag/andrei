@@ -6,6 +6,7 @@ import {
   groundTableOperation,
   NUMBER_MOVE_SMALL_LEDGER,
   tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tablePlaceholderLookupMessage,
   TABLE_PLACEHOLDER_LOOKUP_MESSAGE,
   unsupportedFactsToolResult,
@@ -91,6 +92,296 @@ describe("groundDraftText", () => {
       }
     }
   );
+});
+
+describe("groundDraftText QSR row windows", () => {
+  const ursPage = {
+    filename: "URS-GLR-1301.pdf",
+    pageNumber: 4,
+    attachmentId: "urs",
+    quote:
+      "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.",
+  };
+
+  it("does not copy URS-37's temperature onto the URS-5 row", () => {
+    const result = groundDraftText({
+      text: "15–130 °C",
+      ledger: ledgerFromPages([ursPage]),
+      policy: "block",
+      context: "URS-5 Jacket temperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["15–130 °C"])
+    );
+  });
+
+  it("accepts the temperature that sits in that URS-ID window", () => {
+    const result = groundDraftText({
+      text: "20-25 °C",
+      ledger: ledgerFromPages([ursPage]),
+      policy: "block",
+      context: "URS-5 Jacket temperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("20-25 °C");
+  });
+
+  it("blocks unsigned 15 °C on operating-range Minimum when the URS shows −15 °C", () => {
+    const result = groundDraftText({
+      text: "15 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "urs",
+          quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        },
+      ]),
+      policy: "block",
+      context: "Temperature\nMinimum",
+      grounding: { section: "qsr_operating_range" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["15 °C"])
+    );
+  });
+
+  it("accepts −15 °C on operating-range Minimum from the URS", () => {
+    const result = groundDraftText({
+      text: "−15 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "urs",
+          quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        },
+      ]),
+      policy: "block",
+      context: "Temperature\nMinimum",
+      grounding: { section: "qsr_operating_range" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("−15 °C");
+  });
+
+  it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", () => {
+    const result = groundDraftText({
+      text: "20 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 8,
+          attachmentId: "urs",
+          quote:
+            "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+        },
+      ]),
+      policy: "block",
+      context: "URS-37\nTemperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["20 °C"])
+    );
+  });
+
+  it("accepts −20 °C to 150 °C on URS-37 from the URS", () => {
+    const result = groundDraftText({
+      text: "-20 °C to 150 °C",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 8,
+          attachmentId: "urs",
+          quote:
+            "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+        },
+      ]),
+      policy: "block",
+      context: "URS-37\nTemperature",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toMatch(/-20/);
+    expect(result.text).toContain("150");
+  });
+
+  it("blocks unsigned 50±10 RPM on URS-10 when the URS shows −50 ± 10 RPM", () => {
+    const result = groundDraftText({
+      text: "50+-10 RPM",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 7,
+          attachmentId: "urs",
+          quote: "URS-10 RPM requirement –50 ± 10 RPM",
+        },
+      ]),
+      policy: "block",
+      context: "URS-10\nRPM requirement",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text).join(" ")).toMatch(
+      /50/
+    );
+  });
+
+  it("accepts −50 ± 10 RPM on URS-10 from the URS", () => {
+    const result = groundDraftText({
+      text: "–50 ± 10 RPM",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 7,
+          attachmentId: "urs",
+          quote: "URS-10 RPM requirement –50 ± 10 RPM",
+        },
+      ]),
+      policy: "block",
+      context: "URS-10\nRPM requirement",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("50");
+    expect(result.text).toMatch(/[-−–]50/);
+  });
+
+  it("accepts 8000 L from the URS cover on the URS-1 row", () => {
+    const result = groundDraftText({
+      text: "8000 L [User Requirement Specification.PDF, p. 1]",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 1,
+          attachmentId: "urs",
+          quote:
+            "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301 Page 1 of 12",
+        },
+      ]),
+      policy: "block",
+      context: "URS-1\nReactor Capacity",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("8000 L");
+    expect(result.unsupported).toEqual([]);
+  });
+
+  it("accepts 0 to 760 mmHg for URS-35 when the URS page states it outside a neighbour window", () => {
+    const result = groundDraftText({
+      text: "0 to 760 mmHg",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 8,
+          attachmentId: "urs",
+          quote:
+            "Vacuum gauge to measure the vacuum produced. Range 0 to 760 mmHg. URS-36 Pressure Gauge.",
+        },
+      ]),
+      policy: "block",
+      context: "URS-35\nVacuum gauge",
+      grounding: { section: "qsr_rtm_control" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("760 mmHg");
+  });
+
+  it("does not treat SS 316L as an unsourced litre quantity on a URS-39 row", () => {
+    const result = groundDraftText({
+      text: "Glass lined / SS 316L",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 9,
+          attachmentId: "urs",
+          quote:
+            "URS-39 Contact parts of the equipment shall be Glass lined / SS 316L.",
+        },
+      ]),
+      policy: "block",
+      context: "URS-39\nContact parts",
+      grounding: { section: "qsr_rtm_gmp" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("SS 316L");
+  });
+
+  it("rejects Emergency Stop text on URS-5 when that phrasing is URS-44", () => {
+    const result = groundDraftText({
+      text: "Emergency Stop push button",
+      ledger: ledgerFromPages([ursPage]),
+      policy: "block",
+      context: "URS-5",
+      grounding: { section: "qsr_rtm_safety" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.some((fact) => /emergency stop/i.test(fact.text))).toBe(
+      true
+    );
+  });
+
+  it("fails closed when the URS is attached but no page was retrieved", () => {
+    const result = groundDraftText({
+      text: "URS-5 Jacket temperature 20-25 °C",
+      ledger: new CitationPageLedger(),
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_safety",
+        attachedFilenames: ["URS-GLR-1301.pdf"],
+      },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported[0]?.text).toMatch(/URS is attached/);
+  });
+
+  it("still fails open on an investigation write with an empty ledger", () => {
+    const result = groundDraftText({
+      text: "Invented batch MF-25-VIAL-01",
+      ledger: new CitationPageLedger(),
+      policy: "block",
+      grounding: {
+        section: "define",
+        attachedFilenames: ["URS-GLR-1301.pdf"],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("MF-25-VIAL-01");
+  });
+
+  it("does not keep a DQ approval date on the URS Qual Docs row", () => {
+    const result = groundDraftText({
+      text: "12 Jan 2024",
+      ledger: ledgerFromPages([
+        {
+          filename: "DQ-GLR-1301.pdf",
+          pageNumber: 2,
+          attachmentId: "dq",
+          quote: "Design Qualification approved 12 Jan 2024 Revision 01",
+        },
+        {
+          filename: "URS-GLR-1301.pdf",
+          pageNumber: 1,
+          attachmentId: "urs",
+          quote: "User Requirement Specification Revision 00 approved 03 Mar 2023",
+        },
+      ]),
+      policy: "block",
+      context: "URS User Requirement Specification",
+      grounding: { section: "qsr_qualification_documents" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text)).toEqual(
+      expect.arrayContaining(["12 Jan 2024"])
+    );
+  });
 });
 
 describe("groundDraftText citation parking", () => {
@@ -353,6 +644,30 @@ describe("groundTableOperation", () => {
     });
   });
 
+  it("grounds create_table headers against sibling header text", () => {
+    const gold = GROUNDEDNESS_GOLD_CASES[0]!;
+    const result = groundTableOperation({
+      operation: {
+        kind: "create_table",
+        headers: ["Serial", "Result"],
+        rows: [["MF-25-VIAL-01", "Pass"]],
+      },
+      ledger: ledgerFromPages(gold.pages),
+      policy: "block",
+    });
+    expect(result.operation).toMatchObject({
+      kind: "create_table",
+      headers: ["Serial", "Result"],
+    });
+    expect(result.blocked).toBe(true);
+    const row =
+      result.operation.kind === "create_table"
+        ? result.operation.rows?.[0]
+        : undefined;
+    expect(row?.[0]).toContain("<identifier>");
+    expect(row?.[0]).not.toContain("MF-25-VIAL-01");
+  });
+
   it("keeps a CSV date on the VSR cited in documentRef instead of a colliding SOP page", () => {
     const vsr = "VSR-25-PR-001.pdf";
     const sop = "SOP-DP-QA-014.pdf";
@@ -520,6 +835,20 @@ describe("gated placeholder persist policy", () => {
     expect(tablePlaceholderLookupMessage(["<Units Filled>"])).toContain(
       "Missing: <Units Filled>."
     );
+  });
+
+  it("treats leftover angle-bracket cells as lookup tokens on any table kind", () => {
+    expect(
+      tableLookupPlaceholderLabels({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 1, insertText: "Pass" },
+          { row: 1, col: 3, insertText: "<result>" },
+          { row: 1, col: 4, insertText: "<section>" },
+        ],
+      })
+    ).toEqual(["<result>", "<section>"]);
   });
 
   it("tells the model to fill real values, not invent them", () => {

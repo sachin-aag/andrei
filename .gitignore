@@ -118,6 +118,8 @@ docs/convergent-onboarding-temporary-passwords.md
 
 scripts/eval/retrieval-runs/
 scripts/eval/retrieval-cases.local.json
+scripts/eval/chat-draft-runs/
+scripts/eval/chat-draft-cases.local.json
 
 
 # Investor deck / screenshots (local-only marketing assets)

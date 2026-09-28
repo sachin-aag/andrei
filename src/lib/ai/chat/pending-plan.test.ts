@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
 import { getDocumentType } from "@/lib/document-types";
+import { emptyQsrContent } from "@/lib/document-types/qsr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
@@ -27,6 +28,7 @@ import {
   resolvePlanAtTurnStart,
   resolveReviewCoverageObjective,
   resumeChatPendingPlan,
+  seedNamedSectionQueuePlan,
   seedSectionQueuePlan,
   shouldAutoContinuePlan,
   type ChatPendingPlan,
@@ -76,6 +78,9 @@ describe("multi-section draft detection", () => {
       )
     ).toBe(false);
     expect(isMultiSectionDraftRequest("draft first two sections")).toBe(false);
+    expect(
+      isMultiSectionDraftRequest("perfect now draft 5.2,5.3, 5.4")
+    ).toBe(false);
   });
 
   it("treats continue/resume as a plan resume, not a new queue", () => {
@@ -113,6 +118,33 @@ describe("seedSectionQueuePlan", () => {
         promptVersion: "chat-v94-section-plan",
       })
     ).toBeNull();
+  });
+
+  it("queues QSR section 6 seed templates with leftover CSV and conclusion", () => {
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_rtm_csv: emptyQsrContent("qsr_rtm_csv"),
+        qsr_rtm_maintenance: emptyQsrContent("qsr_rtm_maintenance"),
+        qsr_volumetric_details: emptyQsrContent("qsr_volumetric_details"),
+        qsr_operating_range: emptyQsrContent("qsr_operating_range"),
+        qsr_other_details: emptyQsrContent("qsr_other_details"),
+        qsr_conclusion: emptyQsrContent("qsr_conclusion"),
+      },
+      promptVersion: "chat-v94-section-plan",
+    });
+    const keys = seeded?.items.map((item) => item.sectionKey) ?? [];
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "qsr_volumetric_details",
+        "qsr_operating_range",
+        "qsr_other_details",
+        "qsr_rtm_csv",
+        "qsr_rtm_maintenance",
+        "qsr_conclusion",
+      ])
+    );
   });
 
   it("does not queue ELR Attachments even when that table is empty", () => {
@@ -186,6 +218,42 @@ describe("seedSectionQueuePlan", () => {
         state: "in_progress",
       },
     ]);
+  });
+});
+
+describe("seedNamedSectionQueuePlan", () => {
+  it("queues only the named empty QSR RTM sections", () => {
+    const seeded = seedNamedSectionQueuePlan({
+      userText: "perfect now draft 5.2,5.3, 5.4",
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_rtm_control: emptyQsrContent("qsr_rtm_control"),
+        qsr_rtm_gmp: emptyQsrContent("qsr_rtm_gmp"),
+        qsr_rtm_safety: emptyQsrContent("qsr_rtm_safety"),
+        qsr_rtm_process: emptyQsrContent("qsr_rtm_process"),
+      },
+      promptVersion: "chat-v140-qsr-rtm-nl",
+      now: new Date("2026-09-25T21:04:04.000Z"),
+    });
+    expect(seeded?.items.map((item) => item.sectionKey)).toEqual([
+      "qsr_rtm_control",
+      "qsr_rtm_gmp",
+      "qsr_rtm_safety",
+    ]);
+    expect(seeded?.items[0]?.state).toBe("in_progress");
+  });
+
+  it("does not seed a one-section named leftover", () => {
+    expect(
+      seedNamedSectionQueuePlan({
+        userText: "draft 5.2",
+        documentType: "qualification_summary_report",
+        sections: {
+          qsr_rtm_control: emptyQsrContent("qsr_rtm_control"),
+        },
+        promptVersion: "chat-v140-qsr-rtm-nl",
+      })
+    ).toBeNull();
   });
 });
 
@@ -488,6 +556,29 @@ describe("resolvePlanAtTurnStart", () => {
         promptVersion: "chat-v94-section-plan",
       })
     ).toBe(seeded);
+  });
+
+  it("seeds a named QSR 5.2–5.4 queue instead of every leftover section", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "perfect now draft 5.2,5.3, 5.4",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_rtm_control: emptyQsrContent("qsr_rtm_control"),
+        qsr_rtm_gmp: emptyQsrContent("qsr_rtm_gmp"),
+        qsr_rtm_safety: emptyQsrContent("qsr_rtm_safety"),
+        qsr_objective: emptyQsrContent("qsr_objective"),
+      },
+      promptVersion: "chat-v140-qsr-rtm-nl",
+      now: new Date("2026-09-25T21:04:04.000Z"),
+    });
+    expect(seeded?.items.map((item) => item.sectionKey)).toEqual([
+      "qsr_rtm_control",
+      "qsr_rtm_gmp",
+      "qsr_rtm_safety",
+    ]);
   });
 
   it("seeds a queue on remaining-report phrasing that used to miss", () => {
@@ -1112,6 +1203,11 @@ describe("plan prompt and metadata", () => {
     expect(planCoverageObjective(null, "Fill monitoring from the certificates", {
       documentType: "equipment_lifecycle_report",
     })).toBe("elr_monitoring");
+    expect(
+      planCoverageObjective(null, "perfect now draft 5.2,5.3, 5.4", {
+        documentType: "qualification_summary_report",
+      })
+    ).toBe("qsr_rtm_control");
   });
 
   it("stamps the section being drafted, not a leftover plan pointer", () => {
@@ -1220,6 +1316,15 @@ describe("plan prompt and metadata", () => {
         finishedCoverageKey: null,
       })
     ).toBe(false);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_rtm_control",
+        content: emptyQsrContent("qsr_rtm_control"),
+        finishedCoverageKey:
+          "uspiy53ymhnfd9rktwo3u4g7:12:h0xk4yu7sl9rrds22xhvk43f|obj:extract all requirements for control philosophy (5.2), gmp requirements (5.3), a",
+      })
+    ).toBe(false);
   });
 
   it("does not treat a floor-8 skipped finish as matching coverage", () => {
@@ -1266,6 +1371,18 @@ describe("plan prompt and metadata", () => {
         objective: "elr_monitoring",
         queuedFilenames: ["PRQR-25-PR-005 Report.pdf"],
         skippedFilenames: ["Alarm trend Q2 2025.pdf"],
+      })
+    ).toBe(true);
+  });
+
+  it("lets a QSR RTM URS walk unlock sibling tables when protocol files were skipped", () => {
+    expect(
+      inventoryFinishSatisfiesEmptyTable({
+        reviewedPages: 8,
+        skippedAttachmentIds: ["dq"],
+        objective: "qsr_rtm_process",
+        queuedFilenames: ["User Requirement Specification.PDF"],
+        skippedFilenames: ["Design Qualification.PDF"],
       })
     ).toBe(true);
   });

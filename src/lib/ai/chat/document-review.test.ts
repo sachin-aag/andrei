@@ -162,6 +162,11 @@ describe("DocumentReviewSession", () => {
       pageNumber: expect.any(Number),
     });
     expect(finished.coverageComplete).toBe(true);
+    expect(finished.documents.length).toBeGreaterThan(0);
+    expect(finished.documents[0]).toMatchObject({
+      attachmentId: expect.any(String),
+      filename: expect.any(String),
+    });
     for (const id of ["SW-SST-1", "SW-SIB-2", "SW-LWB-4", "SW-LCB-1", "SW-SDT-3"]) {
       expect(finished.identifiers).toContain(id);
     }

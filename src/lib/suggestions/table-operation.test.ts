@@ -10,12 +10,17 @@ import {
   captureTableOperationSnapshots,
   existingTableCountFromContents,
   filledTableNumberInDocument,
+  isBannerTableRow,
   parseTableOperation,
   prefixTableCaptionMarkdown,
   renumberFilledTableCaptions,
+  dropLeftoverPlaceholderCells,
+  resolveEditCells,
   summarizeTableOperation,
+  tableOperationInvalidHint,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
@@ -101,6 +106,54 @@ function colCount(doc: JSONContent, tableIndex = 0): number {
 function rowCount(doc: JSONContent, tableIndex = 0): number {
   const tables = (doc.content ?? []).filter((n) => n.type === "table");
   return (tables[tableIndex]!.content ?? []).filter((n) => n.type === "tableRow").length;
+}
+
+function tableRowAt(doc: JSONContent, row: number, tableIndex = 0): JSONContent {
+  const tables = (doc.content ?? []).filter((n) => n.type === "table");
+  return (tables[tableIndex]!.content ?? []).filter((n) => n.type === "tableRow")[row]!;
+}
+
+function cellColspan(doc: JSONContent, row: number, col: number): number {
+  const cells = (tableRowAt(doc, row).content ?? []).filter(
+    (n) => n.type === "tableCell" || n.type === "tableHeader"
+  );
+  const raw = cells[col]?.attrs?.colspan;
+  return typeof raw === "number" ? raw : 1;
+}
+
+function bannerRow(text: string, colspan: number): JSONContent {
+  return {
+    type: "tableRow",
+    content: [
+      {
+        type: "tableCell",
+        attrs: { colspan, rowspan: 1, colwidth: null },
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text, marks: [{ type: "bold" }] }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function rtmRow(id: string, requirement = `${id} text`): string[] {
+  return [id, "Parameter", requirement, "", "", ""];
+}
+
+function rtmDoc(ids: string[], bannersAt?: Record<number, string>): JSONContent {
+  const doc = tableDoc([...QSR_RTM_HEADERS], ids.map((id) => rtmRow(id)));
+  const table = doc.content![0]!;
+  if (bannersAt) {
+    const rows = [...(table.content ?? [])];
+    for (const [index, label] of Object.entries(bannersAt)) {
+      rows.splice(Number(index), 0, bannerRow(label, QSR_RTM_HEADERS.length));
+    }
+    table.content = rows;
+  }
+  return doc;
 }
 
 function manufacturerFilledDoc(): JSONContent {
@@ -475,6 +528,657 @@ describe("applyTableOperation", () => {
     expect(result.status).toBe("stale");
   });
 
+  it("does not copy a banner colspan onto inserted data rows", () => {
+    const doc = rtmDoc(["URS-1"]);
+    const table = doc.content![0]!;
+    table.content = [
+      ...(table.content ?? []),
+      bannerRow("ANY SPECIFIC REQUIREMENTS", 6),
+    ];
+    const result = applyTableOperation(doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "ANY SPECIFIC REQUIREMENTS",
+      rows: [rtmRow("URS-58")],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 3, 0)).toBe("URS-58");
+    expect(cellColspan(result.doc, 3, 0)).toBe(1);
+    expect(tableRowAt(result.doc, 3).content).toHaveLength(6);
+  });
+
+  it("does not insert a merged banner row from { banner }", () => {
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        afterRowKey: "URS-1",
+        rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      })
+    ).toBeUndefined();
+  });
+
+  it("resolves afterRowKey even when afterRow is stale", () => {
+    const first = applyTableOperation(rtmDoc(["URS-1", "URS-2", "URS-3"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [rtmRow("URS-1a")],
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const second = applyTableOperation(first.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "URS-3",
+      rows: [rtmRow("URS-4")],
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(cellText(second.doc, 1, 0)).toBe("URS-1");
+    expect(cellText(second.doc, 2, 0)).toBe("URS-1a");
+    expect(cellText(second.doc, 3, 0)).toBe("URS-2");
+    expect(cellText(second.doc, 4, 0)).toBe("URS-3");
+    expect(cellText(second.doc, 5, 0)).toBe("URS-4");
+  });
+
+  it("rejects a missing or ambiguous afterRowKey", () => {
+    const missing = applyTableOperation(rtmDoc(["URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-99",
+      rows: [rtmRow("URS-2")],
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.status).toBe("bad_scope");
+
+    const dup = applyTableOperation(rtmDoc(["URS-1", "URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [rtmRow("URS-2")],
+    });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.status).toBe("bad_scope");
+  });
+
+  it("replays keyed inserts around 5.1 banners in URS order", () => {
+    const start = applyTableOperation(
+      rtmDoc(
+        [
+          "URS-1",
+          "URS-8",
+          "URS-9",
+          "URS-10",
+          "URS-11",
+          "URS-12",
+          "URS-16",
+          "URS-29",
+        ],
+        { 9: "ANY SPECIFIC REQUIREMENTS", 10: "OTHER AUXILIARY REQUIREMENT" }
+      ),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 17,
+        afterRowKey: "URS-16",
+        rows: [rtmRow("URS-17"), rtmRow("URS-18")],
+      }
+    );
+    expect(start.ok).toBe(true);
+    if (!start.ok) return;
+    const withSpecific = applyTableOperation(start.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 14,
+      afterRowKey: "ANY SPECIFIC REQUIREMENTS",
+      rows: [rtmRow("URS-58")],
+    });
+    expect(withSpecific.ok).toBe(true);
+    if (!withSpecific.ok) return;
+    const withAux = applyTableOperation(withSpecific.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 36,
+      afterRowKey: "OTHER AUXILIARY REQUIREMENT",
+      rows: [rtmRow("URS-67"), rtmRow("URS-68")],
+    });
+    expect(withAux.ok).toBe(true);
+    if (!withAux.ok) return;
+    const ids: string[] = [];
+    for (let r = 1; r < rowCount(withAux.doc); r += 1) {
+      ids.push(cellText(withAux.doc, r, 0));
+    }
+    expect(ids).toEqual([
+      "URS-1",
+      "URS-8",
+      "URS-9",
+      "URS-10",
+      "URS-11",
+      "URS-12",
+      "URS-16",
+      "URS-17",
+      "URS-18",
+      "URS-29",
+      "ANY SPECIFIC REQUIREMENTS",
+      "URS-58",
+      "OTHER AUXILIARY REQUIREMENT",
+      "URS-67",
+      "URS-68",
+    ]);
+    expect(isBannerTableRow(tableRowAt(withAux.doc, 11))).toBe(true);
+    expect(isBannerTableRow(tableRowAt(withAux.doc, 13))).toBe(true);
+  });
+
+  it("captures afterRow from afterRowKey before persisting", () => {
+    const captured = captureTableOperationSnapshots(rtmDoc(["URS-1", "URS-2"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-2",
+      rows: [rtmRow("URS-3")],
+    });
+    expect(captured).toMatchObject({
+      kind: "insert_rows",
+      afterRow: 2,
+      afterRowKey: "URS-2",
+      expectedRowAtAfter: rtmRow("URS-2"),
+    });
+  });
+
+  it("rematches edit_cells onto URS-13 when the numeric row is stale after banners", () => {
+    const doc = rtmDoc(["URS-1", "URS-8", "URS-9", "URS-13"], {
+      2: "ANY SPECIFIC REQUIREMENTS",
+    });
+    expect(cellText(doc, 1, 0)).toBe("URS-1");
+    expect(cellText(doc, 5, 0)).toBe("URS-13");
+
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 5, 3)).toBe("PQ");
+  });
+
+  it("rematches edit_cells from a URS-N in rowContext when rowKey is omitted", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"], { 2: "ANY SPECIFIC REQUIREMENTS" });
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowContext: "URS-13\nParameter\nURS-13 text",
+          expectedText: "stale URS-1 cell",
+          insertText: "OQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 3, 3)).toBe("OQ");
+  });
+
+  it("refuses identity edit_cells as already_present", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 2,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "",
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      status: "already_present",
+    });
+  });
+
+  it("drops identity cells and keeps a real change on the rematched row", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const resolved = resolveEditCells(
+      (doc.content![0]!.content ?? []).filter((n) => n.type === "tableRow"),
+      [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "",
+        },
+        {
+          row: 1,
+          col: 1,
+          rowKey: "URS-13",
+          expectedText: "Parameter",
+          insertText: "Jacket temperature",
+        },
+      ]
+    );
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.cells).toEqual([
+      {
+        row: 2,
+        col: 1,
+        rowKey: "URS-13",
+        expectedText: "Parameter",
+        insertText: "Jacket temperature",
+      },
+    ]);
+  });
+
+  it("rematches each cell by its own rowKey when the dummy numeric row is reused", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "13.3.5.1",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "13.2",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 1, 5)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+    expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
+    expect(cellText(result.doc, 2, 5)).toBe("");
+    expect(cellText(result.doc, 3, 3)).toBe("IQ");
+    expect(cellText(result.doc, 3, 4)).toBe("13.2");
+    expect(cellText(result.doc, 3, 5)).toBe("Complies");
+  });
+
+  it("drops already-filled dummy-row cells and still edits the empty remainder", () => {
+    const seeded = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const filled = applyTableOperation(seeded, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "PQ [28]",
+        },
+      ],
+    });
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const result = applyTableOperation(filled.doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "2.4",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "13.3.5.1",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "IQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("PQ [28]");
+    expect(cellText(result.doc, 1, 4)).toBe("2.4");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+    expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
+    expect(cellText(result.doc, 3, 3)).toBe("IQ");
+  });
+
+  it("skips rewriting a filled cell in a mixed fill-empty batch on any table", () => {
+    const doc = tableDoc(
+      [...ELR_MONITORING_HEADERS],
+      [
+        [
+          "1",
+          "Non-viable particles",
+          "1 Apr 2025 – 31 Mar 2026",
+          "PRQR-25-001",
+          "",
+          "",
+          "",
+        ],
+      ]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          rowKey: "1",
+          expectedText: "1 Apr 2025 – 31 Mar 2026",
+          insertText: "Q2 only",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "1",
+          expectedText: "",
+          insertText: "Within limits [PRQR-25-001, p. 4]",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 2)).toBe("1 Apr 2025 – 31 Mar 2026");
+    expect(cellText(result.doc, 1, 4)).toContain("Within limits");
+  });
+
+  it("still rewrites a filled cell when the batch has no empty fills", () => {
+    const doc = tableDoc(
+      [...DV_TRACEABILITY_HEADERS],
+      [["DI-1", "Input A", "TM-1", "Pass", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "DI-1",
+          expectedText: "Pass",
+          insertText: "Fail",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("Fail");
+  });
+
+  it("drops leftover angle-bracket cells on any table kind", () => {
+    const dropped = dropLeftoverPlaceholderCells({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 1, rowKey: "DI-1", insertText: "Pass" },
+        { row: 1, col: 3, rowKey: "DI-1", insertText: "<result>" },
+      ],
+    });
+    expect(dropped).toMatchObject({
+      kind: "edit_cells",
+      cells: [{ col: 1, insertText: "Pass" }],
+    });
+  });
+
+  it("keeps gated leftover date tokens after a lookup bounce", () => {
+    const kept = dropLeftoverPlaceholderCells({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, insertText: "MF-24-PR-001" },
+        { row: 1, col: 1, insertText: "<date>" },
+      ],
+    });
+    expect(kept).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        { col: 0, insertText: "MF-24-PR-001" },
+        { col: 1, insertText: "<date>" },
+      ],
+    });
+  });
+
+  it("keeps a valid rowKey when a sibling rowKey is missing", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-99",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+  });
+
+  it("still refuses a batch when every rowKey is missing", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    expect(
+      applyTableOperation(doc, {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-99",
+            expectedText: "",
+            insertText: "IQ",
+          },
+        ],
+      }).status
+    ).toBe("bad_scope");
+  });
+
+  it("inherits a rowKey onto unkeyed siblings only when every keyed sibling agrees", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const rows = (doc.content![0]!.content ?? []).filter(
+      (n) => n.type === "tableRow"
+    );
+    const agreed = resolveEditCells(rows, [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-13",
+        insertText: "IQ",
+      },
+      {
+        row: 1,
+        col: 4,
+        insertText: "13.3.5.1",
+      },
+    ]);
+    expect(agreed.ok).toBe(true);
+    if (!agreed.ok) return;
+    expect(agreed.cells).toEqual([
+      { row: 2, col: 3, rowKey: "URS-13", insertText: "IQ" },
+      { row: 2, col: 4, rowKey: "URS-13", insertText: "13.3.5.1" },
+    ]);
+
+    const disagreed = resolveEditCells(rows, [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-13",
+        insertText: "IQ",
+      },
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-64",
+        insertText: "PQ",
+      },
+      {
+        row: 1,
+        col: 4,
+        insertText: "13.2",
+      },
+    ]);
+    expect(disagreed.ok).toBe(true);
+    if (!disagreed.ok) return;
+    expect(disagreed.cells).toEqual([
+      { row: 2, col: 3, rowKey: "URS-13", insertText: "IQ" },
+      { row: 3, col: 3, rowKey: "URS-64", insertText: "PQ" },
+      { row: 1, col: 4, insertText: "13.2" },
+    ]);
+  });
+
+  it("captures rematched row and rowKey before persisting edit_cells", () => {
+    const doc = rtmDoc(["URS-1", "URS-8", "URS-13"], {
+      2: "ANY SPECIFIC REQUIREMENTS",
+    });
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(captured).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 4,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
+  it("captures each dummy-row cell onto its own rowKey", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(captured).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 2,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 3,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
   it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
     const doc = tableDoc(
       ["Component", "Description"],
@@ -801,8 +1505,9 @@ describe("applyTableOperation", () => {
   });
 
   it("does not caption a still-empty seeded table", () => {
+    const doc = seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]);
     const result = applyTableOperation(
-      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      doc,
       {
         kind: "edit_cells",
         tableIndex: 0,
@@ -814,10 +1519,8 @@ describe("applyTableOperation", () => {
         existingTableCount: 0,
       }
     );
-    expect(result.status).toBe("ok");
-    if (!result.ok) return;
-    expect(result.tableNumber).toBeUndefined();
-    expect(result.doc.content?.map((n) => n.type)).toEqual(["table"]);
+    expect(result.status).toBe("already_present");
+    expect(doc.content?.map((n) => n.type)).toEqual(["table"]);
   });
 
   it("reuses an existing caption instead of inserting a second one", () => {
@@ -1391,7 +2094,123 @@ describe("parseTableOperation", () => {
       })
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        afterRowKey: "URS-16",
+        rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      })
+    ).toBeUndefined();
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("coerces Langfuse insert_rows aliases (nested array, isBanner/cells, cells matrix)", () => {
+    expect(
+      parseTableOperation({
+        insert_rows: [
+          { isBanner: true, cells: ["PROTOCOL DOCUMENTS"] },
+          {
+            cells: [
+              "URS-GLR-1301",
+              "User Requirement Specification",
+              "01",
+              "Draft",
+              "—",
+              "—",
+            ],
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "URS-GLR-1301",
+          "User Requirement Specification",
+          "01",
+          "Draft",
+          "—",
+          "—",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        rows: [
+          { banner: "GROUP A" },
+          [
+            "URS-GLR-1301",
+            "User Requirement Specification",
+            "01",
+            "Draft",
+            "—",
+            "—",
+          ],
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "URS-GLR-1301",
+          "User Requirement Specification",
+          "01",
+          "Draft",
+          "—",
+          "—",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        tableIndex: 0,
+        cells: [
+          [
+            "DQ-GLR-1301",
+            "Design Qualification",
+            "01",
+            "Approved",
+            "01-04-2025",
+            "Complies",
+          ],
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "DQ-GLR-1301",
+          "Design Qualification",
+          "01",
+          "Approved",
+          "01-04-2025",
+          "Complies",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+  });
+
+  it("hints insert_rows to pass rows, not cells or a nested insert_rows array", () => {
+    expect(
+      tableOperationInvalidHint({
+        kind: "insert_rows",
+        cells: [{ row: 1, col: 0, insertText: "x" }],
+      })
+    ).toMatch(/rows: \[\["col1","col2"\]/);
+    expect(tableOperationInvalidHint({ kind: "insert_rows" })).toMatch(
+      /not pass cells, \{ banner \}, or nest insert_rows/
+    );
   });
 
   it("coerces nested edit_cells with extra reasoning and omitted expectedText", () => {
@@ -1498,6 +2317,33 @@ describe("parseTableOperation", () => {
           row: 1,
           col: 2,
           insertText: "Major release number (e.g., 04)",
+        },
+      ],
+    });
+  });
+
+  it("round-trips edit_cells rowKey and afterRowKey alias", () => {
+    expect(
+      parseTableOperation({
+        kind: "edit_cells",
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            afterRowKey: "URS-13",
+            insertText: "PQ",
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "PQ",
         },
       ],
     });

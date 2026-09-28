@@ -29,6 +29,12 @@ describe("phraseFamiliesForSection", () => {
     ).toEqual(families);
     expect(phraseFamiliesForReviewObjective("every requirement")).toEqual([]);
   });
+
+  it("expands QSR RTM safety from the URS heading family", () => {
+    const families = phraseFamiliesForSection("qsr_rtm_safety");
+    expect(families.flat()).toContain("safety requirements");
+    expect(phraseFamiliesForReviewObjective("qsr_rtm_safety")).toEqual(families);
+  });
 });
 
 describe("planDocumentSearchQuery", () => {

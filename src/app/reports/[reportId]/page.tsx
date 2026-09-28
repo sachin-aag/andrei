@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
@@ -18,7 +18,7 @@ export default async function ReportEntryPage({
     .select()
     .from(reports)
     .where(eq(reports.id, reportId));
-  if (!report) redirect("/");
+  if (!report) notFound();
 
   redirect(reportWorkspacePath(reportId, user));
 }

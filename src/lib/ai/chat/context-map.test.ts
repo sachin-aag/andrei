@@ -63,6 +63,8 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Documents (ready evidence attachments");
     expect(map).toContain("list_attachments");
     expect(map).toContain("an index only");
+    expect(map).toContain("id= is an internal handle");
+    expect(map).toContain("never show the id");
     expect(map).toContain("UNTRUSTED");
     expect(map).toContain('filename="Lab Results.pdf"');
     expect(map).toContain("id=att_123");
@@ -242,13 +244,73 @@ describe("buildReportContextMap", () => {
       evaluations: [],
       comments: [],
     });
-    expect(demo).toContain("Live table N headers are this report's schema");
+    expect(demo).toContain("Live table headers are this report's schema");
+    expect(demo).toContain("no printed Table N yet");
     expect(demo).toContain(
       `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row)`
     );
     expect(demo).toContain("Traceability [traceability] — empty");
     expect(demo).toContain("table: empty");
     expect(demo).not.toContain(CONVERGENT_RESULTS_HEADERS.join(" | "));
+  });
+
+  it("uses ELR contents numbers and a printed table number when the grid has data", () => {
+    const map = buildReportContextMap({
+      documentType: "equipment_lifecycle_report",
+      report: { documentNo: "ELR-1", date: "2026-04-01", status: "draft" },
+      sections: {
+        elr_monitoring: {
+          narrative: docWith("Non-viable particle monitoring stayed within limits."),
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "table",
+                content: [
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableCell",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Sr. No." }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableCell",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "1" }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      evaluations: [],
+      comments: [],
+    });
+    expect(map).toContain("3.10 Monitoring [elr_monitoring]");
+    expect(map).toContain(
+      "3.12 Preventive Maintenance [elr_preventive_maintenance]"
+    );
+    expect(map).toContain("3.15 Access Control [elr_access_control]");
+    expect(map).toContain("printed Table 1");
+    expect(map).not.toContain("3.12 Monitoring");
   });
 
   it("notes inline images so the model knows to call read_section for vision", () => {
@@ -368,6 +430,7 @@ describe("buildReportContextMap", () => {
     });
 
     expect(map).toContain("insert_image source=analytics");
+    expect(map).toContain("never show the id");
     expect(map).toContain("create additional ones in Analytics");
     expect(map).toContain('"Torque scatter" [anl_1] kind=measurement_scatter');
     // A plot nobody has opened is still insertable: insert_image renders it

@@ -3,6 +3,7 @@ import {
   inventoryPhraseFamilyForSection,
   inventorySectionForObjective,
 } from "@/lib/ai/chat/inventory-review-schema";
+import { rtmHeadingPhrases } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   familyTouchesQuery,
   type SearchQueryPlan,
@@ -31,9 +32,11 @@ export function phraseFamiliesForSection(
 ): readonly (readonly string[])[] {
   if (!section || section === "all") return [];
   const stemming = STEM_FAMILIES_BY_SECTION[section as SectionType] ?? [];
+  const headings = rtmHeadingPhrases(section);
+  const headingFamily = headings.length > 0 ? [headings] : [];
   const schemaFamily = inventoryPhraseFamilyForSection(section);
-  if (schemaFamily.length === 0) return stemming;
-  return [...stemming, schemaFamily];
+  if (schemaFamily.length === 0) return [...stemming, ...headingFamily];
+  return [...stemming, ...headingFamily, schemaFamily];
 }
 
 /**

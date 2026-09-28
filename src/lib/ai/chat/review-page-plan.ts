@@ -8,6 +8,11 @@ import {
   scoreInventoryReviewPage,
 } from "@/lib/ai/chat/inventory-review-schema";
 import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-families";
+import {
+  isQsrRtmSection,
+  isUrsFilename,
+  rtmHeadingPhrases,
+} from "@/lib/ai/chat/qsr-row-grounding";
 
 const STOPWORDS = new Set([
   "a",
@@ -69,8 +74,70 @@ export function selectReviewPages<T extends { attachmentId: string }>(
   return selected;
 }
 
+/** QSR-specific RTM headings. Do not use bare "user requirement" — that is every URS. */
+const QSR_RTM_OBJECTIVE_PHRASES = [
+  "control philosophy",
+  "process requirements",
+  "gmp requirements",
+  "safety requirements",
+  "computer system validation",
+  "maintenance and cleaning",
+  "requirement traceability",
+] as const;
+
+/**
+ * Collapse verbose Table 3 / References walk copy onto the section keys so a
+ * later turn that scopes `qsr_qualification_documents` can reuse the finish.
+ */
+function stableQsrCoverageObjective(normalized: string): string | null {
+  if (!normalized) return null;
+  if (
+    normalized === "qsr_qualification_documents" ||
+    normalized.includes("qsr_qualification_documents")
+  ) {
+    return "qsr_qualification_documents";
+  }
+  if (
+    normalized.includes("qualification document") ||
+    normalized.includes("qsr_qualification") ||
+    normalized.includes("lifecycle document") ||
+    (normalized.includes("table 3") &&
+      (normalized.includes("qualification") ||
+        normalized.includes("qsr") ||
+        normalized.includes("qual doc")))
+  ) {
+    return "qsr_qualification_documents";
+  }
+  if (
+    normalized === "qsr_references" ||
+    normalized.includes("qsr_references")
+  ) {
+    return "qsr_references";
+  }
+  if (
+    /\breferences\b/.test(normalized) &&
+    (normalized.includes("qsr") || normalized.includes("qualification summary"))
+  ) {
+    return "qsr_references";
+  }
+  if (
+    normalized === "qsr_rtm" ||
+    /^qsr_rtm_/.test(normalized) ||
+    normalized.includes("qsr_rtm_")
+  ) {
+    return "qsr_rtm";
+  }
+  // Gemini names 5.2–5.4 in prose ("control philosophy", "gmp requirements")
+  // instead of `qsr_rtm_control`. Stamp the same family so edit_table unlocks.
+  if (QSR_RTM_OBJECTIVE_PHRASES.some((phrase) => normalized.includes(phrase))) {
+    return "qsr_rtm";
+  }
+  return null;
+}
+
 export function coverageObjectiveDigest(objective: string): string {
-  return objective.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 80);
+  const normalized = objective.trim().toLowerCase().replace(/\s+/g, " ");
+  return (stableQsrCoverageObjective(normalized) ?? normalized).slice(0, 80);
 }
 
 const COVERAGE_OBJECTIVE_MARKER = "|obj:";
@@ -92,7 +159,10 @@ export function coverageKeySatisfiesObjective(
   const digest = coverageKey.slice(idx + COVERAGE_OBJECTIVE_MARKER.length);
   if (!digest) return false;
   if (digest === want) return true;
-  const wantTokens = objectiveTokens(want);
+  // NL RTM copy ("control philosophy") collapses to qsr_rtm; do not
+  // tokenize the collapsed family or `qsr` leaks onto Table 3.
+  if (coverageObjectiveDigest(digest) === want) return true;
+  const wantTokens = objectiveTokens(objective);
   const haveTokens = objectiveTokens(digest);
   if (wantTokens.length === 0 || haveTokens.length === 0) return false;
   const have = new Set(haveTokens);
@@ -100,7 +170,10 @@ export function coverageKeySatisfiesObjective(
 }
 
 export function objectiveTokens(objective: string): string[] {
-  const tokens = coverageObjectiveDigest(objective)
+  const tokens = objective
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
     .replace(/^elr_/, "")
     .split(/[^a-z0-9]+/)
     .filter((token) => token.length >= 3 && token !== "elr" && !STOPWORDS.has(token));
@@ -131,6 +204,13 @@ export function scoreReviewPage(
       continue;
     }
     if (familyTerms.length === 0 && haystack.includes(token)) score += 2;
+  }
+  const qsrSection = inventorySectionForObjective(objective);
+  if (isQsrRtmSection(qsrSection) || qsrSection === "qsr_operating_range") {
+    if (isUrsFilename(page.filename)) score += 16;
+    for (const phrase of rtmHeadingPhrases(qsrSection)) {
+      if (haystack.includes(phrase)) score += 8;
+    }
   }
   return score;
 }
@@ -208,6 +288,10 @@ function qsrInventorySectionForObjective(
   const digest = coverageObjectiveDigest(objective);
   if (!digest) return null;
   const keys = qsrInventorySectionKeys();
+  if (digest === "qsr_rtm") return "qsr_rtm_process";
+  if (digest === "qsr_operating_range" || digest.includes("operating range")) {
+    return "qsr_operating_range";
+  }
   if (keys.includes(digest)) return digest;
   if (
     digest.includes("qualification document") ||
@@ -220,6 +304,11 @@ function qsrInventorySectionForObjective(
     if (key === "qsr_qualification_documents") continue;
     const noun = key.replace(/^qsr_/, "").replace(/_/g, " ");
     if (noun.length >= 4 && digest.includes(noun)) return key;
+    if (isQsrRtmSection(key)) {
+      if (rtmHeadingPhrases(key).some((phrase) => digest.includes(phrase))) {
+        return key;
+      }
+    }
   }
   return null;
 }
@@ -230,6 +319,53 @@ export function isQsrInventoryReviewObjective(
   return objectives.some((objective) =>
     Boolean(qsrInventorySectionForObjective(objective))
   );
+}
+
+/**
+ * QSR RTM / Operating Range evidence lives in the URS, not DQ/IQ/OQ/PQ
+ * protocol bodies. Table 3 / References stay a cover-page walk of every
+ * lifecycle file.
+ */
+export function isQsrUrsWalkObjective(
+  ...objectives: Array<string | null | undefined>
+): boolean {
+  return objectives.some((objective) => {
+    if (!objective || isQsrLifecycleCoverObjective(objective)) return false;
+    const mapped =
+      qsrInventorySectionForObjective(objective) ??
+      inventorySectionForObjective(objective);
+    return isQsrRtmSection(mapped) || mapped === "qsr_operating_range";
+  });
+}
+
+/** Ready files to page-list for a QSR inventory walk. */
+export function qsrInventoryReadyIdsForObjective<
+  T extends { attachmentId: string; filename?: string | null },
+>(
+  ready: readonly T[],
+  coverageObjective: string | null | undefined,
+  toolObjective: string | null | undefined
+): string[] {
+  if (
+    isQsrLifecycleCoverObjective(coverageObjective) ||
+    isQsrLifecycleCoverObjective(toolObjective)
+  ) {
+    return ready.map((doc) => doc.attachmentId);
+  }
+  if (isQsrUrsWalkObjective(coverageObjective, toolObjective)) {
+    const urs = ready.filter((doc) => isUrsFilename(doc.filename));
+    return (urs.length > 0 ? urs : ready).map((doc) => doc.attachmentId);
+  }
+  return ready.map((doc) => doc.attachmentId);
+}
+
+function pagesForQsrUrsWalk<T extends ReviewPagePlanInput>(
+  pages: readonly T[],
+  objective: string
+): readonly T[] {
+  if (!isQsrUrsWalkObjective(objective)) return pages;
+  const urs = pages.filter((page) => isUrsFilename(page.filename));
+  return urs.length > 0 ? urs : pages;
 }
 
 function coverPagesPerAttachment<T extends ReviewPagePlanInput>(
@@ -458,7 +594,8 @@ function withNeighborFill<T extends ReviewPagePlanInput>(
  * of a 200-page CCF / PRQR, up to `REVIEW_PREFERRED_MISSING_PAGE_CAP`).
  * Scored inventory pages are then capped at `REVIEW_INVENTORY_WALK_CAP`
  * (DV catalogs are not). QSR Table 3 / References take the first
- * `REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE` pages of each file.
+ * `REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE` pages of each file. QSR RTM /
+ * Operating Range keep the URS when one is attached — not protocol bodies.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],
@@ -472,15 +609,16 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
       cap
     );
   }
+  const scopedPages = pagesForQsrUrsWalk(pages, objective);
   if (
     objectiveTokens(objective).length === 0 &&
     phraseFamiliesForReviewObjective(objective).length === 0 &&
     inventorySectionForObjective(objective) === null
   ) {
-    return selectReviewPages(pages, cap);
+    return selectReviewPages(scopedPages, cap);
   }
   const relevant: T[] = [];
-  for (const page of pages) {
+  for (const page of scopedPages) {
     if (
       scoreReviewPage(page, objective) > 0 &&
       !filenameConflictsWithInventoryObjective(page.filename, objective)
@@ -489,7 +627,7 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
     }
   }
   const preferredMissing = preferredPagesMissingFromHits(
-    pages,
+    scopedPages,
     relevant,
     objective
   );
@@ -504,14 +642,16 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
         cap
       );
     }
-    const withoutForeignInventory = pages.filter(
+    const withoutForeignInventory = scopedPages.filter(
       (page) =>
         !filenameConflictsWithInventoryObjective(page.filename, objective)
     );
     let pool =
-      withoutForeignInventory.length > 0 ? withoutForeignInventory : pages;
+      withoutForeignInventory.length > 0
+        ? withoutForeignInventory
+        : scopedPages;
     const section = inventorySectionForObjective(objective);
-    if (section) {
+    if (section && !isQsrRtmSection(section) && section !== "qsr_operating_range") {
       const notDemoted = pool.filter(
         (page) => !isDemotedInventoryFilename(page.filename)
       );
@@ -530,7 +670,7 @@ export function planReviewPages<T extends ReviewPagePlanInput>(
   const candidate =
     preferredSample.length > 0 ? [...relevant, ...preferredSample] : relevant;
   return capInventoryReviewPages(
-    withNeighborFill(selectReviewPages(candidate, cap), pages, cap),
+    withNeighborFill(selectReviewPages(candidate, cap), scopedPages, cap),
     objective,
     cap
   );

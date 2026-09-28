@@ -5,12 +5,16 @@ import {
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
-import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
+import {
+  detectSectionIntentFromText,
+  detectSectionIntentsFromText,
+} from "@/lib/ai/chat/section-intent";
 import { coverageKeySatisfiesObjective, REVIEW_OBJECTIVE_PAGE_FLOOR } from "@/lib/ai/chat/review-page-plan";
 import {
   inventorySectionForObjective,
   preferredInventoryEvidenceSkipped,
 } from "@/lib/ai/chat/inventory-review-schema";
+import { isQsrRtmSection } from "@/lib/ai/chat/qsr-row-grounding";
 import { getDocumentType } from "@/lib/document-types";
 import {
   elrIncompleteSectionKeysFromParts,
@@ -27,6 +31,14 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 /** Client-sent user turn that continues a server-owned section queue. */
 export const CHAT_AUTO_CONTINUE_TEXT = "Continue the remaining sections.";
+
+function planItemWithoutAttempts<T extends { attempts?: number }>(
+  item: T
+): Omit<T, "attempts"> {
+  const { attempts, ...rest } = item;
+  void attempts;
+  return rest;
+}
 
 export const CHAT_PLAN_ITEM_STATES = [
   "queued",
@@ -242,13 +254,16 @@ export function inventoryFinishSatisfiesEmptyTable(input: {
   queuedFilenames?: readonly string[];
   skippedFilenames?: readonly string[];
 }): boolean {
+  const section = inventorySectionForObjective(input.objective);
+  const qsrUrsInventory =
+    isQsrRtmSection(section) || section === "qsr_operating_range";
   if (
     input.reviewedPages <= REVIEW_OBJECTIVE_PAGE_FLOOR &&
-    input.skippedAttachmentIds.length > 0
+    input.skippedAttachmentIds.length > 0 &&
+    !qsrUrsInventory
   ) {
     return false;
   }
-  const section = inventorySectionForObjective(input.objective);
   if (
     section &&
     preferredInventoryEvidenceSkipped(
@@ -352,6 +367,43 @@ export function seedSectionQueuePlan(input: {
   };
 }
 
+/**
+ * Queue only the sections the engineer named ("draft 5.2, 5.3, 5.4"), not
+ * every empty `draftOrder` leftover.
+ */
+export function seedNamedSectionQueuePlan(input: {
+  userText: string;
+  documentType: DocumentType;
+  sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
+  promptVersion: string;
+  now?: Date;
+}): ChatPendingPlan | null {
+  const named = detectSectionIntentsFromText(input.userText, input.documentType);
+  const items: ChatPlanItem[] = [];
+  const seen = new Set<string>();
+  for (const section of named) {
+    if (seen.has(section)) continue;
+    seen.add(section);
+    const fill = sectionFillState(input.sections[section], section);
+    if (fill !== "empty") continue;
+    items.push({
+      sectionKey: section,
+      label: sectionLabel(section),
+      state: "queued",
+    });
+  }
+  if (items.length < 2) return null;
+  const first = items[0];
+  if (first) first.state = "in_progress";
+  return {
+    kind: "section_queue",
+    objective: input.userText.trim().slice(0, 500),
+    items,
+    createdAt: (input.now ?? new Date()).toISOString(),
+    promptVersion: input.promptVersion,
+  };
+}
+
 export function resolvePlanAtTurnStart(input: {
   existing: ChatPendingPlan | null;
   userText: string;
@@ -374,8 +426,8 @@ export function resolvePlanAtTurnStart(input: {
   ) {
     return resumeChatPendingPlan(existing);
   }
-  if (input.writeIntent && isMultiSectionDraftRequest(input.userText)) {
-    return seedSectionQueuePlan({
+  if (input.writeIntent) {
+    const named = seedNamedSectionQueuePlan({
       userText: input.userText,
       documentType: input.documentType,
       sections: input.sections,
@@ -383,6 +435,16 @@ export function resolvePlanAtTurnStart(input: {
       now: input.now,
       report: input.report,
     });
+    if (named) return named;
+    if (isMultiSectionDraftRequest(input.userText)) {
+      return seedSectionQueuePlan({
+        userText: input.userText,
+        documentType: input.documentType,
+        sections: input.sections,
+        promptVersion: input.promptVersion,
+        now: input.now,
+      });
+    }
   }
   if (existing && !input.autoContinue && !isPlanResumeRequest(input.userText)) {
     return pauseChatPendingPlan(existing, "new_user_message");
@@ -420,8 +482,7 @@ export function resumeChatPendingPlan(
           ? { ...item, state: "queued" as const }
           : item;
       }
-      const { attempts: _attempts, ...rest } = item;
-      return { ...rest, state: "in_progress" as const };
+      return { ...planItemWithoutAttempts(item), state: "in_progress" as const };
     }),
   };
 }
@@ -860,8 +921,7 @@ export function advancePlanAfterTurn(input: {
       turnKeys.has(item.sectionKey) &&
       !incomplete.has(item.sectionKey)
     ) {
-      const { attempts: _attempts, ...rest } = item;
-      return { ...rest, state: "done" as const };
+      return { ...planItemWithoutAttempts(item), state: "done" as const };
     }
     if (turnKeys.has(item.sectionKey)) {
       return { ...item, attempts: (item.attempts ?? 0) + 1 };

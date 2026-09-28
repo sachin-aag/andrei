@@ -38,12 +38,19 @@ turn dumped findings instead of matching the offer regex. Polite leftovers
 (`can you` without a produce verb, "do the same") go to Lite — they are
 not `question_or_lookup`. Real lookups (`what` / `who` / `do you`) stay
 on rules. Missing-work complaints ("nothing was filled", "why isn't the
-table filled", "I don't see the change") are write on Agent
-(`reason: missing_work`) so Lite is skipped. Agent read keeps write tools
+table filled", "I don't see the change", "suggestions are not landing",
+"refusing to make an edit", "only summarising") are write on Agent
+(`reason: missing_work`) so Lite is skipped. An explicit "insert the
+suggestion" / "edit the document" turn reads the section first, then the
+next step must call `edit_table` (table in scope) or `propose_edit`. Do not
+claim Agent mode is read-only or paste a markdown table. ELR section numbers
+in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
+Maintenance, 3.15 Access Control). A printed Table N is only the number on
+the context map. Agent read keeps write tools
 registered on the ToolSet; `advertisedTools` hides them. A remapped
 `unsupported_tool` for a write tool unlocks them on the next step
 (Document `prepareReportChatStep` and Analytics `prepareAnalyticsChatStep`).
-`list_suggestions` lists open / approved / dismissed AI cards. Wrap-up
+`list_suggestions` lists open / approved / dismissed AI cards (section + preview, no comment ids). Wrap-up
 must not claim a fill unless a tool this turn returned proposed, drafted,
 or applied.
 
@@ -52,9 +59,11 @@ for report facts (batch, date, result, equipment ID, requirement ID, design
 output, verification objective, ECO/DCR). Exception: when intent is **write**
 and the target section is **filled or partial**, call `read_section` first
 (gate on fill state + write intent — not draft/fill verbs). Review against
-criteria and any cached AI Check gap hints; if there are no material gaps,
-report that it is already drafted and ask whether they want a specific
-change. Explicit rewrite language is the escape hatch. If there are gaps,
+criteria and any cached AI Check gap hints; if there are no material gaps
+and they did not already name a change, report that it is already drafted
+and ask whether they want a specific change. A named cell or document edit
+is that change: after the read, call `edit_table` or `propose_edit`. Explicit
+rewrite language is the escape hatch. If there are gaps,
 make a targeted edit. Do not pad length or invent gaps. If a gap conflicts
 with an omit-if rule, ask once whether to include it. Do not quiz
 them for facts already in the section or that you would put in `hint`.
@@ -72,7 +81,10 @@ system prompt when kickoff retrieval hits.
 After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
-with Analytics). Document-chat attachment cover sheets (ATTACHMENT NO. /
+with Analytics). An identifier-only grep that hits a protocol family
+keeps search open until every higher family (PQ, then OQ, then IQ, then
+DQ) has been queried (`shouldKeepRtmProtocolSearchOpen`) — an IQ hit is
+not enough while PQ or OQ are still unsearched. Document-chat attachment cover sheets (ATTACHMENT NO. /
 certificate-of locators, `divider=true`) and split tables (`continues=true`,
 Page N of M with N < M) are not a complete cited data page: they
 set `keepSearchOpen` and `searchHitCount` treats `dividerHits >=
@@ -101,7 +113,11 @@ zero hits are still queued as a stratified sample (PRQR/PMC on breakdowns,
 CCF/CAPA/PRQR on QMS, cap `REVIEW_PREFERRED_MISSING_PAGE_CAP`) so a few CSV-IQ
 / FAT headers cannot floor-8-pad them out — not every page of a 200-page CCF.
 CSV-OQ / CSV-IQ / RTM / URS pages
-score 0 unless they look like a dated result table. Header-only UNCONTROLLED
+score 0 unless they look like a dated result table (QSR RTM and
+Operating Range skip URS demotion and prefer `urs` / `user requirement`
+filenames plus the URS heading family; 5.1–5.6 share one `|obj:qsr_rtm`
+finish so a URS walk unlocks the sibling tables — including Gemini NL
+objectives such as control philosophy / GMP requirements). Header-only UNCONTROLLED
 COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
 4000 transcript characters. `start_document_review`
 for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
@@ -118,12 +134,20 @@ pages; DV catalogs keep the listing cap. QSR Table 3
 (`qsr_qualification_documents`) is not ELR qualification history: do not
 demote URS or walk 48 protocol body pages — queue the first two pages of
 every attached lifecycle file and omit `attachmentIds`.
+QSR RTM / Operating Range omit `attachmentIds` so the server keeps the URS
+(a 12-page URS is a 12-page walk), not DQ/IQ/OQ/PQ bodies.
 `continue_document_review` stops starting batches after ~60s and round-robins
 batches across attachments. `start_document_review`
 reports `truncated` / `skippedDocuments`. Call `list_attachments` first
 when the file set is unknown. Rehydrate only a finish with `status=complete`
 and `truncated !== true`.
 
+`edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
+`afterRow`. `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
+over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
+group a batch by a reused dummy numeric row. An already-filled or missing
+`rowKey` sibling is dropped so remaining cells still preview. Do not insert `{ banner }` group rows; existing template banners
+keep their colspan and data rows do not inherit it.
 Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
 against the citation ledger's served quotes (`groundDraftText`). That
 gate is fact-level (`citation-exemption.ts`): never skip a whole
@@ -133,14 +157,43 @@ section. Exempt title-page / user-confirmed identity, the ELR
 a page in Purpose, Responsibilities, assessments, and recaps. Tables
 stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or
-pages with no quotes fail open. Every pack uses `unsupportedFactPolicy: block`
+pages with no quotes fail open, except QSR RTM / Operating Range / Qual
+Docs / References, which fail closed when the URS or source protocol is
+attached but unread. Those rows also require the fact in the same URS-N
+quote window (`qsr-row-grounding.ts`) or on the URS cover / outside any
+URS-N window (capacity, MOC) — a neighbour URS on the same page still
+bounces. A column-major URS page (one or more blocks of IDs, then the requirement
+sentences) keeps each block's sentences out of the last ID's window and
+still lets every ID in that block use them, even when another row's
+parameter shares a word such as glass or thickness. URS-1 does not match
+URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing.
+Digits in URS-N are not a measured number. A decimal such as 25.0 is
+not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
+to persist `<number>` or ask the engineer to type it. Integer `3` is not
+`3.5`. A named date column (Effective Date) must match the source value
+next to that same label — presence of a signature or observation date on
+the cited page is not that field. A leading minus is part of the number
+(`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A ±
+window is not independent evidence for the setpoint (`50±10 RPM` is not
+`−50 ± 10 RPM`). The high end of a range is not evidence for the low end
+(`20 °C` is not `−20 °C to 150 °C`). Stock Complies / bare Section 13 still need a named-stage protocol page that
+  either names that URS ID or topic-matches that row's Parameters in the
+  protocol body (not the running header). Verified on the result line counts
+  as a pass; Verified By in a signature block does not. Unsupported Stage /
+  Section / Remarks cells clear
+instead of blocking the URS copy. An explicit empty `edit_cells` of filled
+Stage / Section / Remarks stays a clear (suggestion card), including when
+the URS is attached but unread this turn. Protocol N/A / not applicable
+becomes Remarks NA. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover
 `<date>` / `<identifier>` / `<number>` persist after that lookup when
 the facts are still missing. Table leftovers bounce once
 (`unsupported_facts` + `keepSearchOpen`) so a subsequent grep can still
-fill the cell; a retry in the same turn may persist leftovers. Uncited
+fill the cell; a retry in the same turn may persist leftover `<date>` /
+`<identifier>` / `<number>`, but other leftover `<…>` cells are dropped
+instead of persisting `<remarks>` / `<result>`. Uncited
 numbers do not `citation_move` onto a coincidental ledger page. Analytics
 `write_column` stays ungated.
 
@@ -318,8 +371,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   equipment/UUT draft must not keep “draft the remaining sections” on
   the adaptive path). Inventory-section scope needs latest-turn inventory
   language or open-set produce before comprehensive.   Seeded tables whose cells are blank or unchanged from the
-  template (no surrounding prose) are empty, not partial
-  — `sectionHasTable` still sees them. Empty ELR inventory fills
+  template are empty, not partial, including seed prose that belongs
+  to the template (QSR 6.1 “Auxiliary Equipment:”, 6.3 “Agitator Type:”)
+  — `sectionHasTable` still sees them. Extra engineer sentences are not
+  empty. Canned default paragraphs (QSR 1.2 Scope) stay filled. Empty ELR inventory fills
   (`chat.inventorySections` table fields) require a finished review
   whose coverage key matches that section (`coverageKeySatisfiesObjective`
   on `|obj:`). `isFinished()` after a qualification walk does not unlock
@@ -340,7 +395,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). The saved field converts those to numbered `[n]`
   markers plus a trailing Citations: list on every pack — there is no
-  inline `[filename, p. N]` document style. Do not reject or rewrite a
+  inline `[filename, p. N]` document style. User-visible chat never quotes
+  24-character attachment / analysis / suggestion ids — `ChatMarkdown`
+  rewrites them to filenames and plot titles. Do not reject or rewrite a
   draft that omitted a known page. Clicking those brackets (or numbered `[n]` that maps to
   a parked source) in the document, chat, or suggestion Sources opens or
   reuses that attachment canvas tab and scrolls the PDF to the cited

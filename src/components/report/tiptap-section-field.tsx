@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Content, JSONContent, Editor } from "@tiptap/core";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, useEditorState, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Subscript from "@tiptap/extension-subscript";
@@ -82,6 +82,7 @@ import {
   injectSuggestionMarks,
   resolveSuggestionPreviewSyncDoc,
   richDocsMatchIgnoringAiPreview,
+  richFieldHasLocalTextEdits,
   shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
@@ -132,15 +133,34 @@ import { TiptapEditorContextMenu } from "@/components/report/tiptap-editor-conte
 const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
 const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
 
-export function TableEditToolbar({
-  editor,
-  tableHAlign,
-  tableVAlign,
-}: {
-  editor: Editor;
-  tableHAlign: string | null;
-  tableVAlign: string | null;
-}) {
+function tableToolbarUi(editor: Editor) {
+  const inTable = editor.isActive("table");
+  const attrs = inTable
+    ? editor.isActive("tableHeader")
+      ? editor.getAttributes("tableHeader")
+      : editor.getAttributes("tableCell")
+    : null;
+  return {
+    canMerge: editor.can().mergeCells(),
+    canSplit: editor.can().splitCell(),
+    tableHAlign: (attrs?.align as string | undefined) ?? null,
+    tableVAlign: (attrs?.verticalAlign as string | undefined) ?? null,
+  };
+}
+
+export function TableEditToolbar({ editor }: { editor: Editor }) {
+  // TipTap v3 does not re-render the parent on selection. Subscribe here so
+  // Merge / Split enable as soon as a CellSelection covers more than one cell.
+  const {
+    canMerge,
+    canSplit,
+    tableHAlign,
+    tableVAlign,
+  } = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => tableToolbarUi(ed),
+  });
+
   return (
     <div
       data-testid="table-edit-toolbar"
@@ -224,7 +244,7 @@ export function TableEditToolbar({
         size="sm"
         className="h-6 px-1.5 text-xs gap-1"
         data-testid="table-merge-cells"
-        disabled={!editor.can().mergeCells()}
+        disabled={!canMerge}
         onClick={() => editor.chain().focus().mergeCells().run()}
         title="Merge selected cells"
       >
@@ -237,7 +257,7 @@ export function TableEditToolbar({
         size="sm"
         className="h-6 px-1.5 text-xs gap-1"
         data-testid="table-split-cell"
-        disabled={!editor.can().splitCell()}
+        disabled={!canSplit}
         onClick={() => editor.chain().focus().splitCell().run()}
         title="Split merged cell"
       >
@@ -488,16 +508,15 @@ export function TiptapSectionField({
     [section, contentPath]
   );
 
-  const citationHighlightExtension = useMemo(
-    () =>
-      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on click, not during render
-      createCitationHighlightExtension(
-        getCitationHandlers,
-        getKnownCitationFilenames,
-        getKnownAttachmentIds
-      ),
-    [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]
-  );
+  const citationHighlightExtension = useMemo(() => {
+    /* eslint-disable react-hooks/refs -- ProseMirror calls these getters on click, not during render */
+    return createCitationHighlightExtension(
+      getCitationHandlers,
+      getKnownCitationFilenames,
+      getKnownAttachmentIds
+    );
+    /* eslint-enable react-hooks/refs */
+  }, [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]);
 
   const filteredRanges = useMemo(() => {
     return comments
@@ -977,27 +996,20 @@ export function TiptapSectionField({
     // caret in a later AI suggestion span). Suggestion accept still applies
     // once the persisted value changes — not when the preview-held lock
     // first flips, which would wipe the live preview with the old snapshot.
-    const persistedChanged =
-      prevPersisted !== null && prevPersisted !== incomingJson;
-    const keepStructuralPreview = Boolean(
-      tablePreviewSuggestionIdRef.current &&
-        tablePreviewSuggestionIdRef.current === activeSuggestionId
-    );
     if (
       !shouldApplyExternalValueToEditor({
         previewHeld: isSuggestionPreviewHeld(section),
-        persistedChanged,
+        persistedChanged:
+          prevPersisted !== null && prevPersisted !== incomingJson,
         hasFocus: currentEditor.view.hasFocus(),
         docsMatchIgnoringPreview: richDocsMatchIgnoringAiPreview(
           current,
           incoming
         ),
-        keepStructuralPreview,
       })
     ) {
       return;
     }
-    tablePreviewSuggestionIdRef.current = null;
     const transition = suggestionApplyTransition[section];
     const pinSuggestionId = isSuggestionPreviewHeld(section)
       ? (transition?.gutterAnchorCommentId ?? null)
@@ -1013,7 +1025,6 @@ export function TiptapSectionField({
     section,
     richFieldOptions,
     suggestionApplyTransition,
-    activeSuggestionId,
   ]);
 
   useLayoutEffect(() => {
@@ -1051,27 +1062,17 @@ export function TiptapSectionField({
         tablePreviewSuggestionIdRef.current &&
           tablePreviewSuggestionIdRef.current !== activeSuggestionId
       );
-    const missingActiveMarks = Boolean(
-      activeSuggestionId &&
-        !narrativeHasSuggestionMarks(json, activeSuggestionId)
-    );
-    const forceTablePreviewInject = Boolean(
-      missingActiveMarks &&
-        comments.some((c) => {
-          if (c.id !== activeSuggestionId) return false;
-          if (!isAiSuggestionKind(c.kind) || c.status !== "open") return false;
-          return Boolean(parseAiFixCommentContent(c.content).tableOperation);
-        })
-    );
 
     if (
       shouldSkipSuggestionDocSync({
         hasFocus: editor.view.hasFocus(),
         previewHeld,
-        needsInject: missingActiveMarks,
-        hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+        needsInject: Boolean(
+          activeSuggestionId &&
+            !narrativeHasSuggestionMarks(json, activeSuggestionId)
+        ),
+        hasLocalEdits: richFieldHasLocalTextEdits(json, canonicalJson),
         needsStrip,
-        forceInject: forceTablePreviewInject,
       })
     ) {
       return;
@@ -1389,15 +1390,6 @@ export function TiptapSectionField({
     }
   };
 
-  const activeTableCellAttrs =
-    editor && editable && editor.isActive("table")
-      ? editor.isActive("tableHeader")
-        ? editor.getAttributes("tableHeader")
-        : editor.getAttributes("tableCell")
-      : null;
-  const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
-  const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
-
   const inactiveSuggestionCss = isRichField
     ? buildInactiveSuggestionCss(activeSuggestionId)
     : "";
@@ -1442,11 +1434,7 @@ export function TiptapSectionField({
             !commentComposing
           }
         >
-          <TableEditToolbar
-            editor={editor}
-            tableHAlign={tableHAlign}
-            tableVAlign={tableVAlign}
-          />
+          <TableEditToolbar editor={editor} />
         </FloatingMenu>
       )}
 

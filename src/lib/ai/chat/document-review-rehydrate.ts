@@ -6,6 +6,7 @@ import {
   type DocumentReviewCoverageKey,
   type DocumentReviewCoverageSource,
 } from "@/lib/ai/chat/document-review";
+import { coverageKeySatisfiesObjective } from "@/lib/ai/chat/review-page-plan";
 import type { RecommendedResultsInventory } from "@/lib/ai/chat/results-inventory";
 
 type ToolPartRecord = {
@@ -164,6 +165,38 @@ export function coverageKeyFromReadyDocuments(
 }
 
 /**
+ * Attachment page identity plus skip suffix, ignoring `|obj:` so a verbose
+ * Table 3 walk can match a later `qsr_qualification_documents` key.
+ */
+export function coverageKeyWithoutObjective(
+  key: DocumentReviewCoverageKey | null | undefined
+): string | null {
+  if (!key) return null;
+  const objIdx = key.indexOf("|obj:");
+  if (objIdx === -1) return key;
+  const after = key.slice(objIdx + "|obj:".length);
+  const skipIdx = after.indexOf("|skip:");
+  if (skipIdx === -1) return key.slice(0, objIdx);
+  return `${key.slice(0, objIdx)}${after.slice(skipIdx)}`;
+}
+
+function coverageKeyFitsCurrentObjective(input: {
+  priorKey: DocumentReviewCoverageKey;
+  currentKey: DocumentReviewCoverageKey;
+  coverageObjective?: string;
+}): boolean {
+  if (coverageKeysMatch(input.priorKey, input.currentKey)) return true;
+  if (!input.coverageObjective) return false;
+  if (
+    coverageKeyWithoutObjective(input.priorKey) !==
+    coverageKeyWithoutObjective(input.currentKey)
+  ) {
+    return false;
+  }
+  return coverageKeySatisfiesObjective(input.priorKey, input.coverageObjective);
+}
+
+/**
  * When the latest finished review still matches live attachment coverage,
  * restore the in-request session so draft gates do not force another walk.
  */
@@ -191,7 +224,11 @@ export function rehydrateDocumentReviewIfCoverageUnchanged(input: {
   if (
     input.skipRestore ||
     !prior ||
-    !coverageKeysMatch(prior.coverageKey, currentCoverageKey)
+    !coverageKeyFitsCurrentObjective({
+      priorKey: prior.coverageKey,
+      currentKey: currentCoverageKey,
+      coverageObjective: input.coverageObjective,
+    })
   ) {
     return { restored: false, prior, currentCoverageKey };
   }

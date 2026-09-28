@@ -1,3 +1,4 @@
+import { glueOcrUrsIds } from "@/lib/attachments/numeric-signs";
 import { MIN_TEXT_LAYER_CHARS } from "@/lib/attachments/pdf-text-layer";
 
 export const OCR_CHAR_RATIO_MIN = 0.45;
@@ -85,13 +86,14 @@ export function normalizeRequirementIds(
 }
 
 export function requirementIds(text: string): string[] {
+  const hay = glueOcrUrsIds(text);
   const seen = new Set<string>();
-  for (const match of text.matchAll(REQUIREMENT_ID_RE)) {
+  for (const match of hay.matchAll(REQUIREMENT_ID_RE)) {
     const id = match[0];
     if (!id || REQUIREMENT_ID_DENY_PREFIX.test(id)) continue;
     seen.add(id);
   }
-  for (const match of text.matchAll(SLASH_DOCUMENT_ID_RE)) {
+  for (const match of hay.matchAll(SLASH_DOCUMENT_ID_RE)) {
     const id = match[0];
     if (!id || REQUIREMENT_ID_DENY_PREFIX.test(id.replaceAll("/", "-"))) {
       continue;

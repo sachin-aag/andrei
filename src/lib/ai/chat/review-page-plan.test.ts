@@ -8,9 +8,11 @@ import {
   coverageObjectiveDigest,
   isQsrInventoryReviewObjective,
   isQsrLifecycleCoverObjective,
+  isQsrUrsWalkObjective,
   neighborFillPages,
   objectiveTokens,
   planReviewPages,
+  qsrInventoryReadyIdsForObjective,
   REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE,
   samplePagesAcrossAttachment,
   scoreReviewPage,
@@ -205,6 +207,42 @@ describe("planReviewPages", () => {
     expect(coverageObjectiveDigest("  Calibration  Walk ")).toBe(
       "calibration walk"
     );
+    expect(
+      coverageObjectiveDigest(
+        "Extract document details for section 3 qualification documents (covers)"
+      )
+    ).toBe("qsr_qualification_documents");
+    expect(coverageObjectiveDigest("qsr_qualification_documents")).toBe(
+      "qsr_qualification_documents"
+    );
+    expect(
+      coverageObjectiveDigest("QSR Table 3 qualification document numbers")
+    ).toBe("qsr_qualification_documents");
+    expect(
+      coverageObjectiveDigest("qsr references for the qualification summary")
+    ).toBe("qsr_references");
+    expect(
+      coverageObjectiveDigest(
+        "Extract all requirements for Control Philosophy (5.2), GMP Requirements (5.3), and Safety Requirements (5.4) from the URS."
+      )
+    ).toBe("qsr_rtm");
+    expect(objectiveTokens("5.1 Process Requirements")).toContain("process");
+    expect(objectiveTokens("5.1 Process Requirements")).not.toContain("qsr");
+  });
+
+  it("treats a prose RTM finish as covering 5.2–5.4", () => {
+    const langfuseKey =
+      "uspiy53ymhnfd9rktwo3u4g7:12:h0xk4yu7sl9rrds22xhvk43f|obj:extract all requirements for control philosophy (5.2), gmp requirements (5.3), a";
+    expect(coverageKeySatisfiesObjective(langfuseKey, "qsr_rtm_control")).toBe(
+      true
+    );
+    expect(coverageKeySatisfiesObjective(langfuseKey, "qsr_rtm_gmp")).toBe(true);
+    expect(coverageKeySatisfiesObjective(langfuseKey, "qsr_rtm_safety")).toBe(
+      true
+    );
+    expect(
+      coverageKeySatisfiesObjective(langfuseKey, "qsr_qualification_documents")
+    ).toBe(false);
   });
 
   it("queues schema-matching monitoring pages across files, not a protocol that only says monitoring", () => {
@@ -537,6 +575,24 @@ describe("coverageKeySatisfiesObjective", () => {
         "elr_calibration"
       )
     ).toBe(true);
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:extract document details for section 3 qualification documents (covers)",
+        "qsr_qualification_documents"
+      )
+    ).toBe(true);
+  });
+
+  it("treats every QSR RTM subsection as one coverage family", () => {
+    expect(
+      coverageKeySatisfiesObjective(
+        "att:10:run|obj:qsr_rtm_process",
+        "qsr_rtm_control"
+      )
+    ).toBe(true);
+    expect(
+      coverageKeySatisfiesObjective("att:10:run|obj:qsr_rtm", "qsr_rtm_gmp")
+    ).toBe(true);
   });
 
   it("does not treat a qualification finish as covering calibration", () => {
@@ -549,6 +605,77 @@ describe("coverageKeySatisfiesObjective", () => {
     expect(
       coverageKeySatisfiesObjective("att:10:run", "elr_calibration")
     ).toBe(false);
+  });
+
+  it("prefers URS pages for a QSR RTM review and does not demote them", () => {
+    expect(
+      scoreReviewPage(
+        {
+          attachmentId: "urs",
+          filename: "URS-GLR-1301.pdf",
+          transcript: "Safety Requirements URS-44 Emergency Stop",
+          outlineTitle: "Safety requirements",
+        },
+        "qsr_rtm_safety"
+      )
+    ).toBeGreaterThan(
+      scoreReviewPage(
+        {
+          attachmentId: "dq",
+          filename: "DQ-GLR-1301.pdf",
+          transcript: "Design qualification protocol",
+          outlineTitle: "DQ",
+        },
+        "qsr_rtm_safety"
+      )
+    );
+
+    const selected = planReviewPages(
+      [
+        {
+          attachmentId: "dq",
+          pageNumber: 1,
+          filename: "DQ-GLR-1301.pdf",
+          transcript: "unrelated protocol text",
+        },
+        {
+          attachmentId: "urs",
+          pageNumber: 1,
+          filename: "URS-GLR-1301.pdf",
+          transcript: "unrelated requirement text",
+        },
+      ],
+      "qsr_rtm_safety",
+      REVIEW_OBJECTIVE_PAGE_FLOOR
+    );
+    expect(selected.some((page) => page.attachmentId === "urs")).toBe(true);
+  });
+
+  it("walks only the 12-page URS for process requirements, not protocol bodies", () => {
+    const urs = Array.from({ length: 12 }, (_, i) => ({
+      attachmentId: "urs",
+      pageNumber: i + 1,
+      filename: "User Requirement Specification.pdf",
+      transcript: `URS-${i + 1} process requirements user requirement`,
+      outlineTitle: "Process requirements",
+    }));
+    const iq = Array.from({ length: 234 }, (_, i) => ({
+      attachmentId: "iq",
+      pageNumber: i + 1,
+      filename: "IQ-GLR-1301.pdf",
+      transcript: `Installation qualification process requirements user requirement page ${i + 1}`,
+      outlineTitle: "Process requirements",
+    }));
+    const selected = planReviewPages(
+      [...urs, ...iq],
+      "qsr_rtm_process",
+      2500
+    );
+    expect(selected).toHaveLength(12);
+    expect(selected.every((page) => page.attachmentId === "urs")).toBe(true);
+    expect(
+      planReviewPages([...urs, ...iq], "5.1 Process Requirements", 2500)
+    ).toHaveLength(12);
   });
 });
 
@@ -563,6 +690,9 @@ describe("QSR lifecycle cover review", () => {
     ).toBe(true);
     expect(isQsrLifecycleCoverObjective("qsr_references")).toBe(true);
     expect(isQsrLifecycleCoverObjective("qsr_rtm_process")).toBe(false);
+    expect(isQsrUrsWalkObjective("qsr_rtm_process")).toBe(true);
+    expect(isQsrUrsWalkObjective("5.1 Process Requirements")).toBe(true);
+    expect(isQsrUrsWalkObjective("qsr_qualification_documents")).toBe(false);
     expect(isQsrLifecycleCoverObjective("elr_qualification")).toBe(false);
     expect(
       isQsrInventoryReviewObjective("qualification documents", "qsr_rtm_gmp")
@@ -604,5 +734,23 @@ describe("QSR lifecycle cover review", () => {
     expect(
       selected.filter((page) => page.attachmentId === "iq")
     ).toHaveLength(REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE);
+  });
+
+  it("page-lists only the URS for an RTM start when protocols are also ready", () => {
+    const ready = [
+      { attachmentId: "urs", filename: "User Requirement Specification.pdf" },
+      { attachmentId: "dq", filename: "Design Qualification.PDF" },
+      { attachmentId: "iq", filename: "IQ-GLR-1301.pdf" },
+    ];
+    expect(
+      qsrInventoryReadyIdsForObjective(ready, "qsr_rtm_process", "process requirements")
+    ).toEqual(["urs"]);
+    expect(
+      qsrInventoryReadyIdsForObjective(
+        ready,
+        "qsr_qualification_documents",
+        "qualification documents"
+      )
+    ).toEqual(["urs", "dq", "iq"]);
   });
 });

@@ -871,6 +871,108 @@ describe("narrativeToDocxXml tables", () => {
     expect(afterAt).toBeGreaterThan(landscapeAt);
   });
 
+  it("opens the landscape section before the table name so the caption stays with the table", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Assessment stays portrait." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Table 3. Qualification and periodic re-qualification history",
+            },
+          ],
+        },
+        nColTable(15),
+      ],
+    });
+    const assessmentAt = xml.indexOf("Assessment stays portrait");
+    const breakAt = xml.indexOf("<w:sectPr>");
+    const captionAt = xml.indexOf("Table 3. Qualification");
+    const tableAt = xml.indexOf("<w:tbl>");
+    const landscapeAt = xml.indexOf('w:orient="landscape"');
+    expect(assessmentAt).toBeGreaterThan(-1);
+    expect(breakAt).toBeGreaterThan(assessmentAt);
+    expect(captionAt).toBeGreaterThan(breakAt);
+    expect(tableAt).toBeGreaterThan(captionAt);
+    expect(landscapeAt).toBeGreaterThan(tableAt);
+    const captionPara = xml.slice(
+      xml.lastIndexOf("<w:p>", captionAt),
+      xml.indexOf("</w:p>", captionAt)
+    );
+    expect(captionPara).toContain("<w:keepNext/>");
+  });
+
+  it("keeps a split table name and table title on the landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Table 1." }] },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Associated instruments" }],
+        },
+        nColTable(16),
+      ],
+    });
+    const breakAt = xml.indexOf("<w:sectPr>");
+    const nameAt = xml.indexOf("Table 1.");
+    const titleAt = xml.indexOf("Associated instruments");
+    const tableAt = xml.indexOf("<w:tbl>");
+    expect(nameAt).toBeGreaterThan(breakAt);
+    expect(titleAt).toBeGreaterThan(nameAt);
+    expect(tableAt).toBeGreaterThan(titleAt);
+  });
+
+  it("does not pull a preceding assessment paragraph onto the landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Nine qualification stages were reviewed this period.",
+            },
+          ],
+        },
+        nColTable(15),
+      ],
+    });
+    const assessmentAt = xml.indexOf("Nine qualification stages");
+    const breakAt = xml.indexOf("<w:sectPr>");
+    const tableAt = xml.indexOf("<w:tbl>");
+    expect(assessmentAt).toBeGreaterThan(-1);
+    expect(breakAt).toBeGreaterThan(assessmentAt);
+    expect(tableAt).toBeGreaterThan(breakAt);
+  });
+
+  it("keeps a portrait table caption on the same page with keepNext", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Abbreviations" }],
+        },
+        nColTable(4),
+      ],
+    });
+    expect(xml).not.toContain('w:orient="landscape"');
+    const captionAt = xml.indexOf("Table 1. Abbreviations");
+    const captionPara = xml.slice(
+      xml.lastIndexOf("<w:p>", captionAt),
+      xml.indexOf("</w:p>", captionAt)
+    );
+    expect(captionPara).toContain("<w:keepNext/>");
+  });
+
   it("emits Word gridSpan for colspans", () => {
     const doc: JSONContent = {
       type: "doc",

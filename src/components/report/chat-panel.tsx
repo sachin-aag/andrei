@@ -372,6 +372,7 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions,
   streaming = false,
   filenameByAttachmentId,
+  labelByInternalId,
   onOpenCitation,
   showAnalyticsSwitch = false,
   onSwitchToAnalytics,
@@ -383,6 +384,7 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
   filenameByAttachmentId?: AttachmentFilenameLookup;
+  labelByInternalId?: ReadonlyMap<string, string>;
   onOpenCitation?: (raw: string) => void;
   showAnalyticsSwitch?: boolean;
   onSwitchToAnalytics?: () => void;
@@ -486,11 +488,8 @@ const MessageTurn = memo(function MessageTurn({
                 <ChatMarkdown
                   key={i}
                   onOpenCitation={onOpenCitation}
-                  knownFilenames={
-                    filenameByAttachmentId
-                      ? [...filenameByAttachmentId.values()]
-                      : undefined
-                  }
+                  filenameByAttachmentId={filenameByAttachmentId}
+                  labelByInternalId={labelByInternalId}
                 >
                   {block.text}
                 </ChatMarkdown>
@@ -684,6 +683,21 @@ export function ChatPanel({
   const [mentionMenuToken, setMentionMenuToken] = useState(-1);
   const [analyticsSnapshot, setAnalyticsSnapshot] =
     useState<ReportAnalyticsView | null>(null);
+  const labelByInternalId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!analyticsSnapshot) return map;
+    for (const analysis of analyticsSnapshot.analyses) {
+      const title = analysis.title.trim();
+      if (title) map.set(analysis.id, title);
+    }
+    for (const sheet of dataSheets(analyticsSnapshot.worksheet)) {
+      if (sheet.name.trim()) map.set(sheet.id, sheet.name.trim());
+      for (const column of sheet.columns) {
+        if (column.name.trim()) map.set(column.id, column.name.trim());
+      }
+    }
+    return map;
+  }, [analyticsSnapshot]);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const storedComposerPrefs = useSyncExternalStore(
@@ -860,12 +874,16 @@ export function ChatPanel({
   useEffect(() => {
     if (!pendingSend) return;
     if (pendingRequestStarted && busy) {
-      setSawStreamBusyForPending(true);
+      queueMicrotask(() => {
+        setSawStreamBusyForPending(true);
+      });
     }
   }, [pendingSend, pendingRequestStarted, busy]);
   useEffect(() => {
     if (pendingRequestStarted && sawStreamBusyForPending && !busy) {
-      resetPendingSendState();
+      queueMicrotask(() => {
+        resetPendingSendState();
+      });
     }
   }, [
     busy,
@@ -1924,6 +1942,7 @@ export function ChatPanel({
               message={m}
               chatTarget={m.chatTarget}
               filenameByAttachmentId={filenameByAttachmentId}
+              labelByInternalId={labelByInternalId}
               onOpenCitation={onOpenCitation}
               askUserActive={
                 visibleStartIndex + i === displayMessages.length - 1 &&

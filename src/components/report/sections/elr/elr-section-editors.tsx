@@ -24,7 +24,7 @@ import {
 } from "@/lib/document-types/elr/sections";
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
-const NOOP_DOC_CHANGE = (_doc: JSONContent) => {};
+const NOOP_DOC_CHANGE: (doc: JSONContent) => void = () => {};
 
 function label(section: ElrSectionKey): string {
   return ELR_SECTION_LABELS[section];
@@ -307,6 +307,42 @@ export function ElrQualificationEditor() {
   );
 }
 
+export function ElrProcessValidationEditor() {
+  return (
+    <NarrativeTableEditor
+      section="elr_process_validation"
+      narrativeLabel="Assessment"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_process_validation}
+      narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} State whether process validation remains current for this format. Mark Not Applicable explicitly if this equipment has none.`}
+      hint="Current PPQ / CPV / PV protocols and reports for this equipment and format. Mark every row Vial, Cartridge or Line-common."
+    />
+  );
+}
+
+export function ElrCleaningValidationEditor() {
+  return (
+    <NarrativeTableEditor
+      section="elr_cleaning_validation"
+      narrativeLabel="Assessment"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_cleaning_validation}
+      narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} State whether cleaning validation remains current for this format. Mark Not Applicable explicitly if this equipment has none.`}
+      hint="Current cleaning-validation protocols and reports. Mark every row Vial, Cartridge or Line-common."
+    />
+  );
+}
+
+export function ElrQraReviewEditor() {
+  return (
+    <NarrativeTableEditor
+      section="elr_qra_review"
+      narrativeLabel="Assessment"
+      tableLabel={ELR_TABLE_CAPTION_TITLES.elr_qra_review}
+      narrativePlaceholder={`${ASSESSMENT_PLACEHOLDER} Name the review / reassessment due date (current vs overdue). Mark Not Applicable explicitly if none applies.`}
+      hint="Review of the equipment's Quality Risk Assessment document(s) — not the 5.2 action list. A change since last PRQ needs a change-control reference."
+    />
+  );
+}
+
 export function ElrMediaFillEditor() {
   return (
     <NarrativeTableEditor
@@ -442,7 +478,7 @@ export function ElrSystemTrendsEditor() {
       section="elr_system_trends"
       narrativeLabel="System-level assessment"
       tableLabel={ELR_TABLE_CAPTION_TITLES.elr_system_trends}
-      narrativePlaceholder="The table recaps 3.1–3.14 and 4.0 (skip Purpose and Scope). The narrative then names recurring themes that cut across those rows, and states downtime, uptime or availability for the period. Carry each theme that needs action into the risk-actions table."
+      narrativePlaceholder="The table recaps 3.1–3.17 and 4.0 (skip Purpose and Scope). The narrative then names recurring themes that cut across those rows, and states downtime, uptime or availability for the period. Carry each theme that needs action into the risk-actions table."
       hint="Fill every seeded section row. Nil events still get a short recap (none this period), not a blank summary."
     />
   );
@@ -542,7 +578,7 @@ export function ElrConclusionEditor() {
         section={section}
         contentPath="narrative"
         label="Summary and conclusion"
-        placeholder="Bullet each previous section (3.1–3.14, 4.0, 5.1, 5.2 — Purpose and Scope may be omitted), then state whether the equipment remains in its qualified state for this container format."
+        placeholder="Bullet each previous section (3.1–3.17, 4.0, 5.1, 5.2 — Purpose and Scope may be omitted), then state whether the equipment remains in its qualified state for this container format."
         className="grid gap-2"
         value={content.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}

@@ -218,6 +218,20 @@ describe("qualification summary report DOCX export", () => {
     expect(protocol).toContain('<w:vMerge w:val="restart"/>');
   });
 
+  it("exports a seeded RTM banner as a merged group row", async () => {
+    const seeded = (EMPTY_QSR_CONTENT.qsr_rtm_process as { table: JSONContent })
+      .table;
+    const { document } = await exportXml(
+      sectionsWith({
+        qsr_rtm_process: { table: seeded },
+      })
+    );
+    const banner = (document.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? []).find(
+      (r) => visibleText(r) === "ANY SPECIFIC REQUIREMENTS"
+    );
+    expect(banner).toContain('<w:gridSpan w:val="6"/>');
+  });
+
   it("spans Details across a blank Range cell on the operating range table", async () => {
     const { document } = await exportXml(
       sectionsWith({

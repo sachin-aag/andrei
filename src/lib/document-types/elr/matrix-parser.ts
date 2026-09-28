@@ -17,10 +17,13 @@ import {
   CALIBRATION_COLUMN_SCHEMA,
   CSV_STATUS_COLUMN_SCHEMA,
   ELR_REVISION_HISTORY_COLUMN_SCHEMA,
+  CLEANING_VALIDATION_COLUMN_SCHEMA,
   MEDIA_FILL_COLUMN_SCHEMA,
   MONITORING_COLUMN_SCHEMA,
   PREVENTIVE_MAINTENANCE_COLUMN_SCHEMA,
+  PROCESS_VALIDATION_COLUMN_SCHEMA,
   QMS_COLUMN_SCHEMA,
+  QRA_REVIEW_COLUMN_SCHEMA,
   QUALIFICATION_COLUMN_SCHEMA,
   RESPONSIBILITIES_COLUMN_SCHEMA,
   RISK_ACTION_COLUMN_SCHEMA,
@@ -32,10 +35,13 @@ import {
   type CalibrationColumnId,
   type CsvStatusColumnId,
   type ElrRevisionHistoryColumnId,
+  type CleaningValidationColumnId,
   type MediaFillColumnId,
   type MonitoringColumnId,
   type PreventiveMaintenanceColumnId,
+  type ProcessValidationColumnId,
   type QmsColumnId,
+  type QraReviewColumnId,
   type QualificationColumnId,
   type ResponsibilitiesColumnId,
   type RiskActionColumnId,
@@ -43,6 +49,9 @@ import {
 } from "./matrix-columns";
 
 export type QualificationRow = Record<QualificationColumnId, string>;
+export type ProcessValidationRow = Record<ProcessValidationColumnId, string>;
+export type CleaningValidationRow = Record<CleaningValidationColumnId, string>;
+export type QraReviewRow = Record<QraReviewColumnId, string>;
 export type MediaFillRow = Record<MediaFillColumnId, string>;
 export type MonitoringRow = Record<MonitoringColumnId, string>;
 export type CalibrationRow = Record<CalibrationColumnId, string>;
@@ -94,6 +103,18 @@ function parseElrMatrix<Id extends string>(
 
 export function parseQualificationMatrix(content: unknown) {
   return parseElrMatrix(content, QUALIFICATION_COLUMN_SCHEMA);
+}
+
+export function parseProcessValidationMatrix(content: unknown) {
+  return parseElrMatrix(content, PROCESS_VALIDATION_COLUMN_SCHEMA);
+}
+
+export function parseCleaningValidationMatrix(content: unknown) {
+  return parseElrMatrix(content, CLEANING_VALIDATION_COLUMN_SCHEMA);
+}
+
+export function parseQraReviewMatrix(content: unknown) {
+  return parseElrMatrix(content, QRA_REVIEW_COLUMN_SCHEMA);
 }
 
 export function parseMediaFillMatrix(content: unknown) {

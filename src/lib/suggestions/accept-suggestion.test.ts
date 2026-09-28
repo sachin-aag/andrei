@@ -435,6 +435,35 @@ describe("acceptSuggestion table operations", () => {
     expect(json).toContain("12/01/25 [1]");
     expect(json).not.toContain(suggestionInsertMarkName);
   });
+
+  it("returns noop for identity edit_cells", () => {
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "" },
+      ],
+    };
+    const identityComment: CommentRecord = {
+      ...comment,
+      id: "identity-fill",
+      section: "elr_breakdowns",
+      contentPath: "table",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "No change",
+        tableOperation: operation,
+      }),
+      anchorText: "Update 1 table cell",
+    };
+    const result = applySuggestionToContent({
+      section: "elr_breakdowns",
+      comment: identityComment,
+      sectionContent: { table: seededTableDoc(["Sr. No.", "Date"]) },
+    });
+    expect(result).toEqual({ ok: false, reason: "noop" });
+  });
 });
 
 describe("acceptSuggestion split citation", () => {

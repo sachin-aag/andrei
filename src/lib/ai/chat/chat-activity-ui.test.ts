@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChatActivityBlocks,
+  documentReviewActivityNode,
   readChatToolPart,
 } from "@/lib/ai/chat/chat-activity-ui";
 
@@ -215,8 +216,23 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thought");
     expect(blocks[0].node.thoughtText).toBe("Planning the next edit.");
     expect(blocks[0].node.children).toEqual([]);
+  });
+
+  it("labels a streaming thought as Thinking even before any text arrives", () => {
+    const blocks = buildChatActivityBlocks([
+      { type: "reasoning", text: "", state: "streaming" },
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thinking…");
+    expect(blocks[0].node.pending).toBe(true);
+    expect(blocks[0].node.thoughtText).toBe("");
   });
 
   it("collapses edit failures to Edit attempted with hidden detail", () => {
@@ -338,6 +354,90 @@ describe("buildChatActivityBlocks", () => {
     const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
     expect(reviewBlocks).toHaveLength(1);
     expect(blocks.some((block) => block.kind === "activity")).toBe(false);
+  });
+
+  it("expands a complete review to the full filename and page count", () => {
+    const node = documentReviewActivityNode([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "started",
+          totalPages: 12,
+          documents: [
+            {
+              attachmentId: "urs",
+              filename: "User Requirement Specification.PDF",
+              pageCount: 12,
+            },
+          ],
+        },
+      },
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 12,
+          reviewedPages: 12,
+          findingCount: 4,
+        },
+      },
+    ]);
+    expect(node?.label).toBe(
+      "Complete: reviewed 12/12 pages in User Requirement Specification.PDF"
+    );
+    expect(node?.expandable).toBe(true);
+    expect(node?.wrapLabel).toBe(true);
+    expect(node?.children).toEqual([
+      expect.objectContaining({
+        kind: "detail",
+        label: "User Requirement Specification.PDF · 12 pages",
+      }),
+      expect.objectContaining({
+        kind: "detail",
+        label: "4 relevant findings",
+      }),
+    ]);
+  });
+
+  it("does not split a review chip when list_attachments runs mid-walk", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart("start_document_review", "output-available", undefined, {
+        status: "started",
+        totalPages: 12,
+        documents: [
+          {
+            filename: "User Requirement Specification.pdf",
+            attachmentId: "urs",
+          },
+        ],
+      }),
+      toolPart("list_attachments", "output-available", undefined, {
+        count: 5,
+      }),
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "ready_to_finish",
+        totalPages: 12,
+        reviewedPages: 12,
+      }),
+      toolPart("finish_document_review", "output-available", undefined, {
+        status: "complete",
+        totalPages: 12,
+        reviewedPages: 12,
+        documents: [
+          {
+            filename: "User Requirement Specification.pdf",
+            attachmentId: "urs",
+          },
+        ],
+      }),
+    ] as never);
+
+    const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
+    expect(reviewBlocks).toHaveLength(1);
+    const listed = blocks.filter((block) => block.kind === "activity");
+    expect(listed.length).toBeGreaterThanOrEqual(1);
   });
 
   it("does not show a fatal error chip for a remapped unavailable tool", () => {

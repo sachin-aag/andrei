@@ -5,6 +5,7 @@ import {
   inventoryColumnNeedles,
   inventoryReadyIdsForObjective,
   inventorySectionForObjective,
+  isPreferredInventoryFilename,
   preferredInventoryEvidenceSkipped,
   scoreInventoryReviewPage,
 } from "./inventory-review-schema";
@@ -21,6 +22,16 @@ describe("inventorySectionForObjective", () => {
       "elr_calibration"
     );
     expect(inventorySectionForObjective("every requirement")).toBeNull();
+    expect(inventorySectionForObjective("qsr_rtm_safety")).toBe("qsr_rtm_safety");
+    expect(inventorySectionForObjective("qsr_operating_range")).toBe(
+      "qsr_operating_range"
+    );
+    expect(
+      isPreferredInventoryFilename("URS-GLR-1301.pdf", "qsr_rtm_safety")
+    ).toBe(true);
+    expect(
+      isPreferredInventoryFilename("DQ-GLR-1301.pdf", "qsr_rtm_safety")
+    ).toBe(false);
     expect(inventorySectionForObjective("elr_qualification")).toBe(
       "elr_qualification"
     );
@@ -29,6 +40,46 @@ describe("inventorySectionForObjective", () => {
         "Qualification and periodic re-qualification history"
       )
     ).toBe("elr_qualification");
+    expect(inventorySectionForObjective("elr_process_validation")).toBe(
+      "elr_process_validation"
+    );
+    expect(inventorySectionForObjective("process validation review")).toBe(
+      "elr_process_validation"
+    );
+    expect(inventorySectionForObjective("elr_cleaning_validation")).toBe(
+      "elr_cleaning_validation"
+    );
+    expect(inventorySectionForObjective("cleaning validation review")).toBe(
+      "elr_cleaning_validation"
+    );
+    expect(inventorySectionForObjective("elr_qra_review")).toBe("elr_qra_review");
+    expect(inventorySectionForObjective("quality risk assessment")).toBe(
+      "elr_qra_review"
+    );
+    expect(inventorySectionForObjective("Quality Risk Assessment Review")).toBe(
+      "elr_qra_review"
+    );
+    expect(
+      isPreferredInventoryFilename("PPQ-24-PR-011.pdf", "elr_process_validation")
+    ).toBe(true);
+    expect(
+      isPreferredInventoryFilename(
+        "Cleaning Validation Protocol.pdf",
+        "elr_cleaning_validation"
+      )
+    ).toBe(true);
+    expect(
+      isPreferredInventoryFilename("CSV-OQ-PR-055.pdf", "elr_cleaning_validation")
+    ).toBe(false);
+    expect(
+      isPreferredInventoryFilename("QRA-ELR-070.pdf", "elr_qra_review")
+    ).toBe(true);
+    expect(
+      isPreferredInventoryFilename("Quality Risk FMEA.pdf", "elr_qra_review")
+    ).toBe(true);
+    expect(
+      isPreferredInventoryFilename("PRQR-25-PR-005 Report.pdf", "elr_qra_review")
+    ).toBe(false);
     expect(inventorySectionForObjective("qsr_qualification_documents")).toBeNull();
     expect(inventorySectionForObjective("qualification documents")).toBeNull();
     expect(

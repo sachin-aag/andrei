@@ -624,7 +624,14 @@ function EnteringSuggestionLayer({
   );
 }
 
-export function SectionSuggestionCard({ section }: { section: SectionType }) {
+export function SectionSuggestionCard({
+  section,
+  hideWhenEmpty = false,
+}: {
+  section: SectionType;
+  /** In-section slot. The review margin is the other copy while Comments is on. */
+  hideWhenEmpty?: boolean;
+}) {
   const { report, readOnly, currentUserId, refresh } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
@@ -1092,6 +1099,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }
 
   if (!liveCard && !exitingCard && !frozenCard) {
+    if (hideWhenEmpty) return null;
     return (
       <p className="text-[11px] text-[var(--muted-foreground)] px-1 py-2">
         No pending suggestions for this section. Run criteria, then use Suggest fixes

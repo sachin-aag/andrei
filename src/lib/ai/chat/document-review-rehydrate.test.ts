@@ -104,6 +104,56 @@ describe("rehydrateDocumentReviewIfCoverageUnchanged", () => {
     expect(session.isFinished()).toBe(true);
   });
 
+  it("restores a Table 3 cover walk when the later turn uses the section key", () => {
+    const session = new DocumentReviewSession();
+    const priorKey =
+      "att_a:3:unknown|obj:extract document details for section 3 qualification documents (covers)";
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-start_document_review",
+            toolCallId: "s1",
+            state: "output-available",
+            input: {
+              objective:
+                "Extract document details for section 3 qualification documents (covers)",
+            },
+            output: {
+              status: "started",
+              attachmentIds: ["att_a"],
+              documents: [{ attachmentId: "att_a", pageCount: 3 }],
+              coverageKey: priorKey,
+            },
+          },
+          {
+            type: "tool-finish_document_review",
+            toolCallId: "f1",
+            state: "output-available",
+            input: {},
+            output: {
+              status: "complete",
+              coverageComplete: true,
+              coverageKey: priorKey,
+            },
+          },
+        ],
+      },
+    ];
+    const result = rehydrateDocumentReviewIfCoverageUnchanged({
+      session,
+      messages,
+      readyDocuments: [
+        { attachmentId: "att_a", pageCount: 3, ingestRunId: null },
+      ],
+      coverageObjective: "qsr_qualification_documents",
+    });
+    expect(result.restored).toBe(true);
+    expect(session.isFinished()).toBe(true);
+  });
+
   it("does not restore a finished walk for a different coverage objective", () => {
     const session = new DocumentReviewSession();
     const messages: UIMessage[] = [

@@ -15,7 +15,7 @@ vi.mock("@/providers/user-directory-provider", () => ({
 }));
 
 vi.mock("@/components/report/suggestion-card", () => ({
-  SectionSuggestionCard: () => <div data-testid="section-suggestion-card" />,
+  SectionSuggestionCard: () => null,
 }));
 
 vi.mock("@/providers/report-provider", () => {
@@ -55,12 +55,11 @@ describe("SectionShell AI actions", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Define" })).toBeInTheDocument();
+    expect(document.querySelector(".section-suggestion-slot")).not.toBeNull();
+    expect(document.querySelector(".lg\\:hidden")).toBeNull();
     expect(screen.getByRole("button", { name: /Run criteria/ })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Suggest fixes" })
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("section-suggestion-card").parentElement).toHaveClass(
-      "section-suggestion-card-inline"
-    );
   });
 });

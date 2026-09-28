@@ -148,6 +148,7 @@ import {
   coerceTableOperationInput,
   countFilledTablesInDocument,
   defaultTableCaptionTitle,
+  dropLeftoverPlaceholderCells,
   filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
@@ -215,7 +216,6 @@ type ReadSectionSuccess = {
   }>;
   images: ReadSectionImageRef[];
   pendingSuggestions?: Array<{
-    id: string;
     kind: string;
     targetField: string;
     preview: string;
@@ -276,7 +276,11 @@ import {
   inventoryReadyIdsForObjective,
   isElrInventoryReviewObjective,
 } from "@/lib/ai/chat/inventory-review-schema";
-import { isQsrInventoryReviewObjective } from "@/lib/ai/chat/review-page-plan";
+import {
+  isQsrInventoryReviewObjective,
+  qsrInventoryReadyIdsForObjective,
+} from "@/lib/ai/chat/review-page-plan";
+import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -295,7 +299,7 @@ import {
   groundDraftText,
   groundTableOperation,
   tableOperationContainsPlaceholders,
-  tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tableOperationPlainText,
   tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
@@ -566,6 +570,19 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
           col: z.number().int().min(0),
           expectedText: z.string().optional(),
           insertText: z.string(),
+          rowKey: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              "First-cell text of the live row (e.g. URS-13). Prefer this over row — numeric indexes shift after banners or earlier inserts. Each cell needs its own rowKey; do not reuse one dummy row number for every URS."
+            ),
+          rowContext: z
+            .string()
+            .optional()
+            .describe(
+              "Sibling cell text on this row. Optional; the server captures it when omitted."
+            ),
         })
       )
       .min(1),
@@ -579,7 +596,14 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
       .min(0)
       .optional()
       .describe(
-        "Row to insert after (0 = header). Omit to append after the last existing row."
+        "Row to insert after (0 = header). Omit to append after the last existing row. Prefer afterRowKey when the first cell is a URS ID or banner label — afterRow goes stale after earlier inserts."
+      ),
+    afterRowKey: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "First-cell text of the live row to insert after (e.g. URS-16 or ANY SPECIFIC REQUIREMENTS). Preferred over afterRow."
       ),
     rows: z.array(z.array(z.string()).min(1)).min(1),
     expectedRowAtAfter: z.array(z.string()).optional(),
@@ -987,6 +1011,10 @@ function buildSearchDocumentsTool(opts: {
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
     const continuation = annotateContinuationSearchHits(annotated.results);
+    const rtmProtocolOpen = shouldKeepRtmProtocolSearchOpen(
+      queryList,
+      merged.map((hit) => hit.filename)
+    );
     return {
       results: continuation.results,
       queriesRun: queryList,
@@ -1009,7 +1037,9 @@ function buildSearchDocumentsTool(opts: {
       ...(continuation.continuationHits > 0
         ? { continuationHint: PAGE_CONTINUATION_SEARCH_HINT }
         : {}),
-      ...(annotated.keepSearchOpen || continuation.keepSearchOpen
+      ...(annotated.keepSearchOpen ||
+      continuation.keepSearchOpen ||
+      rtmProtocolOpen
         ? { keepSearchOpen: true as const }
         : {}),
     };
@@ -1161,7 +1191,7 @@ function timeSeriesRunForChat(run: TimeSeriesExcursion) {
  * `[zbud2fet70yu88pvfpccjtko]`.
  */
 const CITE_SOURCES_NOT_IDS =
-  " Cite only the filenames and pages in 'sources'. analysisId is an internal handle for editing a plot — never write it into the document or a Citations list.";
+  " Cite only the filenames and pages in 'sources'. analysisId is an internal handle for editing a plot — never write it into the document, a Citations list, or a user-visible chat reply; name the plot by title.";
 
 function omittedNote(omitted: number): string {
   return omitted > 0
@@ -1452,12 +1482,23 @@ export function buildChatTools(opts: {
     const prev = sameTurnStated.get(key);
     sameTurnStated.set(key, prev ? `${prev}\n${trimmed}` : trimmed);
   };
-  const writeGrounding = (
+  let cachedReadyFilenames: string[] | null = null;
+  const loadReadyFilenames = async (): Promise<string[]> => {
+    if (cachedReadyFilenames) return cachedReadyFilenames;
+    if (documentType !== "qualification_summary_report") {
+      cachedReadyFilenames = [];
+      return cachedReadyFilenames;
+    }
+    const docs = await listReadyDocumentsForReport(reportId);
+    cachedReadyFilenames = docs.map((doc) => doc.filename);
+    return cachedReadyFilenames;
+  };
+  const writeGrounding = async (
     section: SectionType,
     targetField: string,
     tool: CitationWriteTool,
     sectionContent?: Record<string, unknown>
-  ): GroundDraftGrounding => {
+  ): Promise<GroundDraftGrounding> => {
     const extra: string[] = [];
     if (sectionContent) {
       extra.push(
@@ -1484,6 +1525,8 @@ export function buildChatTools(opts: {
         exclude: { section, targetField },
         extra,
       }),
+      section,
+      attachedFilenames: await loadReadyFilenames(),
     };
   };
   let evidenceHydrate: Promise<void> | null = null;
@@ -1726,7 +1769,6 @@ export function buildChatTools(opts: {
 
         const pendingRows = await db
           .select({
-            id: comments.id,
             kind: comments.kind,
             content: comments.content,
             contentPath: comments.contentPath,
@@ -1741,7 +1783,6 @@ export function buildChatTools(opts: {
           const targetField = row.contentPath ?? "narrative";
           return [
             {
-              id: row.id,
               kind: row.kind,
               targetField,
               preview: suggestionPreviewFromRow(row),
@@ -1842,7 +1883,7 @@ export function buildChatTools(opts: {
 
     list_suggestions: tool({
       description:
-        "List AI suggestion cards on this report: open (waiting for Apply/Dismiss), resolved (the engineer approved), and dismissed. Use this before claiming a prior proposal is still waiting or that nothing was proposed. Open cards are proposed, not landed in the document. read_section.pendingSuggestions is open cards on that section only.",
+        "List AI suggestion cards on this report: open (waiting for Apply/Dismiss), resolved (the engineer approved), and dismissed. Use this before claiming a prior proposal is still waiting or that nothing was proposed. Open cards are proposed, not landed in the document. read_section.pendingSuggestions is open cards on that section only. Never quote internal ids in user-visible replies — describe a card by section and preview.",
       inputSchema: z.object({
         status: z
           .enum(["all", "open", "resolved", "dismissed"])
@@ -1865,7 +1906,6 @@ export function buildChatTools(opts: {
         const cap = limit ?? LIST_SUGGESTIONS_MAX;
         const rows = await db
           .select({
-            id: comments.id,
             kind: comments.kind,
             content: comments.content,
             contentPath: comments.contentPath,
@@ -1881,7 +1921,6 @@ export function buildChatTools(opts: {
           if (section && row.section !== section) return [];
           return [
             {
-              id: row.id,
               section: row.section,
               targetField: row.contentPath ?? "narrative",
               status: row.status,
@@ -1905,7 +1944,7 @@ export function buildChatTools(opts: {
           counts,
           truncated: listed.length > cap,
           suggestions: listed.slice(0, cap),
-          note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open.",
+          note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open. Never quote internal ids; name the section and a short preview instead.",
         };
       },
     }),
@@ -2268,7 +2307,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns) and Qualification Summary Report Table 3 / RTM inventories (omit so every attached URS / DQ / IQ / OQ / PQ is walked)."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns), Qualification Summary Report Table 3 (omit so every attached URS / DQ / IQ / OQ / PQ cover is walked), and QSR RTM / Operating Range (omit so the server keeps the URS, not protocol bodies)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {
@@ -2304,7 +2343,11 @@ export function buildChatTools(opts: {
                   coverageObjective || objective
                 )
               : qsrInventoryScoped
-                ? ready.map((doc) => doc.attachmentId)
+                ? qsrInventoryReadyIdsForObjective(
+                    ready,
+                    coverageObjective,
+                    objective
+                  )
                 : requestedInScope.length > 0
                   ? requestedInScope.filter((id) => allowed.has(id))
                   : ready.map((doc) => doc.attachmentId);
@@ -2585,7 +2628,7 @@ export function buildChatTools(opts: {
             )
           : null;
         await ensureEvidence();
-        const insertGrounding = writeGrounding(
+        const insertGrounding = await writeGrounding(
           section,
           resolvedField,
           "propose_edit",
@@ -3644,7 +3687,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3734,7 +3777,7 @@ export function buildChatTools(opts: {
           fieldDoc,
           parsedOp
         );
-        const tableGrounding = writeGrounding(
+        const tableGrounding = await writeGrounding(
           section,
           resolvedField,
           "edit_table",
@@ -3747,6 +3790,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
+          fieldDoc,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3765,7 +3809,22 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            fieldDoc,
           });
+        }
+        if (groundedTable.blocked) {
+          const clearedOptional = groundTableOperation({
+            operation: originalTableOp,
+            ledger: citationLedger,
+            policy: unsupportedFactPolicy,
+            grounding: tableGrounding,
+            analyses: tableAnalysisFacts,
+            clearOptionalOnBlock: true,
+            fieldDoc,
+          });
+          if (!clearedOptional.blocked) {
+            groundedTable = clearedOptional;
+          }
         }
         if (groundedTable.blocked) {
           recordClaimAudit({
@@ -3781,7 +3840,9 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        const leftoverLabels = tablePlaceholderLabels(groundedTable.operation);
+        const leftoverLabels = tableLookupPlaceholderLabels(
+          groundedTable.operation
+        );
         if (leftoverLabels.length > 0 && !tablePlaceholderLookupBounced) {
           tablePlaceholderLookupBounced = true;
           return unsupportedFactsToolResult({
@@ -3790,6 +3851,26 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
             message: tablePlaceholderLookupMessage(leftoverLabels),
           });
+        }
+        if (leftoverLabels.length > 0) {
+          const strippedPlaceholders = dropLeftoverPlaceholderCells(
+            groundedTable.operation
+          );
+          groundedTable = {
+            ...groundedTable,
+            operation: strippedPlaceholders,
+          };
+          if (
+            strippedPlaceholders.kind === "edit_cells" &&
+            strippedPlaceholders.cells.length === 0
+          ) {
+            return unsupportedFactsToolResult({
+              unsupported: groundedTable.unsupported,
+              draftWithPlaceholders: leftoverLabels.join("; "),
+              ...repairResultFields(repair.hits),
+              message: tablePlaceholderLookupMessage(leftoverLabels),
+            });
+          }
         }
         // Cell text overclaims the same way prose does — a Remark column
         // reading "all batches compliant" is the case that prompted this.
@@ -3832,6 +3913,9 @@ export function buildChatTools(opts: {
           };
         }
         if (!applied.ok) {
+          if (applied.status === "already_present") {
+            return { status: "empty_edit", hint: applied.hint };
+          }
           return { status: applied.status, hint: applied.hint };
         }
         const second = citationsAtEndOfSection
@@ -4129,7 +4213,7 @@ export function buildChatTools(opts: {
           markdownForDraft = coercedEnum.value;
         }
         const normalizedMarkdown = normalizeSuggestionInsertText(markdownForDraft);
-        const draftGrounding = writeGrounding(
+        const draftGrounding = await writeGrounding(
           section,
           resolvedField,
           "draft_field",

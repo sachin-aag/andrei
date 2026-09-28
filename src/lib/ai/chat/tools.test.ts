@@ -817,6 +817,36 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "Insert the missing URS after URS-16",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-16",
+          rows: [["URS-17", "Requirement text", "", "", "", ""]],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Fill URS-13 Stage",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-13",
+              insertText: "PQ",
+            },
+          ],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "delete rows",
         operation: {
           kind: "delete_rows",
@@ -1299,6 +1329,79 @@ describe("buildChatTools document review", () => {
         (doc) => doc.attachmentId
       )
     ).toEqual(["att_urs", "att_iq"]);
+  });
+
+  it("walks only the URS for QSR process requirements, not 246 protocol pages", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.pdf",
+        description: null,
+        pageCount: 12,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_dq",
+        filename: "Design Qualification.PDF",
+        description: null,
+        pageCount: 40,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_iq",
+        filename: "IQ-GLR-1301.pdf",
+        description: null,
+        pageCount: 194,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      ...Array.from({ length: 12 }, (_, i) => ({
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.pdf",
+        pageNumber: i + 1,
+        transcript: `URS-${i + 1} process requirements`,
+        pageContext: null,
+        printedPageLabel: String(i + 1),
+      })),
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      reviewCoverageObjective: "qsr_rtm_process",
+      sectionScope: "qsr_rtm_process",
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "5.1 Process Requirements" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_urs"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_urs"],
+      queuedPages: 12,
+      totalPages: 12,
+    });
+    expect(
+      (result as { documents?: { filename: string }[] }).documents
+    ).toEqual([
+      {
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.pdf",
+        pageCount: 12,
+      },
+    ]);
+    expect(
+      (result as { skippedDocuments?: { attachmentId: string }[] })
+        .skippedDocuments
+    ).toEqual([]);
   });
 
   it("blocks drafting until finish_document_review", async () => {
@@ -4634,15 +4737,23 @@ describe("buildChatTools list_suggestions", () => {
       truncated: false,
       suggestions: [
         expect.objectContaining({
-          id: "c-open",
+          section: "define",
           status: "open",
           preview: "Lot 24A failed dissolution.",
         }),
-        expect.objectContaining({ id: "c-approved", status: "resolved" }),
-        expect.objectContaining({ id: "c-dismissed", status: "dismissed" }),
+        expect.objectContaining({
+          section: "define",
+          status: "resolved",
+        }),
+        expect.objectContaining({
+          section: "measure",
+          status: "dismissed",
+        }),
       ],
-      note: expect.stringMatching(/open = waiting/i),
+      note: expect.stringMatching(/Never quote internal ids/i),
     });
+    expect(JSON.stringify(result)).not.toContain("c-open");
+    expect(JSON.stringify(result)).not.toContain('"id":');
   });
 
   it("filters by section and by approved status", async () => {
@@ -4654,17 +4765,21 @@ describe("buildChatTools list_suggestions", () => {
     expect(bySection).toMatchObject({
       counts: { open: 1, resolved: 1, dismissed: 0 },
       suggestions: [
-        expect.objectContaining({ id: "c-open" }),
-        expect.objectContaining({ id: "c-approved" }),
+        expect.objectContaining({ section: "define", status: "open" }),
+        expect.objectContaining({ section: "define", status: "resolved" }),
       ],
     });
+    expect(JSON.stringify(bySection)).not.toContain("c-open");
+    expect(JSON.stringify(bySection)).not.toContain('"id":');
 
     const approved = await tools.list_suggestions!.execute!(
       { status: "resolved" },
       TEST_TOOL_OPTIONS
     );
     expect(approved).toMatchObject({
-      suggestions: [expect.objectContaining({ id: "c-approved", status: "resolved" })],
+      suggestions: [
+        expect.objectContaining({ section: "define", status: "resolved" }),
+      ],
     });
   });
 
@@ -4699,12 +4814,14 @@ describe("buildChatTools list_suggestions", () => {
       expect.objectContaining({
         pendingSuggestions: [
           expect.objectContaining({
-            id: "c-open",
+            targetField: "narrative",
             preview: "Lot 24A failed dissolution.",
           }),
         ],
       })
     );
+    expect(JSON.stringify(result)).not.toContain("c-open");
+    expect(JSON.stringify(result)).not.toContain('"id":');
   });
 });
 
@@ -4749,6 +4866,56 @@ describe("buildChatTools annexure continuation", () => {
       nextPage: 24,
     });
     expect(result.continuationHint).toContain("continues=true");
+  });
+
+  it("keeps search open after an identifier-only Design Qualification hit", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-dq",
+          filename: "Design Qualification.PDF",
+          description: null,
+          pageNumber: 13,
+          chunkId: "c13",
+          sourceKind: "hybrid",
+          text: "URS-41 12.3 MOC Details",
+          quote: "URS-41 12.3 MOC Details",
+          citationId: "att:att-dq:p:13",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.search_documents!.execute!(
+      { query: "URS-41" },
+      TEST_TOOL_OPTIONS
+    )) as { keepSearchOpen?: boolean };
+    expect(result.keepSearchOpen).toBe(true);
+  });
+
+  it("keeps search open after an identifier-only Installation Qualification hit", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-iq",
+          filename: "Installation Qualification.PDF",
+          description: null,
+          pageNumber: 42,
+          chunkId: "c42",
+          sourceKind: "hybrid",
+          text: "URS-41 13.6 Gaskets",
+          quote: "URS-41 13.6 Gaskets",
+          citationId: "att:att-iq:p:42",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.search_documents!.execute!(
+      { query: "URS-41" },
+      TEST_TOOL_OPTIONS
+    )) as { keepSearchOpen?: boolean };
+    expect(result.keepSearchOpen).toBe(true);
   });
 
   it("attaches the next page when a read is Page N of M", async () => {
