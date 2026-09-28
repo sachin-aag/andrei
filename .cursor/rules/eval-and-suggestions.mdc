@@ -60,7 +60,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
   from the batch so the remaining cells still preview — do not mark the
   whole table card stale. A mixed fill-empty batch also skips rewriting
   filled cells so the empty remainder still lands; a batch that only
-  rewrites filled cells still applies. Leftover `<…>` cells are dropped
+  rewrites filled cells still applies. QSR RTM Stage / Section / Remarks
+  may still be overwritten in that mixed batch (a filled 13.6 may become
+  13.6; Gaskets). Leftover `<…>` cells are dropped
   on apply for any table kind. Pending table-preview insert marks also keep the
   card previewable (`alreadyMarked` in validate, same as Apply). Do not insert
   `{ banner }` group rows; existing template banners keep their colspan, and

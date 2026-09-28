@@ -1777,7 +1777,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(sectionCell).not.toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 only edits empty Stage/Remarks from IQ, not filled 13.6", () => {
+  it("fill-empty URS-41 fills Stage/Remarks and overwrites filled 13.6 with the IQ heading title", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1880,7 +1880,8 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(blob).not.toMatch(/\bDQ\b/);
     expect(blob).not.toContain("12.3");
     const section = urs41.find((cell) => cell.col === 4);
-    expect(section).toBeUndefined();
+    expect(section?.insertText).toContain("13.6");
+    expect(section?.insertText).toContain("Gaskets");
     expect(urs41.some((cell) => cell.col === 3)).toBe(true);
     expect(urs41.some((cell) => cell.col === 5)).toBe(true);
 
@@ -1900,8 +1901,9 @@ describe("groundTableOperation optional RTM columns", () => {
     );
     const sectionCell = JSON.stringify(cellsInRow[4]);
     expect(sectionCell).toContain("13.6");
+    expect(sectionCell).toContain("Gaskets");
     expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
     const stageCell = JSON.stringify(cellsInRow[3]);
     expect(stageCell).toMatch(/\bIQ\b/);
     expect(stageCell).toContain(suggestionInsertMarkName);

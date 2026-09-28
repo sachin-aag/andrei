@@ -357,6 +357,7 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("hint field is an expected format");
     expect(block).toContain("Material gap only");
     expect(block).toContain("Empty cells they asked to fill");
+    expect(block).toContain("13.6 → 13.6; Gaskets");
     expect(block).toContain("Omit-if conflict");
   });
 

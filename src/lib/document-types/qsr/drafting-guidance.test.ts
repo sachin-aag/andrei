@@ -18,6 +18,7 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     expect(QSR_DRAFTING_GUIDANCE).toContain(
       "8.2.3; Heating Trial same as that of PQ"
     );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("13.6 → 13.6; Gaskets");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Agitator");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Mechanical Seal");
     expect(QSR_DRAFTING_GUIDANCE).toContain(

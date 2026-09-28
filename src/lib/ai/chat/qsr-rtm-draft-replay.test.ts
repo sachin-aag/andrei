@@ -1839,7 +1839,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(sectionCell).not.toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 paints IQ / Complies and leaves filled 13.6 unstruck when IQ and DQ were both read", async () => {
+  it("fill-empty URS-41 paints IQ / Complies and overwrites filled 13.6 with the IQ heading title", async () => {
     const table7Rows = [
       ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
       ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
@@ -1908,7 +1908,9 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(blob).toMatch(/Complies/i);
     expect(blob).not.toMatch(/\bDQ\b/);
     expect(blob).not.toContain("12.3");
-    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+    const section = cells.find((cell) => cell.col === 4);
+    expect(section?.insertText).toContain("13.6");
+    expect(section?.insertText).toContain("Gaskets");
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-fill-empty",
       authorId: "ai",
@@ -1925,8 +1927,9 @@ describe("QSR RTM section 5 draft replay", () => {
     );
     const sectionCell = JSON.stringify(cellsInRow[4]);
     expect(sectionCell).toContain("13.6");
+    expect(sectionCell).toContain("Gaskets");
     expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
     expect(JSON.stringify(cellsInRow[3])).toMatch(/\bIQ\b/);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
   });
@@ -2006,8 +2009,8 @@ describe("QSR RTM section 5 draft replay", () => {
     const cellsInRow = (rows[2]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    expect(JSON.stringify(cellsInRow[4])).toContain("13.6");
-    expect(JSON.stringify(cellsInRow[4])).not.toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[4])).toContain("13.7.5");
+    expect(JSON.stringify(cellsInRow[4])).toContain(suggestionInsertMarkName);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
     expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
   });

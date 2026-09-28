@@ -1306,11 +1306,9 @@ function rankEditCells(
     );
     if (!touchesRef) return [cell];
     if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
-    if (optionalRefExpectedFilled(cell)) {
-      // Explicit clear of a live Stage / Section / Remarks cell. Fill-empty
-      // mixed batches still skip a non-empty rewrite of a filled sibling.
-      if (!cell.insertText.trim()) return [cell];
-      return [];
+    if (optionalRefExpectedFilled(cell) && !cell.insertText.trim()) {
+      // Explicit clear of a live Stage / Section / Remarks cell.
+      return [cell];
     }
     const context = editCellsSiblingContext(siblings, key);
     const rowKey = key.startsWith("__row:")
@@ -1328,7 +1326,9 @@ function rankEditCells(
       return [{ ...cell, insertText: formatRtmStageCell(pick) }];
     }
     if (cell.col === cols.section) {
-      return [{ ...cell, insertText: pick.sectionHeading ?? "" }];
+      const heading = pick.sectionHeading ?? "";
+      if (!heading.trim() && optionalRefExpectedFilled(cell)) return [];
+      return [{ ...cell, insertText: heading }];
     }
     if (cell.col === cols.remarks) {
       return [{ ...cell, insertText: pick.remarks }];
@@ -1354,22 +1354,22 @@ function rankEditCells(
     );
     if (!pick) continue;
     const template = siblings[0]!;
-    const liveFilled = (col: number) => {
-      if (col === cols.section && floor.sectionText) return true;
-      if (col === cols.stage && floor.stageFamily) return true;
+    const liveText = (col: number): string => {
+      if (col === cols.section && floor.sectionText) return floor.sectionText;
       const sib = siblings.find((cell) => cell.col === col);
-      return sib != null && optionalRefExpectedFilled(sib);
+      return (sib?.expectedText ?? "").trim();
     };
     const add = (col: number, insertText: string) => {
       if (!insertText.trim()) return;
-      if (liveFilled(col)) return;
+      const live = liveText(col);
+      if (live === insertText.trim()) return;
       if (present.has(`${key}:${col}`)) return;
       present.add(`${key}:${col}`);
       extra.push({
         row: template.row,
         col,
         rowKey: template.rowKey ?? key,
-        expectedText: "",
+        expectedText: live,
         insertText,
         ...(template.rowContext ? { rowContext: template.rowContext } : {}),
       });
