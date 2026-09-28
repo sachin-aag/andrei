@@ -52,6 +52,9 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     expect(guidance).toContain(
       "Use the revision printed on that document (URS 00, not a neighbouring protocol's 01)"
     );
+    expect(guidance).toContain(
+      "Fill each named column from the source field with the same label"
+    );
   });
 
   it("pairs protocol and report rows and forbids invented lifecycle types", () => {

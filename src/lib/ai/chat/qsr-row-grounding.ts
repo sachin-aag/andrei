@@ -1,9 +1,18 @@
 import type { JSONContent } from "@tiptap/core";
-import type { HardFact } from "@/lib/ai/chat/claim-facts";
+import {
+  extractHardFacts,
+  type HardFact,
+} from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
-import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
-import { QSR_TABLE_HEADERS } from "@/lib/document-types/qsr/sections";
+import {
+  glueOcrMinusSigns,
+  glueOcrUrsIds,
+} from "@/lib/attachments/numeric-signs";
+import {
+  isQsrTableSectionKey,
+  QSR_TABLE_HEADERS,
+} from "@/lib/document-types/qsr/sections";
 import {
   isLeftoverPlaceholderCellText,
   dropLeftoverPlaceholderCells,
@@ -319,10 +328,98 @@ export function factIsRowKey(fact: HardFact, key: string): boolean {
 
 const COLUMN_LABEL_GAP_MAX = 80;
 
+/** First date after a matching source label must sit in this span. */
+const LABELED_DATE_WINDOW = 80;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function dateColumnLabels(columnLabel: string): string[] {
+  return columnLabel
+    .split("/")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter((part) => /date/i.test(part));
+}
+
+export function qsrTableColumnLabel(
+  section: string | null | undefined,
+  col: number | null | undefined
+): string | null {
+  if (!section || col == null || col < 0) return null;
+  if (!isQsrTableSectionKey(section)) return null;
+  return QSR_TABLE_HEADERS[section][col] ?? null;
+}
+
+export function isLabeledDateColumnLabel(
+  columnLabel: string | null | undefined
+): boolean {
+  return Boolean(columnLabel && dateColumnLabels(columnLabel).length > 0);
+}
+
+/**
+ * Slices immediately after each source occurrence of the destination
+ * column's date label (Effective Date, Approved date, …).
+ */
+export function labeledDateWindows(
+  quote: string,
+  columnLabel: string
+): string[] {
+  const labels = dateColumnLabels(columnLabel);
+  if (labels.length === 0 || !quote.trim()) return [];
+  const windows: string[] = [];
+  for (const label of labels) {
+    const re = new RegExp(escapeRegExp(label).replace(/\s+/g, "\\s+"), "gi");
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(quote))) {
+      const start = match.index + match[0].length;
+      windows.push(quote.slice(start, start + LABELED_DATE_WINDOW));
+    }
+  }
+  return windows;
+}
+
+function firstDateInWindow(window: string): HardFact | null {
+  const dates = extractHardFacts(window).filter((row) => row.kind === "date");
+  if (dates.length === 0) return null;
+  return dates.reduce((earliest, row) =>
+    row.start <= earliest.start ? row : earliest
+  );
+}
+
+/**
+ * When the page prints the destination column's own label next to a date,
+ * only that date supports the cell. Presence of another date on the same
+ * page (signature, observation) is not the same field.
+ * `null` = no labeled date on the page, so the caller fails open.
+ */
+export function dateSupportedAsLabeledField(
+  quote: string,
+  fact: HardFact,
+  columnLabel: string
+): boolean | null {
+  if (fact.kind !== "date") return null;
+  const labeledDates = labeledDateWindows(quote, columnLabel)
+    .map(firstDateInWindow)
+    .filter((row): row is HardFact => row != null);
+  if (labeledDates.length === 0) return null;
+  return labeledDates.some(
+    (labeled) =>
+      evidenceContainsFact(labeled.text, fact) ||
+      evidenceContainsFact(fact.text, labeled)
+  );
+}
+
 type UrsSpan = { id: string; at: number };
 
+/** Glue OCR-split `URS- 33` / `URS-\n33` so window offsets stay on one string. */
+function ursHaystack(quote: string): string {
+  return glueOcrUrsIds(quote);
+}
+
 function ursSpans(quote: string): UrsSpan[] {
-  return [...quote.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
+  const hay = ursHaystack(quote);
+  return [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
     id: match[0]!.toUpperCase(),
     at: match.index ?? 0,
   }));
@@ -349,14 +446,15 @@ type ColumnRun = {
  * A digit in the gap ends the block, so the values are not the last ID's sentence.
  */
 function columnRuns(quote: string): ColumnRun[] {
-  const spans = ursSpans(quote);
+  const hay = ursHaystack(quote);
+  const spans = ursSpans(hay);
   const runs: ColumnRun[] = [];
   let runStart = 0;
   for (let i = 1; i <= spans.length; i++) {
     const continues =
       i < spans.length &&
       isColumnLabelGap(
-        quote.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
+        hay.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
       );
     if (continues) continue;
     const runEnd = i - 1;
@@ -394,8 +492,9 @@ export function columnRunValueStart(quote: string): number | null {
 }
 
 function indexOfUrsId(quote: string, key: string): number {
+  const hay = ursHaystack(quote);
   const needle = key.toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`\\b${needle}\\b`, "i").exec(quote);
+  const match = new RegExp(`\\b${needle}\\b`, "i").exec(hay);
   return match?.index ?? -1;
 }
 
@@ -406,24 +505,26 @@ function indexOfUrsId(quote: string, key: string): number {
  * the previous row's range (`0 to 760 mmHg` sitting just before URS-36).
  * A two-column URS table (IDs, then the requirement text) stops before that
  * value column so the last ID does not own every sentence.
+ * OCR wrap at a table/footer (`URS- 33`) is glued before the window is cut.
  */
 export function quoteWindowAroundKey(quote: string, key: string): string | null {
   if (!quote.trim() || !key) return null;
-  const at = indexOfUrsId(quote, key);
+  const hay = ursHaystack(quote);
+  const at = indexOfUrsId(hay, key);
   if (at < 0) return null;
   const needle = key.toUpperCase();
-  const after = quote.slice(at + needle.length);
+  const after = hay.slice(at + needle.length);
   const next = after.match(/\bURS-\d+\b/i);
   let end =
     next && next.index != null
       ? at + needle.length + next.index
-      : Math.min(quote.length, at + needle.length + 240);
-  const columnStart = columnValueStartForSpan(quote, at);
+      : Math.min(hay.length, at + needle.length + 240);
+  const columnStart = columnValueStartForSpan(hay, at);
   if (columnStart != null && at < columnStart && end > columnStart) {
     end = columnStart;
   }
   if (end <= at) return null;
-  return quote.slice(at, end);
+  return hay.slice(at, end);
 }
 
 /**
@@ -436,9 +537,10 @@ export function pageLevelTokenAroundKey(
   key: string
 ): string | null {
   if (!quote.trim() || !key) return null;
-  const at = indexOfUrsId(quote, key);
+  const hay = ursHaystack(quote);
+  const at = indexOfUrsId(hay, key);
   if (at < 0) return null;
-  return quote.slice(at);
+  return hay.slice(at);
 }
 
 export function evidenceContainsFactNearKey(
@@ -451,9 +553,10 @@ export function evidenceContainsFactNearKey(
 }
 
 export function ursIdsInQuote(quote: string): string[] {
+  const hay = ursHaystack(quote);
   return [
     ...new Set(
-      [...quote.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
+      [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
     ),
   ];
 }
@@ -523,18 +626,19 @@ function otherUrsWindows(
 }
 
 function textOutsideOtherUrsWindows(quote: string, key: string): string {
+  const hay = ursHaystack(quote);
   const needle = key.toUpperCase();
   const ranges: Array<{ start: number; end: number }> = [];
-  for (const id of ursIdsInQuote(quote)) {
+  for (const id of ursIdsInQuote(hay)) {
     if (id === needle) continue;
-    const start = indexOfUrsId(quote, id);
+    const start = indexOfUrsId(hay, id);
     if (start < 0) continue;
-    const window = quoteWindowAroundKey(quote, id);
+    const window = quoteWindowAroundKey(hay, id);
     if (!window) continue;
     ranges.push({ start, end: start + window.length });
   }
   ranges.sort((a, b) => b.start - a.start);
-  let text = quote;
+  let text = hay;
   for (const range of ranges) {
     text = `${text.slice(0, range.start)}${" ".repeat(range.end - range.start)}${text.slice(range.end)}`;
   }
@@ -802,6 +906,44 @@ function protocolPassWindow(
   return null;
 }
 
+function protocolNaWindow(
+  ledger: CitationPageLedger,
+  key: string,
+  family: QualDocFamily,
+  context: string
+): string | null {
+  for (const page of ledger.recordedPages()) {
+    if (!filenameMatchesFamily(page.filename, family)) continue;
+    const window = pageLevelTokenAroundKey(page.quote, key);
+    if (window && NOT_APPLICABLE_RE.test(window)) return window;
+    const topic = protocolTopicBody(page.quote, context);
+    if (topic && NOT_APPLICABLE_RE.test(topic)) return topic;
+  }
+  return null;
+}
+
+function rtmRemarksForPick(
+  body: string | null,
+  ledger: CitationPageLedger,
+  key: string,
+  family: QualDocFamily,
+  context: string
+): string {
+  if (
+    (body && NOT_APPLICABLE_RE.test(body)) ||
+    protocolNaWindow(ledger, key, family, context)
+  ) {
+    return "NA";
+  }
+  if (
+    (body && hasProtocolPassToken(body)) ||
+    protocolPassWindow(ledger, key, family, context)
+  ) {
+    return "Complies";
+  }
+  return "";
+}
+
 function protocolMentionsKey(
   ledger: CitationPageLedger,
   key: string,
@@ -822,7 +964,9 @@ function protocolSectionHeading(body: string): string | null {
   const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+[A-Z]/);
   if (titled?.[1]) return titled[1];
   const labeled = stripped.match(/\bsection\s+(\d+(?:\.\d+)*)/i);
-  return labeled?.[1] ?? null;
+  if (labeled?.[1]) return labeled[1];
+  const titledInt = stripped.match(/(?:^|[\s])(\d+)\.\s+[A-Z]/);
+  return titledInt?.[1] ?? null;
 }
 
 function matchingProtocolPages(
@@ -945,11 +1089,7 @@ export function pickRtmReference(
       filename: passPage.filename,
       pageNumber: passPage.pageNumber,
       sectionHeading: body ? protocolSectionHeading(body) : null,
-      remarks:
-        (body && hasProtocolPassToken(body)) ||
-        protocolPassWindow(ledger, key, family, context)
-          ? "Complies"
-          : "",
+      remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }
   return null;
@@ -1014,7 +1154,12 @@ function rankEditCells(
     );
     if (!touchesRef) return [cell];
     if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
-    if (optionalRefExpectedFilled(cell)) return [];
+    if (optionalRefExpectedFilled(cell)) {
+      // Explicit clear of a live Stage / Section / Remarks cell. Fill-empty
+      // mixed batches still skip a non-empty rewrite of a filled sibling.
+      if (!cell.insertText.trim()) return [cell];
+      return [];
+    }
     const context = editCellsSiblingContext(siblings, key);
     const rowKey = key.startsWith("__row:")
       ? rowKeyFromContext(context)
@@ -1293,10 +1438,36 @@ export function qsrDescriptionUnsupported(
   return preview ? syntheticUnsupportedFact(preview) : null;
 }
 
+function labeledDateUnsupported(input: {
+  cell: string;
+  columnLabel?: string | null;
+  ledger: CitationPageLedger;
+}): HardFact | null {
+  const label = input.columnLabel?.trim();
+  if (!label || !isLabeledDateColumnLabel(label)) return null;
+  const dates = extractHardFacts(input.cell).filter((row) => row.kind === "date");
+  if (dates.length === 0) return null;
+  const quotes = input.ledger.recordedPages().map((page) => page.quote);
+  for (const fact of dates) {
+    const verdicts = quotes.map((quote) =>
+      dateSupportedAsLabeledField(quote, fact, label)
+    );
+    if (
+      verdicts.some((verdict) => verdict !== null) &&
+      !verdicts.some((verdict) => verdict === true)
+    ) {
+      return syntheticUnsupportedFact(fact.text);
+    }
+  }
+  return null;
+}
+
 export function extraQsrUnsupported(input: {
   cell: string;
   context: string;
   section?: string;
+  tableCol?: number;
+  tableColumnLabel?: string;
   ledger: CitationPageLedger;
 }): HardFact[] {
   const out: HardFact[] = [];
@@ -1326,7 +1497,31 @@ export function extraQsrUnsupported(input: {
     )
   );
   add(qsrDescriptionUnsupported(input.cell, input.context, input.ledger));
+  add(
+    labeledDateUnsupported({
+      cell: input.cell,
+      columnLabel:
+        input.tableColumnLabel?.trim() ||
+        qsrTableColumnLabel(input.section, input.tableCol),
+      ledger: input.ledger,
+    })
+  );
   return out;
+}
+
+/** Empty Stage / Section / Remarks `edit_cells` — a clear, not a URS copy. */
+export function isClearOnlyOptionalRtmEdit(
+  operation: TableOperation,
+  section?: string | null
+): boolean {
+  if (operation.kind !== "edit_cells") return false;
+  if (!isQsrRtmSection(section)) return false;
+  if (operation.cells.length === 0) return false;
+  return operation.cells.every(
+    (cell) =>
+      isQsrRtmOptionalReferenceColumn(section, cell.col) &&
+      !cell.insertText.trim()
+  );
 }
 
 export function qsrFailClosedReason(input: {

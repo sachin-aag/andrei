@@ -11,3 +11,14 @@ export function glueOcrMinusSigns(text: string): string {
   });
   return asHyphen.replace(/(?<![\d.])-\s+(\d)/g, "-$1");
 }
+
+/**
+ * Table/footer wrap often splits `URS-33` into `URS- 33`, `URS-\n33`, or
+ * `URS - 33`. Keep the original `URS` casing. Idempotent on a clean ID.
+ */
+export function glueOcrUrsIds(text: string): string {
+  return glueOcrMinusSigns(text).replace(
+    /\b(URS)\s*-\s*(\d+)\b/gi,
+    "$1-$2"
+  );
+}

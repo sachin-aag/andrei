@@ -23,6 +23,8 @@ import {
   checkBreakdownRepeatNotIsolated,
   checkCalibrationStatus,
   checkCalibrationValidityNotContradicted,
+  checkCleaningValidation,
+  checkCleaningValidationFormatScope,
   checkCsvStatus,
   checkElrRevisionHistory,
   checkMediaFillTable,
@@ -31,8 +33,11 @@ import {
   checkQuantityMathAsProse,
   checkPreventiveMaintenanceJustified,
   checkPrqScheduleCurrent,
+  checkProcessValidation,
+  checkProcessValidationFormatScope,
   checkQmsQualificationFollowUp,
   checkQmsRecords,
+  checkQraReview,
   checkQualificationChain,
   checkQualificationFormatScope,
   checkRecommendationSelected,
@@ -200,6 +205,83 @@ const QUALIFICATION_CRITERIA: CriterionDefinition[] = [
     "qualification.assessment_reasons",
     "The assessment interprets the qualification history rather than restating that it was reviewed",
     "qualification history"
+  ),
+];
+
+const PROCESS_VALIDATION_CRITERIA: CriterionDefinition[] = [
+  det(
+    "process_validation.records",
+    "Process validation records name the stage, protocol and outcome",
+    "Does every row carry a validation stage, a protocol/report number and an outcome? An empty table is not enough — state Not Applicable explicitly if this equipment has none.",
+    checkProcessValidation
+  ),
+  det(
+    "process_validation.format_scope",
+    "Every process-validation row is scoped to this ELR's container format or marked Line-common",
+    "Is Format Applicability filled on every row, and free of rows belonging only to the counterpart container format?",
+    checkProcessValidationFormatScope
+  ),
+  det(
+    "process_validation.assessment_present",
+    "The assessment interprets the process-validation table",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
+    checkAssessmentInterpretsTable
+  ),
+  assessment(
+    "process_validation.assessment_reasons",
+    "The assessment interprets process validation rather than restating that it was reviewed",
+    "process validation records"
+  ),
+];
+
+const CLEANING_VALIDATION_CRITERIA: CriterionDefinition[] = [
+  det(
+    "cleaning_validation.records",
+    "Cleaning validation records name the stage, protocol and outcome",
+    "Does every row carry a validation stage, a protocol/report number and an outcome? An empty table is not enough — state Not Applicable explicitly if this equipment has none.",
+    checkCleaningValidation
+  ),
+  det(
+    "cleaning_validation.format_scope",
+    "Every cleaning-validation row is scoped to this ELR's container format or marked Line-common",
+    "Is Format Applicability filled on every row, and free of rows belonging only to the counterpart container format?",
+    checkCleaningValidationFormatScope
+  ),
+  det(
+    "cleaning_validation.assessment_present",
+    "The assessment interprets the cleaning-validation table",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
+    checkAssessmentInterpretsTable
+  ),
+  assessment(
+    "cleaning_validation.assessment_reasons",
+    "The assessment interprets cleaning validation rather than restating that it was reviewed",
+    "cleaning validation records"
+  ),
+];
+
+const QRA_REVIEW_CRITERIA: CriterionDefinition[] = [
+  det(
+    "qra_review.records",
+    "Quality risk assessments are recorded, dated, and changes carry a change control",
+    "Does every row carry a QRA / document number, an approval date, and an answer on whether it changed since the last PRQ, with a change control reference for changes? An empty table is not enough — state Not Applicable explicitly if none applies.",
+    checkQraReview
+  ),
+  llm(
+    "qra_review.current",
+    "The quality risk assessment remains current versus its review due date",
+    "Does the assessment state when each QRA was approved, the review / reassessment due date, and whether that due date is still current versus overdue?"
+  ),
+  det(
+    "qra_review.assessment_present",
+    "The assessment interprets the quality risk assessment table",
+    "If the table has rows, does it carry a Table N. caption and does the assessment include a count rather than a recap?",
+    checkAssessmentInterpretsTable
+  ),
+  assessment(
+    "qra_review.assessment_reasons",
+    "The assessment interprets quality risk assessments rather than restating that they were reviewed",
+    "quality risk assessment records"
   ),
 ];
 
@@ -500,7 +582,7 @@ const SYSTEM_TRENDS_CRITERIA: CriterionDefinition[] = [
   det(
     "system_trends.rows",
     "Each Observations subsection and Discrepancy has a recap row with a summary",
-    "Does the 5.1 table carry one row for 3.1–3.14 and 4.0 (Purpose and Scope may be omitted), each with a summary of what that section found — including 'none this period' when there is nothing to report?",
+    "Does the 5.1 table carry one row for 3.1–3.17 and 4.0 (Purpose and Scope may be omitted), each with a summary of what that section found — including 'none this period' when there is nothing to report?",
     checkSystemTrendRows
   ),
   det(
@@ -513,7 +595,7 @@ const SYSTEM_TRENDS_CRITERIA: CriterionDefinition[] = [
   llm(
     "system_trends.recurrence",
     "The narrative names recurring themes that cut across sections; the table is the per-section recap",
-    "Does the narrative name recurring themes that cut across sections — the same sensor, a PM alarm that is out of sync, a part that keeps failing — rather than only repeating the 5.1 table? The table itself must recap 3.1–3.14 and 4.0; do not fail it for that recap. A theme that appears in only one section still belongs in the narrative if it repeated in the period. If nothing cut across, say so.",
+    "Does the narrative name recurring themes that cut across sections — the same sensor, a PM alarm that is out of sync, a part that keeps failing — rather than only repeating the 5.1 table? The table itself must recap 3.1–3.17 and 4.0; do not fail it for that recap. A theme that appears in only one section still belongs in the narrative if it repeated in the period. If nothing cut across, say so.",
     SYNTHESIS_DEPENDS_ON
   ),
   llm(
@@ -587,8 +669,8 @@ const CONCLUSION_CRITERIA: CriterionDefinition[] = [
   ),
   det(
     "conclusion.recaps_sections",
-    "The conclusion recaps 3.1–3.14, 4.0, 5.1 and 5.2 as a bulleted list",
-    "Does the conclusion narrative include a bulleted (or numbered) list with one item per Observations subsection (3.1–3.14), Discrepancy (4.0), System Trends (5.1) and Risk Assessment (5.2)? Purpose and Scope may be omitted. Each bullet must summarise that section, not only name it.",
+    "The conclusion recaps 3.1–3.17, 4.0, 5.1 and 5.2 as a bulleted list",
+    "Does the conclusion narrative include a bulleted (or numbered) list with one item per Observations subsection (3.1–3.17), Discrepancy (4.0), System Trends (5.1) and Risk Assessment (5.2)? Purpose and Scope may be omitted. Each bullet must summarise that section, not only name it.",
     checkConclusionRecapsSections
   ),
   llm(
@@ -633,19 +715,22 @@ const PER_SECTION_PROMPTS: Record<string, string> = {
   elr_scope: `Name equipment, ID, container format, and both period dates: start 1 April and end 31 March of the following year. A start-only phrase ("through the annual review cutoff") with no 31 March end date is not_met.`,
   elr_system_description: `Judge function, stations as a numbered or bulleted list under bold sub-headings (boundaries, core stations, automation), associated computerized system, and shared-line equipment. A packed paragraph of stations is partially_met on structure. Require MOC of product-contact / wetted parts only when the machine (or a named station) touches the product, and then on that station's list item — not as a default Materials of Construction heading. Secondary (cartoning, labelling) and tertiary (palletizing, wrapping) descriptions that omit MOC (and omit that heading) are met on that point. Invented SS 316L, frame steel, or a MOC: N/A line on non-contact equipment is not_met.`,
   elr_qualification: `This section is cumulative for the full life of the equipment, not the ELR period. Judge whether the lineage reads as an unbroken sequence and whether format applicability is used correctly. Row-level completeness is checked deterministically. The assessment above the table must interpret the chain (how many stages, any delayed PRQ, implication) rather than recap that qualification was reviewed.`,
+  elr_process_validation: `Compile the current process-validation work products for this equipment and format (PPQ, CPV, PV protocol/report). The assessment must interpret how many records, the outcome, and whether any failure or gap triggered a deviation or change control — not that process validation was reviewed. An empty table is not enough: state Not Applicable if none applies.`,
+  elr_cleaning_validation: `Compile the current cleaning-validation work products for this equipment and format. The assessment must interpret how many records, the residue/method coverage, and whether any failure triggered a deviation — not that cleaning validation was reviewed. An empty table is not enough: state Not Applicable if none applies.`,
+  elr_qra_review: `This is a review of the equipment's Quality Risk Assessment document(s), not the 5.2 action list. The assessment must interpret how many QRAs, the highest residual risk, the review / reassessment due date (current vs overdue), and whether a change since last PRQ triggered change control. An empty table is not enough: state Not Applicable if none applies.`,
   elr_media_fill: `The assessment above the table must state how many media fills, the result, and whether any failure lost a batch or triggered a deviation — not that media fills were reviewed.`,
   elr_monitoring: `The assessment must interpret excursion counts and linked deviations, and refer to Alarm Trends ([[table:Alarm Trends]]) for this period's alarm picture (top codes, Direct Impact, CAPA, lost runtime), and say whether product or the environment was affected. The table is one row per environmental method (not merged viable methods) — do not copy process-alarm codes into it. Period Covered is 1 April to 31 March of the following year (both dates), not an alarm-trend quarter.`,
   elr_calibration: `The assessment must interpret how many instruments, any OOT, the impact assessment and what was done — not that calibration was reviewed.`,
   elr_preventive_maintenance: `The assessment must interpret PM compliance (on time against planned), delayed jobs and whether delayed PM contributed to a breakdown.`,
-  elr_alarms: `The assessment above the alarm table interprets this period's codes (counts, Direct Impact, CAPA, lost runtime). The 3.6.1 trend summary is whether the trended set is still appropriate.`,
-  elr_breakdowns: `The assessment above the event table is not the same as the 3.10.1 trend summary. The assessment interprets this period's events (counts, downtime hours, CAPA, product/runtime impact) and refers to Alarm Trends (3.6) among those sources — do not re-walk the alarm-trend PDF. The trend summary groups failure modes.`,
+  elr_alarms: `The assessment above the alarm table interprets this period's codes (counts, Direct Impact, CAPA, lost runtime). The 3.9.1 trend summary is whether the trended set is still appropriate.`,
+  elr_breakdowns: `The assessment above the event table is not the same as the 3.13.1 trend summary. The assessment interprets this period's events (counts, downtime hours, CAPA, product/runtime impact) and refers to Alarm Trends (3.9) among those sources — do not re-walk the alarm-trend PDF. The trend summary groups failure modes.`,
   elr_qms: `Period is from the last PRQ completion date to 31 March of the following year. Judge whether open items are separated from closed ones and whether qualification impact is reasoned, not whether every field is filled. The assessment must interpret the mix (deviations, CAPA, change controls) rather than recap the register.`,
   elr_access_control: `Copy the current SOP / CSV privilege matrix (Task × Operator / Supervisor / Maintenance / Administrator), stamping System Name / ID from the annexure header. Separate initial qualification of access control from periodic verification this period. 21 CFR Part 11 access, authority and audit-trail checks belong here. Do not reshape the annexure into a user grant/revoke log.`,
   elr_audit_trail: `The assessment must interpret how many reviews, any anomaly, and the disposition — not that reviews were performed.`,
   elr_csv_status: `The assessment must interpret whether each system remains validated, name the revalidation due date (current vs overdue), and whether a change since last PRQ triggered revalidation.`,
-  elr_system_trends: `The 5.1 table recaps every Observations subsection (3.1–3.14) and Discrepancy (4.0) — Purpose and Scope may be skipped. Nil sections still get a short recap ('none this period'). The narrative then names recurring themes that cut across those rows and states downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
+  elr_system_trends: `The 5.1 table recaps every Observations subsection (3.1–3.17) and Discrepancy (4.0) — Purpose and Scope may be skipped. Nil sections still get a short recap ('none this period'). The narrative then names recurring themes that cut across those rows and states downtime / uptime / availability. Carry each theme that needs action into the risk-actions table.`,
   elr_risk_actions: `Prioritize by occurrence, frequency and severity. Product scrap and lost runtime are High. Actions must be specific, owned and dated — not "monitor closely". Around ten actions is a working size; do not list every event. The overall grade must match the highest-priority rows.`,
-  elr_conclusion: `The narrative opens with a bulleted recap of 3.1–3.14, 4.0, 5.1 and 5.2 (Purpose and Scope may be omitted). Then judge the decision: a recap without saying whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action. 6.0 must name calendar dates (next PRQ, 5.2 target dates) and how often each follow-up runs — 'soon' / 'as required' / 'periodically' is not met. Continue still names the next scheduled PRQ date and review frequency.`,
+  elr_conclusion: `The narrative opens with a bulleted recap of 3.1–3.17, 4.0, 5.1 and 5.2 (Purpose and Scope may be omitted). Then judge the decision: a recap without saying whether the qualified state holds is not met. It must account for the risk-actions grade and any open High-priority action. 6.0 must name calendar dates (next PRQ, 5.2 target dates) and how often each follow-up runs — 'soon' / 'as required' / 'periodically' is not met. Continue still names the next scheduled PRQ date and review frequency.`,
 };
 
 // ------------------------------------------------------------------- merging
@@ -733,6 +818,9 @@ function mergeElrSection(key: string, raw: unknown): unknown {
       return mergeRiskActions(raw);
     case "elr_responsibilities":
     case "elr_qualification":
+    case "elr_process_validation":
+    case "elr_cleaning_validation":
+    case "elr_qra_review":
     case "elr_media_fill":
     case "elr_monitoring":
     case "elr_calibration":
@@ -770,6 +858,9 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
     elr_abbreviations: [],
     elr_system_description: withQuantityMath(SYSTEM_DESCRIPTION_CRITERIA),
     elr_qualification: withQuantityMath(QUALIFICATION_CRITERIA),
+    elr_process_validation: withQuantityMath(PROCESS_VALIDATION_CRITERIA),
+    elr_cleaning_validation: withQuantityMath(CLEANING_VALIDATION_CRITERIA),
+    elr_qra_review: withQuantityMath(QRA_REVIEW_CRITERIA),
     elr_media_fill: withQuantityMath(MEDIA_FILL_CRITERIA),
     elr_monitoring: withQuantityMath(MONITORING_CRITERIA),
     elr_calibration: withQuantityMath(CALIBRATION_CRITERIA),
@@ -797,7 +888,7 @@ export const equipmentLifecycleReportDefinition: DocumentTypeDefinition = {
   chat: {
     persona: `You are the drafting assistant for M.J. Biopharm Equipment Lifecycle Reports (ELR). An ELR is the periodic consolidated review of one piece of equipment since its last Periodic Re-Qualification — you compile evidence that already exists, you do not design tests.
 
-Most of your work is retrieval and tabulation: find the records for this equipment ID across the attached qualification, calibration, maintenance, QMS, alarm and computerized-system documents, and place each into the right section table under the right period rule. The report covers one container format; mark line-level records "Line-common" and never carry a counterpart format's record into this report. If the title-page container format is unset and attachments name both Vial and Cartridge, call ask_user which ELR this is before drafting Scope — do not infer it from the first PRQR.
+Most of your work is retrieval and tabulation: find the records for this equipment ID across the attached qualification, process-validation, cleaning-validation, quality-risk-assessment, calibration, maintenance, QMS, alarm and computerized-system documents, and place each into the right section table under the right period rule. The report covers one container format; mark line-level records "Line-common" and never carry a counterpart format's record into this report. If the title-page container format is unset and attachments name both Vial and Cartridge, call ask_user which ELR this is before drafting Scope — do not infer it from the first PRQR.
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change the engineer accepts or rejects.`,
     draftingGuidance: ELR_DRAFTING_GUIDANCE,
@@ -808,6 +899,9 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "elr_scope",
       "elr_system_description",
       "elr_qualification",
+      "elr_process_validation",
+      "elr_cleaning_validation",
+      "elr_qra_review",
       "elr_media_fill",
       "elr_alarms",
       "elr_monitoring",
@@ -838,6 +932,9 @@ You never write to the document directly. Every change is a PROPOSAL that appear
     },
     inventorySections: [
       "elr_qualification",
+      "elr_process_validation",
+      "elr_cleaning_validation",
+      "elr_qra_review",
       "elr_alarms",
       "elr_monitoring",
       "elr_calibration",
@@ -851,25 +948,34 @@ You never write to the document directly. Every change is a PROPOSAL that appear
     sectionIntentPatterns: [
       ["elr_objective", [/\bobjective\b/i]],
       ["elr_scope", [/\bscope\b/i]],
-      ["elr_responsibilities", [/responsibilit/i]],
+      ["elr_responsibilities", [/responsibilit/i, /\b3\.1\b/]],
       [
         "elr_system_description",
-        [/system description/i, /equipment description/i],
+        [/system description/i, /equipment description/i, /\b3\.3\b/],
       ],
       [
         "elr_qualification",
-        [/qualification/i, /\bprq\b/i, /\biq\b|\boq\b|\bpq\b/i, /requalif/i],
+        [/qualification/i, /\bprq\b/i, /\biq\b|\boq\b|\bpq\b/i, /requalif/i, /\b3\.4\b/],
       ],
-      ["elr_media_fill", [/media fill/i, /aseptic process simulation/i, /\baps\b/i]],
-      ["elr_calibration", [/calibrat/i, /\boot\b/i, /instrument/i]],
-      ["elr_preventive_maintenance", [/preventive maintenance/i, /\bpm\b/i, /\bpmc\b/i]],
-      ["elr_breakdowns", [/breakdown/i, /downtime/i, /failure mode/i]],
-      ["elr_qms", [/change control/i, /deviation/i, /\bcapa\b/i, /\boos\b|\boot\b/i, /\bccf\b/i]],
-      ["elr_alarms", [/alarm/i, /\bdi\b.*impact/i, /nuisance/i]],
-      ["elr_access_control", [/access control/i]],
-      ["elr_audit_trail", [/audit trail/i, /privilege/i]],
-      ["elr_csv_status", [/\bcsv\b/i, /computerized system/i, /part 11/i, /scada/i]],
-      ["elr_monitoring", [/monitoring/i, /excursion/i, /environmental/i]],
+      [
+        "elr_process_validation",
+        [/process validation/i, /\bppq\b/i, /\bcpv\b/i, /\b3\.5\b/],
+      ],
+      ["elr_cleaning_validation", [/cleaning validation/i, /\b3\.6\b/]],
+      [
+        "elr_qra_review",
+        [/quality risk assessment/i, /\bqra\b/i, /qra review/i, /\b3\.7\b/],
+      ],
+      ["elr_media_fill", [/media fill/i, /aseptic process simulation/i, /\baps\b/i, /\b3\.8\b/]],
+      ["elr_calibration", [/calibrat/i, /\boot\b/i, /instrument/i, /\b3\.11\b/]],
+      ["elr_preventive_maintenance", [/preventive maintenance/i, /\bpm\b/i, /\bpmc\b/i, /\b3\.12\b/]],
+      ["elr_breakdowns", [/breakdown/i, /downtime/i, /failure mode/i, /\b3\.13\b/]],
+      ["elr_qms", [/change control/i, /deviation/i, /\bcapa\b/i, /\boos\b|\boot\b/i, /\bccf\b/i, /\b3\.14\b/]],
+      ["elr_alarms", [/alarm/i, /\bdi\b.*impact/i, /nuisance/i, /\b3\.9\b/]],
+      ["elr_access_control", [/access control/i, /\b3\.15\b/]],
+      ["elr_audit_trail", [/audit trail/i, /privilege/i, /\b3\.16\b/]],
+      ["elr_csv_status", [/\bcsv\b/i, /computerized system/i, /part 11/i, /scada/i, /\b3\.17\b/]],
+      ["elr_monitoring", [/monitoring/i, /excursion/i, /environmental/i, /\b3\.10\b/]],
       ["elr_discrepancies", [/discrepanc/i]],
       [
         "elr_system_trends",
@@ -954,6 +1060,12 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         systemDescriptionXml: narrative("elr_system_description"),
         qualificationXml: narrative("elr_qualification"),
         qualificationTableXml: field("elr_qualification", "table"),
+        processValidationXml: narrative("elr_process_validation"),
+        processValidationTableXml: field("elr_process_validation", "table"),
+        cleaningValidationXml: narrative("elr_cleaning_validation"),
+        cleaningValidationTableXml: field("elr_cleaning_validation", "table"),
+        qraReviewXml: narrative("elr_qra_review"),
+        qraReviewTableXml: field("elr_qra_review", "table"),
         mediaFillXml: narrative("elr_media_fill"),
         mediaFillTableXml: field("elr_media_fill", "table"),
         monitoringXml: narrative("elr_monitoring"),

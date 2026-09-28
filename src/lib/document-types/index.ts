@@ -174,8 +174,9 @@ export function documentTypeShortLabel(type: DocumentType): string {
  * citation style — every pack and document type uses it.
  */
 export function citationsAtEndOfSectionFor(
-  _documentType?: DocumentType | null
+  documentType?: DocumentType | null
 ): boolean {
+  void documentType;
   return true;
 }
 

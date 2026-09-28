@@ -9,6 +9,9 @@ import { continuationPageNumber } from "@/lib/ai/chat/page-continuation";
 
 export const ELR_ASSESSMENT_SECTIONS = [
   "elr_qualification",
+  "elr_process_validation",
+  "elr_cleaning_validation",
+  "elr_qra_review",
   "elr_media_fill",
   "elr_alarms",
   "elr_monitoring",

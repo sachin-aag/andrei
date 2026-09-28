@@ -882,12 +882,16 @@ export function ChatPanel({
   useEffect(() => {
     if (!pendingSend) return;
     if (pendingRequestStarted && busy) {
-      setSawStreamBusyForPending(true);
+      queueMicrotask(() => {
+        setSawStreamBusyForPending(true);
+      });
     }
   }, [pendingSend, pendingRequestStarted, busy]);
   useEffect(() => {
     if (pendingRequestStarted && sawStreamBusyForPending && !busy) {
-      resetPendingSendState();
+      queueMicrotask(() => {
+        resetPendingSendState();
+      });
     }
   }, [
     busy,

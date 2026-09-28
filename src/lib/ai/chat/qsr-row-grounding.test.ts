@@ -10,6 +10,7 @@ import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
+  dateSupportedAsLabeledField,
   descriptionSupportedNearKey,
   protocolBodyQuote,
   documentFamilyFromContext,
@@ -19,6 +20,7 @@ import {
   isQsrRtmOptionalReferenceColumn,
   pickRtmReference,
   qsrFailClosedReason,
+  qsrTableColumnLabel,
   quoteWindowAroundKey,
   pageLevelTokenAroundKey,
   rowKeyFromContext,
@@ -118,6 +120,22 @@ describe("quoteWindowAroundKey column-major URS pages", () => {
     expect(quoteWindowAroundKey(page, "URS-13")).toContain("Jacket Type");
     expect(quoteWindowAroundKey(page, "URS-13")).not.toContain("Limpet");
     expect(quoteWindowAroundKey(page, "URS-20")).not.toContain("Limpet");
+  });
+
+  it("finds URS-33 when OCR wraps the ID into the page footer", () => {
+    const page =
+      "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.";
+    expect(quoteWindowAroundKey(page, "URS-33")).not.toBeNull();
+    expect(
+      descriptionSupportedNearKey("Stage and location", [page], "URS-33")
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "Equipment intended for intermediate stage manufacturing operations.",
+        [page],
+        "URS-33"
+      )
+    ).toBe(true);
   });
 
   it("still rejects a range that sits inside a neighbour URS sentence", () => {
@@ -233,6 +251,45 @@ describe("column-major descriptions across pages", () => {
     });
     expect(result.blocked).toBe(false);
     expect(result.unsupported).toEqual([]);
+  });
+
+  it("proposes URS-33 from a column-major page whose ID wraps at the footer", () => {
+    const page =
+      "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: page,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-33",
+            "Stage and location",
+            "Equipment intended for intermediate stage manufacturing operations. [User Requirement Specification.PDF, p. 8]",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.unsupported).toEqual([]);
+    expect(result.operation.kind).toBe("insert_rows");
+    if (result.operation.kind === "insert_rows") {
+      expect(result.operation.rows[0]?.[0]).toBe("URS-33");
+      expect(result.operation.rows[0]?.[1]).toContain("Stage and location");
+    }
   });
 });
 
@@ -1009,6 +1066,128 @@ describe("groundTableOperation optional RTM columns", () => {
     });
     expect(result.blocked).toBe(true);
     expect(result.operation).toMatchObject({ kind: "edit_cells", cells: [] });
+  });
+
+  it("keeps an explicit clear of filled Stage / Section / Remarks as a card", () => {
+    const ledger = new CitationPageLedger();
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 2,
+            col: 3,
+            rowKey: "URS-9",
+            expectedText: "PQ [Performance Qualification.PDF, p. 8]",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+          {
+            row: 2,
+            col: 4,
+            rowKey: "URS-9",
+            expectedText: "8.1",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+          {
+            row: 2,
+            col: 5,
+            rowKey: "URS-9",
+            expectedText: "Complies",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        attachedFilenames: ["User Requirement Specification.PDF"],
+      },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells).toHaveLength(3);
+    expect(cells.every((cell) => cell.insertText === "")).toBe(true);
+    expect(cells.map((cell) => cell.col).toSorted()).toEqual([3, 4, 5]);
+  });
+
+  it("sets DQ / Section 4 / NA from a Design Qualification N/A page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 9,
+        attachmentId: "urs",
+        quote: "URS-51 Spare parts list to be provided by the vendor.",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 18,
+        attachmentId: "dq",
+        quote:
+          "URS-51 Spare parts list. Section 4. Vendor documentation. Result: N/A not applicable for this protocol.",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-51",
+        "URS-51\nSpare parts list\nDQ\n4\nNA"
+      )
+    ).toMatchObject({
+      stageLabel: "DQ",
+      sectionHeading: "4",
+      remarks: "NA",
+    });
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 6,
+            col: 3,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "DQ",
+            rowContext: "URS-51\nSpare parts list",
+          },
+          {
+            row: 6,
+            col: 4,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "4",
+            rowContext: "URS-51\nSpare parts list",
+          },
+          {
+            row: 6,
+            col: 5,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "NA",
+            rowContext: "URS-51\nSpare parts list",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
+    expect(byCol.get(3)).toMatch(/^DQ\b/);
+    expect(byCol.get(3)).toContain("Design Qualification.PDF");
+    expect(byCol.get(4)).toBe("4");
+    expect(byCol.get(5)).toBe("NA");
   });
 
   it("rewrites DQ up to IQ when Installation Qualification also topic-matches", () => {
@@ -2076,5 +2255,208 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
         ["User Requirement Specification.PDF"]
       )
     ).toBe(false);
+  });
+});
+
+const OQ_SOP_HEADER_PAGE = [
+  "Operational Qualification Glass Lined Reactor",
+  "Document No. OQP/GLR-1301 Effective Date 16-05-2026 Format No. QAD-SOP-FS-003-F02 Page 51 of 85",
+  "Observation: visual inspection completed. Date 19 May 2026",
+  "Done By Sign & Date 19-05-2026 Checked By Sign & Date 19-05-2026",
+].join("\n");
+
+describe("dateSupportedAsLabeledField", () => {
+  it("keeps the date next to Effective Date when a signature date is also on the page", () => {
+    const labeled = extractHardFacts("16-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        OQ_SOP_HEADER_PAGE,
+        labeled,
+        "Effective Date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        OQ_SOP_HEADER_PAGE,
+        signature,
+        "Effective Date"
+      )
+    ).toBe(false);
+  });
+
+  it("uses the first date after the label when a signature date sits in the same window", () => {
+    const quote = "Effective Date 16-05-2026 Sign & Date 19-05-2026";
+    const labeled = extractHardFacts("16-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(dateSupportedAsLabeledField(quote, labeled, "Effective Date")).toBe(
+      true
+    );
+    expect(
+      dateSupportedAsLabeledField(quote, signature, "Effective Date")
+    ).toBe(false);
+  });
+
+  it("fails open when the page has no matching date label", () => {
+    const fact = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        "Done By Sign & Date 19-05-2026",
+        fact,
+        "Effective Date"
+      )
+    ).toBeNull();
+  });
+
+  it("accepts either half of an Effective Date / Approved date header", () => {
+    const quote =
+      "Cover. Effective Date 01-04-2026. Protocol approved date 02-04-2026.";
+    const effective = extractHardFacts("01-04-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const approved = extractHardFacts("02-04-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const other = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        effective,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        `${quote} Sign & Date 19-05-2026`,
+        other,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+});
+
+describe("groundTableOperation QSR SOP Effective Date", () => {
+  const ledger = () =>
+    ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 51,
+        attachmentId: "att-oq",
+        quote: OQ_SOP_HEADER_PAGE,
+      },
+    ]);
+
+  it("rejects a signature date in the Effective Date column", () => {
+    expect(qsrTableColumnLabel("qsr_sops", 2)).toBe("Effective Date");
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            insertText:
+              "19-05-2026 [Operational Qualification.PDF, p. 51]",
+          },
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.operation).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          insertText: expect.stringContaining("<date>"),
+        },
+      ],
+    });
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).not.toContain("19-05-2026");
+  });
+
+  it("accepts the labeled Effective Date from the same cited page", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            insertText:
+              "16-05-2026 [Operational Qualification.PDF, p. 51]",
+          },
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("16-05-2026");
+    expect(cell).not.toContain("<date>");
+  });
+
+  it("still presence-grounds a SOP Number on that page", () => {
+    const numbered = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "att-oq-sop",
+        quote: "SOP Number SOP/PR/OQ/014 Effective Date 16-05-2026",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            insertText: "SOP/PR/OQ/014 [Operational Qualification.PDF, p. 11]",
+          },
+        ],
+      },
+      ledger: numbered,
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("SOP/PR/OQ/014");
   });
 });

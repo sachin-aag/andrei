@@ -18,12 +18,15 @@ import {
   parseAuditTrailMatrix,
   parseBreakdownMatrix,
   parseCalibrationMatrix,
+  parseCleaningValidationMatrix,
   parseCsvStatusMatrix,
   parseElrRevisionHistoryMatrix,
   parseMediaFillMatrix,
   parseMonitoringMatrix,
   parsePreventiveMaintenanceMatrix,
+  parseProcessValidationMatrix,
   parseQmsMatrix,
+  parseQraReviewMatrix,
   parseQualificationMatrix,
   parseResponsibilitiesMatrix,
   parseRiskActionMatrix,
@@ -229,6 +232,23 @@ export function checkQualificationChain(ctx: EvaluationContext) {
 }
 
 export function checkQualificationFormatScope(ctx: EvaluationContext) {
+  return checkFormatApplicability(
+    ctx,
+    parseQualificationMatrix(ctx.content),
+    "No qualification rows to scope"
+  );
+}
+
+function checkFormatApplicability(
+  ctx: EvaluationContext,
+  parsed:
+    | { ok: false; reason: string }
+    | {
+        ok: true;
+        rows: Array<{ serial: string; formatApplicability: string }>;
+      },
+  emptyMessage: string
+) {
   const format = reportFormat(ctx);
   if (!format) {
     return verdict(
@@ -236,10 +256,9 @@ export function checkQualificationFormatScope(ctx: EvaluationContext) {
       "Set the container format on the title page — a separate ELR is compiled per format"
     );
   }
-  const parsed = parseQualificationMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
   if (parsed.rows.length === 0) {
-    return verdict("not_met", "No qualification rows to scope");
+    return verdict("not_met", emptyMessage);
   }
   const unmarked: string[] = [];
   const wrongFormat: string[] = [];
@@ -267,6 +286,102 @@ export function checkQualificationFormatScope(ctx: EvaluationContext) {
     );
   }
   return verdict("met", `Every row is scoped to ${format} or Line-common`);
+}
+
+export function checkProcessValidation(ctx: EvaluationContext) {
+  const parsed = parseProcessValidationMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict(
+      "not_met",
+      "No process-validation records — state Not Applicable explicitly if this equipment has none"
+    );
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!row.stage.trim()) problems.push(`${label} has no validation stage`);
+    if (!hasReference(row.documentNo)) {
+      problems.push(`${label} has no protocol / report number`);
+    }
+    if (!row.outcome.trim()) problems.push(`${label} has no outcome`);
+  });
+  return listProblems(
+    problems,
+    `${parsed.rows.length} process-validation record(s)`
+  );
+}
+
+export function checkProcessValidationFormatScope(ctx: EvaluationContext) {
+  return checkFormatApplicability(
+    ctx,
+    parseProcessValidationMatrix(ctx.content),
+    "No process-validation rows to scope"
+  );
+}
+
+export function checkCleaningValidation(ctx: EvaluationContext) {
+  const parsed = parseCleaningValidationMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict(
+      "not_met",
+      "No cleaning-validation records — state Not Applicable explicitly if this equipment has none"
+    );
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!row.stage.trim()) problems.push(`${label} has no validation stage`);
+    if (!hasReference(row.documentNo)) {
+      problems.push(`${label} has no protocol / report number`);
+    }
+    if (!row.outcome.trim()) problems.push(`${label} has no outcome`);
+  });
+  return listProblems(
+    problems,
+    `${parsed.rows.length} cleaning-validation record(s)`
+  );
+}
+
+export function checkCleaningValidationFormatScope(ctx: EvaluationContext) {
+  return checkFormatApplicability(
+    ctx,
+    parseCleaningValidationMatrix(ctx.content),
+    "No cleaning-validation rows to scope"
+  );
+}
+
+export function checkQraReview(ctx: EvaluationContext) {
+  const parsed = parseQraReviewMatrix(ctx.content);
+  if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.rows.length === 0) {
+    return verdict(
+      "not_met",
+      "No quality risk assessment recorded — state Not Applicable explicitly if none applies"
+    );
+  }
+  const problems: string[] = [];
+  parsed.rows.forEach((row, index) => {
+    const label = rowLabel(row.serial, index);
+    if (!hasReference(row.documentNo)) {
+      problems.push(`${label} has no QRA / document number`);
+    }
+    if (!row.dateApproved.trim()) {
+      problems.push(`${label} has no approval date`);
+    }
+    if (!row.changeSinceLastPrq.trim()) {
+      problems.push(`${label} does not answer whether it changed since last PRQ`);
+      return;
+    }
+    if (isYes(row.changeSinceLastPrq) && !hasReference(row.changeControlRef)) {
+      problems.push(`${label} changed since last PRQ with no change control`);
+    }
+  });
+  return listProblems(
+    problems,
+    `${parsed.rows.length} quality risk assessment(s) recorded`
+  );
 }
 
 /** Identity-block dates are `<input type="date">` values, so ISO and sortable. */
@@ -992,6 +1107,18 @@ export function checkAssessmentInterpretsTable(ctx: EvaluationContext) {
     ) {
       gaps.push(
         "The table records a revalidation due date but the assessment does not name it as due, overdue, or next revalidation"
+      );
+    }
+  }
+  if (ctx.section === "elr_qra_review") {
+    const qra = parseQraReviewMatrix(ctx.content);
+    if (
+      qra.ok &&
+      qra.rows.some((row) => row.reviewDueDate.trim()) &&
+      !/\bdue\b|\boverdue\b|reassess/i.test(text)
+    ) {
+      gaps.push(
+        "The table records a review / reassessment due date but the assessment does not name it as due, overdue, or next review"
       );
     }
   }

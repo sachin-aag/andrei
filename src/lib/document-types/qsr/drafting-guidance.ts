@@ -6,7 +6,8 @@ Editing RTM rows in chat:
 - Never copy a neighbour URS-ID window onto another row (do not copy URS-37's range onto URS-5). Facts on the URS cover or outside any URS-ID window (capacity, MOC) may be copied onto the matching row.
 - Call list_attachments and search the attached DQ / IQ / OQ / PQ PDFs in the same turn as the URS rows, grepping each row's Parameters.
 - When they asked to fill empty cells, read_section first, identify the empty cells, and edit only those — do not rewrite a filled cell in the same batch, including a filled Reference – Section. If you do change a filled Section, still write the highest family only.
-- Never write \`<remarks>\`, \`<qualification stage>\`, or \`<section>\` as RTM cell text. If a tool returns those leftovers, search the IQ / OQ / PQ / DQ protocol bodies for that row's Parameters before calling edit_table again. Do not list Proposed Updates that still show them.`;
+- Never write \`<remarks>\`, \`<qualification stage>\`, or \`<section>\` as RTM cell text. If a tool returns those leftovers, search the IQ / OQ / PQ / DQ protocol bodies for that row's Parameters before calling edit_table again. Do not list Proposed Updates that still show them.
+- Do not tell them to accept a card and type 3.5 (or any leftover <number>) into a cell when a retrieved URS page already states that figure — persist the number.`;
 
 export const QSR_DRAFTING_GUIDANCE: DocumentChatDraftingGuidance = {
   always: `QUALIFICATION SUMMARY REPORT (3xper QAD/016/F06-00) — DRAFTING RULES
@@ -28,7 +29,7 @@ Never invent document numbers, revisions, dates, volumes or ranges — copy them
     qsr_qualification_documents:
       "Qualification Documents (Table 3): start empty. List cited lifecycle documents in this order: URS, DS, FMEA, DQ, FAT, SAT, IQ, OQ, PQ. Omit a type that was not on a cited cover page — do not invent FMEA, FAT, or SAT rows. For DQ / IQ / OQ / PQ, one protocol row then one report row: fill Document Name, Revision, Status, date, and Remarks on the protocol row only; the report row carries Document Number (and Status/date if cited) and leaves Document Name, Revision, and Remarks empty (export merges those cells). Do not insert a second fully filled report row — that looks like a duplicate. Never write Approved / Complies / Closed unless that exact word is on a cited cover page; otherwise leave Status empty. Copy numbers, revisions, and dates from that document's own cover page, not a neighbouring protocol's signature page — do not copy the DQ date or revision onto the URS row.",
     qsr_sops:
-      "Standard Operation Procedures: SOP numbers and effective dates for operation & cleaning, calibration, preventive maintenance, and training.",
+      "Standard Operation Procedures: SOP numbers and effective dates for operation & cleaning, calibration, preventive maintenance, and training. Fill each named column from the source field with the same label — Effective Date from Effective Date on that SOP or protocol header, not a nearby signature or observation date.",
     qsr_rtm_process: QSR_RTM_GUIDANCE,
     qsr_rtm_control: QSR_RTM_GUIDANCE,
     qsr_rtm_gmp: QSR_RTM_GUIDANCE,

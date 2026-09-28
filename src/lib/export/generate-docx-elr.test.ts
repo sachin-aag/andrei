@@ -9,8 +9,11 @@ import { docxParagraphPlainText } from "@/lib/export/docx-toc-headings";
 import {
   ELR_ALARM_HEADERS,
   ELR_BREAKDOWN_HEADERS,
+  ELR_CLEANING_VALIDATION_HEADERS,
   ELR_DEFAULT_METADATA,
   ELR_MONITORING_HEADERS,
+  ELR_PROCESS_VALIDATION_HEADERS,
+  ELR_QRA_REVIEW_HEADERS,
   ELR_QUALIFICATION_HEADERS,
   ELR_SECTION_KEYS,
   EMPTY_ELR_CONTENT,
@@ -93,31 +96,55 @@ const QUALIFICATION_ROWS = [
 
 function qualificationTableSlice(xml: string): string {
   const start = xml.indexOf("3.4 QUALIFICATION");
-  const end = xml.indexOf("3.5 MEDIA FILL");
+  const end = xml.indexOf("3.5 PROCESS VALIDATION");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function processValidationSlice(xml: string): string {
+  const start = xml.indexOf("3.5 PROCESS VALIDATION");
+  const end = xml.indexOf("3.6 CLEANING VALIDATION");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function cleaningValidationSlice(xml: string): string {
+  const start = xml.indexOf("3.6 CLEANING VALIDATION");
+  const end = xml.indexOf("3.7 QUALITY RISK ASSESSMENT");
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return xml.slice(start, end);
+}
+
+function qraReviewSlice(xml: string): string {
+  const start = xml.indexOf("3.7 QUALITY RISK ASSESSMENT");
+  const end = xml.indexOf("3.8 MEDIA FILL");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
 }
 
 function monitoringSlice(xml: string): string {
-  const start = xml.indexOf("3.7 MONITORING");
-  const end = xml.indexOf("3.8 CALIBRATION");
+  const start = xml.indexOf("3.10 MONITORING");
+  const end = xml.indexOf("3.11 CALIBRATION");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
 }
 
 function breakdownSlice(xml: string): string {
-  const start = xml.indexOf("3.10 BREAKDOWNS");
-  const end = xml.indexOf("3.11 QMS");
+  const start = xml.indexOf("3.13 BREAKDOWNS");
+  const end = xml.indexOf("3.14 QMS");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
 }
 
 function alarmSlice(xml: string): string {
-  const start = xml.indexOf("3.6 ALARM TRENDS");
-  const end = xml.indexOf("3.7 MONITORING");
+  const start = xml.indexOf("3.9 ALARM TRENDS");
+  const end = xml.indexOf("3.10 MONITORING");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
@@ -191,15 +218,25 @@ describe("ELR DOCX template", () => {
     const xml = zip.file("word/document.xml")?.asText() ?? "";
     expect(xml).not.toContain("TABLE OF CONTENTS");
     expect(xml).toContain("1.0 PURPOSE");
-    expect(xml.indexOf("3.6 ALARM TRENDS")).toBeGreaterThan(-1);
-    expect(xml.indexOf("3.6 ALARM TRENDS")).toBeLessThan(
-      xml.indexOf("3.7 MONITORING")
+    expect(xml.indexOf("3.9 ALARM TRENDS")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.5 PROCESS VALIDATION REVIEW")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.5 PROCESS VALIDATION REVIEW")).toBeLessThan(
+      xml.indexOf("3.6 CLEANING VALIDATION REVIEW")
     );
-    expect(xml.indexOf("3.7 MONITORING")).toBeLessThan(
-      xml.indexOf("3.10 BREAKDOWNS AND TRENDS")
+    expect(xml.indexOf("3.6 CLEANING VALIDATION REVIEW")).toBeLessThan(
+      xml.indexOf("3.7 QUALITY RISK ASSESSMENT REVIEW")
     );
-    expect(xml.indexOf("3.10 BREAKDOWNS AND TRENDS")).toBeLessThan(
-      xml.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION")
+    expect(xml.indexOf("3.7 QUALITY RISK ASSESSMENT REVIEW")).toBeLessThan(
+      xml.indexOf("3.8 MEDIA FILL")
+    );
+    expect(xml.indexOf("3.9 ALARM TRENDS")).toBeLessThan(
+      xml.indexOf("3.10 MONITORING")
+    );
+    expect(xml.indexOf("3.10 MONITORING")).toBeLessThan(
+      xml.indexOf("3.13 BREAKDOWNS AND TRENDS")
+    );
+    expect(xml.indexOf("3.13 BREAKDOWNS AND TRENDS")).toBeLessThan(
+      xml.indexOf("3.14 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION")
     );
   });
 });
@@ -239,7 +276,12 @@ describe("ELR DOCX export", () => {
     expect(paragraphStyle(xml, "1.0 PURPOSE")).toBe("Heading1");
     expect(paragraphStyle(xml, "3.0 OBSERVATIONS AND RESULTS")).toBe("Heading1");
     expect(paragraphStyle(xml, "3.1 RESPONSIBILITY")).toBe("Heading2");
-    expect(paragraphStyle(xml, "3.10.1 BREAKDOWN TREND SUMMARY")).toBe("Heading3");
+    expect(paragraphStyle(xml, "3.5 PROCESS VALIDATION REVIEW")).toBe("Heading2");
+    expect(paragraphStyle(xml, "3.6 CLEANING VALIDATION REVIEW")).toBe("Heading2");
+    expect(paragraphStyle(xml, "3.7 QUALITY RISK ASSESSMENT REVIEW")).toBe(
+      "Heading2"
+    );
+    expect(paragraphStyle(xml, "3.13.1 BREAKDOWN TREND SUMMARY")).toBe("Heading3");
     expect(paragraphStyle(xml, "5.0 SUMMARY AND CONCLUSION")).toBe("Heading1");
     expect(paragraphStyle(xml, "5.1 SYSTEM TRENDS AND PATTERNS")).toBe("Heading2");
     expect(paragraphStyle(xml, "5.2 RISK ASSESSMENT AND PRIORITIZED ACTIONS")).toBe(
@@ -346,7 +388,7 @@ describe("ELR DOCX export", () => {
 
     const breakdown = breakdownSlice(xml);
     const breakdownNarrative = breakdown.indexOf("Two breakdowns this period");
-    const breakdownHeading = breakdown.indexOf("3.10.1 BREAKDOWN TREND SUMMARY");
+    const breakdownHeading = breakdown.indexOf("3.13.1 BREAKDOWN TREND SUMMARY");
     const breakdownTrend = breakdown.indexOf("Recurring peristaltic pump");
     const breakdownTable = breakdown.indexOf("<w:tbl");
     expect(breakdownNarrative).toBeGreaterThan(-1);
@@ -356,7 +398,7 @@ describe("ELR DOCX export", () => {
 
     const alarms = alarmSlice(xml);
     const alarmNarrative = alarms.indexOf("Alarm 1951 repeated");
-    const alarmHeading = alarms.indexOf("3.6.1 ALARM TREND SUMMARY");
+    const alarmHeading = alarms.indexOf("3.9.1 ALARM TREND SUMMARY");
     const alarmTrend = alarms.indexOf("The trended alarm set still covers");
     const alarmTable = alarms.indexOf("<w:tbl");
     expect(alarmNarrative).toBeGreaterThan(-1);
@@ -393,12 +435,30 @@ describe("ELR DOCX export", () => {
   });
 
   it("exports the 3.4 Qualification table on a landscape page", async () => {
+    const qualificationTable = tableDoc(
+      [...ELR_QUALIFICATION_HEADERS],
+      QUALIFICATION_ROWS
+    );
     const buf = await generateReportDocx({
       report: elrReport(),
       sections: elrSections({
         elr_qualification: {
           ...EMPTY_ELR_CONTENT.elr_qualification,
-          table: tableDoc([...ELR_QUALIFICATION_HEADERS], QUALIFICATION_ROWS),
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "Table 3. Qualification and periodic re-qualification history",
+                  },
+                ],
+              },
+              ...(qualificationTable.content ?? []),
+            ],
+          },
         },
       }),
     });
@@ -413,12 +473,18 @@ describe("ELR DOCX export", () => {
     expect(slice).toContain("Steriline S.r.l., Italy");
     expect(slice).toContain("Room GF-89");
 
+    const captionAt = slice.indexOf(
+      "Table 3. Qualification and periodic re-qualification history"
+    );
     const tableAt = slice.indexOf("<w:tbl");
     const landscapeAt = slice.indexOf('w:orient="landscape"');
-    const portraitBeforeTable = slice.slice(0, tableAt).includes("<w:pgSz");
+    const portraitBreakAt = slice.indexOf("<w:sectPr");
+    expect(captionAt).toBeGreaterThan(-1);
     expect(tableAt).toBeGreaterThan(-1);
+    expect(portraitBreakAt).toBeGreaterThan(-1);
+    expect(captionAt).toBeGreaterThan(portraitBreakAt);
+    expect(tableAt).toBeGreaterThan(captionAt);
     expect(landscapeAt).toBeGreaterThan(tableAt);
-    expect(portraitBeforeTable).toBe(true);
 
     const innerTables =
       slice.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
@@ -431,6 +497,115 @@ describe("ELR DOCX export", () => {
     const gridSum = widths.reduce((sum, w) => sum + w, 0);
     expect(gridSum).toBeGreaterThan(10469);
     expect(gridSum).toBeLessThanOrEqual(15394);
+  });
+
+  it("exports process, cleaning and QRA review tables on landscape pages", async () => {
+    const buf = await generateReportDocx({
+      report: elrReport(),
+      sections: elrSections({
+        elr_process_validation: {
+          ...EMPTY_ELR_CONTENT.elr_process_validation,
+          table: tableDoc(
+            [...ELR_PROCESS_VALIDATION_HEADERS],
+            [
+              [
+                "1",
+                "PPQ",
+                "PPQ-24-PR-011",
+                "Insulin vial fill",
+                "Vial",
+                "12.03.2025",
+                "Pass",
+                "Nil",
+                "NA",
+                "Current PPQ for this format.",
+              ],
+            ]
+          ),
+        },
+        elr_cleaning_validation: {
+          ...EMPTY_ELR_CONTENT.elr_cleaning_validation,
+          table: tableDoc(
+            [...ELR_CLEANING_VALIDATION_HEADERS],
+            [
+              [
+                "1",
+                "CV",
+                "CVP-24-PR-003",
+                "Insulin residue",
+                "WIP",
+                "Vial",
+                "12.03.2025",
+                "Pass",
+                "Nil",
+                "NA",
+                "Current cleaning validation.",
+              ],
+            ]
+          ),
+        },
+        elr_qra_review: {
+          ...EMPTY_ELR_CONTENT.elr_qra_review,
+          table: tableDoc(
+            [...ELR_QRA_REVIEW_HEADERS],
+            [
+              [
+                "1",
+                "QRA-ELR-070",
+                "Filling line QRA",
+                "12.03.2025",
+                "Medium",
+                "12.03.2027",
+                "N",
+                "",
+                "Current QRA.",
+              ],
+            ]
+          ),
+        },
+      }),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    const cases = [
+      {
+        slice: processValidationSlice(xml),
+        header: "Validation Stage",
+        columns: ELR_PROCESS_VALIDATION_HEADERS.length,
+        cell: "PPQ-24-PR-011",
+      },
+      {
+        slice: cleaningValidationSlice(xml),
+        header: "Cleaning Method",
+        columns: ELR_CLEANING_VALIDATION_HEADERS.length,
+        cell: "CVP-24-PR-003",
+      },
+      {
+        slice: qraReviewSlice(xml),
+        header: "QRA / Document No.",
+        columns: ELR_QRA_REVIEW_HEADERS.length,
+        cell: "QRA-ELR-070",
+      },
+    ] as const;
+
+    for (const { slice, header, columns, cell } of cases) {
+      expect(slice).toContain(header);
+      expect(slice).toContain(cell);
+      const tableAt = slice.indexOf("<w:tbl");
+      const landscapeAt = slice.indexOf('w:orient="landscape"');
+      expect(tableAt).toBeGreaterThan(-1);
+      expect(landscapeAt).toBeGreaterThan(tableAt);
+      const innerTables =
+        slice.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
+      const inner = innerTables.find((table) => table.includes(header)) ?? "";
+      const widths = [...inner.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+        Number(m[1])
+      );
+      expect(widths).toHaveLength(columns);
+      const gridSum = widths.reduce((sum, w) => sum + w, 0);
+      expect(gridSum).toBeGreaterThan(10469);
+      expect(gridSum).toBeLessThanOrEqual(15394);
+    }
   });
 
   it("fills 7.0 Attachments from every live file and unifies citations at 10.0", async () => {

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v152-prompt-structure");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v153-prompt-structure");
   });
 
   it("keeps shared source-list and wrap-up rules on every type", () => {
@@ -29,6 +29,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("A leading minus is part of the number");
     expect(prompt).toContain(
       "Do not tell them to accept a card and type a leftover <number>"
+    );
+    expect(prompt).toContain(
+      "Do not tell them to accept a card and type a leftover <number>"
+    );
+    expect(prompt).toContain("drop the version numbers");
+    expect(prompt).toContain("Do not copy document topics/summaries into the draft");
+    expect(prompt).toContain("−15 °C is not 15 °C");
+    expect(prompt).toContain("−50 ± 10 RPM");
+    expect(prompt).toContain(
+      "When filling a named column, copy the value printed next to that same label"
     );
     expect(prompt).toContain(
       "Never quote attachment ids, analysis ids, or suggestion-card ids"
@@ -51,6 +61,9 @@ describe("buildChatSystemPrompt", () => {
     expect(qsr).toContain("PQ, then OQ, then IQ, then DQ");
     expect(qsr).toContain("including a filled Reference – Section");
     expect(qsr).toContain("Do not list Proposed Updates that still show them");
+    expect(qsr).toContain(
+      "Do not tell them to accept a card and type 3.5"
+    );
 
     for (const documentType of [
       "investigation_report",
@@ -833,6 +846,8 @@ describe("buildChatSystemPrompt", () => {
       'Never reason "they want it inserted directly, so a suggestion is not what they asked for"'
     );
     expect(prompt).toContain("Never say the edit tools are disabled");
+    expect(prompt).toContain("3.12 Preventive Maintenance");
+    expect(prompt).toContain("3.10 Monitoring");
     expect(prompt).toContain("Never tell the engineer to switch to Agent mode");
     expect(prompt).toContain("for them to copy by hand instead of calling the tool");
     expect(prompt).toContain(

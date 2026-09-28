@@ -31,6 +31,13 @@ export type GroundDraftGrounding = {
   section?: string;
   /** Ready attachment filenames (QSR fail-closed when the URS is attached). */
   attachedFilenames?: readonly string[];
+  /** Destination table column when grounding an edit_table cell. */
+  tableCol?: number;
+  /**
+   * Destination column header (Effective Date, …). When set, a date cell
+   * must match the source value next to that same label.
+   */
+  tableColumnLabel?: string;
 };
 
 const MONTH_INDEX: Record<string, number> = {
