@@ -2001,4 +2001,67 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
     expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
   });
+
+  it("lands Complies on executed IQ rows (Langfuse 256f0e5d, Table 5 IQ Remarks blank)", async () => {
+    // Production: Stage IQ / Section 13.3.5.4 landed but Remarks saved empty,
+    // because signed IQ records print no pass word and p.18 has a
+    // `Model Number NA` spec cell.
+    const table5Rows = [
+      ["URS-7", "Agitator", "Anchor agitator, flame proof flange mounted motor", "", "", ""],
+      ["URS-13", "Equipment identification", "Manufacturer name plate and serial number", "", "", ""],
+    ];
+    mockSection("qsr_rtm_process", { table: rtmTableDoc(table5Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readIqPage(
+      tools,
+      25,
+      "3xper EMPOWERING INNOVATION Issued By MASTER COPY Issued On INSTALLATION QUALIFICATION Carat Kumar Gedla 3xper Innoventure Limited, 30/04/202619:20 Equipment/System Glass Lined Reactor Protocol No. Report No. IQP/GLR-1301 IQR/GLR-1301 Equipment Number GLR-1301 13.3.5.4. Agitator Motor Specifications Revision: 01 Page No. Section Revision: 01 Capacity/Size Effective Date 25 of 60 Production Block-2 8000 L 30-04-2026 Sr. No Parameters 1. Make Actual Verification Verified By Design specifications observations Source (Sign & Date) Design Crompton Crompton 2. Type mounted 3. Motor speed 1470 rpm 14708pm Flame proof, Flange Flame Proof, Analification Afita Design 01-05-2006 01-05-2026 Flange mounted qualification R.Ajita Design qualification R. Ajith 01-05-2026"
+    );
+    await readIqPage(
+      tools,
+      18,
+      "Issued On 30/04/202619:20 INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Page No. 18 of 60 Protocol No. IQP/GLR-1301 Effective Date 30-04-2026 13.3. System Identification & technical specification verification Reactor S. No Description Actual Observation Verified By (Sign & Date) 1.0 Name of the equipment Glass Lined Reactor R.Ajita 2.0 Manufacturer Standard Glass Lining Technology Ltd 01-05-2026 3.0 Model Number NA RANG 01-05-2076 4.0 Serial Number £250710956 RAjith 01-05-2026 7.0 Equipment Identification GLR-1301 01-05-2026"
+    );
+    const cell = (row: number, col: number, rowKey: string, insertText: string) => ({
+      row,
+      col,
+      rowKey,
+      expectedText: "",
+      insertText,
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill Stage, Section, and Remarks from the IQ records.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            cell(1, 3, "URS-7", `IQ [${IQ_FILENAME}, p. 25]`),
+            cell(1, 4, "URS-7", "13.3.5"),
+            cell(1, 5, "URS-7", "Complies"),
+            cell(2, 3, "URS-13", `IQ [${IQ_FILENAME}, p. 18]`),
+            cell(2, 4, "URS-13", "13.3"),
+            cell(2, 5, "URS-13", "Complies"),
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const remarks = (rowKey: string) =>
+      cells.find((c) => c.rowKey === rowKey && c.col === 5)?.insertText;
+    expect(remarks("URS-7")).toBe("Complies");
+    expect(remarks("URS-13")).toBe("Complies");
+    const adjusted =
+      (result as { adjustedCells?: Array<{ column?: string }> }).adjustedCells ?? [];
+    expect(adjusted.filter((adj) => adj.column === "Remarks")).toEqual([]);
+    expect(cells.find((c) => c.rowKey === "URS-7" && c.col === 3)?.insertText).toMatch(
+      /^IQ\b/
+    );
+  });
 });
