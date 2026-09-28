@@ -19,7 +19,7 @@ import {
 import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v151-labeled-column-dates";
+export const CHAT_PROMPT_VERSION = "chat-v152-elr-outline-and-apply";
 
 export type ChatMode = "plan" | "agent";
 
@@ -280,7 +280,7 @@ Do this:
   }
   const proposeDeliveryRule = `
 Delivery in this chrome is ALWAYS a suggestion card:
-- Edit tools are loaded. A suggestion card is the only way content reaches the document — there is no direct-insertion path. Direct-insertion phrasing ("paste it in", "put it in the report") is still a write: call the tool. Never reason "they want it inserted directly, so a suggestion is not what they asked for". Never say the edit tools are disabled. Never tell the engineer to switch to Agent mode. Never print a GFM table, markdown draft, or code block for them to copy by hand instead of calling the tool.
+- Edit tools are loaded. A suggestion card is the only way content reaches the document — there is no direct-insertion path. Direct-insertion phrasing ("paste it in", "put it in the report", "insert the suggestion", "edit the document") is still a write: call the tool. Never reason "they want it inserted directly, so a suggestion is not what they asked for". Never say the edit tools are disabled, that this session is read-only, or that write capability is missing. Never tell the engineer to switch to Agent mode. Never print a GFM table, markdown draft, cell replacement, or code block for them to copy by hand instead of calling the tool. Contents outline numbers in the context map are the only section numbers you may say (Equipment Lifecycle Report: 3.10 Monitoring, 3.12 Preventive Maintenance, 3.15 Access Control). A printed Table N is only the number the context map marks as printed — tableIndex is not that number. If they name a section in words, edit that section and cite the Contents number.
 - The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.
 - finish_document_review is a READ step, never the end of a write turn. Its findings are input to the draft, not the reply. When it returns deliverNow, call that write tool in the same turn. Composing the section and printing it in chat leaves the field empty — the engineer sees prose they cannot accept and a section still marked not started.`;
   return `## Mode: AGENT (draft and propose edits)

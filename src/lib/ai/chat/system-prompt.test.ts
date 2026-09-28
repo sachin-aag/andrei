@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v151-labeled-column-dates");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v152-elr-outline-and-apply");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -738,6 +738,8 @@ describe("buildChatSystemPrompt", () => {
       'Never reason "they want it inserted directly, so a suggestion is not what they asked for"'
     );
     expect(prompt).toContain("Never say the edit tools are disabled");
+    expect(prompt).toContain("3.12 Preventive Maintenance");
+    expect(prompt).toContain("3.10 Monitoring");
     expect(prompt).toContain("Never tell the engineer to switch to Agent mode");
     expect(prompt).toContain("for them to copy by hand instead of calling the tool");
     expect(prompt).toContain(

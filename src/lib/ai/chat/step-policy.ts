@@ -8,6 +8,8 @@ import {
 } from "@/lib/ai/chat/document-review";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import {
+  callToolName,
+  collectToolCalls,
   documentAskUserDirective,
   searchLoopDirective,
   type SearchGate,
@@ -73,7 +75,63 @@ export type PrepareReportChatStepInput = {
    * were stripped from the ToolSet (Ask / social).
    */
   registeredWriteTools?: readonly string[];
+  /**
+   * "Insert the suggestion" / "edit the document" / the card did not land.
+   * After read_section, the next step must call the write tool.
+   */
+  explicitDocumentEdit?: boolean;
 };
+
+function stepsIncludeTool(
+  steps: readonly SearchLoopStep[],
+  toolName: string
+): boolean {
+  return steps.some((step) =>
+    collectToolCalls(step).some((call) => callToolName(call) === toolName)
+  );
+}
+
+function toolIsAvailable(
+  input: PrepareReportChatStepInput,
+  toolName: string
+): boolean {
+  return (
+    input.advertisedTools.includes(toolName) ||
+    (input.registeredWriteTools ?? []).includes(toolName)
+  );
+}
+
+/**
+ * An explicit "put it in the document" turn must not end as a chat summary.
+ * Step 0 reads the section. The following step calls edit_table when a table
+ * is in scope, otherwise propose_edit.
+ */
+function explicitDocumentEditStep(
+  input: PrepareReportChatStepInput
+): ChatStepDecision | undefined {
+  if (
+    !input.explicitDocumentEdit ||
+    input.userIntentKind !== "write" ||
+    !input.hasReadSectionTool
+  ) {
+    return undefined;
+  }
+  if (!stepsIncludeTool(input.steps, "read_section")) {
+    if (input.steps.length !== 0) return undefined;
+    return {
+      activeTools: ["read_section"],
+      toolChoice: { type: "tool", toolName: "read_section" },
+    };
+  }
+  const writeTool = input.inScopeHasTable ? "edit_table" : "propose_edit";
+  if (stepsIncludeTool(input.steps, writeTool) || !toolIsAvailable(input, writeTool)) {
+    return undefined;
+  }
+  return {
+    activeTools: [writeTool],
+    toolChoice: { type: "tool", toolName: writeTool },
+  };
+}
 
 function asTableEditSteps(
   steps: readonly SearchLoopStep[]
@@ -225,6 +283,9 @@ export function prepareReportChatStep(
     inScopeHasTable: input.inScopeHasTable,
   });
   if (schemaStep) return schemaStep;
+
+  const deliverEdit = explicitDocumentEditStep(input);
+  if (deliverEdit) return deliverEdit;
 
   if (
     input.forceListAttachments &&

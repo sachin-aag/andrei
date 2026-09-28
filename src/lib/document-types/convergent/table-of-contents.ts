@@ -556,6 +556,28 @@ export function getReportTableOfContents(
   );
 }
 
+/**
+ * Contents headings that scroll to this section, parent before children.
+ * Equipment Lifecycle Report: 3.10 Monitoring, 3.12 Preventive Maintenance,
+ * 3.15 Access Control. Empty when the section is not in the outline.
+ */
+export function outlineLabelsForSection(
+  documentType: DocumentType,
+  section: SectionType,
+  customerId = resolveCustomerId()
+): string[] {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const entry of flattenTableOfContents(
+    getReportTableOfContents(documentType, customerId)
+  )) {
+    if (entry.sectionKey !== section || seen.has(entry.label)) continue;
+    seen.add(entry.label);
+    labels.push(entry.label);
+  }
+  return labels;
+}
+
 /** Flatten nested TOC entries (parent before children) for tests and scroll targets. */
 export function flattenTableOfContents(
   entries: readonly TableOfContentsEntry[]
