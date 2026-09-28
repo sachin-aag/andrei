@@ -81,9 +81,9 @@ const MINUS_GLYPH_RE = new RegExp(`^${LEADING_MINUS_CLASS}$`);
 const UNMAPPED_DASH_RE = /^[\u0000\uFFFD\uE000-\uF8FF]$/;
 
 /**
- * PDF.js often maps a subset-font minus to an empty string (or a private-use
- * / replacement character) while keeping the glyph's width. Those items are
- * dropped by naive concatenation, so URS-3 lands as `15 °C` instead of `-15`.
+ * PDF.js often maps a subset-font minus to an empty string, a private-use
+ * character, or a space-width run sitting one space left of the digits.
+ * Naive concatenation drops those items, so URS-3 lands as `15 °C`.
  */
 export function attachSpatialMinusSigns(
   items: readonly StructuredTextItem[]
@@ -94,7 +94,7 @@ export function attachSpatialMinusSigns(
   for (let i = 0; i < next.length; i++) {
     const numberItem = next[i]!;
     if (!/^\d/.test(numberItem.str.trim())) continue;
-    const leftIndex = nearestNonWhitespaceLeft(next, i, consumed);
+    const leftIndex = nearestSignCandidateLeft(next, i, consumed);
     if (leftIndex == null) continue;
     const left = next[leftIndex]!;
     if (/\d$/.test(left.str.trim())) continue;
@@ -118,26 +118,96 @@ export function reconstructPageText(
   );
 }
 
-function nearestNonWhitespaceLeft(
+function itemEm(item: StructuredTextItem): number {
+  return item.fontSize > 0 ? item.fontSize : item.height > 0 ? item.height : 8;
+}
+
+function isWhitespaceItem(item: StructuredTextItem): boolean {
+  return item.str.length > 0 && /^\s*$/.test(item.str);
+}
+
+function isMinusGlyphItem(item: StructuredTextItem): boolean {
+  return MINUS_GLYPH_RE.test(item.str.trim());
+}
+
+function isUnmappedDashItem(item: StructuredTextItem): boolean {
+  const trimmed = item.str.trim();
+  return trimmed.length === 0 || UNMAPPED_DASH_RE.test(item.str);
+}
+
+/**
+ * Closest item to the left of `anchorIndex` that could be a leading minus.
+ * A word-space after `mm` is skipped. A dash-width space sitting alone in
+ * the cell (one space left of the digits) is kept. A space *between* a
+ * minus glyph and the number is skipped so the glyph is the candidate.
+ */
+function nearestSignCandidateLeft(
   items: readonly StructuredTextItem[],
-  numberIndex: number,
+  anchorIndex: number,
   consumed: ReadonlySet<number>
 ): number | null {
-  const numberItem = items[numberIndex]!;
-  const maxGap = Math.max(numberItem.fontSize, 8) * 1.25;
-  const baselineTol = Math.max(numberItem.fontSize, 8) * 0.35;
+  const anchor = items[anchorIndex]!;
+  const size = itemEm(anchor);
+  const maxGap = size * 2.5;
+  const baselineTol = size * 0.35;
   let best: { index: number; gap: number } | null = null;
   for (let j = 0; j < items.length; j++) {
-    if (j === numberIndex || consumed.has(j)) continue;
+    if (j === anchorIndex || consumed.has(j)) continue;
     const left = items[j]!;
-    if (left.str.length > 0 && /^\s*$/.test(left.str)) continue;
-    if (Math.abs(left.y - numberItem.y) > baselineTol) continue;
-    const gap = numberItem.x - (left.x + Math.max(left.width, 0));
-    if (gap < -Math.max(numberItem.fontSize, 8) * 0.2) continue;
+    if (Math.abs(left.y - anchor.y) > baselineTol) continue;
+    if (shouldSkipLeftItem(items, j, consumed)) continue;
+    const gap = anchor.x - (left.x + Math.max(left.width, 0));
+    if (gap < -size * 0.2) continue;
     if (gap > maxGap) continue;
     if (!best || gap < best.gap) best = { index: j, gap };
   }
   return best?.index ?? null;
+}
+
+function shouldSkipLeftItem(
+  items: readonly StructuredTextItem[],
+  leftIndex: number,
+  consumed: ReadonlySet<number>
+): boolean {
+  const left = items[leftIndex]!;
+  if (!isWhitespaceItem(left)) return false;
+  const prevIndex = nearestContentLeft(items, leftIndex, consumed);
+  if (prevIndex == null) return false;
+  const prev = items[prevIndex]!;
+  if (isMinusGlyphItem(prev) || isUnmappedDashItem(prev)) return true;
+  return isWordAdjacentSpace(prev, left);
+}
+
+function nearestContentLeft(
+  items: readonly StructuredTextItem[],
+  fromIndex: number,
+  consumed: ReadonlySet<number>
+): number | null {
+  const from = items[fromIndex]!;
+  const size = itemEm(from);
+  const maxGap = size * 2.5;
+  const baselineTol = size * 0.35;
+  let best: { index: number; gap: number } | null = null;
+  for (let j = 0; j < items.length; j++) {
+    if (j === fromIndex || consumed.has(j)) continue;
+    const left = items[j]!;
+    if (isWhitespaceItem(left)) continue;
+    if (Math.abs(left.y - from.y) > baselineTol) continue;
+    const gap = from.x - (left.x + Math.max(left.width, 0));
+    if (gap < -size * 0.2) continue;
+    if (gap > maxGap) continue;
+    if (!best || gap < best.gap) best = { index: j, gap };
+  }
+  return best?.index ?? null;
+}
+
+function isWordAdjacentSpace(
+  prev: StructuredTextItem,
+  space: StructuredTextItem
+): boolean {
+  if (!/[A-Za-z0-9]$/.test(prev.str.trim())) return false;
+  const gap = space.x - (prev.x + Math.max(prev.width, 0));
+  return gap <= itemEm(space) * 0.5;
 }
 
 function isPrecededByDigit(
@@ -145,7 +215,7 @@ function isPrecededByDigit(
   dashIndex: number,
   consumed: ReadonlySet<number>
 ): boolean {
-  const leftIndex = nearestNonWhitespaceLeft(items, dashIndex, consumed);
+  const leftIndex = nearestSignCandidateLeft(items, dashIndex, consumed);
   if (leftIndex == null) return false;
   return /\d$/.test(items[leftIndex]!.str.trim());
 }
@@ -154,18 +224,15 @@ function isSpatialMinus(item: StructuredTextItem, gap: number): boolean {
   const trimmed = item.str.trim();
   if (MINUS_GLYPH_RE.test(trimmed)) return true;
   if (trimmed.length > 1) return false;
-  const unmapped =
-    trimmed.length === 0 || UNMAPPED_DASH_RE.test(item.str);
-  if (!unmapped) return false;
-  const em =
-    item.fontSize > 0 ? item.fontSize : item.height > 0 ? item.height : 8;
+  if (!isUnmappedDashItem(item) && !isWhitespaceItem(item)) return false;
+  const size = itemEm(item);
   if (item.width > 0) {
-    const ratio = item.width / em;
+    const ratio = item.width / size;
     return ratio >= 0.15 && ratio <= 0.8;
   }
   // PDF.js maps some subset-font minuses to an empty .notdef with width 0.
-  // Keep a small gap so a coincident empty item is not treated as a sign.
-  return gap >= em * 0.05 && gap <= em * 1.25;
+  // A coincident item (gap ~ 0) or one space away still counts.
+  return gap >= -size * 0.2 && gap <= size * 2.5;
 }
 
 function normalizePageText(raw: string): string {

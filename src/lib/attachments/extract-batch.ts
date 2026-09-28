@@ -28,7 +28,6 @@ import {
   overlayLeadingMinuses,
   textLayerDroppedCelsiusSign,
 } from "@/lib/attachments/numeric-signs";
-import { selectTabularEvidencePages } from "@/lib/attachments/tabular-evidence";
 import {
   MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
@@ -284,9 +283,7 @@ async function tryReadTextLayer(
  *
  * Enterprise OCR ingest waves are 15 pages. Sending those to Gemini for
  * visuals would reintroduce the old 3-page insight bottleneck, so large
- * batches skip the bulk model pass. Table-like pages in those batches still
- * get a targeted insight look (capped), because that is where the text layer
- * drops cell glyphs such as a leading minus.
+ * batches skip the model and keep the derived page digest.
  */
 async function extractFromTextLayer(
   input: ResolvedInput,
@@ -294,9 +291,7 @@ async function extractFromTextLayer(
 ): Promise<ExtractBatchResult> {
   const batchPages = input.pageEnd - input.pageStart + 1;
   const insights =
-    batchPages > MAX_PDF_BATCH_PAGES
-      ? await requestInsightsForTabularPages(input, textLayer)
-      : await requestPageInsights(input);
+    batchPages > MAX_PDF_BATCH_PAGES ? null : await requestPageInsights(input);
   const byPageNumber = new Map(
     (insights?.pages ?? []).map((page) => [page.pageNumber, page])
   );
@@ -533,48 +528,6 @@ type PageInsights = {
   finishReason?: string;
   usage: ExtractBatchResult["usage"];
 };
-
-async function requestInsightsForTabularPages(
-  input: ResolvedInput,
-  textLayer: PdfTextLayer
-): Promise<PageInsights | null> {
-  const selected = selectTabularEvidencePages(textLayer.pages);
-  if (selected.length === 0) return null;
-
-  const results = await Promise.all(
-    selected.map(async (page) => {
-      const relative = page.pageNumber - input.pageStart + 1;
-      return requestPageInsights({
-        ...input,
-        pdfBuffer: await copyPdfPage(input.pdfBuffer, relative),
-        pageStart: page.pageNumber,
-        pageEnd: page.pageNumber,
-      });
-    })
-  );
-
-  const pages = results.flatMap((result) => result?.pages ?? []);
-  if (pages.length === 0) return null;
-
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let lastFinishReason: string | undefined;
-  for (const result of results) {
-    if (!result) continue;
-    inputTokens += result.usage?.inputTokens ?? 0;
-    outputTokens += result.usage?.outputTokens ?? 0;
-    lastFinishReason = result.finishReason;
-  }
-
-  const last = results.findLast((result) => result != null) ?? null;
-  return {
-    pages,
-    batchSummary: last?.batchSummary ?? "",
-    continuationNote: last?.continuationNote ?? "",
-    finishReason: lastFinishReason,
-    usage: { inputTokens, outputTokens },
-  };
-}
 
 async function requestPageInsights(
   input: ResolvedInput
@@ -1331,7 +1284,7 @@ function pagesWithDroppedCelsiusSign(pages: ExtractedPage[]): ExtractedPage[] {
 }
 
 /**
- * Restore a leading minus on unsigned `N °C to` when table insight, OCR,
+ * Restore a leading minus on unsigned `N °C to` when insight visuals, OCR,
  * or a last-resort Gemini look at the page still saw `-N °C`. Overlay only —
  * the parser transcript stays canonical. Never invent a sign.
  */

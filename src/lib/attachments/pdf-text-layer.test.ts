@@ -140,6 +140,27 @@ describe("reconstructPageText", () => {
     ).toBe(false);
   });
 
+  it("glues a minus that sits one space left of 15", () => {
+    expect(
+      reconstructPageText([
+        pdfItem("URS-3 Shell Operating temperature ", 10, 200, { width: 190 }),
+        pdfItem("−", 210, 200, { width: 5 }),
+        pdfItem(" ", 216, 200, { width: 18 }),
+        pdfItem("15 °C to 130 °C", 236),
+      ])
+    ).toMatch(/-15 °C to 130 °C/);
+  });
+
+  it("restores a minus that PDF.js mapped to a space in the temperature cell", () => {
+    expect(
+      reconstructPageText([
+        pdfItem("Shell Operating temperature", 10, 200, { width: 160 }),
+        pdfItem(" ", 220, 200, { width: 5 }),
+        pdfItem("15 °C to 130 °C", 226),
+      ])
+    ).toMatch(/-15 °C to 130 °C/);
+  });
+
   it("does not treat a word-space before 15 as a minus", () => {
     expect(
       reconstructPageText([
