@@ -111,6 +111,15 @@ export const QSR_RTM_SECTIONS = [
   "qsr_rtm_maintenance",
 ] as const;
 
+/**
+ * Sections where `rankRtmReferenceOperation` may rewrite Stage / Section /
+ * Remarks to the highest matching protocol family. Printed QSR Tables 5–10
+ * (`QSR_RTM_SECTIONS`) stay off this list: keep the cited model cells and
+ * let citation grounding clear unsupported facts. Add a key only when
+ * ranking that matrix is worth shrinking the card.
+ */
+export const RTM_REFERENCE_RANK_SECTIONS: readonly string[] = [];
+
 export const QSR_IDENTITY_TABLE_SECTIONS = [
   ...QSR_RTM_SECTIONS,
   "qsr_operating_range",
@@ -210,6 +219,16 @@ export function rtmReferenceColumnIndexes(
   }
   if (stage < 0 || sectionCol < 0 || remarks < 0) return null;
   return { stage, section: sectionCol, remarks };
+}
+
+export function shouldRankRtmReference(
+  section: string | null | undefined
+): boolean {
+  return (
+    typeof section === "string" &&
+    RTM_REFERENCE_RANK_SECTIONS.includes(section) &&
+    rtmReferenceColumnIndexes(section) != null
+  );
 }
 
 export function isQsrIdentityTableSection(
@@ -2001,6 +2020,7 @@ export function rankRtmReferenceOperation(
   ledger: CitationPageLedger,
   section?: string
 ): TableOperation {
+  if (!shouldRankRtmReference(section)) return operation;
   const cols = rtmReferenceColumnIndexes(section);
   if (!cols) return operation;
   switch (operation.kind) {

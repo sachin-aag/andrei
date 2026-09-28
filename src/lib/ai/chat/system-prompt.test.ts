@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v163-qsr-section-audit-line");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v164-qsr-rtm-rank-allowlist");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -56,6 +56,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("8.2.3 – Fill the reactor to 8000 L");
     expect(prompt).toContain("a title next to the number is not required");
     expect(prompt).toContain("do not replace 8.2.3 with a neighbour 8.2.4");
+    expect(prompt).toContain(
+      "the server does not rewrite Tables 5–10 Stage / Section / Remarks"
+    );
     expect(prompt).toContain("counts only cells that actually change");
     expect(prompt).toContain(
       "one requirement ID is not one grep when filling RTM Stage"
