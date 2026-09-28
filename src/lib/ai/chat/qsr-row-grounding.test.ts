@@ -1275,7 +1275,8 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
     expect(byCol.get(3)).toMatch(/^DQ\b/);
-    expect(byCol.get(4)).toBe("4");
+    expect(byCol.get(4)).toContain("4");
+    expect(byCol.get(4)).toMatch(/Vendor documentation/i);
     expect(byCol.get(5)).toBe("NA");
   });
 
@@ -1432,7 +1433,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toMatch(/^PQ\b/);
-    expect(keptRow[4]).toContain("16");
+    expect(keptRow[4]).toBe("");
     expect(keptRow[4]).not.toMatch(/8\.2\.3/);
     expect(keptRow[5]).toMatch(/Complies/i);
   });
@@ -1814,8 +1815,8 @@ describe("groundTableOperation optional RTM columns", () => {
         ? droppedWithoutLiveRow.operation.cells.map((cell) => cell.insertText)
         : [];
     expect(droppedTexts.join(" ")).toContain("13.6");
-    expect(droppedTexts.join(" ")).not.toMatch(/\bIQ\b/);
-    expect(droppedTexts.join(" ")).not.toMatch(/Complies/i);
+    expect(droppedTexts.join(" ")).toMatch(/\bIQ\b/);
+    expect(droppedTexts.join(" ")).toMatch(/Complies/i);
 
     const result = groundTableOperation({
       operation: {
@@ -2392,6 +2393,60 @@ describe("groundTableOperation optional RTM columns", () => {
         "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm"
       )?.sectionHeading
     ).toBe("8.2.1 – Physical verification");
+  });
+
+  it("elaborates a cited bare Section number without ranking Stage to a higher family", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-1 Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume. Reactor Capacity. Result: Verified",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "PQ [Performance Qualification.PDF, p. 19]",
+            "8.2.3",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/^PQ\b/);
+    expect(keptRow[3]).not.toMatch(/\bIQ\b/);
+    expect(keptRow[4]).toContain("8.2.3");
+    expect(keptRow[4]).toMatch(/Heating Trial|Fill the reactor/i);
+    expect(keptRow[4]).not.toContain("13.3.5.1");
+    expect(keptRow[5]).toMatch(/Complies/i);
   });
 
   it("keeps cited neighbour 8.2.4 on Tables 5–10 instead of rewriting to the live 8.2.3 heading", () => {
