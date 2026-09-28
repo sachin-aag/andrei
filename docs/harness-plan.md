@@ -33,6 +33,7 @@ Live report creation on the PR is still the layer-3 merge gate.
 | Live QMS vs calibration-planner walk | Landed. ELR inventory start no longer page-lists files typed as a different inventory (a calibration planner is not QMS). Page scoring ignores running-header `document no`. The planning chip names queued files, not the whole vault. |
 | Remaining-sections UI (plan slot, false error, done popup, idle Working… / N of N chip) | Landed. Plan progress sits below the transcript. Auto-continue rows stay hidden and do not resurrect the original user bubble. Successful section turns do not toast “hit an error”. Agent-done notice is `Assistant is done with {section}`. Working… hides when the stream is idle (stale optimistic send overlay after hydrate). The N of N chip spins only while the turn is running, shows Paused on Cancel, and hides when every remaining section is drafted. |
 | Remaining-sections seed miss (`dev 7` “go on to monitoring and sections after that”) | Landed. That phrasing is a write (`go on`) but was not a multi-section seed, so the first leftover-inventory turn had no queue and milled reviews until the 270s abort. Queue still does not cap start/finish loops inside one inventory turn — that abort cluster remains after an explicit `draft remaining sections`. |
+| General-purpose planner | **Specified (§2c). Not shipped.** Widen `pending_plan` beyond `kind: "section_queue"`, add gated `make_plan`, keep mechanical completions. Plan-mode approval is stage 2. |
 
 ## 1. What `dev 6` actually cost (measured, not estimated)
 
@@ -123,7 +124,107 @@ add empty `draftOrder`), and unsure skip/add goes to `ask_user`. Lookups
 do not grow from retrieval. Cited-hit search stays open only while the
 write is still due; two empty greps always hide. `pending_plan` is still
 the persisted remaining-section queue across turns — remaining-work does
-not replace it.
+not replace it. A general-purpose planner (§2c) widens that queue; it
+does not replace the kickoff classifier or the in-turn ledger.
+
+## 2c. General-purpose planner (specified; not shipped)
+
+We already have most of a planner, just a narrow one. `pending_plan` is
+a saved plan that carries across turns, but it can only be
+`kind: "section_queue"`: sections with queued / in_progress / done /
+skipped. Rules build it without a model call — "draft 5.2, 5.3, 5.4"
+becomes those empty named sections; "draft the remaining sections"
+becomes the empty `draftOrder`. Within a turn, remaining-work tracks
+progress: drafts complete their section automatically, and `update_plan`
+can skip or add a section once. Multi-step sections are hardcoded per
+type (MJ ELR evidence: review → table → assessment with a count), not
+plan steps.
+
+The missing pieces are plans that are not just sections, a model-written
+plan when rules cannot build one, and steps inside a complex section.
+
+Two limits keep this from turning into tool-call hell:
+
+1. **The orchestrator proposes the plan. The server decides what counts
+   as a step and when a step is done.**
+2. **Plan edits have a small, fixed budget per turn.**
+
+```mermaid
+flowchart TD
+  user["User message"] --> rules["Intent classifier<br/>rules + gated Lite"]
+  rules --> turn["TurnPlan once<br/>social / read / write + alsoLookup"]
+  turn --> seed{"Rules can seed<br/>named sections or leftover queue?"}
+  seed -->|yes| persist["pending_plan<br/>typed steps"]
+  seed -->|no, multi-part write| make["make_plan once<br/>orchestrator proposes, server validates"]
+  make --> persist
+  persist --> orch["Orchestrator · 3.7 Flash"]
+  orch --> remain["Remaining work this turn<br/>tool result → step done<br/>update_plan budget or ask_user"]
+  remain --> step["prepareStep"]
+  step --> workers["Workers stay pipelines"]
+  workers --> remain
+```
+
+### Shape
+
+Widen `pending_plan`, do not add a second architecture. Allow typed
+steps: a section, a table in a section, a lookup, a document review, or
+an Analytics action. Each step names what finishes it (draft landed,
+table filled, cited answer, review finished). JSON column — no migration.
+Today's section queues read as plans made only of section steps.
+`remaining-work.ts` stays the in-turn ledger; `pending_plan` stays the
+persisted queue.
+
+### Rules first, then `make_plan`
+
+"Draft 1, 2, 3" and "draft the remaining sections" must not spend a
+Gemini call — `seedNamedSectionQueuePlan` / `seedSectionQueuePlan`
+already get them right. The orchestrator writes a plan only when rules
+cannot: mixed write+lookup+table ("draft Purpose, fix table 3's dates,
+and which batches failed"), or one section with real sub-steps.
+
+`make_plan` loads only in Agent, on a write turn, when kickoff flags the
+ask as multi-part. One call per turn. The server rejects steps that name
+unknown sections, an unknown completion rule, or more than a small
+maximum. Greetings, simple questions, and single-section rewrites never
+see it. Off the Plan-mode allowlist until stage 2. Analytics has no
+`make_plan` in stage 1 (typed Analytics steps can wait).
+
+### Mid-turn updates
+
+Keep `update_plan` with the same budget: one successful change, two
+attempts, hidden after any `ask_user`. It may add, skip, split, or
+reorder. It may never mark a step done — only a matching tool result
+can. Unsure skip/add still goes to `ask_user`. Lookups stay
+kickoff-seeded (`alsoLookup`); they do not grow from retrieval.
+
+### Surfaces
+
+Show the proposed steps in Plan mode for the engineer to approve or
+edit. Run them in Agent mode through the existing progress chip and
+auto-continue. Stage 1 is format + `make_plan` + extended `update_plan`
++ step-policy / report-eval cases. Stage 2 is the Plan-mode approval
+screen (separate UI). Prompt copy changes bump `CHAT_PROMPT_VERSION`
+(and Analytics only if that surface gains the tool).
+
+### Eval
+
+Report-eval cases should score: whether the plan covered the ask, how
+many edits it took, how many turns until done, and whether any step
+closed without evidence. An LLM judge is reserved for "was this plan
+sensible for the ask"; coverage, edit count, and unearned completions
+are deterministic. Add those cases before `make_plan` merges.
+
+### Risks
+
+- **Cost.** The orchestrator is ~$21 of a ~$21.40 session. Rules first
+  and a gated tool are the bound.
+- **Plan churn.** Without the edit budget and automatic completions, the
+  model revises the plan instead of doing the work.
+- **Plans that sound finished but are not.** A step marked done without
+  evidence is worse than no plan.
+- **Hardcoded ELR completion.** Typed steps should absorb
+  review-then-assessment rather than growing another per-type special
+  case — name that retirement when the code lands.
 
 ## 3. Design rules for this plan
 
@@ -208,7 +309,8 @@ losing any grounded fact.
   let everything downstream consume it. Delete the per-consumer
   re-derivation. The orchestrator may **refine remaining work** as tools
   return (draft landed → still search for the follow-up); it must not
-  replace the kickoff classifier.
+  replace the kickoff classifier. Typed steps and gated `make_plan` are
+  §2c — they consume this `TurnPlan`, they do not re-classify greetings.
 - **B4. Retire heuristics the eval cannot defend.** Candidates:
   APS/calibration-specific divider regexes in `attachment-divider.ts`,
   `requirementIndex` TOC demotion, the needle tables in
