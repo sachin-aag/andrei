@@ -258,21 +258,18 @@ describe("fieldFillState seeded tables", () => {
     expect(sectionFillState(content, "qsr_volumetric_details")).not.toBe("empty");
   });
 
-  it("treats QSR other details as filled once the agitator type is named", () => {
-    const content = {
-      narrative: {
-        type: "doc",
-        content: [
-          {
-            type: "paragraph",
-            content: [
-              { type: "text", text: "Agitator Type: ", marks: [{ type: "bold" }] },
-              { type: "text", text: "Pitched blade" },
-            ],
-          },
-        ],
-      },
+  it("treats QSR other details as filled once a Details cell is written", () => {
+    const content = structuredClone(emptyQsrContent("qsr_other_details")) as {
+      narrative: JSONContent;
     };
+    const table = content.narrative.content?.find((node) => node.type === "table");
+    const agitatorRow = table?.content?.[2];
+    const detailsCell = agitatorRow?.content?.[1];
+    expect(detailsCell).toBeTruthy();
+    if (!detailsCell) return;
+    detailsCell.content = [
+      { type: "paragraph", content: [{ type: "text", text: "Pitched blade" }] },
+    ];
     expect(sectionFillState(content, "qsr_other_details")).not.toBe("empty");
   });
 
