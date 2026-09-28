@@ -64,6 +64,83 @@ function sanitizeDocTextNodes(doc: JSONContent): JSONContent {
   return visit(doc);
 }
 
+function nodePlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map(nodePlainText).join("");
+}
+
+/** `Table 1.` / `Table 1: Title` / `Table 1. Title` immediately above a grid. */
+const TABLE_NAME_RE = /^Table\s+\d+\s*[.:]/i;
+const TABLE_NAME_ONLY_RE = /^Table\s+\d+\.?\s*$/i;
+
+function isTableNameNode(node: JSONContent): boolean {
+  if (node.type !== "paragraph" && node.type !== "heading") return false;
+  const text = nodePlainText(node).trim();
+  return TABLE_NAME_RE.test(text) || TABLE_NAME_ONLY_RE.test(text);
+}
+
+function isEmptyExportNode(node: JSONContent | undefined): boolean {
+  if (!node) return true;
+  if (node.type === "table") return false;
+  if (node.type === "bulletList" || node.type === "orderedList") {
+    return !(node.content ?? []).some((child) => !isEmptyExportNode(child));
+  }
+  return !nodePlainText(node).trim();
+}
+
+function isTableTitleNode(node: JSONContent): boolean {
+  if (node.type !== "paragraph" && node.type !== "heading") return false;
+  const text = nodePlainText(node).trim();
+  if (!text || isTableNameNode(node)) return false;
+  // Numbered section headings (3.4 QUALIFICATION) are not table titles.
+  return !/^\d+(\.\d+)*(\s|$)/.test(text);
+}
+
+/**
+ * Index of the table name (and optional title) that must stay on the same
+ * page as `tableIndex`. Word's section break describes the section that just
+ * ended, so the break has to sit *before* those captions — not between them
+ * and `<w:tbl>`.
+ */
+function tableHeaderStartIndex(
+  nodes: JSONContent[],
+  tableIndex: number
+): number {
+  let i = tableIndex;
+  const skipEmpty = () => {
+    while (i > 0 && isEmptyExportNode(nodes[i - 1])) i -= 1;
+  };
+  skipEmpty();
+  if (
+    i > 0 &&
+    isTableTitleNode(nodes[i - 1]!) &&
+    !isTableNameNode(nodes[i - 1]!)
+  ) {
+    const afterTitle = i;
+    i -= 1;
+    skipEmpty();
+    if (!(i > 0 && isTableNameNode(nodes[i - 1]!))) {
+      i = afterTitle;
+    }
+  }
+  while (i > 0 && isTableNameNode(nodes[i - 1]!)) {
+    i -= 1;
+    skipEmpty();
+  }
+  return i;
+}
+
+function tableUsesLandscape(
+  node: JSONContent,
+  portraitMax: number,
+  forceLandscapeTables: boolean
+): boolean {
+  const colCount = Math.max(1, getLogicalColumnCount(node.content ?? []));
+  return (
+    forceLandscapeTables || tableNeedsLandscapePage(colCount, portraitMax)
+  );
+}
+
 export function narrativeToDocxXmlWithContext(
   doc: JSONContent | undefined | null,
   ctx: DocxExportContext = createDocxExportContext(),
@@ -78,6 +155,18 @@ export function narrativeToDocxXmlWithContext(
   const parts: string[] = [];
   const portraitMax = portraitTableGridMax(ctx);
   const landscapeMax = ctx.pageSetup.landscapeContentWidthDxa;
+  const forceLandscape = options?.forceLandscapeTables === true;
+  const nodes = sanitized.content ?? [];
+  const landscapeWithTable = new Set<number>();
+  const keepWithTable = new Set<number>();
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i]?.type !== "table") continue;
+    const headerStart = tableHeaderStartIndex(nodes, i);
+    for (let j = headerStart; j < i; j++) keepWithTable.add(j);
+    if (tableUsesLandscape(nodes[i]!, portraitMax, forceLandscape)) {
+      for (let j = headerStart; j <= i; j++) landscapeWithTable.add(j);
+    }
+  }
   let landscapeOpen = false;
 
   const closeLandscape = () => {
@@ -91,38 +180,39 @@ export function narrativeToDocxXmlWithContext(
     landscapeOpen = true;
   };
 
-  for (const node of sanitized.content ?? []) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
     if (node.type === "table") {
-      const colCount = Math.max(1, getLogicalColumnCount(node.content ?? []));
-      const useLandscape =
-        options?.forceLandscapeTables === true ||
-        tableNeedsLandscapePage(colCount, portraitMax);
-      if (useLandscape) {
+      if (landscapeWithTable.has(i)) {
         openLandscape();
         parts.push(tableToXml(node, ctx, landscapeMax));
       } else {
         closeLandscape();
         parts.push(tableToXml(node, ctx, portraitMax));
       }
+      continue;
+    }
+    // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
+    // the same landscape section. Word's sectPr describes the section that
+    // just ended, so the footnote must sit *before* the landscape break.
+    // Table name/title captions of a landscape table also stay in that
+    // section — open the break before the caption, not before `<w:tbl>`.
+    if (landscapeWithTable.has(i)) {
+      openLandscape();
+    } else if (!(forceLandscape && landscapeOpen)) {
+      closeLandscape();
+    }
+    const keepNext = keepWithTable.has(i);
+    if (node.type === "paragraph") {
+      parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
+    } else if (node.type === "bulletList" || node.type === "orderedList") {
+      parts.push(listToXml(node, ctx));
+    } else if (node.type === "heading") {
+      parts.push(headingToXml(node, ctx, keepNext));
+    } else if (node.type === "mathBlock") {
+      parts.push(mathBlockToXml(node));
     } else {
-      // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
-      // the same landscape section. Word's sectPr describes the section that
-      // just ended, so the footnote must sit *before* the landscape break.
-      // Default still returns to portrait after a wide table.
-      if (!(options?.forceLandscapeTables === true && landscapeOpen)) {
-        closeLandscape();
-      }
-      if (node.type === "paragraph") {
-        parts.push(paragraphToXml(node, false, null, null, false, ctx));
-      } else if (node.type === "bulletList" || node.type === "orderedList") {
-        parts.push(listToXml(node, ctx));
-      } else if (node.type === "heading") {
-        parts.push(headingToXml(node, ctx));
-      } else if (node.type === "mathBlock") {
-        parts.push(mathBlockToXml(node));
-      } else {
-        parts.push(paragraphToXml(node, false, null, null, false, ctx));
-      }
+      parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
     }
   }
   closeLandscape();
@@ -365,13 +455,18 @@ function headingStyleName(level: unknown): "Heading1" | "Heading2" | "Heading3" 
   return "Heading2";
 }
 
-function headingToXml(node: JSONContent, ctx: DocxExportContext): string {
+function headingToXml(
+  node: JSONContent,
+  ctx: DocxExportContext,
+  keepNext = false
+): string {
   if (!ctx.useHeadingStyles) {
-    return paragraphToXml(node, true, null, null, false, ctx);
+    return paragraphToXml(node, true, null, null, keepNext, ctx);
   }
   const style = headingStyleName(node.attrs?.level);
   const runs = inlineNodesToRuns(node.content ?? [], false, ctx);
-  const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${paragraphJustification(null, ctx)}</w:pPr>`;
+  const keep = keepNext ? "<w:keepNext/>" : "";
+  const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${keep}${paragraphJustification(null, ctx)}</w:pPr>`;
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
