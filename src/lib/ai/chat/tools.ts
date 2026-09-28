@@ -4446,7 +4446,7 @@ export function buildChatTools(opts: {
           };
         }
 
-        const identityGrounding = writeGrounding(
+        const identityGrounding = await writeGrounding(
           CHAT_IDENTITY_SECTION,
           parsed.applied[0] ?? "identity",
           "draft_identity"

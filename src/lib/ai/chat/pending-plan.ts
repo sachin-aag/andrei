@@ -433,7 +433,6 @@ export function resolvePlanAtTurnStart(input: {
       sections: input.sections,
       promptVersion: input.promptVersion,
       now: input.now,
-      report: input.report,
     });
     if (named) return named;
     if (isMultiSectionDraftRequest(input.userText)) {
@@ -443,6 +442,7 @@ export function resolvePlanAtTurnStart(input: {
         sections: input.sections,
         promptVersion: input.promptVersion,
         now: input.now,
+        report: input.report,
       });
     }
   }

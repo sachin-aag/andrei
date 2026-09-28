@@ -5394,6 +5394,8 @@ describe("buildChatTools draft_identity", () => {
   beforeEach(() => {
     isDocumentNoTakenMock.mockReset();
     isDocumentNoTakenMock.mockResolvedValue(false);
+    listReadyDocumentsForReportMock.mockReset();
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
     dbSelectMock.mockReset();

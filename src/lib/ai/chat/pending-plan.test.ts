@@ -642,6 +642,28 @@ describe("resolvePlanAtTurnStart", () => {
     );
   });
 
+  it("forwards report into remaining-section identity prepend", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "Draft the remaining sections",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_scope: { narrative: emptyNarrative.narrative },
+        qsr_objective: { narrative: emptyNarrative.narrative },
+      },
+      promptVersion: "chat-v153-identity-no-cite",
+      now: new Date("2026-09-28T00:00:00.000Z"),
+      report: { documentNo: "", date: "2026-01-01", metadata: {} },
+    });
+    expect(seeded?.items[0]).toMatchObject({
+      sectionKey: "identity",
+      label: "Cover identity",
+      state: "in_progress",
+    });
+  });
+
   it("pauses an active plan when the engineer types a new prompt", () => {
     const started = plan([
       { sectionKey: "define", label: "Define", state: "in_progress" },
