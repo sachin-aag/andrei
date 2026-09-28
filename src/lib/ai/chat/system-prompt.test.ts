@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v163-qsr-section-audit-line");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v164-qsr-empty-section-audit");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -28,6 +28,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("URS cover");
     expect(prompt).toContain("stock Complies / bare Section 13");
     expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
+    expect(prompt).toContain(
+      "empty Reference – Section cells on other URS rows"
+    );
     expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
     expect(prompt).toContain("never the printed page counter");
     expect(prompt).toContain("12.72 °C");

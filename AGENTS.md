@@ -88,7 +88,9 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   RTM Section number is elaborated with any one audit line from that
   protocol section (`8.2.3` → `8.2.3 – Heating Trial` or
   `8.2.3 – Fill the reactor to 8000 L`; a heading title is not required),
-  not replaced with a neighbour heading. "Insert the suggestion" / "edit
+  not replaced with a neighbour heading. Empty Reference – Section cells
+  on other live URS rows still get that audit line from retrieved protocol
+  pages even when the card only named two rows. "Insert the suggestion" / "edit
   the document" reads the section, then calls `edit_table` or `propose_edit`
   — do not claim Agent mode is read-only or paste a markdown table. ELR
   section numbers in chat are the Contents outline (3.10 Monitoring, 3.12

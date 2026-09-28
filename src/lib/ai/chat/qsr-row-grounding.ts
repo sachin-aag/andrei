@@ -1309,6 +1309,39 @@ function rtmSectionNumbersCited(
   });
 }
 
+/**
+ * One audit line from a protocol body when there is no dotted heading.
+ * Prefer a sentence that names this row's Parameters so Jacket Type is
+ * not labelled with a neighbour agitator trial on the same page.
+ */
+function fallbackAuditLineFromBody(
+  body: string,
+  context: string,
+  family?: RtmStageFamily | null
+): string | null {
+  const stripped = protocolBodyQuote(body);
+  if (!stripped) return null;
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  const chunks = stripped.split(/(?<=\.)\s+|(?:;\s+)/);
+  for (const chunk of chunks) {
+    if (
+      tokens.length > 0 &&
+      !tokens.some((token) => windowHasToken(chunk, token))
+    ) {
+      continue;
+    }
+    const numbered = protocolSectionHeading(chunk, context, family);
+    if (numbered && rtmCellSectionNumber(numbered, family)) return numbered;
+    const cleaned = cleanAuditLine(chunk);
+    if (!cleaned) continue;
+    if (rtmCellSectionNumber(cleaned, family)) return cleaned;
+    const rawNumber = rtmSectionNumber(cleaned);
+    if (rawNumber && !rtmCellSectionNumber(cleaned, family)) continue;
+    return cleaned;
+  }
+  return null;
+}
+
 function preferredRtmSectionNumber(
   requested: string,
   heading: string,
@@ -1465,7 +1498,19 @@ export function rtmSectionCellText(
   const number = preferredRtmSectionNumber(requested, heading, family);
   const description = rtmCellDescription(requested) || rtmCellDescription(heading);
   if (number && description) return `${number} – ${description}`;
-  return number;
+  if (number) return number;
+  const requestedRaw = rtmSectionNumber(requested);
+  if (requestedRaw && !rtmCellSectionNumber(requested, family)) return "";
+  const headingRaw = rtmSectionNumber(heading);
+  if (headingRaw && !rtmCellSectionNumber(heading, family)) return "";
+  if (
+    description &&
+    heading &&
+    rtmCellDescription(heading) === description
+  ) {
+    return description;
+  }
+  return "";
 }
 
 function rtmSectionNumberParts(text: string): string[] {
@@ -1782,7 +1827,9 @@ export function pickRtmReference(
       stageLabel: STAGE_LABEL[family],
       filename: cited.page.filename,
       pageNumber: cited.page.pageNumber,
-      sectionHeading: cited.heading,
+      sectionHeading:
+        cited.heading ??
+        fallbackAuditLineFromBody(body ?? "", context, family),
       remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }
@@ -1840,7 +1887,8 @@ function rankEditCells(
   operation: Extract<TableOperation, { kind: "edit_cells" }>,
   ledger: CitationPageLedger,
   section: string | undefined,
-  cols: { stage: number; section: number; remarks: number }
+  cols: { stage: number; section: number; remarks: number },
+  fieldDoc?: JSONContent | null
 ): TableOperation {
   const byKey = new Map<string, TableCellEdit[]>();
   for (const cell of operation.cells) {
@@ -1989,6 +2037,56 @@ function rankEditCells(
     );
     add(cols.remarks, pick.remarks);
   }
+  const operationTouchesRef = operation.cells.some((cell) =>
+    isQsrRtmOptionalReferenceColumn(section, cell.col)
+  );
+  if (operationTouchesRef) {
+    for (const [key, liveCells] of liveTableRowsByKey(fieldDoc)) {
+      if (present.has(`${key}:${cols.section}`)) continue;
+      const liveSection = (liveCells[cols.section] ?? "").trim();
+      if (liveSection && !isQsrRtmPlaceholderText(liveSection)) continue;
+      const context = liveCells
+        .filter((part) => Boolean(part?.trim()))
+        .join("\n");
+      const pick = stickyRtmPick(
+        pickRtmReference(
+          ledger,
+          key,
+          context,
+          rtmCellSectionNumber(liveSection) || undefined
+        ),
+        [
+          {
+            row: 1,
+            col: cols.section,
+            rowKey: key,
+            expectedText: liveSection,
+            insertText: "",
+            rowContext: context,
+          },
+        ],
+        cols
+      );
+      if (!pick) continue;
+      const text = resolveRtmSectionInsert({
+        requested: "",
+        live: liveSection,
+        pick,
+        rankingUp: false,
+        quotes: protocolPageQuotes(ledger, pick.family),
+      });
+      if (!text.trim() || text.trim() === liveSection) continue;
+      present.add(`${key}:${cols.section}`);
+      extra.push({
+        row: 1,
+        col: cols.section,
+        rowKey: key,
+        expectedText: liveSection,
+        insertText: text,
+        rowContext: context,
+      });
+    }
+  }
   return {
     ...operation,
     cells: extra.length > 0 ? [...rewritten, ...extra] : rewritten,
@@ -1999,7 +2097,8 @@ function rankEditCells(
 export function rankRtmReferenceOperation(
   operation: TableOperation,
   ledger: CitationPageLedger,
-  section?: string
+  section?: string,
+  fieldDoc?: JSONContent | null
 ): TableOperation {
   const cols = rtmReferenceColumnIndexes(section);
   if (!cols) return operation;
@@ -2043,7 +2142,7 @@ export function rankRtmReferenceOperation(
         }),
       };
     case "edit_cells":
-      return rankEditCells(operation, ledger, section, cols);
+      return rankEditCells(operation, ledger, section, cols, fieldDoc);
     case "insert_column":
     case "delete_rows":
     case "delete_column":

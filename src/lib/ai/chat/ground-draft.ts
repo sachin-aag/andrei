@@ -676,7 +676,8 @@ export function groundTableOperation(input: {
       input.ledger
     ),
     input.ledger,
-    input.grounding?.section
+    input.grounding?.section,
+    input.fieldDoc
   );
   const failClosed = isClearOnlyOptionalRtmEdit(
     cited,
