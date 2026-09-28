@@ -1092,8 +1092,43 @@ function formatRtmSectionHeading(number: string, rest: string, body: string): st
   return detail ? `${number}; ${detail}` : number;
 }
 
-function protocolSectionHeading(body: string): string | null {
+const MULTI_LEVEL_HEADING_RE = /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Z])/g;
+
+/**
+ * A PQ page often prints several tests (8.2.1 Physical verification …
+ * 8.2.3 Heating Trial …). Pick the heading whose block names this row's
+ * topic so Reactor Capacity is not labelled with the first test on the page.
+ */
+function rowMatchedSectionHeading(stripped: string, context: string): string | null {
+  const starts = [...stripped.matchAll(MULTI_LEVEL_HEADING_RE)].map((m) => ({
+    number: m[1]!,
+    at: m.index! + m[0].indexOf(m[1]!),
+  }));
+  if (starts.length < 2) return null;
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (tokens.length === 0) return null;
+  let best: { number: string; block: string; score: number } | null = null;
+  for (let index = 0; index < starts.length; index++) {
+    const start = starts[index]!;
+    const end = starts[index + 1]?.at ?? stripped.length;
+    const block = stripped.slice(start.at + start.number.length, end);
+    const score = tokens.filter((token) => windowHasToken(block, token)).length;
+    if (score > 0 && (!best || score > best.score)) {
+      best = { number: start.number, block, score };
+    }
+  }
+  if (!best) return null;
+  return formatRtmSectionHeading(
+    best.number,
+    best.block.replace(/^\.?\s+/, ""),
+    best.block
+  );
+}
+
+function protocolSectionHeading(body: string, context = ""): string | null {
   const stripped = protocolBodyQuote(body);
+  const matched = context ? rowMatchedSectionHeading(stripped, context) : null;
+  if (matched) return matched;
   const multiTitle = stripped.match(
     /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
   );
@@ -1240,7 +1275,7 @@ export function pickRtmReference(
       stageLabel: STAGE_LABEL[family],
       filename: passPage.filename,
       pageNumber: passPage.pageNumber,
-      sectionHeading: body ? protocolSectionHeading(body) : null,
+      sectionHeading: body ? protocolSectionHeading(body, context) : null,
       remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }

@@ -2216,6 +2216,29 @@ describe("groundTableOperation optional RTM columns", () => {
     });
   });
 
+  it("picks the test heading that matches the row when one PQ page prints several", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies",
+      },
+    ]);
+    expect(
+      pickRtmReference(ledger, "URS-1", "URS-1\nReactor Capacity\n8000 L")
+        ?.sectionHeading
+    ).toBe("8.2.3; Heating Trial same as that of PQ");
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-2",
+        "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm"
+      )?.sectionHeading
+    ).toBe("8.2.1; Physical verification");
+  });
+
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
     const dropped = dropQsrRtmPlaceholderCells(
       {
