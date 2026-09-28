@@ -55,7 +55,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v11";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v12";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -167,6 +167,8 @@ export type ExtractBatchResult = {
     inputTokens: number | undefined;
     outputTokens: number | undefined;
   };
+  /** Raster/vision overlay failures. Transcript is still stored unsigned. */
+  overlayErrors?: string[];
 };
 
 export type ExtractPdfBatchInput = {
@@ -327,7 +329,11 @@ async function extractFromTextLayer(
     };
   });
 
-  await overlayAmbiguousNumericSigns(input, pages, ambiguousByPage);
+  const overlayErrors = await overlayAmbiguousNumericSigns(
+    input,
+    pages,
+    ambiguousByPage
+  );
 
   return {
     pages,
@@ -343,6 +349,7 @@ async function extractFromTextLayer(
     recovery: insights ? "none" : "text-layer-only",
     finishReason: insights?.finishReason,
     usage: insights?.usage,
+    overlayErrors,
   };
 }
 
@@ -461,7 +468,7 @@ async function extractMixedPagesWithDocumentAi(
     outputTokens += vision.usage?.outputTokens ?? 0;
   }
 
-  await overlayAmbiguousNumericSigns(
+  const overlayErrors = await overlayAmbiguousNumericSigns(
     input,
     pages,
     new Map(
@@ -477,6 +484,7 @@ async function extractMixedPagesWithDocumentAi(
     recovery,
     finishReason: lastFinishReason,
     usage: { inputTokens, outputTokens },
+    overlayErrors,
   };
 }
 
@@ -490,6 +498,7 @@ async function extractMixedPagesPerPage(
   });
 
   const pages: ExtractedPage[] = [];
+  const overlayErrors: string[] = [];
   let recovery: ExtractRecovery = "none";
   let inputTokens = 0;
   let outputTokens = 0;
@@ -521,6 +530,7 @@ async function extractMixedPagesPerPage(
     lastFinishReason = pageResult.finishReason;
     inputTokens += pageResult.usage?.inputTokens ?? 0;
     outputTokens += pageResult.usage?.outputTokens ?? 0;
+    overlayErrors.push(...(pageResult.overlayErrors ?? []));
   }
 
   return {
@@ -531,6 +541,7 @@ async function extractMixedPagesPerPage(
     recovery,
     finishReason: lastFinishReason,
     usage: { inputTokens, outputTokens },
+    overlayErrors,
   };
 }
 
@@ -1171,6 +1182,10 @@ function withAddedUsage(
   result: ExtractBatchResult,
   prior: ExtractBatchResult
 ): ExtractBatchResult {
+  const overlayErrors = [
+    ...(prior.overlayErrors ?? []),
+    ...(result.overlayErrors ?? []),
+  ];
   return {
     ...result,
     usage: {
@@ -1179,6 +1194,7 @@ function withAddedUsage(
       outputTokens:
         (prior.usage?.outputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
     },
+    overlayErrors: overlayErrors.length > 0 ? overlayErrors : undefined,
   };
 }
 
@@ -1348,23 +1364,27 @@ async function overlayAmbiguousNumericSigns(
   input: ResolvedInput,
   pages: ExtractedPage[],
   ambiguousByPage: ReadonlyMap<number, readonly string[]> = new Map()
-): Promise<void> {
+): Promise<string[] | undefined> {
   for (const page of pages) {
     page.transcript = overlayLeadingMinuses(
       page.transcript,
       page.visualInterpretation
     );
   }
-  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) return;
+  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) {
+    return undefined;
+  }
 
   await overlayAmbiguousNumericSignsFromDocumentAi(
     input,
     pages,
     ambiguousByPage
   );
-  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) return;
+  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) {
+    return undefined;
+  }
 
-  await overlayAmbiguousNumericSignsFromVision(input, pages, ambiguousByPage);
+  return overlayAmbiguousNumericSignsFromVision(input, pages, ambiguousByPage);
 }
 
 async function overlayAmbiguousNumericSignsFromDocumentAi(
@@ -1414,18 +1434,24 @@ async function overlayAmbiguousNumericSignsFromVision(
   input: ResolvedInput,
   pages: ExtractedPage[],
   ambiguousByPage: ReadonlyMap<number, readonly string[]>
-): Promise<void> {
+): Promise<string[] | undefined> {
   const selected = selectNumericSignOverlayPages(pages, ambiguousByPage);
-  if (selected.length === 0) return;
+  if (selected.length === 0) return undefined;
   console.info("[document-extract] Signed-quantity overlay", {
     filename: input.filename,
     pages: selected.map((page) => page.pageNumber),
   });
+  const overlayErrors: string[] = [];
   for (const page of selected) {
     const relative = page.pageNumber - input.pageStart + 1;
     try {
       const pagePdf = await copyPdfPage(input.pdfBuffer, relative);
       const pageImage = await renderPdfPagePng(pagePdf);
+      console.info("[document-extract] Signed-quantity overlay raster", {
+        filename: input.filename,
+        page: page.pageNumber,
+        bytes: pageImage.length,
+      });
       const evidence = await requestSignedQuantityOverlay({
         ...input,
         pdfBuffer: pagePdf,
@@ -1436,12 +1462,15 @@ async function overlayAmbiguousNumericSignsFromVision(
       if (!evidence) continue;
       page.transcript = overlayLeadingMinuses(page.transcript, evidence);
     } catch (error) {
-      console.warn(
+      const message = error instanceof Error ? error.message : String(error);
+      overlayErrors.push(`page ${page.pageNumber}: ${message}`);
+      console.error(
         `[document-extract] Vision sign overlay failed for page ${page.pageNumber}`,
-        { error: error instanceof Error ? error.message : String(error) }
+        { error: message }
       );
     }
   }
+  return overlayErrors.length > 0 ? overlayErrors : undefined;
 }
 
 async function requestSignedQuantityOverlay(
@@ -1497,11 +1526,12 @@ async function requestSignedQuantityOverlay(
       .join("\n");
     return evidence || null;
   } catch (error) {
-    console.warn(
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
       `[document-extract] Signed-quantity overlay failed for page ${input.pageStart}`,
-      { error: error instanceof Error ? error.message : String(error) }
+      { error: message }
     );
-    return null;
+    throw error instanceof Error ? error : new Error(message);
   }
 }
 

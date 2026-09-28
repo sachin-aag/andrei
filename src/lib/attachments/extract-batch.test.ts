@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { NoOutputGeneratedError, type LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as pdfPageImage from "./pdf-page-image";
 
 const generateTextMock = vi.fn();
 const { ocrPdfWithDocumentAiMock, isDocumentAiConfiguredMock } = vi.hoisted(
@@ -639,6 +640,10 @@ describe("extractPdfBatch with a text layer", () => {
     isDocumentAiConfiguredMock.mockReturnValue(false);
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("transcribes with the parser and asks the model only for context", async () => {
     generateTextMock.mockResolvedValueOnce(
       resultWithOutput(
@@ -1037,6 +1042,40 @@ describe("extractPdfBatch with a text layer", () => {
     expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
     expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
     expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
+  });
+
+  it("records a raster failure and does not invent a minus", async () => {
+    vi.spyOn(pdfPageImage, "renderPdfPagePng").mockRejectedValue(
+      new Error("native canvas missing")
+    );
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        throw new Error("overlay generateText must not run after raster failure");
+      }
+      return resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(overlayCallMediaTypes()).toEqual([]);
+    expect(result.overlayErrors).toEqual(["page 1: native canvas missing"]);
+    expect(result.pages[0]?.transcript).toMatch(/15 °C to 130 °C/);
+    expect(result.pages[0]?.transcript).not.toContain("-15 °C to 130 °C");
   });
 
   it("does not OCR a page that has no leftover dash and no unsigned quantity range", async () => {
