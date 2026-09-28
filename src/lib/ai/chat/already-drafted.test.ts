@@ -442,6 +442,7 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("Material gap only");
     expect(block).toContain("Empty cells they asked to fill");
     expect(block).toContain("Empty required identity cells");
+    expect(block).toContain("13.6 → 13.6 – Gasket material verified as PTFE");
     expect(block).toContain("Omit-if conflict");
   });
 

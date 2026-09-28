@@ -12,6 +12,7 @@ import {
   seedLivingTurnWork,
   type LivingTurnWork,
 } from "@/lib/ai/chat/remaining-work";
+import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import {
   isAnovaAnalysis,
@@ -33,14 +34,14 @@ import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
 export const ANALYTICS_CHAT_PROMPT_VERSION =
-  "analytics-chat-v64-living-lookup-search";
+  "analytics-chat-v65-ask-agent-living-lookup";
 
 const LANGUAGE_RULES = `## Language
 The engineer may dictate or type in English, Hindi, or Marathi, including Devanagari. Understand that input as-is (do not ask them to switch languages).
 Reply only in English. Worksheet names, column headers you write, questions, and user-visible tool arguments must be English. Quoted source text and proper names may stay in the original language.`;
 
 const USER_INTENT_RULES = `## User intent (required)
-Follow the latest user message. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
+Follow the latest user message. Ask vs Agent is chosen per send — not for the whole thread. When this prompt's Mode / This send block is AGENT, ignore an earlier assistant note that you were in Ask mode. Agent mode means you MAY fill the worksheet or run a plot when they asked — not because the sheet is empty or files are attached.
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not write columns or run plots.
 - A question, a plan, or an outline: answer it. Search only if the question needs evidence. Do not write or plot unless they also asked to.
 - How many attachments, which files in which folder, PDF vs Word, file status, or filename/topic matches: call list_attachments and read folders[] / fileTypes[]. Do not guess from the Ready documents index. Do not search for an inventory — that greps page text. Which files mention a fact inside a PDF is still search_documents.
@@ -136,14 +137,14 @@ function modeRules(mode: ChatMode, canEdit: boolean): string {
   switch (mode) {
     case "plan":
       return `## Mode: ASK
-You cannot write the worksheet or run plots in this mode. write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, plot_histogram, and plot_measurements are disabled. Search, outline, scan, extract, read_worksheet, and ask_user are available. Answer from evidence. If they want a new sheet/column/row, a filled column, sixpack, ANOVA, scatter, boxplot, histogram, or to change an existing plot, tell them to switch to Agent. You never draft the document.`;
+You cannot write the worksheet or run plots in this mode THIS SEND. write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, plot_histogram, and plot_measurements are disabled. Search, outline, scan, extract, read_worksheet, and ask_user are available. Answer from evidence. If they want a new sheet/column/row, a filled column, sixpack, ANOVA, scatter, boxplot, histogram, or to change an existing plot, tell them to switch the Ask/Agent control to Agent and send the request. Do not say the whole session is locked in Ask. You never draft the document.`;
     case "agent":
       if (!canEdit) {
         return `## Mode: AGENT
 This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, plot_xy_scatter, plot_boxplot, plot_histogram, or plot_measurements. You never draft the document.`;
       }
       return `## Mode: AGENT
-Fill the worksheet (including adding sheets, columns, and rows) when they asked. For a long numeric table, call load_table (list, then load by tableId). For other attachment tables, plan the sheets and call extract_sheet once per sheet in the same step (parallel workers create the tabs and write). For add/remove rows on an existing filled sheet, call extract_sheet mode edit once per affected sheet. Run the analysis they asked for (time series via plot_time_series — measurement column plus the date column, the only plot that takes a timestamp — sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — histogram via plot_histogram — column required, optional LSL/USL and overlay checkboxes — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, showMeanLine, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. To change an existing histogram, call plot_histogram with that analysisId. To change an existing time series, call plot_time_series with that analysisId. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. Do not volunteer a fill or plot on a greeting. You never draft the document.`;
+This send is Agent — ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Fill the worksheet (including adding sheets, columns, and rows) when they asked. For a long numeric table, call load_table (list, then load by tableId). For other attachment tables, plan the sheets and call extract_sheet once per sheet in the same step (parallel workers create the tabs and write). For add/remove rows on an existing filled sheet, call extract_sheet mode edit once per affected sheet. Run the analysis they asked for (time series via plot_time_series — measurement column plus the date column, the only plot that takes a timestamp — sixpack, one-way ANOVA, worksheet scatter via plot_xy_scatter — Y required on create, X optional, optional legend — boxplot via plot_boxplot — Y required, optional nested categories — histogram via plot_histogram — column required, optional LSL/USL and overlay checkboxes — or attachment measurement scatter). To change an existing worksheet plot, call plot_xy_scatter with that analysisId (new Y/X, legendColumnId, mark, showSpecLimits, showMeanLine, xMin/xMax/yMin/yMax) instead of creating a duplicate. To change an existing boxplot, call plot_boxplot with that analysisId. To change an existing histogram, call plot_histogram with that analysisId. To change an existing time series, call plot_time_series with that analysisId. Do not substitute a sixpack or ANOVA for a scatter, boxplot, or histogram. Do not volunteer a fill or plot on a greeting. You never draft the document.`;
     default: {
       const exhaustive: never = mode;
       return exhaustive;
@@ -263,6 +264,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
   );
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",
+    composerModeTurnRule(input.mode),
     LANGUAGE_RULES,
     editLine,
     USER_INTENT_RULES,
@@ -281,6 +283,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
     CAPABILITY_RULES,
     documentIndex(input.documents),
     worksheetIndex(input.analytics),
+    composerModeTurnRule(input.mode),
   ]
     .filter((part): part is string => Boolean(part))
     .join("\n\n");

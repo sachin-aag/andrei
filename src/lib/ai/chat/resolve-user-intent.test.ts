@@ -85,8 +85,8 @@ describe("resolveChatUserIntent", () => {
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 
-  it("pins the mixed-lookup classifier prompt version", () => {
-    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v7-mixed-lookup");
+  it("pins the ask-to-agent and mixed-lookup classifier prompt version", () => {
+    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v8-ask-agent-mixed-lookup");
   });
 
   it("skips Lite when a missing-work complaint is already write", async () => {
@@ -102,6 +102,12 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
       })
     ).resolves.toEqual({ kind: "write", reason: "missing_work" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "I switched to Agent",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "switched_to_agent" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 

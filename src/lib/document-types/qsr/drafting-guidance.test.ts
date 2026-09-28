@@ -16,6 +16,17 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "Never write Complies, bare Section 13, or a stock IQ page"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "8.2.3 – Heating trial at 8000 L working volume"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("13.6 → 13.6 – Gasket material verified as PTFE");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("8.2.4 / 8.8 – Agitator speed check");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Never copy the page number (Page 21 of 51)");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("never the printed page counter");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("12.72 °C");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("page that prints that dotted heading");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Agitator");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Mechanical Seal");
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
       "do not paste a protocol-to-URS mapping in chat"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
@@ -49,6 +60,8 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     expect(QSR_DRAFTING_GUIDANCE).toContain(
       "Fill each named column from the source field with the same label"
     );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Inner Surface area");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Equipment Dimensions (L x W x H)");
   });
 
   it("pairs protocol and report rows and forbids invented lifecycle types", () => {

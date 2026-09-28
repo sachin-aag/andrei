@@ -297,7 +297,8 @@ export function isEmptyTableScaffoldDoc(
 }
 
 /**
- * Short seed-only narratives (“Agitator Type:”) are empty. A canned
+ * Short seed-only narratives and unchanged table scaffolds (QSR 6.3 Other
+ * Details Parameter / Details rows) are empty. A canned
  * paragraph that is the intended default (QSR 1.2 Scope) stays filled.
  */
 function isUnchangedSeedNarrative(

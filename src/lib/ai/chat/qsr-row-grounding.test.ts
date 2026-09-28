@@ -26,6 +26,7 @@ import {
   pageLevelTokenAroundKey,
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
+  rtmSectionCellText,
   dropQsrRtmPlaceholderCells,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -323,6 +324,42 @@ describe("descriptionSupportedNearKey", () => {
       )
     ).toBe(true);
   });
+
+  it("grounds an RTM Section one-liner on the protocol number, not paraphrase words", () => {
+    const pqPage =
+      "8.2.4 Simulation Trial-3 followed by cleaning. Operate the agitator. Result: Complies.";
+    expect(
+      descriptionSupportedNearKey(
+        "8.2.4 – Verification of agitator speed stability (~50 ± 10 RPM) during PQ trials",
+        [pqPage],
+        "URS-10"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)",
+        [pqPage, "8.8 Operation of Agitator at Different RPM (without load)"],
+        "URS-10"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "8.5 & 8.6 – Pressure hold test at 3.5 kg/cm² and vacuum hold test",
+        ["8.5 Pressure hold test 8.6 Vacuum hold test Result: Complies"],
+        "URS-4"
+      )
+    ).toBe(true);
+  });
+
+  it("still rejects a Section one-liner whose protocol number was not retrieved", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "9.9.9 – Invented verification of agitator speed",
+        ["8.2.4 Simulation Trial. Operate the agitator."],
+        "URS-10"
+      )
+    ).toBe(false);
+  });
 });
 
 describe("protocolBodyQuote", () => {
@@ -335,6 +372,14 @@ describe("protocolBodyQuote", () => {
     expect(body).not.toContain("reactor");
     // Second call must not skip the start because of sticky /g lastIndex.
     expect(protocolBodyQuote(header)).toBe(protocolBodyQuote(header));
+  });
+
+  it("strips a printed 16 of 51 counter that has no Page word", () => {
+    const body = protocolBodyQuote(
+      "Page No. 16 of 51 Water batch at 8000 L capacity Result: Complies"
+    );
+    expect(body.toLowerCase()).not.toMatch(/\b16\b/);
+    expect(body.toLowerCase()).toContain("water batch");
   });
 
   it("keeps jacket spec body after the same running header", () => {
@@ -1010,6 +1055,7 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toContain("IQ");
     expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[4]).toContain("Jacket Specifications");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -1142,7 +1188,7 @@ describe("groundTableOperation optional RTM columns", () => {
       )
     ).toMatchObject({
       stageLabel: "DQ",
-      sectionHeading: "4",
+      sectionHeading: "4 – Vendor documentation",
       remarks: "NA",
     });
     const result = groundTableOperation({
@@ -1187,7 +1233,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
     expect(byCol.get(3)).toMatch(/^DQ\b/);
     expect(byCol.get(3)).toContain("Design Qualification.PDF");
-    expect(byCol.get(4)).toBe("4");
+    expect(byCol.get(4)).toBe("4 – Vendor documentation");
     expect(byCol.get(5)).toBe("NA");
   });
 
@@ -1294,6 +1340,60 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[3]).toContain("Performance Qualification.PDF");
     expect(keptRow[3]).not.toMatch(/\bIQ\b/);
     expect(keptRow[4]).toContain("8.2");
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("rewrites a PQ page-counter Section cell to the dotted heading and cites that page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: "URS-1 Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 21,
+        attachmentId: "pq",
+        quote:
+          "Page No. 16 of 51 Water batch at 8000 L capacity. Result: Complies.",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume. Reactor Capacity. Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "PQ",
+            "16 – Water batch at 8000 L capacity",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/^PQ\b/);
+    expect(keptRow[3]).toContain("p. 19");
+    expect(keptRow[3]).not.toContain("p. 21");
+    expect(keptRow[4]).toBe("8.2.3 – Water batch at 8000 L capacity");
+    expect(keptRow[4]).not.toMatch(/\b16\b/);
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -1512,6 +1612,92 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs4).toContain("Operational Qualification.PDF");
     expect(urs4).not.toContain("13.3.5.1");
     expect(urs4).not.toContain("<remarks>");
+  });
+
+  it("keeps every rowKey's Section when a PQ sensor log prints 12.72 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 40,
+        attachmentId: "pq",
+        quote:
+          "Bottomsensor- 12.72 °C during chilling. Jacket pressure 3 to 5 kg/cm². 8000 L. Result: Complies.",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume. Reactor Capacity. Result: Verified",
+      },
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 84,
+        attachmentId: "oq",
+        quote:
+          "10.5 Jacket pressure test 3 to 5 kg/cm² utility pressure. Result: Verified",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 48,
+        attachmentId: "iq",
+        quote:
+          "13.7 Verification of jacket MOC SA-516M Gr. 380 and SS sheet insulation. Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-1",
+            expectedText: "12.72 – Simulation trials at 8000 L working capacity",
+            insertText: "8.2 – Simulation trials at 8000 L working capacity",
+            rowContext: "URS-1\nReactor Capacity\n8000 L",
+          },
+          {
+            row: 6,
+            col: 4,
+            rowKey: "URS-6",
+            expectedText: "12.72 – Jacket pressure test",
+            insertText:
+              "10.5 – Jacket pressure test (3 to 5 kg/cm² utility pressure verification)",
+            rowContext: "URS-6\nJacket Pressure\n3 to 5 kg/cm²",
+          },
+          {
+            row: 12,
+            col: 4,
+            rowKey: "URS-12",
+            expectedText: "12.72 – Jacket MOC",
+            insertText:
+              "13.7 – Verification of jacket MOC and SS sheet insulation",
+            rowContext: "URS-12\nJacket MOC\nSA-516M Gr. 380",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const sectionOf = (key: string) =>
+      cells.find((cell) => cell.rowKey === key && cell.col === 4)?.insertText ??
+      "";
+    expect(sectionOf("URS-1")).toMatch(/^8\.2/);
+    expect(sectionOf("URS-1")).not.toMatch(/12\.72/);
+    expect(sectionOf("URS-6")).toMatch(/^10\.5/);
+    expect(sectionOf("URS-6")).not.toMatch(/12\.72/);
+    expect(sectionOf("URS-12")).toMatch(/^13\.7/);
+    expect(sectionOf("URS-12")).not.toMatch(/12\.72/);
+    expect(cells.filter((cell) => cell.col === 4).map((cell) => cell.rowKey)).toEqual(
+      ["URS-1", "URS-6", "URS-12"]
+    );
   });
 
   it("keeps Table 7 URS-41 IQ / 13.6 / Complies from live Gaskets when rowContext is only URS-41 / IQ / Complies", () => {
@@ -1750,7 +1936,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(blob).not.toContain("12.3");
     expect(blob).not.toMatch(/Complies/i);
     const section = urs41.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toBe("13.6");
+    if (section) expect(section.insertText).toContain("13.6");
     if (urs41.length === 0) return;
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
@@ -1776,7 +1962,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(sectionCell).not.toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 only edits empty Stage/Remarks from IQ, not filled 13.6", () => {
+  it("fill-empty URS-41 fills Stage/Remarks and overwrites filled 13.6 with the IQ heading title", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1879,7 +2065,8 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(blob).not.toMatch(/\bDQ\b/);
     expect(blob).not.toContain("12.3");
     const section = urs41.find((cell) => cell.col === 4);
-    expect(section).toBeUndefined();
+    expect(section?.insertText).toContain("13.6");
+    expect(section?.insertText).toContain("Gaskets");
     expect(urs41.some((cell) => cell.col === 3)).toBe(true);
     expect(urs41.some((cell) => cell.col === 5)).toBe(true);
 
@@ -1899,8 +2086,9 @@ describe("groundTableOperation optional RTM columns", () => {
     );
     const sectionCell = JSON.stringify(cellsInRow[4]);
     expect(sectionCell).toContain("13.6");
+    expect(sectionCell).toContain("Gaskets");
     expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
     const stageCell = JSON.stringify(cellsInRow[3]);
     expect(stageCell).toMatch(/\bIQ\b/);
     expect(stageCell).toContain(suggestionInsertMarkName);
@@ -2118,7 +2306,10 @@ describe("groundTableOperation optional RTM columns", () => {
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
     expect(urs41.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
-    expect(urs41.find((cell) => cell.col === 4)).toBeUndefined();
+    const section = urs41.find((cell) => cell.col === 4);
+    expect(section?.insertText).toContain("13.6");
+    expect(section?.insertText).toContain("Gaskets");
+    expect(section?.insertText).not.toContain("13.7.5");
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
       id: "sug-table7-urs41-complies-outside-id-window",
@@ -2139,7 +2330,8 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(remarksCell).toContain(suggestionInsertMarkName);
     const sectionCell = JSON.stringify(cellsInRow[4]);
     expect(sectionCell).toContain("13.6");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain("Gaskets");
+    expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
   it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {
@@ -2165,7 +2357,320 @@ describe("groundTableOperation optional RTM columns", () => {
     );
     expect(pick?.stageLabel).toBe("IQ");
     expect(pick?.sectionHeading).toContain("13.6");
+    expect(pick?.sectionHeading).toContain("Gaskets");
     expect(pick?.filename).toContain("Installation Qualification");
+  });
+
+  it("puts protocol section number and activity title in Reference – Section", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial same as that of PQ. Reactor Capacity 8000 L Result: Verified",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-1",
+        "URS-1\nReactor Capacity\n8000 L"
+      )
+    ).toMatchObject({
+      stageLabel: "PQ",
+      sectionHeading: "8.2.3 – Heating Trial",
+    });
+  });
+
+  it("keeps Physical verification in the Section cell when the IQ heading names it", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 20,
+        attachmentId: "iq",
+        quote:
+          "8.2.1 Physical verification same as that of PQ. MOC glass lining thickness 1 mm Result: Verified",
+      },
+    ]);
+    expect(
+      pickRtmReference(ledger, "URS-2", "URS-2\nMOC\nHigh-quality Glass Lining")
+    ).toMatchObject({
+      stageLabel: "IQ",
+      sectionHeading: "8.2.1 – Physical verification",
+    });
+  });
+
+  it("picks the test heading that matches the row when one PQ page prints several", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies",
+      },
+    ]);
+    expect(
+      pickRtmReference(ledger, "URS-1", "URS-1\nReactor Capacity\n8000 L")
+        ?.sectionHeading
+    ).toBe("8.2.3 – Heating Trial");
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-2",
+        "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm"
+      )?.sectionHeading
+    ).toBe("8.2.1 – Physical verification");
+  });
+
+  it("cites the PQ page that prints the dotted heading, not a later results page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 21,
+        attachmentId: "pq",
+        quote:
+          "Page No. 16 of 51 Water batch at 8000 L capacity. Result: Complies.",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume and heat. Reactor Capacity. Result: Verified",
+      },
+    ]);
+    expect(
+      pickRtmReference(ledger, "URS-1", "URS-1\nReactor Capacity\n8000 L")
+    ).toMatchObject({
+      stageLabel: "PQ",
+      pageNumber: 19,
+      sectionHeading: "8.2.3 – Heating Trial",
+    });
+  });
+
+  it("does not treat printed page 16 as a PQ section heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 21,
+        attachmentId: "pq",
+        quote:
+          "Page No. 16 of 51 Section 16 Water batch at 8000 L capacity. Result: Complies.",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-1",
+      "URS-1\nReactor Capacity\n8000 L"
+    );
+    expect(pick?.stageLabel).toBe("PQ");
+    expect(pick?.sectionHeading ?? "").not.toMatch(/\b16\b/);
+    expect(rtmSectionCellText("16 – Water batch at 8000 L capacity", pick)).toBe(
+      ""
+    );
+  });
+
+  it("does not treat a PQ thermal-log 12.72 °C as a protocol section heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 40,
+        attachmentId: "pq",
+        quote:
+          "Bottomsensor- 12.72 °C during chilling/cooling. Jacket pressure 3 to 5 kg/cm². Result: Complies.",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume and heat. Reactor Capacity. Result: Verified",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-1",
+      "URS-1\nReactor Capacity\n8000 L"
+    );
+    expect(pick?.stageLabel).toBe("PQ");
+    expect(pick?.pageNumber).toBe(19);
+    expect(pick?.sectionHeading).toBe("8.2.3 – Heating Trial");
+    expect(pick?.sectionHeading ?? "").not.toMatch(/12\.72/);
+    expect(
+      rtmSectionCellText("8.2 – Simulation trials at 8000 L working capacity", pick)
+    ).toBe("8.2.3 – Simulation trials at 8000 L working capacity");
+    expect(
+      rtmSectionCellText("12.72 – Simulation trials at 8000 L working capacity", pick)
+    ).toBe("8.2.3 – Simulation trials at 8000 L working capacity");
+  });
+
+  it("does not persist 12.72 as Section when the PQ page is only a sensor log", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 40,
+        attachmentId: "pq",
+        quote:
+          "Bottomsensor- 12.72 °C Chilling trial jacket. Result: Complies.",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-6",
+      "URS-6\nJacket Pressure\n3 to 5 kg/cm²"
+    );
+    expect(pick?.sectionHeading ?? "").not.toMatch(/12\.72/);
+    expect(
+      rtmSectionCellText("12.72 – Jacket pressure test", pick)
+    ).toBe("");
+    expect(
+      rtmSectionCellText("10.5 – Jacket pressure test", {
+        family: "pq",
+        sectionHeading: pick?.sectionHeading ?? "12.72 – Chilling",
+      })
+    ).toBe("10.5 – Jacket pressure test");
+  });
+
+  describe("rtmSectionCellText", () => {
+    const pick = { sectionHeading: "8.2.3 – Heating Trial" };
+
+    it("keeps the model's one-line test description on the protocol section number", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.3 – Heating trial run with the reactor filled to 8000 L",
+          pick
+        )
+      ).toBe("8.2.3 – Heating trial run with the reactor filled to 8000 L");
+      expect(
+        rtmSectionCellText("8.2.1 – Heating trial at 8000 L working volume", pick)
+      ).toBe("8.2.3 – Heating trial at 8000 L working volume");
+    });
+
+    it("drops a page number and header block instead of persisting it", () => {
+      const junk =
+        "21; of 51 Capacity/Size Effective Date Production Block-2 8000 L 21-05-2026 S";
+      expect(rtmSectionCellText(junk, pick)).toBe("8.2.3 – Heating Trial");
+      expect(rtmSectionCellText(junk, null)).toBe("");
+      expect(rtmSectionCellText("Page 21 of 51", null)).toBe("");
+    });
+
+    it("strips an ALL-CAPS protocol label and keeps one line", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.2; PROCEDURE Conduct heating, cooling, and chilling operations. Record the jacket temperature every 15 minutes",
+          null
+        )
+      ).toBe("8.2.2 – Conduct heating, cooling, and chilling operations");
+    });
+
+    it("keeps dual protocol section numbers joined with / or &", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)",
+          null
+        )
+      ).toBe(
+        "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)"
+      );
+      expect(
+        rtmSectionCellText(
+          "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)",
+          { sectionHeading: "8.2.4 – Simulation Trial" }
+        )
+      ).toBe(
+        "8.2.4 / 8.8 – Agitator drive speed stability verification (~50 ± 10 RPM)"
+      );
+      expect(
+        rtmSectionCellText(
+          "8.5 & 8.6 – Pressure hold test at 3.5 kg/cm² and vacuum hold test",
+          { sectionHeading: "8.5 – Pressure hold" }
+        )
+      ).toBe(
+        "8.5 & 8.6 – Pressure hold test at 3.5 kg/cm² and vacuum hold test"
+      );
+    });
+
+    it("does not treat Gr. 380 as the end of the line", () => {
+      expect(
+        rtmSectionCellText(
+          "13.7.1 – Verification of shell base material (ASME SA-516M Gr. 380) and insulation",
+          { sectionHeading: "8.2.1 – Physical verification" }
+        )
+      ).toBe(
+        "8.2.1 – Verification of shell base material (ASME SA-516M Gr. 380) and insulation"
+      );
+    });
+
+    it("keeps a dotted section number when the heading is a page counter", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.3 – Water batch trial verification at 8000 L capacity",
+          { sectionHeading: "16 – Water batch trial verification at 8000 L capacity" }
+        )
+      ).toBe("8.2.3 – Water batch trial verification at 8000 L capacity");
+    });
+
+    it("does not persist a printed page counter as the Section cell", () => {
+      expect(
+        rtmSectionCellText("16 – Water batch at 8000 L capacity", null)
+      ).toBe("");
+      expect(
+        rtmSectionCellText("14 – Thermal trial verification", null)
+      ).toBe("");
+      expect(
+        rtmSectionCellText("16 – Water batch at 8000 L capacity", {
+          family: "pq",
+          sectionHeading: "8.2.3 – Heating Trial",
+        })
+      ).toBe("8.2.3 – Water batch at 8000 L capacity");
+    });
+
+    it("does not persist a thermal-log 12.72 as the Section number", () => {
+      expect(
+        rtmSectionCellText("12.72 – Simulation trials at 8000 L working capacity", {
+          family: "pq",
+          sectionHeading: "8.2.3 – Heating Trial",
+        })
+      ).toBe("8.2.3 – Simulation trials at 8000 L working capacity");
+      expect(
+        rtmSectionCellText("8.2 – Simulation trials at 8000 L working capacity", {
+          family: "pq",
+          sectionHeading: "12.72 – Chilling",
+        })
+      ).toBe("8.2 – Simulation trials at 8000 L working capacity");
+      expect(
+        rtmSectionCellText("12.72 – Simulation trials at 8000 L working capacity", {
+          family: "pq",
+          sectionHeading: "12.72 – Chilling",
+        })
+      ).toBe("");
+    });
+
+    it("keeps a DQ integer chapter from Section 4", () => {
+      expect(
+        rtmSectionCellText("4", {
+          family: "dq",
+          sectionHeading: "4 – Vendor documentation",
+        })
+      ).toBe("4 – Vendor documentation");
+      expect(
+        rtmSectionCellText("Section 4. Vendor documentation", {
+          family: "dq",
+          sectionHeading: "4 – Vendor documentation",
+        })
+      ).toBe("4 – Vendor documentation");
+    });
+
+    it("falls back to the section number when the text runs past one line", () => {
+      expect(
+        rtmSectionCellText(
+          "8.2.2 conduct heating cooling and chilling operations as per the standard operating procedure while recording the jacket and mass temperature at every fifteen minute interval",
+          null
+        )
+      ).toBe("8.2.2");
+    });
   });
 
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {

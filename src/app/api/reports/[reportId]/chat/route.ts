@@ -26,6 +26,7 @@ import {
   CHAT_PROMPT_VERSION,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
+import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-reminder";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
@@ -737,7 +738,10 @@ async function handleChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = messagesWithComposerModeReminder(
+      await convertToModelMessages(messages),
+      mode
+    );
     setRouteObservationIO({
       input: {
         reportId,
