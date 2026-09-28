@@ -91,6 +91,30 @@ describe("detectSectionIntentFromText", () => {
         "equipment_lifecycle_report"
       )
     ).toBe("elr_risk_actions");
+    expect(
+      detectSectionIntentFromText(
+        "Fill the process validation review from PPQ and CPV reports",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_process_validation");
+    expect(
+      detectSectionIntentFromText(
+        "Compile the cleaning validation review",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_cleaning_validation");
+    expect(
+      detectSectionIntentFromText(
+        "Review the quality risk assessment documents for this equipment",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_qra_review");
+    expect(
+      detectSectionIntentFromText(
+        "Fill the 5.2 risk assessment and prioritized actions",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_risk_actions");
   });
 
   it("maps QSR Contents numbers 5.2–5.4 to Control / GMP / Safety", () => {

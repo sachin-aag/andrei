@@ -7,10 +7,13 @@ import {
   AUDIT_TRAIL_COLUMN_SCHEMA,
   BREAKDOWN_COLUMN_SCHEMA,
   CALIBRATION_COLUMN_SCHEMA,
+  CLEANING_VALIDATION_COLUMN_SCHEMA,
   CSV_STATUS_COLUMN_SCHEMA,
   MONITORING_COLUMN_SCHEMA,
   PREVENTIVE_MAINTENANCE_COLUMN_SCHEMA,
+  PROCESS_VALIDATION_COLUMN_SCHEMA,
   QMS_COLUMN_SCHEMA,
+  QRA_REVIEW_COLUMN_SCHEMA,
   QUALIFICATION_COLUMN_SCHEMA,
 } from "@/lib/document-types/elr/matrix-columns";
 
@@ -22,6 +25,9 @@ const ELR_INVENTORY_SCHEMAS: Partial<
   Record<SectionType, readonly MatrixColumnSchema<string>[]>
 > = {
   elr_qualification: QUALIFICATION_COLUMN_SCHEMA,
+  elr_process_validation: PROCESS_VALIDATION_COLUMN_SCHEMA,
+  elr_cleaning_validation: CLEANING_VALIDATION_COLUMN_SCHEMA,
+  elr_qra_review: QRA_REVIEW_COLUMN_SCHEMA,
   elr_monitoring: MONITORING_COLUMN_SCHEMA,
   elr_calibration: CALIBRATION_COLUMN_SCHEMA,
   elr_preventive_maintenance: PREVENTIVE_MAINTENANCE_COLUMN_SCHEMA,
@@ -169,6 +175,12 @@ function preferredFilenameFamilies(
       return [["pmc", "breakdown", "prqr"]];
     case "elr_qualification":
       return [["prqr", "prqp", "pqr"]];
+    case "elr_process_validation":
+      return [["ppq", "cpv", "process validation"]];
+    case "elr_cleaning_validation":
+      return [["cleaning validation", "cleaning protocol"]];
+    case "elr_qra_review":
+      return [["qra-", "quality risk", "fmea"]];
     case "elr_alarms":
       return [["alarm", "aap"]];
     case "qsr_rtm_process":
@@ -353,6 +365,19 @@ function isElrQualificationHistoryObjective(digest: string): boolean {
   );
 }
 
+/**
+ * Ranked noun for `elr_qra_review` is "qra review" and will not match
+ * "quality risk assessment". Preferred filenames must not use bare `qra`
+ * (it matches PRQR).
+ */
+function isElrQraReviewObjective(digest: string): boolean {
+  return (
+    digest.includes("quality risk assessment") ||
+    digest.includes("qra review") ||
+    digest.includes("elr qra")
+  );
+}
+
 export function inventorySectionForObjective(
   objective: string | null | undefined
 ): SectionType | null {
@@ -365,6 +390,9 @@ export function inventorySectionForObjective(
   }
   if (digest in ELR_INVENTORY_SCHEMAS) {
     return digest as SectionType;
+  }
+  if (isElrQraReviewObjective(digest)) {
+    return "elr_qra_review";
   }
   if (
     digest.startsWith("qsr_") ||

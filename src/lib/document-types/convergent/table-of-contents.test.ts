@@ -224,31 +224,34 @@ describe("getReportTableOfContents", () => {
       "3.2 Abbreviations",
       "3.3 Equipment and System Description",
       "3.4 Qualification and Periodic Re-Qualification History",
-      "3.5 Media Fill / Aseptic Process Simulation",
-      "3.6 Alarm Trends",
-      "3.7 Monitoring",
-      "3.8 Calibration of Associated Instruments",
-      "3.9 Preventive Maintenance",
-      "3.10 Breakdowns and Trends",
-      "3.11 QMS Records since Last Periodic Re-Qualification",
-      "3.12 Access Control",
-      "3.13 Audit Trail Review",
-      "3.14 Computerized System Validation Status",
+      "3.5 Process Validation Review",
+      "3.6 Cleaning Validation Review",
+      "3.7 Quality Risk Assessment Review",
+      "3.8 Media Fill / Aseptic Process Simulation",
+      "3.9 Alarm Trends",
+      "3.10 Monitoring",
+      "3.11 Calibration of Associated Instruments",
+      "3.12 Preventive Maintenance",
+      "3.13 Breakdowns and Trends",
+      "3.14 QMS Records since Last Periodic Re-Qualification",
+      "3.15 Access Control",
+      "3.16 Audit Trail Review",
+      "3.17 Computerized System Validation Status",
     ]);
     const alarms = observations?.children?.find(
-      (c) => c.label === "3.6 Alarm Trends"
+      (c) => c.label === "3.9 Alarm Trends"
     );
     expect(alarms?.sectionKey).toBe("elr_alarms");
     expect(alarms?.children?.[0]).toEqual({
-      label: "3.6.1 Alarm Trend Summary",
+      label: "3.9.1 Alarm Trend Summary",
       sectionKey: "elr_alarms",
     });
     const breakdowns = observations?.children?.find(
-      (c) => c.label === "3.10 Breakdowns and Trends"
+      (c) => c.label === "3.13 Breakdowns and Trends"
     );
     expect(breakdowns?.sectionKey).toBe("elr_breakdowns");
     expect(breakdowns?.children?.[0]).toEqual({
-      label: "3.10.1 Breakdown Trend Summary",
+      label: "3.13.1 Breakdown Trend Summary",
       sectionKey: "elr_breakdowns",
     });
     const summary = toc.find((e) => e.label === "5. Summary and Conclusion");
