@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v154-identity-complete-hits");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v155-qsr-table-11-rows");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
