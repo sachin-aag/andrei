@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v152-elr-outline-and-apply");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v153-table-adjusted-cells");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {

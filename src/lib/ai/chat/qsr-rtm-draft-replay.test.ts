@@ -1090,6 +1090,16 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows[0]?.[3]).toContain("IQ");
     expect(rows[0]?.[4]).toContain("13.3.5.1");
     expect(rows[0]?.[5] ?? "").not.toMatch(/Complies/i);
+    expect(result).toMatchObject({
+      adjustedCells: expect.arrayContaining([
+        expect.objectContaining({
+          rowKey: "URS-5",
+          column: "Remarks",
+          requested: "Complies",
+          saved: "",
+        }),
+      ]),
+    });
   });
 
   it("rewrites a DQ Stage up to IQ when both protocol bodies topic-match", async () => {

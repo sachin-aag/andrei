@@ -262,7 +262,15 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
-import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  qsrTableColumnLabel,
+  shouldKeepRtmProtocolSearchOpen,
+} from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  tableCellAdjustments,
+  tableCellAdjustmentsMessage,
+  type TableCellAdjustment,
+} from "@/lib/ai/chat/table-cell-adjustments";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -389,6 +397,8 @@ export type EditTableResult =
       supersededSuggestionIds?: string[];
       tableNumber?: number;
       warning?: string;
+      adjustedCells?: TableCellAdjustment[];
+      adjustmentNote?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -3940,6 +3950,11 @@ export function buildChatTools(opts: {
           resolvedField,
           repairTextsFromTableOperation(groundedTable.operation).join("\n")
         );
+        const adjustedCells = tableCellAdjustments(
+          originalTableOp,
+          groundedTable.operation,
+          (col) => qsrTableColumnLabel(section, col)
+        );
         return proposedWithSupersession(
           {
             status: "proposed" as const,
@@ -3952,6 +3967,12 @@ export function buildChatTools(opts: {
               : {}),
             ...(tableOverclaims.warning
               ? { warning: tableOverclaims.warning }
+              : {}),
+            ...(adjustedCells.length > 0
+              ? {
+                  adjustedCells,
+                  adjustmentNote: tableCellAdjustmentsMessage(adjustedCells),
+                }
               : {}),
           },
           supersededSuggestionIds
