@@ -109,7 +109,7 @@ export function unifyElrCitationsForExport(
   return unifyReportCitationsForExport(sections, ELR_SECTION_KEYS);
 }
 
-function headingParagraphXml(text: string): string {
+export function citationsHeadingParagraphXml(text: string): string {
   return (
     `<w:p>` +
     `<w:pPr>` +
@@ -133,7 +133,7 @@ export function citationsAppendixXml(
 ): string {
   if (bibliography.length === 0) return "";
   return [
-    headingParagraphXml(heading),
+    citationsHeadingParagraphXml(heading),
     ...bibliography.map(({ number, source }) =>
       bodyParagraphXml(`${number}. ${source}`)
     ),
