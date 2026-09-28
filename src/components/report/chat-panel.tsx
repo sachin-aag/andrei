@@ -484,7 +484,8 @@ const MessageTurn = memo(function MessageTurn({
       ) : (
         buildChatActivityBlocks(
           filterPartsForActivityDisplay(parts),
-          filenameByAttachmentId
+          filenameByAttachmentId,
+          { streaming }
         ).map(
           (block, i) => {
             if (block.kind === "text") {

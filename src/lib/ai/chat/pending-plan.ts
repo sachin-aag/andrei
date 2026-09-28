@@ -5,11 +5,12 @@ import {
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import { detectSectionIntentsFromText } from "@/lib/ai/chat/section-intent";
 import {
-  detectSectionIntentFromText,
-  detectSectionIntentsFromText,
-} from "@/lib/ai/chat/section-intent";
-import { coverageKeySatisfiesObjective, REVIEW_OBJECTIVE_PAGE_FLOOR } from "@/lib/ai/chat/review-page-plan";
+  coverageKeySatisfiesObjective,
+  qsrReviewPagePlan,
+  REVIEW_OBJECTIVE_PAGE_FLOOR,
+} from "@/lib/ai/chat/review-page-plan";
 import {
   inventorySectionForObjective,
   preferredInventoryEvidenceSkipped,
@@ -578,6 +579,24 @@ export function persistablePendingPlan(
   return plan;
 }
 
+/**
+ * One named section, or the first of several that share a page plan
+ * (5.2–5.4 are all URS walks). Mixed cover + body identities stay raw so
+ * an all-scope "draft 3 and 4" cannot stamp Table 3's cover walk.
+ */
+function coverageSectionFromUserText(
+  userText: string,
+  documentType: DocumentType
+): string | null {
+  const intents = detectSectionIntentsFromText(userText, documentType);
+  if (intents.length === 0) return null;
+  if (intents.length === 1) return intents[0]!;
+  if (documentType !== "qualification_summary_report") return intents[0]!;
+  const plans = new Set(intents.map((section) => qsrReviewPagePlan(section)));
+  if (plans.size <= 1) return intents[0]!;
+  return null;
+}
+
 export function planCoverageObjective(
   plan: ChatPendingPlan | null,
   userText: string,
@@ -591,7 +610,7 @@ export function planCoverageObjective(
   if (scope && scope !== "all" && isChatEditableSection(scope, documentType)) {
     return scope;
   }
-  const detected = detectSectionIntentFromText(userText, documentType);
+  const detected = coverageSectionFromUserText(userText, documentType);
   if (detected) return detected;
   if (plan && !plan.paused) {
     const current = plan.items.find((item) => item.state === "in_progress");
@@ -621,7 +640,7 @@ export function resolveReviewCoverageObjective(input: {
     return scope;
   }
   const fromUser = input.userText
-    ? detectSectionIntentFromText(input.userText, input.documentType)
+    ? coverageSectionFromUserText(input.userText, input.documentType)
     : null;
   if (fromUser) return fromUser;
   const tool = input.toolObjective.trim();

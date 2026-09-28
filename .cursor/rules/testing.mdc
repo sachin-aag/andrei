@@ -43,5 +43,7 @@ alwaysApply: false
   Report-shaped cases: `pnpm report-eval -- --replay` /
   `--capture <reportId>` / Langfuse `report-quality-scenarios`. Mixed
   write+lookup scores the intent classifier on replay; LLM-as-judge
-  (`judgeRubric`) stays skipped until wired.
+  (`judgeRubric`) stays skipped until wired. Add a `page_plan` or
+  `identity_incomplete` row when a review-collapse or title-list search
+  incident ships.
 - Run one spec with `--project=chromium`. `pnpm precommit` does not run E2E.

@@ -579,7 +579,8 @@ claim "ELR retrieval is fixed."
 
 **Partial.** The **deterministic** half of this floor is in-repo:
 `pnpm chat-eval -- --replay` on `scripts/eval/chat-draft-cases.json`
-(QSR section 5 grounding + greeting / empty-inventory harness). Pushing
+(QSR section 5 grounding, mixed-identity page plans, identity-incomplete
+search hits, greeting / empty-inventory harness). Pushing
 that same set to Langfuse (`--experiment` upserts dataset
 `chat-draft-quality-floor` then `runExperiment`) makes runs comparable
 across `CHAT_PROMPT_VERSION` without waiting for a live Agent turn.

@@ -20,6 +20,7 @@ import {
   isQsrRtmOptionalReferenceColumn,
   pickRtmReference,
   qsrFailClosedReason,
+  qsrRtmCellUnsupported,
   qsrTableColumnLabel,
   quoteWindowAroundKey,
   pageLevelTokenAroundKey,
@@ -2203,6 +2204,92 @@ describe("groundTableOperation optional RTM columns", () => {
         },
       ],
     });
+  });
+});
+
+// Real 3xper GLR-1301 IQ transcripts (Langfuse trace 256f0e5d…, 14:54 edit_cells).
+// Executed IQ records print Actual observation / Verified By (Sign & Date)
+// with signed dates and never a pass word.
+const IQ_P25_AGITATOR_MOTOR =
+  "3xper EMPOWERING INNOVATION Issued By MASTER COPY Issued On INSTALLATION QUALIFICATION Carat Kumar Gedla 3xper Innoventure Limited, 30/04/202619:20 Equipment/System Glass Lined Reactor Protocol No. Report No. IQP/GLR-1301 IQR/GLR-1301 Equipment Number GLR-1301 13.3.5.4. Agitator Motor Specifications Revision: 01 Page No. Section Revision: 01 Capacity/Size Effective Date 25 of 60 Production Block-2 8000 L 30-04-2026 Sr. No Parameters 1. Make Actual Verification Verified By Design specifications observations Source (Sign & Date) Design Crompton Crompton 2. Type mounted 3. Motor speed 1470 rpm 14708pm Flame proof, Flange Flame Proof, Analification Afita Design 01-05-2006 01-05-2026 Flange mounted qualification R.Ajita Design qualification R. Ajith 01-05-2026 4. Motor Power 15 HP (11 KW) 15 HP (11kw) GA Drawing R.Alith 01-05-2026";
+const IQ_P18_IDENTIFICATION =
+  "Issued By Carat Kumar Yedla 3xper EMPOWERING INNOVAT ON MASTER COPY 3xper Innoventure Limited, Issued On 30/04/202619:20 INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Page No. 18 of 60 Protocol No. IQP/GLR-1301 Revision: 01 Section Production Block-2 Report No. IQR/GLR-1301 Revision: 01 Capacity/Size 8000 L Equipment Number GLR-1301 Effective Date 30-04-2026 13.3. System Identification & technical specification verification 13.3.1. Rationale To check and record the system identity of Equipment Reactor S. No Description Actual Observation Verified By (Sign & Date) 1.0 Name of the equipment Glass Lined Reactor R.Ajita 2.0 Manufacturer Standard Glass Lining Technology Ltd 01-05-2026 RANG 01-05-2026 3.0 Model Number NA RANG 01-05-2076 4.0 Serial Number £250710956 RAjith 01-05-2026 5.0 Capacity / Size 8000L R.Ajith 01-05-2026 6.0 Operating ranges -20°to 220℃ 4.5/FV RA 01-05-2026 7.0 Equipment Identification GLR-1301 RAJ윈도 01-05-2026 Format. No: QAD-SOP-FS-003-F10-00 CONTROLLED COPY";
+
+describe("RTM Remarks from executed protocol records", () => {
+  const iqLedger = (quote: string, pageNumber = 25) =>
+    ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber,
+        attachmentId: "iq",
+        quote,
+      },
+    ]);
+
+  it("gives Complies to an executed IQ spec table with signed dates and no pass word", () => {
+    expect(
+      pickRtmReference(
+        iqLedger(IQ_P25_AGITATOR_MOTOR),
+        "URS-7",
+        "URS-7\nAgitator\nAgitator motor flame proof flange mounted"
+      )
+    ).toMatchObject({
+      stageLabel: "IQ",
+      pageNumber: 25,
+      remarks: "Complies",
+    });
+  });
+
+  it("does not let a stray `Model Number NA` cell make the row NA", () => {
+    expect(
+      pickRtmReference(
+        iqLedger(IQ_P18_IDENTIFICATION, 18),
+        "URS-13",
+        "URS-13\nEquipment identification\nManufacturer name plate and serial number"
+      )
+    ).toMatchObject({ stageLabel: "IQ", remarks: "Complies" });
+  });
+
+  it("keeps an unexecuted IQ template (no signature dates) empty", () => {
+    expect(
+      pickRtmReference(
+        iqLedger(
+          "INSTALLATION QUALIFICATION Effective Date 30-04-2026 13.3.5.4. Agitator Motor Specifications Parameters Design specifications Actual observations Verification Source Verified By (Sign & Date) Make Crompton Motor speed 1470 rpm Flame proof"
+        ),
+        "URS-7",
+        "URS-7\nAgitator\nAgitator motor flame proof"
+      )?.remarks
+    ).toBe("");
+  });
+
+  it("keeps an executed record that failed empty", () => {
+    expect(
+      pickRtmReference(
+        iqLedger(
+          `${IQ_P25_AGITATOR_MOTOR} Remarks: motor speed does not meet design specification`
+        ),
+        "URS-7",
+        "URS-7\nAgitator\nAgitator motor flame proof"
+      )?.remarks
+    ).toBe("");
+  });
+
+  it("gives NA only for a labeled result N/A, not a spec cell", () => {
+    expect(
+      pickRtmReference(
+        iqLedger(`${IQ_P25_AGITATOR_MOTOR} Result: N/A for this equipment`),
+        "URS-7",
+        "URS-7\nAgitator\nAgitator motor flame proof"
+      )?.remarks
+    ).toBe("NA");
+  });
+
+  it("lets stock Complies on an IQ row persist when that IQ record was executed", () => {
+    const context =
+      "URS-7\nAgitator\nAgitator motor flame proof flange mounted\nIQ [Installation Qualification.PDF, p. 25]\n13.3.5.4";
+    expect(
+      qsrRtmCellUnsupported("Complies", context, iqLedger(IQ_P25_AGITATOR_MOTOR))
+    ).toBeNull();
   });
 });
 
