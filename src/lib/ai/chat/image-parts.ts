@@ -40,6 +40,11 @@ function isOversizedDataUrl(url: string): boolean {
  * Keep only valid, sized image file parts so convertToModelMessages can pass
  * them to Gemini as vision context. Non-image files and oversized data URLs
  * are dropped. Caps images on the latest user turn.
+ *
+ * Also drops `role: "system"` UI messages. Gemini rejects a system-role
+ * ModelMessage after the first turn; instructions belong on streamText's
+ * `system` option, not in the thread. Client system text is not hoisted
+ * (prompt-injection).
  */
 export function sanitizeChatMessagesForModel(
   messages: UIMessage[]
@@ -52,7 +57,7 @@ export function sanitizeChatMessagesForModel(
     }
   }
 
-  return messages.map((message, index) => {
+  const next = messages.map((message, index) => {
     const parts = message.parts ?? [];
     const kept: typeof parts = [];
     let imageCount = 0;
@@ -74,6 +79,8 @@ export function sanitizeChatMessagesForModel(
     if (kept.length === parts.length) return message;
     return { ...message, parts: kept };
   });
+
+  return next.filter((message) => message.role !== "system");
 }
 
 export function countImageParts(message: UIMessage | null | undefined): number {
