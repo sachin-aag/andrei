@@ -578,6 +578,32 @@ describe("partsForPersistedAssistantTurn", () => {
       incomplete: true,
     });
   });
+
+  it("marks leftover streaming thoughts as done so reload does not keep Thinking", () => {
+    const parts = [
+      {
+        type: "reasoning",
+        text: "Clarifying URS-65.",
+        state: "streaming",
+      },
+      { type: "text", text: "Drafted the RTM." },
+    ] as unknown as UIMessage["parts"];
+    expect(
+      partsForPersistedAssistantTurn({ parts, isAborted: false })
+    ).toEqual({
+      parts: [
+        {
+          type: "reasoning",
+          text: "Clarifying URS-65.",
+          state: "done",
+        },
+        { type: "text", text: "Drafted the RTM." },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      incomplete: false,
+    });
+  });
 });
 
 describe("isCannedAssistantNoticeText", () => {
