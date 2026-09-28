@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v158-qsr-rtm-section-not-page");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v159-qsr-rtm-section-not-reading");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -30,6 +30,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
     expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
     expect(prompt).toContain("never the printed page counter");
+    expect(prompt).toContain("12.72 °C");
+    expect(prompt).toContain("Bottomsensor");
     expect(prompt).toContain("page that prints that dotted heading");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
@@ -37,6 +39,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Installation Qualification");
     expect(prompt).toContain("8.2.4 / 8.8");
     expect(prompt).toContain("Never paste a markdown table of RTM rows in chat");
+    expect(prompt).toContain("Do not list URS-N rows as updated");
     expect(prompt).toContain("Do not write Stage as PQ/OQ or PQ/IQ");
     expect(prompt).toContain(
       "leave those three cells empty for that row"

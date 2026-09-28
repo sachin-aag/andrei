@@ -189,7 +189,7 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
   Section / Remarks cells clear
 instead of blocking the URS copy. PQ/OQ/IQ Reference – Section numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
-`Page 21 of 51`) is cleared, and Stage `[file, p. N]` cites the page that
+`Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and Stage `[file, p. N]` cites the page that
 prints that heading. An explicit empty `edit_cells` of filled
 Stage / Section / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA

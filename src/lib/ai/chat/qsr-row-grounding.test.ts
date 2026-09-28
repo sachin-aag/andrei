@@ -1614,6 +1614,92 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs4).not.toContain("<remarks>");
   });
 
+  it("keeps every rowKey's Section when a PQ sensor log prints 12.72 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 40,
+        attachmentId: "pq",
+        quote:
+          "Bottomsensor- 12.72 °C during chilling. Jacket pressure 3 to 5 kg/cm². 8000 L. Result: Complies.",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume. Reactor Capacity. Result: Verified",
+      },
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 84,
+        attachmentId: "oq",
+        quote:
+          "10.5 Jacket pressure test 3 to 5 kg/cm² utility pressure. Result: Verified",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 48,
+        attachmentId: "iq",
+        quote:
+          "13.7 Verification of jacket MOC SA-516M Gr. 380 and SS sheet insulation. Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-1",
+            expectedText: "12.72 – Simulation trials at 8000 L working capacity",
+            insertText: "8.2 – Simulation trials at 8000 L working capacity",
+            rowContext: "URS-1\nReactor Capacity\n8000 L",
+          },
+          {
+            row: 6,
+            col: 4,
+            rowKey: "URS-6",
+            expectedText: "12.72 – Jacket pressure test",
+            insertText:
+              "10.5 – Jacket pressure test (3 to 5 kg/cm² utility pressure verification)",
+            rowContext: "URS-6\nJacket Pressure\n3 to 5 kg/cm²",
+          },
+          {
+            row: 12,
+            col: 4,
+            rowKey: "URS-12",
+            expectedText: "12.72 – Jacket MOC",
+            insertText:
+              "13.7 – Verification of jacket MOC and SS sheet insulation",
+            rowContext: "URS-12\nJacket MOC\nSA-516M Gr. 380",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const sectionOf = (key: string) =>
+      cells.find((cell) => cell.rowKey === key && cell.col === 4)?.insertText ??
+      "";
+    expect(sectionOf("URS-1")).toMatch(/^8\.2/);
+    expect(sectionOf("URS-1")).not.toMatch(/12\.72/);
+    expect(sectionOf("URS-6")).toMatch(/^10\.5/);
+    expect(sectionOf("URS-6")).not.toMatch(/12\.72/);
+    expect(sectionOf("URS-12")).toMatch(/^13\.7/);
+    expect(sectionOf("URS-12")).not.toMatch(/12\.72/);
+    expect(cells.filter((cell) => cell.col === 4).map((cell) => cell.rowKey)).toEqual(
+      ["URS-1", "URS-6", "URS-12"]
+    );
+  });
+
   it("keeps Table 7 URS-41 IQ / 13.6 / Complies from live Gaskets when rowContext is only URS-41 / IQ / Complies", () => {
     const ledger = ledgerFromPages([
       {
@@ -2386,6 +2472,67 @@ describe("groundTableOperation optional RTM columns", () => {
     );
   });
 
+  it("does not treat a PQ thermal-log 12.72 °C as a protocol section heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 40,
+        attachmentId: "pq",
+        quote:
+          "Bottomsensor- 12.72 °C during chilling/cooling. Jacket pressure 3 to 5 kg/cm². Result: Complies.",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial. Fill the reactor to 8000 L working volume and heat. Reactor Capacity. Result: Verified",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-1",
+      "URS-1\nReactor Capacity\n8000 L"
+    );
+    expect(pick?.stageLabel).toBe("PQ");
+    expect(pick?.pageNumber).toBe(19);
+    expect(pick?.sectionHeading).toBe("8.2.3 – Heating Trial");
+    expect(pick?.sectionHeading ?? "").not.toMatch(/12\.72/);
+    expect(
+      rtmSectionCellText("8.2 – Simulation trials at 8000 L working capacity", pick)
+    ).toBe("8.2.3 – Simulation trials at 8000 L working capacity");
+    expect(
+      rtmSectionCellText("12.72 – Simulation trials at 8000 L working capacity", pick)
+    ).toBe("8.2.3 – Simulation trials at 8000 L working capacity");
+  });
+
+  it("does not persist 12.72 as Section when the PQ page is only a sensor log", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 40,
+        attachmentId: "pq",
+        quote:
+          "Bottomsensor- 12.72 °C Chilling trial jacket. Result: Complies.",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-6",
+      "URS-6\nJacket Pressure\n3 to 5 kg/cm²"
+    );
+    expect(pick?.sectionHeading ?? "").not.toMatch(/12\.72/);
+    expect(
+      rtmSectionCellText("12.72 – Jacket pressure test", pick)
+    ).toBe("");
+    expect(
+      rtmSectionCellText("10.5 – Jacket pressure test", {
+        family: "pq",
+        sectionHeading: pick?.sectionHeading ?? "12.72 – Chilling",
+      })
+    ).toBe("10.5 – Jacket pressure test");
+  });
+
   describe("rtmSectionCellText", () => {
     const pick = { sectionHeading: "8.2.3 – Heating Trial" };
 
@@ -2478,6 +2625,27 @@ describe("groundTableOperation optional RTM columns", () => {
           sectionHeading: "8.2.3 – Heating Trial",
         })
       ).toBe("8.2.3 – Water batch at 8000 L capacity");
+    });
+
+    it("does not persist a thermal-log 12.72 as the Section number", () => {
+      expect(
+        rtmSectionCellText("12.72 – Simulation trials at 8000 L working capacity", {
+          family: "pq",
+          sectionHeading: "8.2.3 – Heating Trial",
+        })
+      ).toBe("8.2.3 – Simulation trials at 8000 L working capacity");
+      expect(
+        rtmSectionCellText("8.2 – Simulation trials at 8000 L working capacity", {
+          family: "pq",
+          sectionHeading: "12.72 – Chilling",
+        })
+      ).toBe("8.2 – Simulation trials at 8000 L working capacity");
+      expect(
+        rtmSectionCellText("12.72 – Simulation trials at 8000 L working capacity", {
+          family: "pq",
+          sectionHeading: "12.72 – Chilling",
+        })
+      ).toBe("");
     });
 
     it("keeps a DQ integer chapter from Section 4", () => {

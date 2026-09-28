@@ -69,6 +69,9 @@ const SECTION_NUMBER_CELL_RE = /^(?:section\s+)?\d+(?:\.\d+)+$/i;
 /** `8.2.4`, `8.2.4 / 8.8`, `8.5 & 8.6` — not a page counter like `16`. */
 const RTM_DOTTED_SECTION_HEAD_RE =
   /(?:\d+\.\d+(?:\.\d+)*)(?:\s*[\/&]\s*\d+\.\d+(?:\.\d+)*)*/;
+/** After `12.72` in a thermal log: `°C`, `kg/cm²`, `mm`, `L`, `rpm`. */
+const MEASURED_UNIT_AFTER_RE =
+  /^\s*(?:°\s*c|º\s*c|deg(?:rees?)?\s*c|celsius|\bc(?:\b|elsius)|kg(?:\s*\/\s*cm)?|mm\b|cm(?:\s*[²2])?\b|bar\b|rpm\b|kpa\b|%\b|\bl(?:it(?:er|re)s?)?\b)/i;
 const RTM_SECTION_DETAIL_CELL_RE = new RegExp(
   `^(?:section\\s+\\d+(?:\\.\\d+)*|${RTM_DOTTED_SECTION_HEAD_RE.source})(?:\\s*[;:.–—-]\\s+|\\s+)[A-Za-z]`,
   "i"
@@ -804,12 +807,20 @@ function isRtmReferenceMetaLine(line: string): boolean {
 
 function isRtmSectionCellText(text: string): boolean {
   const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
-  if (SECTION_NUMBER_CELL_RE.test(stripped)) return true;
   if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
   // Labeled `Section 4` is a DQ chapter. A bare `16` is a page counter.
-  if (/^section\s+\d+(?:\.\d+)*$/i.test(stripped)) return true;
-  if (/^\d+(?:\.\d+)+$/i.test(stripped)) return true;
-  return RTM_SECTION_DETAIL_CELL_RE.test(stripped);
+  // `12.72 °C` is a sensor reading, not a protocol heading.
+  if (/^section\s+\d+(?:\.\d+)*$/i.test(stripped)) {
+    return Boolean(rtmCellSectionNumber(stripped));
+  }
+  if (
+    SECTION_NUMBER_CELL_RE.test(stripped) ||
+    /^\d+(?:\.\d+)+$/i.test(stripped) ||
+    RTM_SECTION_DETAIL_CELL_RE.test(stripped)
+  ) {
+    return Boolean(rtmCellSectionNumber(stripped));
+  }
+  return false;
 }
 
 function rtmSectionNumber(text: string): string {
@@ -1127,9 +1138,44 @@ function cleanRtmSectionDescription(raw: string): string {
 }
 
 /**
+ * Two-level `12.72` / `25.0` are sensor readings and page-like quantities,
+ * not IQ 13.7 / OQ 10.5 / PQ 8.2. Three-or-more-level `13.3.5` stays.
+ */
+function isMeasuredReadingNumber(number: string): boolean {
+  const parts = number.split(".").filter(Boolean);
+  if (parts.length !== 2) return false;
+  const first = Number(parts[0]);
+  const last = Number(parts[1]);
+  if (!Number.isFinite(first) || !Number.isFinite(last)) return false;
+  return last >= 20 || first >= 20;
+}
+
+function followingLooksLikeMeasurement(after: string): boolean {
+  return MEASURED_UNIT_AFTER_RE.test(after);
+}
+
+function isUsableProtocolSectionNumber(number: string, after = ""): boolean {
+  if (!number || isMeasuredReadingNumber(number)) return false;
+  if (followingLooksLikeMeasurement(after)) return false;
+  return true;
+}
+
+function usableDottedParts(head: string, after = ""): string {
+  const parts = head
+    .split(/\s*[\/&]\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part && isUsableProtocolSectionNumber(part, after));
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0]!;
+  const joiner = /\s*&\s*/.test(head) ? " & " : " / ";
+  return parts.join(joiner);
+}
+
+/**
  * Protocol section number(s): `8.2.3`, `8.2.4 / 8.8`, `8.5 & 8.6`,
  * DQ `Section 4`. A bare `16` / `14` is a printed page counter, not a
  * PQ/OQ/IQ section — those families only accept a dotted number.
+ * `12.72` is a thermal-log reading (Bottomsensor- 12.72 °C), not clause 72.
  */
 function rtmCellSectionNumber(
   text: string,
@@ -1138,7 +1184,10 @@ function rtmCellSectionNumber(
   const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
   const labeled = trimmed.match(/^section\s+(\d+(?:\.\d+)*)/i);
   if (labeled?.[1]) {
-    if (/\./.test(labeled[1])) return labeled[1];
+    const after = trimmed.slice(labeled[0].length);
+    if (/\./.test(labeled[1])) {
+      return isUsableProtocolSectionNumber(labeled[1], after) ? labeled[1] : "";
+    }
     // `Section 4` is DQ. PQ/OQ/IQ never use a labeled integer chapter.
     if (family == null || family === "dq") return labeled[1];
     return "";
@@ -1147,7 +1196,8 @@ function rtmCellSectionNumber(
     new RegExp(`^(${RTM_DOTTED_SECTION_HEAD_RE.source})`)
   )?.[1];
   if (match && !/^\s*of\s+\d/i.test(trimmed.slice(match.length))) {
-    return match.replace(/\s+/g, " ").trim();
+    const usable = usableDottedParts(match, trimmed.slice(match.length));
+    if (usable) return usable.replace(/\s+/g, " ").trim();
   }
   if (family === "dq") {
     const integer = trimmed.match(/^(\d{1,2})(?!\.\d)/);
@@ -1171,6 +1221,7 @@ function rtmSectionNumbersCited(
     .match(/^section\s+(\d+(?:\.\d+)*)/i);
   if (labeled?.[1]) {
     const number = labeled[1];
+    if (!isUsableProtocolSectionNumber(number)) return false;
     const labeledRe = new RegExp(
       `\\bsection\\s+${number.replace(/\./g, "\\.")}\\b`,
       "i"
@@ -1182,7 +1233,10 @@ function rtmSectionNumbersCited(
   const head = rtmCellSectionNumber(text);
   if (!head) return false;
   const numbers = head.split(/\s*[\/&]\s*/).filter(Boolean);
-  return numbers.some((number) => quotes.some((quote) => quote.includes(number)));
+  return numbers.some((number) => {
+    if (!isUsableProtocolSectionNumber(number)) return false;
+    return quotes.some((quote) => quote.includes(number));
+  });
 }
 
 function preferredRtmSectionNumber(
@@ -1218,8 +1272,8 @@ function rtmCellDescription(text: string): string {
  * Reference – Section is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
  * one; the model's one-line description is kept when it is clean, else the
- * heading title. Printed page counters (`16`, `14`) never persist, even as
- * a description-only cell.
+ * heading title. Printed page counters (`16`, `14`) and logged readings
+ * (`12.72 °C`) never persist, even as a description-only cell.
  */
 export function rtmSectionCellText(
   requested: string,
@@ -1286,20 +1340,29 @@ function protocolSectionHeading(
 ): string | null {
   const stripped = protocolBodyQuote(body);
   const matched = context ? rowMatchedSectionHeading(stripped, context) : null;
-  if (matched) return matched;
+  if (matched && rtmCellSectionNumber(matched, family)) return matched;
   const multiTitle = stripped.match(
     /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
   );
-  if (multiTitle?.[1] && multiTitle[2]) {
+  if (
+    multiTitle?.[1] &&
+    multiTitle[2] &&
+    isUsableProtocolSectionNumber(multiTitle[1], multiTitle[2])
+  ) {
     return formatRtmSectionHeading(multiTitle[1], multiTitle[2]);
   }
   const multi = stripped.match(/(?:^|[\s])(\d+(?:\.\d+){2,4})\.?(?:\s|$)/);
-  if (multi?.[1]) {
+  if (multi?.[1] && isUsableProtocolSectionNumber(multi[1])) {
     return formatRtmSectionHeading(multi[1], "");
   }
-  const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+([A-Z][\s\S]*)/);
-  if (titled?.[1] && titled[2]) {
-    return formatRtmSectionHeading(titled[1], titled[2]);
+  const twoLevel = /(?:^|[\s])(\d+\.\d+)(?!\.\d)\.?/g;
+  let titled: RegExpExecArray | null;
+  while ((titled = twoLevel.exec(stripped))) {
+    const number = titled[1]!;
+    const after = stripped.slice(titled.index + titled[0].length);
+    if (!isUsableProtocolSectionNumber(number, after)) continue;
+    if (!/^\s+[A-Z]/.test(after)) continue;
+    return formatRtmSectionHeading(number, after);
   }
   const labeled = stripped.match(
     /\bsection\s+(\d+(?:\.\d+)*)\.?(?:\s+([\s\S]*))?/i
@@ -1310,6 +1373,9 @@ function protocolSectionHeading(
     // PQ/OQ/IQ print dotted 8.x / 13.x. A labeled integer is DQ `Section 4`,
     // not printed page 16.
     if (!/\./.test(labeled[1]) && family && family !== "dq") return null;
+    if (/\./.test(labeled[1]) && !isUsableProtocolSectionNumber(labeled[1], after)) {
+      return null;
+    }
     return formatRtmSectionHeading(labeled[1], labeled[2] ?? "");
   }
   return null;
@@ -1417,6 +1483,7 @@ function headingNumberOnPage(quote: string, number: string): boolean {
     .split(/\s*[\/&]\s*/)
     .filter(Boolean)
     .some((part) => {
+      if (!isUsableProtocolSectionNumber(part)) return false;
       const escaped = part.replace(/\./g, "\\.");
       return new RegExp(
         `(?:^|\\s)(?:section\\s+)?${escaped}(?!\\.\\d)\\.?\\s`,
@@ -1595,7 +1662,14 @@ function rankEditCells(
       if (!rankingUp && conflictingFilledSectionNumber(live, text)) {
         return [];
       }
-      if (!text.trim() && optionalRefExpectedFilled(cell)) return [];
+      if (!text.trim() && optionalRefExpectedFilled(cell)) {
+        // Drop a logged reading / page counter the engineer already accepted
+        // so the next card can replace it; do not keep `12.72` as Section.
+        if (!rtmCellSectionNumber(live, pick.family)) {
+          return [{ ...cell, insertText: "" }];
+        }
+        return [];
+      }
       if (text.trim() === live) return [];
       return [{ ...cell, insertText: text }];
     }

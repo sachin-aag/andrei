@@ -83,4 +83,56 @@ describe("tableCellAdjustments", () => {
     };
     expect(tableCellAdjustments(op, op)).toEqual([]);
   });
+
+  it("names URS rows whose saved Section actually landed, not the requested list", () => {
+    const message = tableCellAdjustmentsMessage(
+      tableCellAdjustments(
+        {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 4,
+              rowKey: "URS-1",
+              insertText: "8.2 – Simulation trials at 8000 L",
+            },
+            {
+              row: 6,
+              col: 4,
+              rowKey: "URS-6",
+              insertText: "10.5 – Jacket pressure test",
+            },
+            {
+              row: 12,
+              col: 4,
+              rowKey: "URS-12",
+              insertText: "13.7 – Jacket MOC",
+            },
+          ],
+        },
+        {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 4,
+              rowKey: "URS-1",
+              insertText: "8.2.3 – Simulation trials at 8000 L",
+            },
+            { row: 6, col: 4, rowKey: "URS-6", insertText: "" },
+            { row: 12, col: 4, rowKey: "URS-12", insertText: "" },
+          ],
+        },
+        (col) => (col === 4 ? "Reference – Section" : null)
+      )
+    );
+    expect(message).toContain("URS-1");
+    expect(message).toContain("Left blank: URS-6 Reference – Section");
+    expect(message).toContain("URS-12 Reference – Section");
+    expect(message).toContain(
+      "do not list requested URS rows whose saved Section is empty"
+    );
+  });
 });

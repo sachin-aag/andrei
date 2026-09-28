@@ -22,6 +22,7 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     expect(QSR_DRAFTING_GUIDANCE).toContain("8.2.4 / 8.8 – Agitator speed check");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Never copy the page number (Page 21 of 51)");
     expect(QSR_DRAFTING_GUIDANCE).toContain("never the printed page counter");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("12.72 °C");
     expect(QSR_DRAFTING_GUIDANCE).toContain("page that prints that dotted heading");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Agitator");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Mechanical Seal");

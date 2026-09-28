@@ -113,5 +113,13 @@ export function tableCellAdjustmentsMessage(
     named.length > 0
       ? ` Left blank: ${named.join("; ")}${blanks.length > named.length ? "…" : ""}.`
       : "";
-  return `${parts.join(" and ")} because the retrieved pages did not support the requested value.${blankList} Report the saved values in adjustedCells, not the requested ones; do not claim an empty cell was filled. Do not paste a markdown table of requested RTM rows in chat.`;
+  const kept = adjustments.filter((adj) => adj.saved);
+  const keptKeys = [
+    ...new Set(kept.map((adj) => adj.rowKey).filter(Boolean)),
+  ];
+  const keptNote =
+    keptKeys.length > 0
+      ? ` Non-empty saved replacements landed on ${keptKeys.slice(0, 8).join(", ")}${keptKeys.length > 8 ? "…" : ""} only — do not list requested URS rows whose saved Section is empty.`
+      : "";
+  return `${parts.join(" and ")} because the retrieved pages did not support the requested value.${blankList}${keptNote} Report the saved values in adjustedCells, not the requested ones; do not claim an empty cell was filled. Do not paste a markdown table of requested RTM rows in chat.`;
 }
