@@ -16,6 +16,11 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "Never write Complies, bare Section 13, or a stock IQ page"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "8.2.3; Heating Trial same as that of PQ"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Agitator");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Type of Mechanical Seal");
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
       "do not paste a protocol-to-URS mapping in chat"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(

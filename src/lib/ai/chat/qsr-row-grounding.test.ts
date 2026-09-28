@@ -1010,6 +1010,7 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toContain("IQ");
     expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[4]).toContain("Jacket Specifications");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -1142,7 +1143,7 @@ describe("groundTableOperation optional RTM columns", () => {
       )
     ).toMatchObject({
       stageLabel: "DQ",
-      sectionHeading: "4",
+      sectionHeading: "4; Vendor documentation",
       remarks: "NA",
     });
     const result = groundTableOperation({
@@ -1187,7 +1188,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
     expect(byCol.get(3)).toMatch(/^DQ\b/);
     expect(byCol.get(3)).toContain("Design Qualification.PDF");
-    expect(byCol.get(4)).toBe("4");
+    expect(byCol.get(4)).toBe("4; Vendor documentation");
     expect(byCol.get(5)).toBe("NA");
   });
 
@@ -1750,7 +1751,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(blob).not.toContain("12.3");
     expect(blob).not.toMatch(/Complies/i);
     const section = urs41.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toBe("13.6");
+    if (section) expect(section.insertText).toContain("13.6");
     if (urs41.length === 0) return;
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
@@ -2165,7 +2166,48 @@ describe("groundTableOperation optional RTM columns", () => {
     );
     expect(pick?.stageLabel).toBe("IQ");
     expect(pick?.sectionHeading).toContain("13.6");
+    expect(pick?.sectionHeading).toContain("Gaskets");
     expect(pick?.filename).toContain("Installation Qualification");
+  });
+
+  it("puts protocol section number and activity title in Reference – Section", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Heating Trial same as that of PQ. Reactor Capacity 8000 L Result: Verified",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-1",
+        "URS-1\nReactor Capacity\n8000 L"
+      )
+    ).toMatchObject({
+      stageLabel: "PQ",
+      sectionHeading: "8.2.3; Heating Trial same as that of PQ",
+    });
+  });
+
+  it("keeps Physical verification in the Section cell when the IQ heading names it", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 20,
+        attachmentId: "iq",
+        quote:
+          "8.2.1 Physical verification same as that of PQ. MOC glass lining thickness 1 mm Result: Verified",
+      },
+    ]);
+    expect(
+      pickRtmReference(ledger, "URS-2", "URS-2\nMOC\nHigh-quality Glass Lining")
+    ).toMatchObject({
+      stageLabel: "IQ",
+      sectionHeading: "8.2.1; Physical verification same as that of PQ",
+    });
   });
 
   it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {

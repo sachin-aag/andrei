@@ -65,6 +65,12 @@ const STOCK_COMPLIES_RE = /\bcomplies\b/i;
 const STOCK_BARE_SECTION_13_RE = /^section\s*13$/i;
 const PASS_WORD_CELL_RE = /^(?:complies|verified)$/i;
 const SECTION_NUMBER_CELL_RE = /^(?:section\s+)?\d+(?:\.\d+)+$/i;
+/** Titled Section cells: `8.2.3; Heating Trial` or `Section 4. Vendor documentation`. */
+const RTM_SECTION_DETAIL_CELL_RE =
+  /^(?:section\s+\d+(?:\.\d+)*|(?:\d+\.)+\d+)(?:\s*[;:.]?\s+|\s+)[A-Za-z]/i;
+const SECTION_HEADING_STOP_RE =
+  /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|uncontrolled)\b/i;
+const SAME_AS_PROTOCOL_RE = /\bsame as that of\s+(DQ|IQ|OQ|PQ)\b/i;
 const PASS_TOKEN_RE =
   /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable|verified)\b/i;
 const NOT_APPLICABLE_RE = /\b(?:n\/?a|not\s+applicable)\b/i;
@@ -729,6 +735,15 @@ export function descriptionSupportedNearKey(
   if (STAGE_ONLY_RE.test(trimmed)) return true;
   if (PASS_WORD_CELL_RE.test(trimmed)) return true;
   if (SECTION_NUMBER_CELL_RE.test(trimmed)) return true;
+  if (isRtmSectionCellText(trimmed)) {
+    const rest = trimmed
+      .replace(/^(?:section\s+)?\d+(?:\.\d+)*/i, "")
+      .replace(/^[\s;:.]+/, "");
+    const tokens = significantDescriptionTokens(rest);
+    const alphaTokens = tokens.filter((token) => /[a-z]/.test(token));
+    if (alphaTokens.length === 0) return true;
+    return tokensSupportedNearKey(alphaTokens, quotes, key);
+  }
   if (new RegExp(`^${key}$`, "i").test(trimmed)) return true;
   const tokens = significantDescriptionTokens(trimmed);
   const alphaTokens = tokens.filter((token) => /[a-z]/.test(token));
@@ -777,7 +792,32 @@ function isRtmReferenceMetaLine(line: string): boolean {
   if (PASS_WORD_CELL_RE.test(stripped)) return true;
   if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
   if (SECTION_NUMBER_CELL_RE.test(stripped)) return true;
+  if (isRtmSectionCellText(stripped)) return true;
   return false;
+}
+
+function isRtmSectionCellText(text: string): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (SECTION_NUMBER_CELL_RE.test(stripped)) return true;
+  if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
+  if (/^(?:section\s+)?\d+(?:\.\d+)*$/i.test(stripped)) return true;
+  return RTM_SECTION_DETAIL_CELL_RE.test(stripped);
+}
+
+function rtmSectionNumber(text: string): string {
+  const m = text
+    .replace(/\[[^\]]*\]/g, "")
+    .trim()
+    .replace(/^section\s+/i, "")
+    .match(/^(\d+(?:\.\d+)*)/);
+  return m?.[1] ?? "";
+}
+
+function sameRtmSectionCell(a: string, b: string): boolean {
+  const left = rtmSectionNumber(a);
+  const right = rtmSectionNumber(b);
+  if (left && right) return left === right;
+  return a.trim() === b.trim();
 }
 
 /**
@@ -1024,16 +1064,61 @@ function protocolMentionsKey(
   });
 }
 
+function headingTitleAfterNumber(rest: string): string {
+  let text = rest;
+  const same = SAME_AS_PROTOCOL_RE.exec(text);
+  if (same && same.index != null) {
+    text = text.slice(0, same.index + same[0].length);
+  }
+  const sentence = text.search(/\.\s+[A-Z]/);
+  if (sentence !== -1) text = text.slice(0, sentence);
+  const cut = text.search(SECTION_HEADING_STOP_RE);
+  const raw = (cut === -1 ? text : text.slice(0, cut)).trim();
+  return raw.replace(/[.:;,-]+$/g, "").replace(/\s+/g, " ").trim();
+}
+
+function protocolSameAsClause(body: string, title: string): string {
+  const match = body.match(SAME_AS_PROTOCOL_RE);
+  if (!match?.[1]) return "";
+  const clause = `same as that of ${match[1].toUpperCase()}`;
+  if (title.toLowerCase().includes(clause.toLowerCase())) return "";
+  return clause;
+}
+
+function formatRtmSectionHeading(number: string, rest: string, body: string): string {
+  const title = headingTitleAfterNumber(rest);
+  const sameAs = protocolSameAsClause(body, title);
+  const detail = [title, sameAs].filter(Boolean).join(" ");
+  return detail ? `${number}; ${detail}` : number;
+}
+
 function protocolSectionHeading(body: string): string | null {
   const stripped = protocolBodyQuote(body);
+  const multiTitle = stripped.match(
+    /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
+  );
+  if (multiTitle?.[1] && multiTitle[2]) {
+    return formatRtmSectionHeading(multiTitle[1], multiTitle[2], stripped);
+  }
   const multi = stripped.match(/(?:^|[\s])(\d+(?:\.\d+){2,4})\.?(?:\s|$)/);
-  if (multi?.[1]) return multi[1];
-  const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+[A-Z]/);
-  if (titled?.[1]) return titled[1];
-  const labeled = stripped.match(/\bsection\s+(\d+(?:\.\d+)*)/i);
-  if (labeled?.[1]) return labeled[1];
-  const titledInt = stripped.match(/(?:^|[\s])(\d+)\.\s+[A-Z]/);
-  return titledInt?.[1] ?? null;
+  if (multi?.[1]) {
+    return formatRtmSectionHeading(multi[1], "", stripped);
+  }
+  const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+([A-Z][\s\S]*)/);
+  if (titled?.[1] && titled[2]) {
+    return formatRtmSectionHeading(titled[1], titled[2], stripped);
+  }
+  const labeled = stripped.match(
+    /\bsection\s+(\d+(?:\.\d+)*)\.?(?:\s+([\s\S]*))?/i
+  );
+  if (labeled?.[1]) {
+    return formatRtmSectionHeading(labeled[1], labeled[2] ?? "", stripped);
+  }
+  const titledInt = stripped.match(/(?:^|[\s])(\d+)\.\s+([A-Z][\s\S]*)/);
+  if (titledInt?.[1] && titledInt[2]) {
+    return formatRtmSectionHeading(titledInt[1], titledInt[2], stripped);
+  }
+  return null;
 }
 
 function matchingProtocolPages(
@@ -1067,7 +1152,7 @@ function stageRankIndex(family: RtmStageFamily): number {
 function firstSectionNumberLine(text: string): string {
   for (const line of text.split("\n")) {
     const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
-    if (SECTION_NUMBER_CELL_RE.test(trimmed)) {
+    if (isRtmSectionCellText(trimmed)) {
       return trimmed.replace(/^section\s+/i, "");
     }
   }
@@ -1109,7 +1194,7 @@ function pickWouldReplaceFilledReference(
   if (
     floor.sectionText &&
     pick.sectionHeading &&
-    floor.sectionText !== pick.sectionHeading
+    !sameRtmSectionCell(floor.sectionText, pick.sectionHeading)
   ) {
     // DQ pages print every URS ID. A heading clash with a filled Section
     // means this pick must not stamp empty Stage / Remarks beside it.

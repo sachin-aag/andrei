@@ -1814,7 +1814,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(blob).not.toMatch(/\bDQ\b/);
     expect(blob).not.toContain("12.3");
     const section = cells.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toBe("13.6");
+    if (section) expect(section.insertText).toContain("13.6");
     if (cells.length === 0) return;
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-dq",
