@@ -5528,6 +5528,113 @@ describe("buildChatTools draft_identity", () => {
     expect(dbUpdateMock).not.toHaveBeenCalled();
   });
 
+  it("restores Capacity/Size units from cited quotes when the model writes a bare number", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      seedCitationHits: [
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 1,
+          quote:
+            "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301",
+        },
+      ],
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [
+          { key: "equipmentName", value: "Glass Lined Reactor" },
+          { key: "equipmentCode", value: "GLR-1301" },
+          { key: "capacity", value: "8000" },
+          { key: "plantSection", value: "Production Block-2" },
+        ],
+        reasoning: "Copied from the URS cover.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("applied");
+    expect(updates[0]?.metadata).toMatchObject({
+      equipmentName: "Glass Lined Reactor",
+      equipmentCode: "GLR-1301",
+      capacity: "8000 L",
+      plantSection: "Production Block-2",
+    });
+  });
+
+  it("does not attach a unit to non-capacity identity fields", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      seedCitationHits: [
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 1,
+          quote: "Equipment ID GLR-1301 Capacity 8000 L",
+        },
+      ],
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [{ key: "equipmentCode", value: "GLR-1301" }],
+        reasoning: "Copied the equipment number.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("applied");
+    expect(updates[0]?.metadata).toMatchObject({
+      equipmentCode: "GLR-1301",
+    });
+    expect(JSON.stringify(updates[0]?.metadata)).not.toContain("8000");
+  });
+
+  it("leaves capacity bare when cited units for that figure conflict", async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      seedCitationHits: [
+        {
+          filename: "protocol.pdf",
+          pageNumber: 1,
+          quote: "volume 8000 L mass 8000 kg",
+        },
+      ],
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [{ key: "capacity", value: "8000" }],
+        reasoning: "Number is on the page; units disagree.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("applied");
+    expect(updates[0]?.metadata).toMatchObject({ capacity: "8000" });
+  });
+
   it("persists identity scalars without citations", async () => {
     const updates: Array<Record<string, unknown>> = [];
     dbUpdateMock.mockImplementation(() => ({

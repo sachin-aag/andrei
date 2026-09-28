@@ -34,6 +34,7 @@ export const QSR_IDENTITY_FIELDS: readonly ChatIdentityField[] = [
     storage: "metadata",
     metadataKey: "capacity",
     required: true,
+    keepUnits: true,
   },
   {
     key: "plantSection",
@@ -69,6 +70,6 @@ export function qsrChatContextIdentity(
     line("capacity/size", meta.capacity),
     line("plant section", meta.plantSection),
     `form: QAD/016/F06-00 revision ${sanitizePromptMetadata(meta.revision, 20) || "00"}`,
-    "This is the Qualification Summary Report. Headings, sign-off, revision history and Index are fixed by the form — do not draft those. Fill cover identity (equipment, report no., revision) with draft_identity from attachments. Cover scalars never include citations.",
+    "This is the Qualification Summary Report. Headings, sign-off, revision history and Index are fixed by the form — do not draft those. Fill cover identity (equipment, report no., capacity with unit, revision) with draft_identity from attachments. Cover scalars never include citations. Capacity / Size is the printed figure with its unit (8000 L, 3.0 KL) — not a bare 8000.",
   ];
 }

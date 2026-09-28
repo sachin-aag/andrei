@@ -105,6 +105,7 @@ import {
   identityRemainingRequired,
   identitySnapshotFields,
   isChatIdentitySection,
+  attachIdentityCapacityUnits,
   sanitizeIdentityScalar,
 } from "@/lib/ai/chat/identity";
 import { stripCreatePreloadMetadata } from "@/lib/reports/create-preload";
@@ -4366,12 +4367,16 @@ export function buildChatTools(opts: {
   };
 
   if (hasChatIdentity(documentType) && canEdit) {
-    const identityKeys = chatIdentityFields(documentType)
+    const identityCatalog = chatIdentityFields(documentType);
+    const identityKeys = identityCatalog
       .map((field) => `'${field.key}' (${field.label}${field.required ? ", required" : ""})`)
       .join(", ");
+    const capacityUnitHint = identityCatalog.some((field) => field.keepUnits)
+      ? " Measured size (capacity) includes the printed unit (8000 L, 3.0 KL) — not a bare number."
+      : "";
     tools.draft_identity = tool({
       description:
-        `Fill cover/header identity scalars (${identityKeys}). Search attachments first. This write lands immediately — not a suggestion card. Pass the bare scalar with no [filename, p. N], numbered [n], or Citations: list — these fields print on the cover. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`,
+        `Fill cover/header identity scalars (${identityKeys}). Search attachments first. This write lands immediately — not a suggestion card. Pass the bare scalar with no [filename, p. N], numbered [n], or Citations: list — these fields print on the cover.${capacityUnitHint} ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`,
       inputSchema: z.object({
         fields: z
           .array(
@@ -4386,7 +4391,7 @@ export function buildChatTools(opts: {
                 .min(1)
                 .max(500)
                 .describe(
-                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list."
+                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list. Measured size fields keep the printed unit (8000 L, 3.0 KL)."
                 ),
             })
           )
@@ -4499,10 +4504,20 @@ export function buildChatTools(opts: {
           });
         }
 
-        const cleanedFields = groundedIdentity.groundedPatches.map((patch) => ({
-          key: patch.key,
-          value: sanitizeIdentityScalar(patch.value),
-        }));
+        const identityQuotes = citationLedger
+          .recordedPages()
+          .map((page) => page.quote);
+        const identityCatalog = chatIdentityFields(documentType);
+        const cleanedFields = groundedIdentity.groundedPatches.map((patch) => {
+          const field = identityCatalog.find(
+            (item) => item.key === patch.key.trim()
+          );
+          let value = sanitizeIdentityScalar(patch.value);
+          if (field?.keepUnits) {
+            value = attachIdentityCapacityUnits(value, identityQuotes);
+          }
+          return { key: patch.key, value };
+        });
         const update = buildIdentityUpdate({
           documentType,
           current,

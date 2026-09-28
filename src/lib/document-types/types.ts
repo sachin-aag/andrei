@@ -108,6 +108,11 @@ export type ChatIdentityField = {
   alsoMetadataKey?: string;
   /** Remaining-section treats the identity block as empty while any required field is blank. */
   required?: boolean;
+  /**
+   * Restore a printed unit from cited quotes when the model writes a bare
+   * number (QSR Capacity / Size: `8000` → `8000 L`). No conversion (8000 ≠ 8 KL).
+   */
+  keepUnits?: boolean;
 };
 
 export type DocxTemplateData = Record<string, unknown>;

@@ -10,6 +10,7 @@ import {
   identityRemainingRequired,
   identitySnapshotFields,
   readIdentityValue,
+  attachIdentityCapacityUnits,
   sanitizeIdentityScalar,
 } from "./identity";
 
@@ -28,6 +29,14 @@ describe("hasChatIdentity", () => {
     expect(hasChatIdentity("design_verification")).toBe(
       getCustomerPack().id === "demo"
     );
+  });
+
+  it("marks QSR capacity as keepUnits", () => {
+    expect(
+      chatIdentityFields("qualification_summary_report").find(
+        (field) => field.key === "capacity"
+      )?.keepUnits
+    ).toBe(true);
   });
 
   it("is off for investigation, Convergent mechanical, VQ, and generic", () => {
@@ -173,6 +182,83 @@ describe("buildIdentityUpdate", () => {
       )
     ).toBe("Glass Lined Reactor");
     expect(sanitizeIdentityScalar("[protocol.pdf, p. 1]")).toBe("");
+  });
+});
+
+describe("attachIdentityCapacityUnits", () => {
+  const ursCover =
+    "Equipment Name Glass Lined Reactor Capacity 8000 L Equipment ID GLR-1301 Page 1 of 12";
+  const iqHeader =
+    "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 1 of 60";
+
+  it("copies L from a Capacity label next to the same figure", () => {
+    expect(attachIdentityCapacityUnits("8000", [ursCover])).toBe("8000 L");
+    expect(attachIdentityCapacityUnits("8000", [iqHeader])).toBe("8000 L");
+  });
+
+  it("keeps a unit the model already wrote", () => {
+    expect(attachIdentityCapacityUnits("8000 L", [ursCover])).toBe("8000 L");
+    expect(attachIdentityCapacityUnits("3.0 KL", ["Capacity 3.0 KL"])).toBe(
+      "3.0 KL"
+    );
+  });
+
+  it("copies KL from 3.0 KL as printed", () => {
+    expect(attachIdentityCapacityUnits("3.0", ["Capacity / Size: 3.0 KL"])).toBe(
+      "3.0 KL"
+    );
+  });
+
+  it("does not steal a jacket volume with a different number", () => {
+    expect(
+      attachIdentityCapacityUnits("8000", [
+        "Jacket volume 773 L",
+        "Capacity 8000 L",
+      ])
+    ).toBe("8000 L");
+  });
+
+  it("does not convert 8000 L into 8 KL", () => {
+    expect(attachIdentityCapacityUnits("8000", ["Working volume 8 KL"])).toBe(
+      "8000"
+    );
+  });
+
+  it("leaves a bare number when unlabeled units conflict", () => {
+    expect(
+      attachIdentityCapacityUnits("8000", ["volume 8000 L", "mass 8000 kg"])
+    ).toBe("8000");
+  });
+
+  it("prefers a labeled Capacity/Size unit over an unlabeled conflict", () => {
+    expect(
+      attachIdentityCapacityUnits("8000", [
+        "Capacity/Size 8000 L",
+        "mass 8000 kg",
+      ])
+    ).toBe("8000 L");
+  });
+
+  it("matches comma-grouped source figures", () => {
+    expect(attachIdentityCapacityUnits("8000", ["Capacity 8,000 L"])).toBe(
+      "8000 L"
+    );
+  });
+
+  it("accepts a missing space after the number", () => {
+    expect(attachIdentityCapacityUnits("8000", ["Capacity 8000L"])).toBe(
+      "8000 L"
+    );
+  });
+
+  it("leaves non-numeric identity values alone", () => {
+    expect(
+      attachIdentityCapacityUnits("Glass Lined Reactor", [ursCover])
+    ).toBe("Glass Lined Reactor");
+  });
+
+  it("leaves a bare number when quotes are empty", () => {
+    expect(attachIdentityCapacityUnits("8000", [])).toBe("8000");
   });
 });
 
