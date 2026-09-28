@@ -348,6 +348,7 @@ function citationsTableDoc(rows: readonly ThreeXperCitationRow[]): JSONContent {
     content: [
       {
         type: "table",
+        attrs: { colWidths: [1400, 2800, 3800, 2000] },
         content: [
           tableRow(THREE_XPER_CITATION_HEADERS, true),
           ...rows.map((row) =>

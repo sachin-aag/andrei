@@ -260,6 +260,8 @@ describe("threeXperCitationsAppendixXml", () => {
     expect(xml).toContain(THREE_XPER_CITATIONS_HEADING);
     expect(xml).toContain('<w:pStyle w:val="Heading1"/>');
     expect(xml).toContain("<w:tbl>");
+    expect(xml).toContain('<w:gridCol w:w="1400"/>');
+    expect(xml).toContain('<w:gridCol w:w="3800"/>');
     for (const header of THREE_XPER_CITATION_HEADERS) {
       expect(xml).toContain(header);
     }
