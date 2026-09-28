@@ -94,9 +94,6 @@ function pdfItem(
   extras: Partial<StructuredTextItem> = {}
 ): StructuredTextItem {
   return {
-    str,
-    x,
-    y,
     width: extras.width ?? Math.max(str.length * 6, 4),
     height: extras.height ?? 10,
     fontSize: extras.fontSize ?? 10,
