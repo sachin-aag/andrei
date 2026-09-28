@@ -93,4 +93,31 @@ describe("ChatActivityLine", () => {
       screen.getByRole("button", { name: "Thinking… 1s" })
     ).toBeInTheDocument();
   });
+
+  it("stops the thinking timer when the thought is no longer pending", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<ChatActivityLine node={pendingThought} />);
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(
+      screen.getByRole("button", { name: "Thinking… 2s" })
+    ).toBeInTheDocument();
+
+    rerender(
+      <ChatActivityLine
+        node={{ ...pendingThought, pending: false, label: "Thought" }}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Thought" })).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByRole("button", { name: "Thought" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Thinking/ })
+    ).not.toBeInTheDocument();
+  });
 });

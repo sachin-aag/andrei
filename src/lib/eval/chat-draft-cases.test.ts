@@ -60,7 +60,7 @@ describe("chat-draft-cases.json", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("covers the QSR section 5 overblock and a greeting", () => {
+  it("covers the QSR section 5 overblock, mixed identity, SOP titles, and a greeting", () => {
     const ids = new Set(cases.map((entry) => entry.id));
     expect(ids.has("qsr-rtm-cover-8000l")).toBe(true);
     expect(ids.has("qsr-rtm-vacuum-760mmhg")).toBe(true);
@@ -68,6 +68,10 @@ describe("chat-draft-cases.json", () => {
     expect(ids.has("qsr-rtm-neighbour-urs37-blocked")).toBe(true);
     expect(ids.has("qsr-rtm-iq-jacket-topic-stage")).toBe(true);
     expect(ids.has("qsr-rtm-iq-header-only-stage-blocked")).toBe(true);
+    expect(ids.has("qsr-mixed-identity-not-cover-walk")).toBe(true);
+    expect(ids.has("qsr-draft-2-3-4-not-cover-walk")).toBe(true);
+    expect(ids.has("qsr-table-3-only-still-cover-walk")).toBe(true);
+    expect(ids.has("qsr-sop-title-list-keeps-search-open")).toBe(true);
     expect(ids.has("harness-greeting-no-tools")).toBe(true);
   });
 
@@ -87,6 +91,35 @@ describe("chat-draft-cases.json", () => {
     const scored = scoreChatDraftCase(cover, output);
     expect(scored.passed).toBe(false);
     expect(scored.failures.some((row) => row.includes("8000 L"))).toBe(true);
+  });
+
+  it("fails a mutated mixed-identity case that collapses onto Table 3 covers", () => {
+    const mixed = cases.find((entry) => entry.id === "qsr-mixed-identity-not-cover-walk");
+    expect(mixed?.task).toBe("page_plan");
+    if (mixed?.task !== "page_plan") return;
+    const output = runChatDraftCase({
+      ...mixed,
+      expected: { ...mixed.expected, pagePlan: "cover", isCoverWalk: true },
+    });
+    const scored = scoreChatDraftCase(
+      { ...mixed, expected: { ...mixed.expected, pagePlan: "cover", isCoverWalk: true } },
+      output
+    );
+    expect(scored.passed).toBe(false);
+    expect(scored.failures.some((row) => row.includes("pagePlan"))).toBe(true);
+  });
+
+  it("fails a mutated SOP-title case that would close search", () => {
+    const titles = cases.find((entry) => entry.id === "qsr-sop-title-list-keeps-search-open");
+    expect(titles?.task).toBe("identity_incomplete");
+    if (titles?.task !== "identity_incomplete") return;
+    const output = runChatDraftCase(titles);
+    const scored = scoreChatDraftCase(
+      { ...titles, expected: { ...titles.expected, keepSearchOpen: false } },
+      output
+    );
+    expect(scored.passed).toBe(false);
+    expect(scored.failures.some((row) => row.includes("keepSearchOpen"))).toBe(true);
   });
 
   it("lets a local overlay replace a public id", () => {

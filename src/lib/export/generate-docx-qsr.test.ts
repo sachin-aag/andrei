@@ -177,6 +177,54 @@ describe("qualification summary report DOCX export", () => {
     );
     expect(document).not.toContain("PRIMARY CONDENSER");
     expect(document).not.toContain("MOTOR & GEARBOX");
+    expect(body).toContain("Inner Surface area");
+    expect(body).toContain("Equipment Dimensions (L x W x H)");
+  });
+
+  it("appends Table 11 extra rows when exporting an older six-row volumetric seed", async () => {
+    const olderMain = tableDoc(
+      ["S.No", "Parameter", "Details"],
+      [
+        ["1", "Minimum stirring volume (L)", ""],
+        ["2", "Minimum temperature sensing volume without stirring (L)", ""],
+        ["3", "Minimum temperature sensing volume with stirring (L)", ""],
+        ["4", "Minimum sampling volume (L)- If applicable", ""],
+        ["5", "Full volume (L)", ""],
+        ["6", "Over flow volume (L)", ""],
+      ]
+    );
+    const auxiliary = tableDoc(
+      ["S.No", "Parameter", "Details"],
+      [
+        ["1", "Dead volume (L)", ""],
+        ["2", "Full volume (L)", ""],
+        ["3", "Over flow volume (L)", ""],
+      ]
+    );
+    const { document } = await exportXml(
+      sectionsWith({
+        qsr_volumetric_details: {
+          narrative: {
+            type: "doc",
+            content: [
+              { type: "paragraph" },
+              olderMain.content![0],
+              {
+                type: "paragraph",
+                content: [text("Auxiliary Equipment: ")],
+              },
+              auxiliary.content![0],
+            ],
+          },
+        },
+      })
+    );
+    const body = visibleText(document);
+    expect(body).toContain("Inner Surface area");
+    expect(body).toContain("Equipment Dimensions (L x W x H)");
+    expect(rowContaining(document, "Dead volume (L)")).not.toContain(
+      "Inner Surface area"
+    );
   });
 
   it("keeps user text that looks like a template tag literal", async () => {
@@ -308,7 +356,7 @@ describe("qualification summary report DOCX export", () => {
     expect(table?.content?.[3]?.content).toHaveLength(2);
   });
 
-  it("unifies citations at the end of the form", async () => {
+  it("unifies citations at the end of the form as a table", async () => {
     function cited(body: string, source: string): JSONContent {
       return {
         type: "doc",
@@ -322,8 +370,38 @@ describe("qualification summary report DOCX export", () => {
     }
     const { document } = await exportXml(
       sectionsWith({
-        qsr_conclusion: { narrative: cited("The system is qualified [1].", "[iq.pdf, p. 4]") },
-        qsr_objective: { narrative: cited("The URS was approved [1].", "[urs.pdf, p. 2]") },
+        qsr_qualification_documents: {
+          table: tableDoc(QSR_QUALIFICATION_DOCUMENT_HEADERS, [
+            [
+              "User Requirement Specification",
+              "URS/PB2/001/12345",
+              "00",
+              "Approved",
+              "01/01/2026",
+              "",
+            ],
+            [
+              "Installation Qualification",
+              "IQ/PB2/003/9",
+              "00",
+              "Approved",
+              "02/01/2026",
+              "",
+            ],
+          ]),
+        },
+        qsr_conclusion: {
+          narrative: cited(
+            "The system is qualified [1].",
+            "[Installation Qualification.PDF, p. 4]"
+          ),
+        },
+        qsr_objective: {
+          narrative: cited(
+            "The URS was approved [1].",
+            "[User Requirement Specification.PDF, p. 2]"
+          ),
+        },
       })
     );
     const body = visibleText(document);
@@ -333,8 +411,28 @@ describe("qualification summary report DOCX export", () => {
     expect(body).toContain("The system is qualified");
     expect(document).toContain('<w:vertAlign w:val="superscript"/>');
     expect(body).not.toContain("Citations:");
-    expect(body).toContain("1. [urs.pdf, p. 2]");
-    expect(body).toContain("2. [iq.pdf, p. 4]");
-    expect(body.indexOf("1. [urs.pdf, p. 2]")).toBeGreaterThan(citationsAt);
+    expect(body).not.toContain("1. [User Requirement Specification.PDF, p. 2]");
+
+    const headingAt = document.indexOf("CITATIONS");
+    const citationsTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        document.indexOf(tbl) > headingAt &&
+        visibleText(tbl).includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const tableText = visibleText(citationsTable!);
+    expect(tableText).toContain("Document reference #");
+    expect(tableText).toContain("Description of Document");
+    expect(tableText).toContain("Reference page#");
+    expect(tableText).toContain("URS/PB2/001/12345");
+    expect(tableText).toContain("User Requirement Specification");
+    expect(tableText).toContain("Page # 2");
+    expect(tableText).toContain("IQ/PB2/003/9");
+    expect(tableText).toContain("Installation Qualification");
+    expect(tableText).toContain("Page # 4");
+    expect(citationsTable).toContain('w:fill="FFD966"');
+    expect(tableText.indexOf("URS/PB2/001/12345")).toBeLessThan(
+      tableText.indexOf("IQ/PB2/003/9")
+    );
   });
 });

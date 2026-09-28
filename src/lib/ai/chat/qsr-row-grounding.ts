@@ -69,6 +69,20 @@ const SECTION_NUMBER_CELL_RE = /^(?:section\s+)?\d+(?:\.\d+)+$/i;
 const PASS_TOKEN_RE =
   /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable|verified)\b/i;
 const NOT_APPLICABLE_RE = /\b(?:n\/?a|not\s+applicable)\b/i;
+// A labeled result / whole-test N/A. A bare `NA` cell in a filled
+// specification table (`Model Number NA`) is a row value, not the verdict.
+const NA_STATEMENT_RE =
+  /\b(?:result|remarks?|status|inference|conclusion|verdict)\s*[:\-–]?\s*(?:is\s+)?(?:n\/a|na|not\s+applicable)\b|\bnot\s+applicable\s+(?:for|to)\s+(?:this|the)\b/i;
+// Executed IQ / OQ records print Actual observation + Verified By (Sign &
+// Date) with signed dates and no pass word.
+const EXECUTED_RECORD_HEADER_RE =
+  /\bactual\s+(?:observations?|verification|values?|results?|readings?)\b|\bobserv(?:ed|ations?)\b[\s\S]{0,160}\bverified\s+by\b|\bverified\s+by\b[\s\S]{0,160}\bobserv(?:ed|ations?)\b/i;
+const SIGNED_DATE_RE = /\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/g;
+const HEADER_DATE_LABEL_RE =
+  /\b(?:effective\s+date|issued\s+on|date\s+of\s+issue|review\s+date|next\s+review)\b/gi;
+const PROTOCOL_FAIL_RE =
+  /\bfail(?:ed|s|ure)?\b|\bnot\s+(?:compl(?:y|ied|ies)|met|satisfactory|acceptable|accepted)\b|\bdoes\s+not\s+(?:comply|meet)\b|\bnon[-\s]?complian(?:ce|t)\b/i;
+const PASS_FAIL_LABEL_RE = /\bpass\s*(?:\/|or)\s*fail\b/gi;
 const REVISION_CELL_RE = /^0?\d{1,2}$/;
 const RPM_PARAMETER_RE = /\bagitator\b|\brpm\b/i;
 const RANGE_PARAMETER_RE =
@@ -794,10 +808,50 @@ function protocolTopicBody(quote: string, context: string): string | null {
   return null;
 }
 
+function normalizedDate(match: RegExpMatchArray): string {
+  return `${Number(match[1])}-${Number(match[2])}-${match[3]}`;
+}
+
+/** First date after each Effective Date / Issued On label (running header). */
+function headerDates(text: string): Set<string> {
+  const dates = new Set<string>();
+  for (const label of text.matchAll(HEADER_DATE_LABEL_RE)) {
+    const after = text.slice(
+      (label.index ?? 0) + label[0].length,
+      (label.index ?? 0) + label[0].length + 80
+    );
+    const first = [...after.matchAll(SIGNED_DATE_RE)][0];
+    if (first) dates.add(normalizedDate(first));
+  }
+  return dates;
+}
+
+/**
+ * A filled verification record: observation / Verified By columns plus a
+ * signature date that is not the running-header Effective Date / Issued On.
+ * An unexecuted template (`Verification Verified By Date`) has no date.
+ */
+function isExecutedVerificationRecord(text: string): boolean {
+  if (!EXECUTED_RECORD_HEADER_RE.test(text)) return false;
+  const header = headerDates(text);
+  return [...text.matchAll(SIGNED_DATE_RE)].some(
+    (match) => !header.has(normalizedDate(match))
+  );
+}
+
+function hasNaStatement(text: string): boolean {
+  return NA_STATEMENT_RE.test(text);
+}
+
+function hasProtocolFailStatement(text: string): boolean {
+  return PROTOCOL_FAIL_RE.test(text.replace(PASS_FAIL_LABEL_RE, " "));
+}
+
 function hasProtocolPassToken(text: string): boolean {
+  if (hasNaStatement(text) || hasProtocolFailStatement(text)) return false;
   const hay = text.replace(/\bverified\s+by\b/gi, " ");
-  if (NOT_APPLICABLE_RE.test(hay)) return false;
-  return PASS_TOKEN_RE.test(hay);
+  if (PASS_TOKEN_RE.test(hay)) return true;
+  return isExecutedVerificationRecord(text);
 }
 
 export function documentFamilyFromFilename(
@@ -901,6 +955,7 @@ function protocolPassWindow(
 ): string | null {
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
+    if (keyedNotApplicable(page.quote, key)) continue;
     const window = pageLevelTokenAroundKey(page.quote, key);
     if (window && hasProtocolPassToken(window)) return window;
     const topic = protocolTopicBody(page.quote, context);
@@ -909,6 +964,17 @@ function protocolPassWindow(
   return null;
 }
 
+/** Bare N/A inside this row's own URS-N window (not a neighbour cell). */
+function keyedNotApplicable(quote: string, key: string): boolean {
+  const window = quoteWindowAroundKey(quote, key);
+  return window != null && NOT_APPLICABLE_RE.test(window);
+}
+
+/**
+ * Row-level N/A only: a labeled result / whole-test statement on the
+ * matching page, or a bare N/A inside this URS-N window. A stray `NA`
+ * spec cell on an executed IQ page must not stamp the row NA.
+ */
 function protocolNaWindow(
   ledger: CitationPageLedger,
   key: string,
@@ -917,10 +983,11 @@ function protocolNaWindow(
 ): string | null {
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
+    if (keyedNotApplicable(page.quote, key)) return page.quote;
     const window = pageLevelTokenAroundKey(page.quote, key);
-    if (window && NOT_APPLICABLE_RE.test(window)) return window;
+    if (window && hasNaStatement(window)) return window;
     const topic = protocolTopicBody(page.quote, context);
-    if (topic && NOT_APPLICABLE_RE.test(topic)) return topic;
+    if (topic && hasNaStatement(topic)) return topic;
   }
   return null;
 }
@@ -933,7 +1000,7 @@ function rtmRemarksForPick(
   context: string
 ): string {
   if (
-    (body && NOT_APPLICABLE_RE.test(body)) ||
+    (body && hasNaStatement(body)) ||
     protocolNaWindow(ledger, key, family, context)
   ) {
     return "NA";

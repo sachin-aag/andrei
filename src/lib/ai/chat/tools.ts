@@ -97,6 +97,10 @@ import {
 } from "@/lib/ai/chat/fields";
 import { annotateDividerSearchHits } from "@/lib/ai/chat/attachment-divider";
 import {
+  annotateIdentityIncompleteSearchHits,
+  IDENTITY_INCOMPLETE_SEARCH_HINT,
+} from "@/lib/ai/chat/identity-incomplete-hits";
+import {
   annotateContinuationSearchHits,
   continuationPageNumber,
   PAGE_CONTINUATION_SEARCH_HINT,
@@ -262,7 +266,15 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
-import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  qsrTableColumnLabel,
+  shouldKeepRtmProtocolSearchOpen,
+} from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  tableCellAdjustments,
+  tableCellAdjustmentsMessage,
+  type TableCellAdjustment,
+} from "@/lib/ai/chat/table-cell-adjustments";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -389,6 +401,8 @@ export type EditTableResult =
       supersededSuggestionIds?: string[];
       tableNumber?: number;
       warning?: string;
+      adjustedCells?: TableCellAdjustment[];
+      adjustmentNote?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -993,17 +1007,19 @@ function buildSearchDocumentsTool(opts: {
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
     const continuation = annotateContinuationSearchHits(annotated.results);
+    const identity = annotateIdentityIncompleteSearchHits(continuation.results);
     const rtmProtocolOpen = shouldKeepRtmProtocolSearchOpen(
       queryList,
       merged.map((hit) => hit.filename)
     );
     return {
-      results: continuation.results,
+      results: identity.results,
       queriesRun: queryList,
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,
       dividerHits: annotated.dividerHits,
       continuationHits: continuation.continuationHits,
+      identityIncompleteHits: identity.identityIncompleteHits,
       dataHits: Math.max(0, annotated.results.length - annotated.dividerHits),
       queryPlan,
       truncated,
@@ -1019,8 +1035,12 @@ function buildSearchDocumentsTool(opts: {
       ...(continuation.continuationHits > 0
         ? { continuationHint: PAGE_CONTINUATION_SEARCH_HINT }
         : {}),
+      ...(identity.keepSearchOpen
+        ? { identityIncompleteHint: IDENTITY_INCOMPLETE_SEARCH_HINT }
+        : {}),
       ...(annotated.keepSearchOpen ||
       continuation.keepSearchOpen ||
+      identity.keepSearchOpen ||
       rtmProtocolOpen
         ? { keepSearchOpen: true as const }
         : {}),
@@ -3940,6 +3960,11 @@ export function buildChatTools(opts: {
           resolvedField,
           repairTextsFromTableOperation(groundedTable.operation).join("\n")
         );
+        const adjustedCells = tableCellAdjustments(
+          originalTableOp,
+          groundedTable.operation,
+          (col) => qsrTableColumnLabel(section, col)
+        );
         return proposedWithSupersession(
           {
             status: "proposed" as const,
@@ -3952,6 +3977,12 @@ export function buildChatTools(opts: {
               : {}),
             ...(tableOverclaims.warning
               ? { warning: tableOverclaims.warning }
+              : {}),
+            ...(adjustedCells.length > 0
+              ? {
+                  adjustedCells,
+                  adjustmentNote: tableCellAdjustmentsMessage(adjustedCells),
+                }
               : {}),
           },
           supersededSuggestionIds

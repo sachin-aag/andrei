@@ -82,10 +82,13 @@ with Analytics). An identifier-only grep that hits a protocol family
 keeps search open until every higher family (PQ, then OQ, then IQ, then
 DQ) has been queried (`shouldKeepRtmProtocolSearchOpen`) — an IQ hit is
 not enough while PQ or OQ are still unsearched. Document-chat attachment cover sheets (ATTACHMENT NO. /
-certificate-of locators, `divider=true`) and split tables (`continues=true`,
-Page N of M with N < M) are not a complete cited data page: they
-set `keepSearchOpen` and `searchHitCount` treats `dividerHits >=
-returnedCount` as 0 so the following page can be read. `read_document_page`
+certificate-of locators, `divider=true`), split tables (`continues=true`,
+Page N of M with N < M), and title lists without identifier values
+(`identityIncomplete=true` — SOP Name / Document Name without a document
+number) are not a complete cited data page: they
+set `keepSearchOpen` and `searchHitCount` treats `dividerHits` /
+`identityIncompleteHits >= returnedCount` as 0 so the following page can
+be read or grep can continue. `read_document_page`
 includes the next page as `continuation` when the transcript prints Page N
 of M. Analytics still hides after a real cited page (it does not keep grep
 open for split tables). Do not hide search while a document review is
@@ -130,7 +133,9 @@ those column phrases. `REVIEW_PAGE_FETCH_CAP`
 pages; DV catalogs keep the listing cap. QSR Table 3
 (`qsr_qualification_documents`) is not ELR qualification history: do not
 demote URS or walk 48 protocol body pages — queue the first two pages of
-every attached lifecycle file and omit `attachmentIds`.
+every attached lifecycle file and omit `attachmentIds`. Collapse `|obj:`
+onto that cover walk only when every named identity shares the cover
+plan — mixed SOP Number / Reference Number copy is a scored body walk.
 QSR RTM / Operating Range omit `attachmentIds` so the server keeps the URS
 (a 12-page URS is a 12-page walk), not DQ/IQ/OQ/PQ bodies.
 `continue_document_review` stops starting batches after ~60s and round-robins
@@ -176,12 +181,20 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
 (`20 °C` is not `−20 °C to 150 °C`). Stock Complies / bare Section 13 still need a named-stage protocol page that
   either names that URS ID or topic-matches that row's Parameters in the
   protocol body (not the running header). Verified on the result line counts
-  as a pass; Verified By in a signature block does not. Unsupported Stage /
+  as a pass; Verified By in a signature block does not. An executed
+  verification record (Actual observation / Verified By columns plus a
+  signature date that is not the Effective Date / Issued On header date)
+  is a pass with no pass word; an unexecuted template (no signature date)
+  is not, and a fail / does-not-meet statement vetoes every pass. Unsupported Stage /
   Section / Remarks cells clear
 instead of blocking the URS copy. An explicit empty `edit_cells` of filled
 Stage / Section / Remarks stays a clear (suggestion card), including when
-the URS is attached but unread this turn. Protocol N/A / not applicable
-becomes Remarks NA. Every pack uses `unsupportedFactPolicy: block`
+the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
+only at row level (labeled Result / Remarks N/A, `not applicable for this
+…`, or a bare N/A inside that URS-N window) — a stray `Model Number NA`
+spec cell does not. When a saved cell differs from the request, the
+`edit_table` `proposed` result carries `adjustedCells` (`requested` /
+`saved`) so the wrap-up reports what landed. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

@@ -98,7 +98,7 @@ async function ensureLangfuseDataset(
     await client.api.datasets.create({
       name: CHAT_DRAFT_DATASET_NAME,
       description:
-        "Git-owned chat draft quality floor (QSR section 5 grounding + layer-1 harness). Source: scripts/eval/chat-draft-cases.json.",
+        "Git-owned chat draft quality floor (QSR section 5 grounding, mixed-identity page plans, identity-incomplete search hits, layer-1 harness). Source: scripts/eval/chat-draft-cases.json.",
     });
     console.log(`created Langfuse dataset ${CHAT_DRAFT_DATASET_NAME}`);
   } catch (err) {
@@ -218,7 +218,7 @@ async function main(): Promise<void> {
   if (args.dryRun && !args.replay && !args.sync && !args.experiment) {
     console.log(`chat-eval dry-run: ${cases.length} case(s)`);
     for (const entry of cases) {
-      console.log(`  ${entry.task.padEnd(12)} ${entry.id}`);
+      console.log(`  ${entry.task.padEnd(22)} ${entry.id}`);
     }
     return;
   }

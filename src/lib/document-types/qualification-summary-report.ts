@@ -10,6 +10,7 @@ import {
   QSR_DEFAULT_METADATA,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  ensureVolumetricFormRows,
   isQsrSectionKey,
   isQsrTableSectionKey,
   qsrMetadataFrom,
@@ -116,7 +117,11 @@ function mergeQsrSection(key: string, raw: unknown): unknown {
   const base = (EMPTY_QSR_CONTENT[key] as Record<string, unknown>)[field];
   const value =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
-  return { [field]: normalizeRichField(value ?? base) };
+  const doc = normalizeRichField(value ?? base);
+  if (key === "qsr_volumetric_details") {
+    return { [field]: ensureVolumetricFormRows(doc) };
+  }
+  return { [field]: doc };
 }
 
 export const qualificationSummaryReportDefinition: DocumentTypeDefinition = {
@@ -186,8 +191,14 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["qsr_acronyms", [/\bacronyms?\b/i, /\babbreviations?\b/i, /\b1\.4\b/]],
       ["qsr_overview", [/\boverview\b/i, /\b2\.1\b/]],
       ["qsr_background", [/\bbackground\b/i, /\b2\.2\b/]],
-      ["qsr_qualification_documents", [/\bqualification documents?\b/i, /\blifecycle\b/i]],
-      ["qsr_sops", [/\bsops?\b/i, /\bstandard operati\w* procedures?\b/i]],
+      [
+        "qsr_qualification_documents",
+        [/\bqualification documents?\b/i, /\blifecycle\b/i, /\btable\s*3\b/i],
+      ],
+      [
+        "qsr_sops",
+        [/\bsops?\b/i, /\bstandard operati\w* procedures?\b/i, /\btable\s*4\b/i],
+      ],
       ["qsr_rtm_process", [/\bprocess requirements?\b/i, /\btraceability\b/i, /\brtm\b/i, /\b5\.1\b/]],
       ["qsr_rtm_control", [/\bcontrol philosophy\b/i, /\b5\.2\b/]],
       ["qsr_rtm_gmp", [/\bgmp requirements?\b/i, /\b5\.3\b/]],

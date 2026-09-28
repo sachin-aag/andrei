@@ -118,12 +118,17 @@ function searchHitCount(output: unknown): number {
       : 0;
   const dividerHits =
     typeof record.dividerHits === "number" ? record.dividerHits : 0;
+  const identityIncompleteHits =
+    typeof record.identityIncompleteHits === "number"
+      ? record.identityIncompleteHits
+      : 0;
   if (typeof record.returnedCount === "number" && record.returnedCount > 0) {
-    // TOC / running-header laundry lists and attachment cover sheets are
-    // not a data page. Keep search open so the model can grep again or read
-    // the following page instead of drafting from the divider.
+    // TOC / running-header laundry lists, attachment cover sheets, and
+    // title lists without identifier values are not a data page. Keep
+    // search open so the model can grep again or read the following page.
     if (indexHits >= record.returnedCount) return 0;
     if (dividerHits >= record.returnedCount) return 0;
+    if (identityIncompleteHits >= record.returnedCount) return 0;
     return record.returnedCount;
   }
   if (Array.isArray(record.seenPages) && record.seenPages.length > 0) {

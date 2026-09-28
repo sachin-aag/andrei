@@ -40,4 +40,6 @@ alwaysApply: false
   `edit_table` through `buildChatTools` (`qsr-rtm-draft-replay.test.ts`)
   and the git-owned quality floor (`pnpm chat-eval -- --replay`). Optional
   Langfuse dataset `chat-draft-quality-floor` via `--sync` / `--experiment`.
+  Add a `page_plan` or `identity_incomplete` row when a review-collapse or
+  title-list search incident ships.
 - Run one spec with `--project=chromium`. `pnpm precommit` does not run E2E.

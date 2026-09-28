@@ -14,6 +14,44 @@ function firstMatchIndex(text: string, pattern: RegExp): number {
   return match?.index ?? -1;
 }
 
+const OUTLINE_NUMBER_LIST_RE =
+  /\b(?:draft|fill|populate|complete|sections?|tables?)\b[\s\w,]{0,48}?(\d+(?:\.\d+)?(?:\s*(?:,|&|and)\s*(?:and\s+)?\d+(?:\.\d+)?)+)/gi;
+
+function outlineNumberFromLabel(label: string): string | null {
+  const match = label.trim().match(/^(\d+(?:\.\d+)*)\b/);
+  return match?.[1] ?? null;
+}
+
+function outlineNumberMatches(userNum: string, labelNum: string): boolean {
+  if (userNum === labelNum) return true;
+  return !userNum.includes(".") && labelNum.startsWith(`${userNum}.`);
+}
+
+/** "draft 2,3,4" / "tables 3 and 4" → Contents numbers in mention order. */
+function listedOutlineNumbers(
+  text: string
+): Array<{ number: string; index: number }> {
+  const found: Array<{ number: string; index: number }> = [];
+  const seen = new Set<string>();
+  for (const match of text.matchAll(OUTLINE_NUMBER_LIST_RE)) {
+    const blob = match[1] ?? "";
+    const full = match[0] ?? "";
+    const blobIndex = (match.index ?? 0) + Math.max(0, full.indexOf(blob));
+    let cursor = 0;
+    for (const part of blob.split(/\s*(?:,|&|and)\s*/i)) {
+      const n = part.trim();
+      if (!/^\d+(?:\.\d+)?$/.test(n)) continue;
+      const local = blob.indexOf(n, cursor);
+      const index = blobIndex + (local >= 0 ? local : 0);
+      cursor = (local >= 0 ? local : cursor) + n.length;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      found.push({ number: n, index });
+    }
+  }
+  return found;
+}
+
 function sectionHitsFromText(
   text: string,
   documentType: DocumentType
@@ -21,8 +59,10 @@ function sectionHitsFromText(
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  const patterns = getDocumentType(documentType).chat.sectionIntentPatterns;
+  const def = getDocumentType(documentType);
+  const patterns = def.chat.sectionIntentPatterns;
   const hits: SectionHit[] = [];
+  const bySection = new Map<SectionType, SectionHit>();
   for (const [section, sectionPatterns] of patterns) {
     let count = 0;
     let earliest = Number.POSITIVE_INFINITY;
@@ -33,7 +73,32 @@ function sectionHitsFromText(
       if (index < earliest) earliest = index;
     }
     if (count > 0) {
-      hits.push({ section, count, earliest });
+      const hit = { section, count, earliest };
+      hits.push(hit);
+      bySection.set(section, hit);
+    }
+  }
+
+  for (const listed of listedOutlineNumbers(trimmed)) {
+    for (const section of def.sections) {
+      if (!section.editable || section.virtual) continue;
+      const labelNum = outlineNumberFromLabel(section.label);
+      if (!labelNum || !outlineNumberMatches(listed.number, labelNum)) {
+        continue;
+      }
+      const existing = bySection.get(section.key);
+      if (existing) {
+        existing.count += 1;
+        if (listed.index < existing.earliest) existing.earliest = listed.index;
+        continue;
+      }
+      const hit = {
+        section: section.key,
+        count: 1,
+        earliest: listed.index,
+      };
+      hits.push(hit);
+      bySection.set(section.key, hit);
     }
   }
   return hits;

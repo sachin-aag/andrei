@@ -268,6 +268,12 @@ const SOP_ROWS = [
   ["Training"],
 ];
 
+/** QAD/016/F06-00 Table 11 rows added after overflow; auxiliary tables omit these. */
+export const QSR_MAIN_VOLUMETRIC_EXTRA_ROWS = [
+  ["7", "Inner Surface area"],
+  ["8", "Equipment Dimensions (L x W x H)"],
+] as const;
+
 export const QSR_MAIN_VOLUMETRIC_ROWS = [
   ["1", "Minimum stirring volume (L)"],
   ["2", "Minimum temperature sensing volume without stirring (L)"],
@@ -275,6 +281,7 @@ export const QSR_MAIN_VOLUMETRIC_ROWS = [
   ["4", "Minimum sampling volume (L)- If applicable"],
   ["5", "Full volume (L)"],
   ["6", "Over flow volume (L)"],
+  ...QSR_MAIN_VOLUMETRIC_EXTRA_ROWS,
 ];
 
 export const QSR_AUXILIARY_VOLUMETRIC_ROWS = [
@@ -399,6 +406,62 @@ export function shapeOperatingRangeTable(doc: JSONContent): JSONContent {
     i += extras.length;
   }
   return { type: "doc", content: [{ type: "table", content: out }] };
+}
+
+function normalizeParam(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function isVolumetricHeader(labels: string[]): boolean {
+  return labels.join("\0") === QSR_VOLUMETRIC_HEADERS.join("\0");
+}
+
+function tableParameterLabels(table: JSONContent): string[] {
+  return (table.content ?? []).slice(1).map((row) => cellPlain(row.content?.[1]).trim());
+}
+
+function isMainVolumetricTable(table: JSONContent): boolean {
+  const rows = table.content ?? [];
+  if (!isVolumetricHeader(rows[0]?.content?.map((node) => cellPlain(node).trim()) ?? [])) {
+    return false;
+  }
+  const stirring = normalizeParam("Minimum stirring volume (L)");
+  return tableParameterLabels(table).some((label) => normalizeParam(label) === stirring);
+}
+
+function appendMissingExtraRows(table: JSONContent): JSONContent {
+  if (!isMainVolumetricTable(table)) return table;
+  const existing = new Set(tableParameterLabels(table).map(normalizeParam));
+  const extraRows = QSR_MAIN_VOLUMETRIC_EXTRA_ROWS.flatMap((extra) => {
+    if (existing.has(normalizeParam(extra[1]))) return [];
+    existing.add(normalizeParam(extra[1]));
+    return [
+      {
+        type: "tableRow" as const,
+        content: QSR_VOLUMETRIC_HEADERS.map((_, i) => cell("tableCell", extra[i] ?? "")),
+      },
+    ];
+  });
+  if (extraRows.length === 0) return table;
+  return { ...table, content: [...(table.content ?? []), ...extraRows] };
+}
+
+/**
+ * Existing reports were seeded with Table 11 rows 1–6. Opening or exporting
+ * them appends Inner Surface area and Equipment Dimensions when those labels
+ * are missing. Auxiliary Dead/Full/Overflow tables are left alone.
+ */
+export function ensureVolumetricFormRows(doc: JSONContent): JSONContent {
+  const content = doc.content ?? [];
+  let changed = false;
+  const next = content.map((node) => {
+    if (node.type !== "table") return node;
+    const ensured = appendMissingExtraRows(node);
+    if (ensured !== node) changed = true;
+    return ensured;
+  });
+  if (!changed) return doc;
+  return { ...doc, content: next };
 }
 
 function volumetricDoc(): JSONContent {
