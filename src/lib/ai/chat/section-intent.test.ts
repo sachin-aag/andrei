@@ -81,6 +81,24 @@ describe("detectSectionIntentFromText", () => {
     ).toBe("elr_access_control");
     expect(
       detectSectionIntentFromText(
+        "edit section 3.12",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_preventive_maintenance");
+    expect(
+      detectSectionIntentFromText(
+        "section 3.12 is preventive maintenance",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_preventive_maintenance");
+    expect(
+      detectSectionIntentFromText(
+        "update section 3.10",
+        "equipment_lifecycle_report"
+      )
+    ).toBe("elr_monitoring");
+    expect(
+      detectSectionIntentFromText(
         "Identify system trends across the evidence tables",
         "equipment_lifecycle_report"
       )

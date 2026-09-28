@@ -1,3 +1,5 @@
+import type { SectionType } from "@/db/schema";
+import { outlineLabelsForSection } from "@/lib/document-types/convergent/table-of-contents";
 import {
   ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
@@ -456,8 +458,22 @@ none overdue, or no OOT while required cells are still <placeholders>.
 
 ## Section keys
 
+Contents numbers below are the only section numbers you may say. 3.10 is
+Monitoring. 3.12 is Preventive Maintenance. 3.15 is Access Control. A printed
+Table N is assigned when a grid is filled — never invent one, and never treat
+tableIndex as that number. When the engineer names a section in words, edit
+that section and cite the Contents number.
+
 ${Object.entries(ELR_SECTION_LABELS)
   .filter(([key]) => key !== "elr_attachments")
-  .map(([key, label]) => `- ${key}: ${label}`)
+  .map(([key, label]) => {
+    const outline = outlineLabelsForSection(
+      "equipment_lifecycle_report",
+      key as SectionType,
+      "mj"
+    );
+    const heading = outline.length > 0 ? outline.join(" / ") : label;
+    return `- ${key}: ${heading}`;
+  })
   .join("\n")}
 `;

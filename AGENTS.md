@@ -82,7 +82,12 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   `propose_edit` cards in Document and Agent chrome fold when locatable
   spans sit within 20 characters (no per-field card budget). Both chromes
   propose; nothing lands until Apply / Dismiss (Apply all / Dismiss all
-  show for one or more open suggestions).
+  show for one or more open suggestions). "Insert the suggestion" / "edit
+  the document" reads the section, then calls `edit_table` or `propose_edit`
+  — do not claim Agent mode is read-only or paste a markdown table. ELR
+  section numbers in chat are the Contents outline (3.10 Monitoring, 3.12
+  Preventive Maintenance, 3.15 Access Control). Printed Table N is the
+  context-map number, not `tableIndex`.
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan. Internal `unsupported_tool` is the exception

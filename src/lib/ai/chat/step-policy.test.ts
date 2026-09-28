@@ -70,6 +70,49 @@ describe("prepareReportChatStep (characterization)", () => {
     });
   });
 
+  it("reads, then forces edit_table when they asked to land a suggestion", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+        })
+      )
+    ).toEqual({
+      activeTools: ["read_section"],
+      toolChoice: { type: "tool", toolName: "read_section" },
+    });
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+          steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+        })
+      )
+    ).toEqual({
+      activeTools: ["edit_table"],
+      toolChoice: { type: "tool", toolName: "edit_table" },
+    });
+  });
+
+  it("forces propose_edit after read when the landed edit is prose", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          inScopeHasTable: false,
+          steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+        })
+      )
+    ).toEqual({
+      activeTools: ["propose_edit"],
+      toolChoice: { type: "tool", toolName: "propose_edit" },
+    });
+  });
+
   it("forces read_section on the first write when a scoped section has a table", () => {
     expect(
       prepareReportChatStep(

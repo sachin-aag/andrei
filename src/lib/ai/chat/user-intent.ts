@@ -86,7 +86,7 @@ const CONTINUE_RE =
  * mapped those turns to read so write tools never loaded.
  */
 const MISSING_WORK_RE =
-  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank)\b/i;
+  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank|(?:suggestion|card)s? (?:are |is )?(?:not landing|did(?:n't| not) land|aren'?t landing)|refus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)|(?:no|without|did(?:n't| not) have) write (?:capability|capabilities|tools|access)|only summar(?:ising|izing|ised|ized)|read-only mode)\b/i;
 
 const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
@@ -373,7 +373,7 @@ None. This message is small talk — reply in one short sentence and call nothin
   ).join(", ");
   return `## Tools available this turn
 This message reads as a question, so the write tools (${hidden}) start hidden.
-Do not call them for a lookup. If they actually asked to change the ${target} (including "it's still empty", "nothing was filled", "I don't see the change", or "you said you filled it"), call the matching write tool anyway — it becomes available on the next step. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit, and do not tell them to switch modes.`;
+Do not call them for a lookup. If they actually asked to change the ${target} (including "it's still empty", "nothing was filled", "I don't see the change", "suggestions are not landing", or "you said you filled it"), call the matching write tool anyway — it becomes available on the next step. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit. Do not say the tools are disabled, that this session is read-only, or that they should switch modes.`;
 }
 
 export function restrictToolsForIntent<T extends Record<string, unknown>>(

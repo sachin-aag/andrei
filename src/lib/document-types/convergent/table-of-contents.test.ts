@@ -4,6 +4,7 @@ import {
   getConvergentTableOfContents,
   getReportTableOfContents,
   numberTableOfContents,
+  outlineLabelsForSection,
   stripOutlinePrefix,
 } from "./table-of-contents";
 
@@ -246,6 +247,19 @@ describe("getReportTableOfContents", () => {
       label: "3.9.1 Alarm Trend Summary",
       sectionKey: "elr_alarms",
     });
+    expect(
+      outlineLabelsForSection(
+        "equipment_lifecycle_report",
+        "elr_preventive_maintenance",
+        "mj"
+      )
+    ).toEqual(["3.12 Preventive Maintenance"]);
+    expect(
+      outlineLabelsForSection("equipment_lifecycle_report", "elr_monitoring", "mj")
+    ).toEqual(["3.10 Monitoring"]);
+    expect(
+      outlineLabelsForSection("equipment_lifecycle_report", "elr_alarms", "mj")
+    ).toEqual(["3.9 Alarm Trends", "3.9.1 Alarm Trend Summary"]);
     const breakdowns = observations?.children?.find(
       (c) => c.label === "3.13 Breakdowns and Trends"
     );

@@ -180,7 +180,7 @@ function buildIntentClassifierPrompt(input: ResolveChatUserIntentInput): string 
     "kind=write: they asked to change the document or worksheet now (draft, insert, fill, edit, plot, extract into the grid, or yes to an offer to write).",
     "A yes / go for it / do it after you told them to switch to Analytics is write — continue the earlier extract/fill request. Do not classify that as social.",
     '"Can you do the same for X" and "do that for Preventive Maintenance" are kind=write — they continue the previous edit. They are not questions.',
-    '"Nothing was filled", "the table is still empty", "I don\'t see the change", "you said you filled it but it isn\'t there", and "why isn\'t the table filled" are kind=write in Agent — they want the missing work delivered. They are not lookups.',
+    '"Nothing was filled", "the table is still empty", "I don\'t see the change", "you said you filled it but it isn\'t there", "why isn\'t the table filled", "suggestions are not landing", and "it is refusing to make an edit" are kind=write in Agent — they want the missing work delivered. They are not lookups.',
     '"Can you tell me what is in the table" is read.',
     "preferredSurface=analytics: they asked to fill, extract into, or plot on the Analytics worksheet / spreadsheet / data grid. Not when they asked to put worksheet results into a report section.",
     "preferredSurface=report: anything else, including drafting prose or editing a document table.",
