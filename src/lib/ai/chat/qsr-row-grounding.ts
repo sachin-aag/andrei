@@ -111,15 +111,6 @@ export const QSR_RTM_SECTIONS = [
   "qsr_rtm_maintenance",
 ] as const;
 
-/**
- * Sections where family ranking may rewrite Stage / Section / Remarks to
- * the highest matching protocol (PQ then OQ then IQ then DQ). Printed QSR
- * Tables 5–10 (`QSR_RTM_SECTIONS`) stay off this list: keep the cited model
- * cells. The cited Section number still gets an audit line from that same
- * block. Add a key only when ranking that matrix is worth shrinking the card.
- */
-export const RTM_REFERENCE_RANK_SECTIONS: readonly string[] = [];
-
 export const QSR_IDENTITY_TABLE_SECTIONS = [
   ...QSR_RTM_SECTIONS,
   "qsr_operating_range",
@@ -219,16 +210,6 @@ export function rtmReferenceColumnIndexes(
   }
   if (stage < 0 || sectionCol < 0 || remarks < 0) return null;
   return { stage, section: sectionCol, remarks };
-}
-
-export function shouldRankRtmReference(
-  section: string | null | undefined
-): boolean {
-  return (
-    typeof section === "string" &&
-    RTM_REFERENCE_RANK_SECTIONS.includes(section) &&
-    rtmReferenceColumnIndexes(section) != null
-  );
 }
 
 export function isQsrIdentityTableSection(
@@ -2014,132 +1995,14 @@ function rankEditCells(
   };
 }
 
-function rtmStageFamilyFromText(
-  text: string | null | undefined
-): RtmStageFamily | null {
-  const family = stageFamilyFromCell(text);
-  return isRtmStageFamily(family) ? family : null;
-}
-
-/**
- * Keep the cited Section number and add one audit line from that same
- * block. Do not swap in a higher family or a neighbour heading.
- */
-function elaborateRequestedSectionText(
-  requested: string,
-  quotes: readonly string[],
-  family?: RtmStageFamily | null
-): string {
-  if (isQsrRtmPlaceholderText(requested)) return requested;
-  const number = rtmCellSectionNumber(requested, family);
-  const heading = number
-    ? headingFromQuotes(quotes, number, family)
-    : null;
-  return rtmSectionCellText(
-    requested,
-    heading ? { sectionHeading: heading, family } : { family }
-  );
-}
-
-function mapRtmSectionColumn(
-  row: readonly string[],
-  cols: { stage: number; section: number; remarks: number },
-  quotes: readonly string[]
-): string[] {
-  const next = [...row];
-  const family = rtmStageFamilyFromText(next[cols.stage]);
-  next[cols.section] = elaborateRequestedSectionText(
-    next[cols.section] ?? "",
-    quotes,
-    family
-  );
-  return next;
-}
-
-function elaborateEditCells(
-  operation: Extract<TableOperation, { kind: "edit_cells" }>,
-  ledger: CitationPageLedger,
-  cols: { stage: number; section: number; remarks: number }
-): TableOperation {
-  const quotes = protocolPageQuotes(ledger);
-  const byKey = new Map<string, TableCellEdit[]>();
-  for (const cell of operation.cells) {
-    const key = editCellsGroupKey(cell);
-    const list = byKey.get(key) ?? [];
-    list.push(cell);
-    byKey.set(key, list);
-  }
-  return {
-    ...operation,
-    cells: operation.cells.flatMap((cell) => {
-      if (cell.col !== cols.section) return [cell];
-      if (optionalRefExpectedFilled(cell) && !cell.insertText.trim()) {
-        return [cell];
-      }
-      if (isQsrRtmPlaceholderText(cell.insertText)) return [cell];
-      const siblings = byKey.get(editCellsGroupKey(cell)) ?? [];
-      const stageText =
-        siblings.find((sib) => sib.col === cols.stage)?.insertText ??
-        siblings.find((sib) => sib.col === cols.stage)?.expectedText ??
-        "";
-      const family = rtmStageFamilyFromText(stageText);
-      const text = elaborateRequestedSectionText(
-        cell.insertText,
-        quotes,
-        family
-      );
-      const live = (cell.expectedText ?? "").trim();
-      if (!text.trim() && optionalRefExpectedFilled(cell)) {
-        if (!rtmCellSectionNumber(live, family)) {
-          return [{ ...cell, insertText: "" }];
-        }
-        return [];
-      }
-      if (text.trim() === live) return [];
-      return [{ ...cell, insertText: text }];
-    }),
-  };
-}
-
-function elaborateRtmSectionOperation(
+/** Rewrite Stage / Section / Remarks to the highest matching family. */
+export function rankRtmReferenceOperation(
   operation: TableOperation,
   ledger: CitationPageLedger,
-  cols: { stage: number; section: number; remarks: number }
+  section?: string
 ): TableOperation {
-  const quotes = protocolPageQuotes(ledger);
-  switch (operation.kind) {
-    case "insert_rows":
-      return {
-        ...operation,
-        rows: operation.rows.map((row) => mapRtmSectionColumn(row, cols, quotes)),
-      };
-    case "create_table":
-      return {
-        ...operation,
-        rows: operation.rows?.map((row) =>
-          mapRtmSectionColumn(row, cols, quotes)
-        ),
-      };
-    case "edit_cells":
-      return elaborateEditCells(operation, ledger, cols);
-    case "insert_column":
-    case "delete_rows":
-    case "delete_column":
-    case "delete_table":
-      return operation;
-    default: {
-      const exhaustive: never = operation;
-      return exhaustive;
-    }
-  }
-}
-
-function applyRtmFamilyRanking(
-  operation: TableOperation,
-  ledger: CitationPageLedger,
-  section: string | undefined,
-  cols: { stage: number; section: number; remarks: number }
-): TableOperation {
+  const cols = rtmReferenceColumnIndexes(section);
+  if (!cols) return operation;
   switch (operation.kind) {
     case "insert_rows":
       return {
@@ -2191,23 +2054,6 @@ function applyRtmFamilyRanking(
       return exhaustive;
     }
   }
-}
-
-/**
- * Family ranking is allowlisted. On Tables 5–10, only elaborate the cited
- * Section number (bare `8.2.3` → `8.2.3 – Heating Trial`).
- */
-export function rankRtmReferenceOperation(
-  operation: TableOperation,
-  ledger: CitationPageLedger,
-  section?: string
-): TableOperation {
-  const cols = rtmReferenceColumnIndexes(section);
-  if (!cols) return operation;
-  if (shouldRankRtmReference(section)) {
-    return applyRtmFamilyRanking(operation, ledger, section, cols);
-  }
-  return elaborateRtmSectionOperation(operation, ledger, cols);
 }
 
 export function syntheticUnsupportedFact(text: string): HardFact {
