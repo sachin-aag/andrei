@@ -2121,7 +2121,10 @@ describe("groundTableOperation optional RTM columns", () => {
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
     expect(urs41.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
-    expect(urs41.find((cell) => cell.col === 4)).toBeUndefined();
+    const section = urs41.find((cell) => cell.col === 4);
+    expect(section?.insertText).toContain("13.6");
+    expect(section?.insertText).toContain("Gaskets");
+    expect(section?.insertText).not.toContain("13.7.5");
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
       id: "sug-table7-urs41-complies-outside-id-window",
@@ -2142,7 +2145,8 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(remarksCell).toContain(suggestionInsertMarkName);
     const sectionCell = JSON.stringify(cellsInRow[4]);
     expect(sectionCell).toContain("13.6");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain("Gaskets");
+    expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
   it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {

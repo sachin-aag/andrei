@@ -2009,8 +2009,8 @@ describe("QSR RTM section 5 draft replay", () => {
     const cellsInRow = (rows[2]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    expect(JSON.stringify(cellsInRow[4])).toContain("13.7.5");
-    expect(JSON.stringify(cellsInRow[4])).toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[4])).toContain("13.6");
+    expect(JSON.stringify(cellsInRow[4])).not.toContain(suggestionInsertMarkName);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
     expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
   });
