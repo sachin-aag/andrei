@@ -355,9 +355,9 @@ export function attachLiveTableRowContext(
         }
       }
       // Dummy-row fills omit expectedText. Stamp the live cell so the
-      // ranker can elaborate 8.2.3 → 8.2.3 – Heating Trial and identity-drop
-      // Remarks that are already Complies, without treating an empty insert
-      // as an explicit clear.
+      // ranker can elaborate 8.2.3 with one audit line from that section
+      // and identity-drop Remarks that are already Complies, without
+      // treating an empty insert as an explicit clear.
       if (
         liveText &&
         cell.insertText.trim() &&
@@ -1123,8 +1123,49 @@ function headingTitleAfterNumber(rest: string): string {
   return raw.replace(/[.:;,-]+$/g, "").replace(/\s+/g, " ").trim();
 }
 
-function formatRtmSectionHeading(number: string, rest: string): string {
+const RESULT_ONLY_AUDIT_RE =
+  /^(?:results?|remarks?|status|inference|conclusion|verdict)?\s*[:\-–]?\s*(?:complies|complied|verified|pass(?:ed|es)?|satisfactory|accepted|acceptable)\b/i;
+
+function isResultOnlyAuditLine(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/^(?:complies|complied)\.?$/i.test(trimmed)) return true;
+  return (
+    RESULT_ONLY_AUDIT_RE.test(trimmed) && trimmed.split(/\s+/).length <= 6
+  );
+}
+
+/** One audit line from a protocol section block, or "" when nothing usable. */
+function cleanAuditLine(raw: string): string {
+  const cleaned = cleanRtmSectionDescription(raw);
+  if (cleaned && !isResultOnlyAuditLine(cleaned)) return cleaned;
+  const words = raw.replace(/\s+/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length <= RTM_SECTION_DESCRIPTION_MAX_WORDS) return "";
+  const trimmed = cleanRtmSectionDescription(
+    words.slice(0, RTM_SECTION_DESCRIPTION_MAX_WORDS).join(" ")
+  );
+  return trimmed && !isResultOnlyAuditLine(trimmed) ? trimmed : "";
+}
+
+/**
+ * Reviewer line for Reference – Section. A heading title is fine
+ * (`Heating Trial`); so is a procedure or observation from that same
+ * block (`Fill the reactor to 8000 L`). Result-only leftovers
+ * (`Result: Complies`) are not.
+ */
+function auditLineFromSectionBlock(rest: string): string {
   const title = cleanRtmSectionDescription(headingTitleAfterNumber(rest));
+  if (title && !isResultOnlyAuditLine(title)) return title;
+  const text = rest.replace(SAME_AS_PROTOCOL_RE, " ").replace(/\s+/g, " ").trim();
+  for (const chunk of text.split(/(?<=\.)\s+|(?:;\s+)/)) {
+    const cleaned = cleanAuditLine(chunk);
+    if (cleaned) return cleaned;
+  }
+  return cleanAuditLine(text);
+}
+
+function formatRtmSectionHeading(number: string, rest: string): string {
+  const title = auditLineFromSectionBlock(rest);
   return title ? `${number} – ${title}` : number;
 }
 
@@ -1284,8 +1325,18 @@ function preferredRtmSectionNumber(
 }
 
 /**
- * Heading whose number is `number` (`8.2.3 Heating Trial` on a page that
- * also prints 8.2.1 / 8.2.4). Do not take a neighbour test.
+ * Next sibling heading in a protocol body. Three-or-more-level numbers
+ * (`8.2.4`) may start a lowercase procedure; two-level (`13.6 Heating`)
+ * still need a capital so `3.5 kg` is not a heading.
+ */
+const NEXT_SECTION_HEADING_RE =
+  /(?:^|\s)(?:\d+(?:\.\d+){2,4}\.?\s+(?=[A-Za-z])|\d+\.\d+(?!\.\d)\.?\s+(?=[A-Z]))/;
+
+/**
+ * Block whose number is `number` (`8.2.3 Heating Trial` or
+ * `8.2.3 Fill the reactor…` on a page that also prints 8.2.1 / 8.2.4).
+ * Do not take a neighbour test. The audit line is any one line from
+ * that block — heading title if present, else a procedure/observation.
  */
 function headingBlockForNumber(
   stripped: string,
@@ -1294,15 +1345,13 @@ function headingBlockForNumber(
   if (!number || !isUsableProtocolSectionNumber(number)) return null;
   const escaped = number.replace(/\./g, "\\.");
   const re = new RegExp(
-    `(?:^|\\s)(?:section\\s+)?(${escaped})(?!\\.\\d)\\.?(\\s+[A-Z][\\s\\S]*)?`,
+    `(?:^|\\s)(?:section\\s+)?(${escaped})(?!\\.\\d)\\.?(\\s+[A-Za-z][\\s\\S]*)?`,
     "i"
   );
   const match = re.exec(` ${stripped}`);
   if (!match) return null;
   const rest = (match[2] ?? "").trim();
-  const next = rest.search(
-    /(?:^|\s)\d+(?:\.\d+){1,4}\.?\s+(?=[A-Z])/
-  );
+  const next = rest.search(NEXT_SECTION_HEADING_RE);
   const block = next === -1 ? rest : rest.slice(0, next);
   return formatRtmSectionHeading(number, block);
 }
@@ -1337,10 +1386,12 @@ function protocolPageQuotes(
 }
 
 /**
- * Filled `8.2.3` → `8.2.3 – Heating Trial` (that heading on the cited page).
- * Do not swap to a neighbour `8.2.4` on the same PQ page, and do not drop
- * the cell. A page counter (`14`) or a truncated number that is not a
- * heading (`2.4`) may still become the cited heading.
+ * Filled `8.2.3` → `8.2.3 – Heating Trial` or `8.2.3 – Fill the reactor
+ * to 8000 L` (any one audit line from that section on the cited page).
+ * A title next to the number is not required. Do not swap to a neighbour
+ * `8.2.4` on the same PQ page, and do not drop the cell. A page counter
+ * (`14`) or a truncated number that is not a heading (`2.4`) may still
+ * become the cited heading.
  */
 function resolveRtmSectionInsert(input: {
   requested: string;
@@ -1368,9 +1419,9 @@ function resolveRtmSectionInsert(input: {
     const requestedDesc = rtmCellDescription(input.requested);
     const headingDesc = rtmCellDescription(liveHeading);
     const description =
-      requestedNum === liveNum && requestedDesc
+      requestedDesc && (!requestedNum || requestedNum === liveNum)
         ? requestedDesc
-        : headingDesc || requestedDesc;
+        : headingDesc;
     return formatRtmSectionHeading(liveNum, description);
   }
 
@@ -1397,9 +1448,10 @@ function rtmCellDescription(text: string): string {
 /**
  * Reference – Section is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
- * one; the model's one-line description is kept when it is clean, else the
- * heading title. Printed page counters (`16`, `14`) and logged readings
- * (`12.72 °C`) never persist, even as a description-only cell.
+ * one; the model's one-line description is kept when it is clean, else any
+ * audit line from that section (heading title, procedure, or observation).
+ * Printed page counters (`16`, `14`) and logged readings (`12.72 °C`)
+ * never persist, even as a description-only cell.
  */
 export function rtmSectionCellText(
   requested: string,
@@ -1421,12 +1473,14 @@ function rtmSectionNumberParts(text: string): string[] {
   return number ? number.split(/\s*[\/&]\s*/).filter(Boolean) : [];
 }
 
-const MULTI_LEVEL_HEADING_RE = /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Z])/g;
+const MULTI_LEVEL_HEADING_RE =
+  /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Za-z])/g;
 
 /**
  * A PQ page often prints several tests (8.2.1 Physical verification …
- * 8.2.3 Heating Trial …). Pick the heading whose block names this row's
- * topic so Reactor Capacity is not labelled with the first test on the page.
+ * 8.2.3 Heating Trial …, or untitled procedure sentences under those
+ * numbers). Pick the block whose text names this row's topic so Reactor
+ * Capacity is not labelled with the first test on the page.
  */
 function rowMatchedSectionHeading(stripped: string, context: string): string | null {
   const starts = [...stripped.matchAll(MULTI_LEVEL_HEADING_RE)].map((m) => ({
@@ -1464,7 +1518,7 @@ function protocolSectionHeading(
   const matched = context ? rowMatchedSectionHeading(stripped, context) : null;
   if (matched && rtmCellSectionNumber(matched, family)) return matched;
   const multiTitle = stripped.match(
-    /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
+    /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Za-z][\s\S]*)/
   );
   if (
     multiTitle?.[1] &&
@@ -1483,7 +1537,7 @@ function protocolSectionHeading(
     const number = titled[1]!;
     const after = stripped.slice(titled.index + titled[0].length);
     if (!isUsableProtocolSectionNumber(number, after)) continue;
-    if (!/^\s+[A-Z]/.test(after)) continue;
+    if (!/^\s+[A-Za-z]/.test(after)) continue;
     return formatRtmSectionHeading(number, after);
   }
   const labeled = stripped.match(
