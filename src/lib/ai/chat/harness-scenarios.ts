@@ -1,6 +1,7 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { chatSectionsInScope } from "@/lib/ai/chat/fields";
 import { inScopeEmptyInventoryNeedsReview } from "@/lib/ai/chat/pending-plan";
+import { documentWriteProgressTools } from "@/lib/ai/chat/remaining-work";
 import {
   prepareReportChatStep,
   type ChatStepDecision,
@@ -9,6 +10,7 @@ import {
   assembleRulesChatTurnPlan,
   type ChatTurnPlan,
 } from "@/lib/ai/chat/turn-plan";
+import { MAKE_PLAN_TOOL, makePlanEligible } from "@/lib/ai/chat/task-plan";
 
 const ADVERTISED_TOOLS = [
   "read_section",
@@ -78,7 +80,8 @@ export type HarnessScenarioId =
   | "sentence_rewrite"
   | "placeholder_fill"
   | "empty_inventory"
-  | "identifier_lookup";
+  | "identifier_lookup"
+  | "multi_part_plan";
 
 export type HarnessScenario = {
   id: HarnessScenarioId;
@@ -146,6 +149,13 @@ export const HARNESS_SCENARIOS: readonly HarnessScenario[] = [
     hasDocuments: true,
     mentionedPageCount: 62,
   },
+  {
+    id: "multi_part_plan",
+    userText:
+      "tighten the problem statement in Define, then summarise Measure, and tell me which batch was affected",
+    documentType: "investigation_report",
+    hasDocuments: true,
+  },
 ];
 
 export type HarnessScenarioResult = {
@@ -155,8 +165,13 @@ export type HarnessScenarioResult = {
   firstStep: ChatStepDecision;
 };
 
-function advertisedToolsFor(intent: ChatTurnPlan["intent"]): string[] {
-  if (intent === "write") return [...ADVERTISED_TOOLS];
+function advertisedToolsFor(
+  intent: ChatTurnPlan["intent"],
+  planEligible: boolean
+): string[] {
+  if (intent === "write") {
+    return planEligible ? [...ADVERTISED_TOOLS, MAKE_PLAN_TOOL] : [...ADVERTISED_TOOLS];
+  }
   return ADVERTISED_TOOLS.filter((name) => !WRITE_TOOLS.has(name));
 }
 
@@ -178,8 +193,18 @@ export function evaluateHarnessScenario(
     sectionKeys,
     finishedCoverageKey: null,
   });
+  const planEligible = makePlanEligible({
+    mode: "agent",
+    intent: plan.intent,
+    canEdit: true,
+    planLive: false,
+    userText: scenario.userText,
+    documentType: scenario.documentType,
+    alsoLookup: plan.alsoLookup,
+    autoContinue: false,
+  });
   const firstStep = prepareReportChatStep({
-    advertisedTools: advertisedToolsFor(plan.intent),
+    advertisedTools: advertisedToolsFor(plan.intent, planEligible),
     steps: [],
     userIntentKind: plan.intent,
     alreadyDrafted: plan.alreadyDrafted !== null,
@@ -188,6 +213,14 @@ export function evaluateHarnessScenario(
     retrievalPolicy: plan.retrievalPolicy,
     reviewPhase: "idle",
     requireInventoryReview,
+    remainingWorkContext: {
+      surface: "document",
+      documentType: scenario.documentType,
+      emptySectionKeys: [],
+      queueLive: false,
+      writeToolNames: documentWriteProgressTools(),
+      makePlanEligible: planEligible,
+    },
   });
   return {
     id: scenario.id,

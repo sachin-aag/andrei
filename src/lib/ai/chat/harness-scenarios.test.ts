@@ -13,7 +13,15 @@ describe("harness scenarios (F1 layer 1)", () => {
       "placeholder_fill",
       "empty_inventory",
       "identifier_lookup",
+      "multi_part_plan",
     ]);
+  });
+
+  it("multi-part write offers make_plan on the first step", () => {
+    const scenario = HARNESS_SCENARIOS.find((row) => row.id === "multi_part_plan")!;
+    const result = evaluateHarnessScenario(scenario);
+    expect(result.plan.intent).toBe("write");
+    expect(result.firstStep.activeTools).toContain("make_plan");
   });
 
   it("greeting: no search, no review, no write tools", () => {

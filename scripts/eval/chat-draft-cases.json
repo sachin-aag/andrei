@@ -213,5 +213,29 @@
       "activeTools": ["start_document_review"],
       "activeToolsMustNotContain": ["edit_table", "draft_field"]
     }
+  },
+  {
+    "id": "harness-multi-part-offers-make-plan",
+    "task": "harness",
+    "passCriteria": "A multi-part Agent write ask offers make_plan on the first step; single edits and greetings do not.",
+    "notes": "docs/harness-plan.md §2c.",
+    "input": {
+      "scenarioId": "multi_part_plan"
+    },
+    "expected": {
+      "intent": "write",
+      "activeToolsMustContain": ["make_plan"]
+    }
+  },
+  {
+    "id": "harness-sentence-rewrite-no-make-plan",
+    "task": "harness",
+    "passCriteria": "A one-sentence rewrite does not load make_plan.",
+    "input": {
+      "scenarioId": "sentence_rewrite"
+    },
+    "expected": {
+      "activeToolsMustNotContain": ["make_plan"]
+    }
   }
 ]
