@@ -1,5 +1,12 @@
-import { extractText, getDocumentProxy } from "unpdf";
-import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
+import {
+  extractTextItems,
+  getDocumentProxy,
+  type StructuredTextItem,
+} from "unpdf";
+import {
+  glueOcrMinusSigns,
+  LEADING_MINUS_CLASS,
+} from "@/lib/attachments/numeric-signs";
 
 /**
  * Below this many characters a page is treated as a scan: born-digital pages
@@ -43,10 +50,10 @@ export async function readPdfTextLayer(
   ensureMathSumPrecise();
 
   const document = await getDocumentProxy(new Uint8Array(buffer));
-  const { text } = await extractText(document, { mergePages: false });
-  const pages = text.map((raw, index) => ({
+  const { items } = await extractTextItems(document);
+  const pages = items.map((pageItems, index) => ({
     pageNumber: pageStart + index,
-    text: normalizePageText(raw),
+    text: reconstructPageText(pageItems),
   }));
 
   return {
@@ -68,6 +75,91 @@ export function classifyPdfExtractLayout(
   if (usableCount === 0) return "scan";
   if (usableCount === layer.pages.length) return "text-layer";
   return "mixed";
+}
+
+const MINUS_GLYPH_RE = new RegExp(`^${LEADING_MINUS_CLASS}$`);
+const UNMAPPED_DASH_RE = /^[\u0000\uFFFD\uE000-\uF8FF]$/;
+
+/**
+ * PDF.js often maps a subset-font minus to an empty string (or a private-use
+ * / replacement character) while keeping the glyph's width. Those items are
+ * dropped by naive concatenation, so URS-3 lands as `15 °C` instead of `-15`.
+ */
+export function attachSpatialMinusSigns(
+  items: readonly StructuredTextItem[]
+): StructuredTextItem[] {
+  const next = items.map((item) => ({ ...item }));
+  const consumed = new Set<number>();
+
+  for (let i = 0; i < next.length; i++) {
+    const numberItem = next[i]!;
+    if (!/^\d/.test(numberItem.str.trim())) continue;
+    const leftIndex = nearestNonWhitespaceLeft(next, i, consumed);
+    if (leftIndex == null) continue;
+    const left = next[leftIndex]!;
+    if (/\d$/.test(left.str.trim())) continue;
+    if (!isSpatialMinus(left)) continue;
+    if (isPrecededByDigit(next, leftIndex, consumed)) continue;
+    numberItem.str = `-${numberItem.str.replace(/^\s+/, "")}`;
+    consumed.add(leftIndex);
+  }
+
+  return next.filter((_, index) => !consumed.has(index));
+}
+
+export function reconstructPageText(
+  items: readonly StructuredTextItem[]
+): string {
+  return normalizePageText(
+    attachSpatialMinusSigns(items)
+      .map((item) => item.str + (item.hasEOL ? "\n" : ""))
+      .join("")
+  );
+}
+
+function nearestNonWhitespaceLeft(
+  items: readonly StructuredTextItem[],
+  numberIndex: number,
+  consumed: ReadonlySet<number>
+): number | null {
+  const numberItem = items[numberIndex]!;
+  const maxGap = Math.max(numberItem.fontSize, 8) * 1.25;
+  const baselineTol = Math.max(numberItem.fontSize, 8) * 0.35;
+  let best: { index: number; gap: number } | null = null;
+  for (let j = 0; j < items.length; j++) {
+    if (j === numberIndex || consumed.has(j)) continue;
+    const left = items[j]!;
+    if (left.str.length > 0 && /^\s*$/.test(left.str)) continue;
+    if (Math.abs(left.y - numberItem.y) > baselineTol) continue;
+    const gap = numberItem.x - (left.x + Math.max(left.width, 0));
+    if (gap < -Math.max(numberItem.fontSize, 8) * 0.2) continue;
+    if (gap > maxGap) continue;
+    if (!best || gap < best.gap) best = { index: j, gap };
+  }
+  return best?.index ?? null;
+}
+
+function isPrecededByDigit(
+  items: readonly StructuredTextItem[],
+  dashIndex: number,
+  consumed: ReadonlySet<number>
+): boolean {
+  const leftIndex = nearestNonWhitespaceLeft(items, dashIndex, consumed);
+  if (leftIndex == null) return false;
+  return /\d$/.test(items[leftIndex]!.str.trim());
+}
+
+function isSpatialMinus(item: StructuredTextItem): boolean {
+  const trimmed = item.str.trim();
+  if (MINUS_GLYPH_RE.test(trimmed)) return true;
+  if (trimmed.length > 1) return false;
+  const unmapped =
+    trimmed.length === 0 || UNMAPPED_DASH_RE.test(item.str);
+  if (!unmapped) return false;
+  const em = item.fontSize > 0 ? item.fontSize : item.height;
+  if (!(em > 0) || !(item.width > 0)) return false;
+  const ratio = item.width / em;
+  return ratio >= 0.15 && ratio <= 0.8;
 }
 
 function normalizePageText(raw: string): string {

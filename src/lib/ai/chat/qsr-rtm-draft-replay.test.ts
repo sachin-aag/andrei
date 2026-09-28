@@ -765,6 +765,122 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(cells.map((cell) => cell.insertText).join(" ")).toContain("−15 °C");
   });
 
+  it("blocks unsigned 15 °C on URS-3 when the column-major URS value is −15 °C", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript:
+        "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm −15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const blocked = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the column-major URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-3",
+              "Shell Operating temperature",
+              "15 °C to 130 °C",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "unsupported_facts" });
+    const proposed = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the column-major URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-3",
+              "Shell Operating temperature",
+              "−15 °C to 130 °C",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(proposed).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("−15 °C");
+  });
+
+  it("blocks unsigned 15 °C on operating-range Minimum when URS-37 is also 15–130 °C", async () => {
+    mockSection("qsr_operating_range");
+    const tools = buildTools({ section: "qsr_operating_range" });
+    readDocumentPageMock
+      .mockResolvedValueOnce({
+        attachmentId: URS_ID,
+        filename: URS_FILENAME,
+        pageNumber: 6,
+        transcript: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        visualInterpretation: "",
+        pageContext: null,
+        printedPageLabel: "6",
+      })
+      .mockResolvedValueOnce({
+        attachmentId: URS_ID,
+        filename: URS_FILENAME,
+        pageNumber: 4,
+        transcript: NEIGHBOUR_QUOTE,
+        visualInterpretation: "",
+        pageContext: null,
+        printedPageLabel: "4",
+      });
+    await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 4 },
+      TEST_TOOL_OPTIONS
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_operating_range",
+        targetField: "table",
+        reasoning: "Fill temperature minimum from the URS.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 4, col: 3, rowKey: "4.", insertText: "15 °C" }],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+  });
+
   it("blocks unsigned 50+-10 RPM on URS-10 when the URS shows −50 ± 10 RPM", async () => {
     mockSection("qsr_rtm_process");
     const tools = buildTools({ section: "qsr_rtm_process" });

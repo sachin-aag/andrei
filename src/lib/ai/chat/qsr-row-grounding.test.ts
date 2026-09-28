@@ -456,6 +456,85 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toEqual([]);
   });
 
+  it("blocks Temperature Minimum 15 even when URS-37 on the ledger is 15–130 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C");
+  });
+
+  it("still allows URS-37 15–130 °C when the shell URS is −15 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15–130 °C",
+        context: "URS-37\nProcess temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 15 °C on URS-3 when the column-major value is −15 °C", () => {
+    const signedColumn =
+      "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm −15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: signedColumn,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C to 130 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "−15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", () => {
     const ledger = ledgerFromPages([
       {

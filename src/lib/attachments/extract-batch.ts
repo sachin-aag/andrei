@@ -48,7 +48,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v5";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v6";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -1328,7 +1328,7 @@ function buildUserPrompt(input: {
 For each page, use the original document page number:
 - pageNumber: absolute 1-based PDF page number.
 - transcript: readable text, OCR text, labels, captions, and table text in natural reading order. Keep a leading minus on negative numbers (−15 °C is not 15 °C).
-- visualInterpretation: factual description of diagrams, charts, signatures, stamps, handwriting, and layout. Max ${MAX_VISUAL_CHARS} characters.
+- visualInterpretation: factual description of diagrams, charts, signatures, stamps, handwriting, and layout. If a table shows a negative temperature or RPM, keep the leading minus (−15 °C is not 15 °C). Max ${MAX_VISUAL_CHARS} characters.
 - pageContext: brief context for retrieval, including the page's role in the document. Max ${MAX_PAGE_CONTEXT_CHARS} characters.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 extraction confidence.

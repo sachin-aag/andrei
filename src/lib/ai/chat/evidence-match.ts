@@ -3,6 +3,7 @@ import type { HardFact, HardFactKind } from "@/lib/ai/chat/claim-facts";
 import {
   glueOcrMinusSigns,
   glueOcrUrsIds,
+  LEADING_MINUS_CLASS,
 } from "@/lib/attachments/numeric-signs";
 
 const fuzzy = new uFuzzy({
@@ -50,7 +51,7 @@ function numericForms(fact: HardFact): string[] {
     compact,
     glueOcrMinusSigns(fact.normalized),
   ]);
-  const re = /[-−–]?\d+(?:\.\d+)?/g;
+  const re = new RegExp(`${LEADING_MINUS_CLASS}?\\d+(?:\\.\\d+)?`, "g");
   let match: RegExpExecArray | null;
   while ((match = re.exec(compact))) {
     const before = compact.slice(0, match.index);
@@ -76,7 +77,9 @@ function numericForms(fact: HardFact): string[] {
 }
 
 function isNegativeSignBefore(haystack: string, index: number): boolean {
-  return /(?<![\d.])[-−–]\s*$/.test(haystack.slice(0, index));
+  return new RegExp(`(?<![\\d.])${LEADING_MINUS_CLASS}\\s*$`).test(
+    haystack.slice(0, index)
+  );
 }
 
 function hasSignedMatch(

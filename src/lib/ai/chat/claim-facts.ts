@@ -1,3 +1,4 @@
+import { LEADING_MINUS_CLASS } from "@/lib/attachments/numeric-signs";
 import { splitSentences } from "@/lib/citations/citation-site";
 import {
   citationNumbersFromMarker,
@@ -79,7 +80,7 @@ const DURATION_RE =
  * extracted as 15 °C. `\b` before the digits would drop that sign.
  * `−15 °C to 130 °C` keeps the unit on both ends.
  */
-const SIGNED_NUMBER = String.raw`[-−–]?\s*\d+(?:\.\d+)?`;
+const SIGNED_NUMBER = String.raw`${LEADING_MINUS_CLASS}?\s*\d+(?:\.\d+)?`;
 const TEMP_UNIT = String.raw`°?\s*C`;
 const TEMPERATURE_RE = new RegExp(
   String.raw`(?<![A-Za-z0-9])${SIGNED_NUMBER}(?:\s*${TEMP_UNIT})?\s*(?:[–−-]|to)\s*${SIGNED_NUMBER}\s*${TEMP_UNIT}\b|(?<![A-Za-z0-9])${SIGNED_NUMBER}\s*${TEMP_UNIT}\b`,
@@ -107,7 +108,7 @@ const PLUS_MINUS_QUANTITY_RE = new RegExp(
 );
 
 const NUMBER_WITH_UNIT_RE = new RegExp(
-  String.raw`(?<![A-Za-z0-9])[-−–]?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|(?<![A-Za-z0-9])[-−–]?\s*\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
+  String.raw`(?<![A-Za-z0-9])${LEADING_MINUS_CLASS}?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|(?<![A-Za-z0-9])${LEADING_MINUS_CLASS}?\s*\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
   "gi"
 );
 

@@ -8,6 +8,7 @@ import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import {
   glueOcrMinusSigns,
   glueOcrUrsIds,
+  LEADING_MINUS_CLASS,
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
@@ -72,7 +73,9 @@ const REVISION_CELL_RE = /^0?\d{1,2}$/;
 const RPM_PARAMETER_RE = /\bagitator\b|\brpm\b/i;
 const RANGE_PARAMETER_RE =
   /\bpressure\b|\bvacuum\b|\btemperature\b|\bagitator\b|\brpm\b/i;
-const LEADING_QUANTITY_RE = /^(?:[~≈±]|[-−–])?\s*\d+(?:\.\d+)?/;
+const LEADING_QUANTITY_RE = new RegExp(
+  `^(?:[~≈±]|${LEADING_MINUS_CLASS})?\\s*\\d+(?:\\.\\d+)?`
+);
 
 export const QSR_RTM_SECTIONS = [
   "qsr_rtm_process",
@@ -1342,9 +1345,10 @@ export function qsrOperatingRangeUnsupported(
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (RPM_PARAMETER_RE.test(context)) {
     const hasRpm = quotes.some((quote) =>
-      /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
-        quote
-      )
+      new RegExp(
+        `(?<![A-Za-z0-9.])${LEADING_MINUS_CLASS}?\\s*\\d+(?:\\.\\d+)?\\s*(?:±|\\+\\/-|\\+\\-|plus\\/minus)?\\s*\\d*\\s*rpm\\b`,
+        "i"
+      ).test(quote)
     );
     if (hasRpm && !/\brpm\b/i.test(trimmed) && !/\d/.test(trimmed)) {
       return syntheticUnsupportedFact(trimmed);
@@ -1360,7 +1364,8 @@ export function qsrOperatingRangeUnsupported(
 function unsignedQuantityWhenEvidenceIsNegative(
   cell: string,
   context: string,
-  quotes: readonly string[]
+  quotes: readonly string[],
+  section?: string
 ): HardFact | null {
   const isTemp = /\btemperature\b/i.test(context);
   const isRpm = RPM_PARAMETER_RE.test(context);
@@ -1385,6 +1390,21 @@ function unsignedQuantityWhenEvidenceIsNegative(
     text: `-${token}${unit}`,
     normalized: `-${token}${normalizedUnit}`,
   };
+  const key = rowKeyFromContext(context);
+  if (key) {
+    const windows = quotes
+      .map((quote) => quoteWindowAroundKey(quote, key))
+      .filter((window): window is string => Boolean(window));
+    const windowHasUnsigned = windows.some((quote) =>
+      evidenceContainsFact(quote, unsigned)
+    );
+    const windowHasNegative = windows.some((quote) =>
+      evidenceContainsFact(quote, signed)
+    );
+    if (windowHasNegative && !windowHasUnsigned) {
+      return syntheticUnsupportedFact(cell);
+    }
+  }
   const hasUnsigned = quotes.some((quote) =>
     evidenceContainsFact(quote, unsigned)
   );
@@ -1392,6 +1412,12 @@ function unsignedQuantityWhenEvidenceIsNegative(
     evidenceContainsFact(quote, signed)
   );
   if (hasNegative && !hasUnsigned) {
+    return syntheticUnsupportedFact(cell);
+  }
+  // Operating Range has no URS-N row key. A neighbour process range of
+  // 15–130 °C must not licence Temperature Minimum 15 when the shell URS
+  // prints −15 °C.
+  if (section === "qsr_operating_range" && hasNegative) {
     return syntheticUnsupportedFact(cell);
   }
   return null;
@@ -1485,7 +1511,8 @@ export function extraQsrUnsupported(input: {
     unsignedQuantityWhenEvidenceIsNegative(
       input.cell.trim(),
       input.context,
-      input.ledger.recordedPages().map((page) => page.quote)
+      input.ledger.recordedPages().map((page) => page.quote),
+      input.section
     )
   );
   add(

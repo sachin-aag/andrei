@@ -119,7 +119,7 @@ flowchart TD
   E --> D
 ```
 
-Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v5`.
+Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v6`.
 
 ## DOCX path
 

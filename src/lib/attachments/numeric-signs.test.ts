@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { glueOcrMinusSigns, glueOcrUrsIds } from "./numeric-signs";
 
 describe("glueOcrMinusSigns", () => {
-  it("turns a unicode minus or en-dash sign into a hyphen", () => {
-    expect(glueOcrMinusSigns("−15 °C")).toBe("-15 °C");
-    expect(glueOcrMinusSigns("–15 °C")).toBe("-15 °C");
+  it("turns a figure dash, em dash, or fullwidth minus into a hyphen", () => {
+    expect(glueOcrMinusSigns("‒15 °C")).toBe("-15 °C");
+    expect(glueOcrMinusSigns("—15 °C")).toBe("-15 °C");
+    expect(glueOcrMinusSigns("－15 °C")).toBe("-15 °C");
+    expect(glueOcrMinusSigns("‐ 15 °C")).toBe("-15 °C");
   });
 
   it("glues an OCR-split minus from the URS temperature cell", () => {
