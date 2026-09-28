@@ -578,7 +578,13 @@ describe("QSR RTM section 5 draft replay", () => {
   });
 
   it("proposes URS-33 when the URS page wraps the ID at the table footer", async () => {
-    mockSection("qsr_rtm_process");
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        ["URS-30", "Batch Size", "", "", "", ""],
+        ["URS-31", "Type of Operation", "", "", "", ""],
+        ["URS-32", "Location", "", "", "", ""],
+      ]),
+    });
     const tools = buildTools({ section: "qsr_rtm_process" });
     readDocumentPageMock.mockResolvedValueOnce({
       attachmentId: URS_ID,
