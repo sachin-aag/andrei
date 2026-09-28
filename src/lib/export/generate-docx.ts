@@ -120,6 +120,9 @@ const MECHANICAL_DV_RESULTS_TABLE_KEYS = new Set([
 /** MJ ELR observation grids are too wide for A4 portrait even at 7–10 columns. */
 const ELR_LANDSCAPE_TABLE_KEYS = new Set([
   "qualificationTableXml",
+  "processValidationTableXml",
+  "cleaningValidationTableXml",
+  "qraReviewTableXml",
   "mediaFillTableXml",
   "monitoringTableXml",
   "calibrationTableXml",
