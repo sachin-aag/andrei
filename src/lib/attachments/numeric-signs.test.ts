@@ -8,6 +8,7 @@ import {
   hasAmbiguousNumericDash,
   overlayLeadingMinuses,
   pageNeedsNumericSignLook,
+  pageNeedsOcrSignLook,
   unsignedQuantityRangeCount,
 } from "./numeric-signs";
 
@@ -130,6 +131,19 @@ describe("unsignedQuantityRangeCount", () => {
   });
 });
 
+describe("pageNeedsOcrSignLook", () => {
+  it("OCRs leftover hyphens and unmapped glyphs, not unsigned ranges", () => {
+    expect(
+      pageNeedsOcrSignLook(
+        "URS-3 Shell Operating temperature – 15 °C to 130 °C"
+      )
+    ).toBe(true);
+    expect(pageNeedsOcrSignLook("15 °C to 130 °C", ["15"])).toBe(true);
+    expect(pageNeedsOcrSignLook("15 °C to 130 °C")).toBe(false);
+    expect(pageNeedsOcrSignLook("-15 °C to 130 °C")).toBe(false);
+  });
+});
+
 describe("hasAmbiguousNumericDash", () => {
   it("detects a hyphen one space before a number", () => {
     expect(hasAmbiguousNumericDash("– 15 °C to 130 °C")).toBe(true);
@@ -183,12 +197,14 @@ describe("pageNeedsNumericSignLook", () => {
     expect(GLR_1301_URS_PAGE_6).toContain("15 °C to 130 °C");
     expect(GLR_1301_URS_PAGE_6).not.toMatch(/-15 °C to 130 °C/);
     expect(hasAmbiguousNumericDash(GLR_1301_URS_PAGE_6)).toBe(false);
+    expect(pageNeedsOcrSignLook(GLR_1301_URS_PAGE_6)).toBe(false);
     expect(pageNeedsNumericSignLook(GLR_1301_URS_PAGE_6)).toBe(true);
     expect(unsignedQuantityRangeCount(GLR_1301_URS_PAGE_6)).toBeGreaterThan(0);
 
     expect(GLR_1301_URS_PAGE_9).toContain("20 °C to 150");
     expect(GLR_1301_URS_PAGE_9).not.toMatch(/-20 °C/);
     expect(hasAmbiguousNumericDash(GLR_1301_URS_PAGE_9)).toBe(false);
+    expect(pageNeedsOcrSignLook(GLR_1301_URS_PAGE_9)).toBe(false);
     expect(pageNeedsNumericSignLook(GLR_1301_URS_PAGE_9)).toBe(true);
     expect(unsignedQuantityRangeCount(GLR_1301_URS_PAGE_9)).toBeGreaterThan(0);
   });

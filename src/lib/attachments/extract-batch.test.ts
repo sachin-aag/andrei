@@ -237,6 +237,24 @@ function isSignedQuantityOverlayPrompt(text: string): boolean {
   return text.includes("visibly signed quantity");
 }
 
+function overlayMediaTypes(args: unknown): string[] {
+  const call = args as {
+    messages?: Array<{
+      content?: Array<{ type?: string; mediaType?: string }>;
+    }>;
+  };
+  return (call.messages?.[0]?.content ?? [])
+    .filter((part) => part.type === "image" || part.type === "file")
+    .map((part) => `${part.type}:${part.mediaType ?? ""}`);
+}
+
+function overlayCallMediaTypes(): string[] {
+  return generateTextMock.mock.calls.flatMap((call) => {
+    if (!isSignedQuantityOverlayPrompt(userPrompt(call[0]))) return [];
+    return overlayMediaTypes(call[0]);
+  });
+}
+
 async function pdfWithEnDashCelsiusRange(): Promise<Buffer> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
@@ -761,6 +779,7 @@ describe("extractPdfBatch with a text layer", () => {
     });
 
     expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+    expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
     expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
     expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
   });
@@ -803,6 +822,7 @@ describe("extractPdfBatch with a text layer", () => {
     });
 
     expect(ocrPdfWithDocumentAiMock).toHaveBeenCalledTimes(1);
+    expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
     expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
   });
 
@@ -835,6 +855,49 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages).toHaveLength(12);
     expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
     expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(overlayCallMediaTypes()).toEqual([
+      "image:image/png",
+      "image:image/png",
+    ]);
+    expect(result.pages[5]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[5]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
+    expect(result.pages[8]?.transcript).toContain("-20 °C to 150 °C");
+    expect(result.pages[8]?.transcript).not.toMatch(/(?<![-\d])20 °C to 150 °C/);
+  });
+
+  it("overlays −15 and −20 on a 12-page URS batch even when Document AI is configured", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (!isSignedQuantityOverlayPrompt(text)) {
+        throw new Error(`unexpected generateText prompt: ${text}`);
+      }
+      if (text.includes("page 6 of")) {
+        return resultWithOutput({ signedQuantities: ["−15 °C"] }, "stop");
+      }
+      if (text.includes("page 9 of")) {
+        return resultWithOutput({ signedQuantities: ["−20 °C"] }, "stop");
+      }
+      return resultWithOutput({ signedQuantities: [] }, "stop");
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithTwelvePageUrsTemperatures(),
+      pageStart: 1,
+      pageEnd: 12,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.mode).toBe("text-layer");
+    expect(result.recovery).toBe("text-layer-only");
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+    expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(overlayCallMediaTypes()).toEqual([
+      "image:image/png",
+      "image:image/png",
+    ]);
     expect(result.pages[5]?.transcript).toContain("-15 °C to 130 °C");
     expect(result.pages[5]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
     expect(result.pages[8]?.transcript).toContain("-20 °C to 150 °C");
@@ -871,6 +934,7 @@ describe("extractPdfBatch with a text layer", () => {
         isSignedQuantityOverlayPrompt(userPrompt(call[0]))
       )
     ).toBe(true);
+    expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
     expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
     expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
   });
@@ -945,26 +1009,19 @@ describe("extractPdfBatch with a text layer", () => {
 
   it("looks at an unsigned quantity range even when no leftover hyphen is in the text", async () => {
     isDocumentAiConfiguredMock.mockReturnValue(true);
-    generateTextMock.mockResolvedValueOnce(
-      resultWithOutput(
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        return resultWithOutput({ signedQuantities: ["−15 °C"] }, "stop");
+      }
+      return resultWithOutput(
         {
           pages: [insightPayload(1)],
           batchSummary: "summary",
           continuationNote: "note",
         },
         "stop"
-      )
-    );
-    ocrPdfWithDocumentAiMock.mockResolvedValueOnce({
-      pages: [
-        {
-          pageNumber: 1,
-          transcript: "URS-3 Shell Operating temperature -15 °C to 130 °C",
-          confidence: 0.94,
-        },
-      ],
-      elapsedMs: 20,
-      chunks: [],
+      );
     });
 
     const result = await extractPdfBatch({
@@ -976,7 +1033,8 @@ describe("extractPdfBatch with a text layer", () => {
       model: stubModel(),
     });
 
-    expect(ocrPdfWithDocumentAiMock).toHaveBeenCalledTimes(1);
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+    expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
     expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
     expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
   });

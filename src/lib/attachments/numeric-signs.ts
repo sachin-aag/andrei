@@ -179,6 +179,21 @@ export function pageNeedsNumericSignLook(
 }
 
 /**
+ * Document AI OCR can recover a leftover hyphen or an unmapped glyph. It
+ * cannot see a minus that exists only as a drawn stroke, so unsigned
+ * quantity ranges skip OCR and go to a page-image look.
+ */
+export function pageNeedsOcrSignLook(
+  text: string,
+  ambiguousMagnitudes: readonly string[] = []
+): boolean {
+  if (hasAmbiguousNumericDash(text)) return true;
+  return ambiguousMagnitudes.some((magnitude) =>
+    hasUnsignedMagnitude(text, magnitude)
+  );
+}
+
+/**
  * Table/footer wrap often splits `URS-33` into `URS- 33`, `URS-\n33`, or
  * `URS - 33`. Keep the original `URS` casing. Idempotent on a clean ID.
  */

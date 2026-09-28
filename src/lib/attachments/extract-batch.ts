@@ -28,7 +28,9 @@ import {
   numericSignLookScore,
   overlayLeadingMinuses,
   pageNeedsNumericSignLook,
+  pageNeedsOcrSignLook,
 } from "@/lib/attachments/numeric-signs";
+import { renderPdfPagePng } from "@/lib/attachments/pdf-page-image";
 import {
   MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
@@ -53,7 +55,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v10";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v11";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -1324,6 +1326,18 @@ function selectNumericSignOverlayPages(
     .toSorted((left, right) => left.pageNumber - right.pageNumber);
 }
 
+function selectNumericSignOcrPages(
+  pages: ExtractedPage[],
+  ambiguousByPage: ReadonlyMap<number, readonly string[]>
+): ExtractedPage[] {
+  return selectNumericSignOverlayPages(pages, ambiguousByPage).filter((page) =>
+    pageNeedsOcrSignLook(
+      page.transcript,
+      ambiguousByPage.get(page.pageNumber) ?? []
+    )
+  );
+}
+
 /**
  * Restore a leading minus when insight visuals, OCR, or a page look already
  * saw a signed quantity. Used when a leftover hyphen may be a minus or a
@@ -1358,7 +1372,7 @@ async function overlayAmbiguousNumericSignsFromDocumentAi(
   pages: ExtractedPage[],
   ambiguousByPage: ReadonlyMap<number, readonly string[]>
 ): Promise<void> {
-  const dropped = selectNumericSignOverlayPages(pages, ambiguousByPage);
+  const dropped = selectNumericSignOcrPages(pages, ambiguousByPage);
   if (dropped.length === 0 || !isDocumentAiConfigured()) return;
 
   try {
@@ -1394,21 +1408,30 @@ async function overlayAmbiguousNumericSignsFromDocumentAi(
  * Large text-layer batches skip the insight pass. Look at pages where a
  * leftover hyphen may be a minus or a bullet, or where an unsigned quantity
  * range may have dropped a drawn minus, and copy a minus only when the
- * model reports a signed quantity.
+ * model reports a signed quantity from a PNG raster of that page.
  */
 async function overlayAmbiguousNumericSignsFromVision(
   input: ResolvedInput,
   pages: ExtractedPage[],
   ambiguousByPage: ReadonlyMap<number, readonly string[]>
 ): Promise<void> {
-  for (const page of selectNumericSignOverlayPages(pages, ambiguousByPage)) {
+  const selected = selectNumericSignOverlayPages(pages, ambiguousByPage);
+  if (selected.length === 0) return;
+  console.info("[document-extract] Signed-quantity overlay", {
+    filename: input.filename,
+    pages: selected.map((page) => page.pageNumber),
+  });
+  for (const page of selected) {
     const relative = page.pageNumber - input.pageStart + 1;
     try {
+      const pagePdf = await copyPdfPage(input.pdfBuffer, relative);
+      const pageImage = await renderPdfPagePng(pagePdf);
       const evidence = await requestSignedQuantityOverlay({
         ...input,
-        pdfBuffer: await copyPdfPage(input.pdfBuffer, relative),
+        pdfBuffer: pagePdf,
         pageStart: page.pageNumber,
         pageEnd: page.pageNumber,
+        pageImage,
       });
       if (!evidence) continue;
       page.transcript = overlayLeadingMinuses(page.transcript, evidence);
@@ -1422,7 +1445,7 @@ async function overlayAmbiguousNumericSignsFromVision(
 }
 
 async function requestSignedQuantityOverlay(
-  input: ResolvedInput
+  input: ResolvedInput & { pageImage: Buffer }
 ): Promise<string | null> {
   try {
     const result = await generateText({
@@ -1435,14 +1458,9 @@ async function requestSignedQuantityOverlay(
           content: [
             { type: "text", text: buildSignedQuantityOverlayPrompt(input) },
             {
-              type: "file",
-              data: input.pdfBuffer,
-              mediaType: "application/pdf",
-              filename: batchFilename(
-                input.filename,
-                input.pageStart,
-                input.pageEnd
-              ),
+              type: "image",
+              image: new Uint8Array(input.pageImage),
+              mediaType: "image/png",
             },
           ],
         },
@@ -1456,6 +1474,7 @@ async function requestSignedQuantityOverlay(
           filename: input.filename,
           pageStart: input.pageStart,
           pageEnd: input.pageEnd,
+          overlayMedia: "image/png",
         },
       }),
     });
@@ -1590,7 +1609,7 @@ function buildSignedQuantityOverlayPrompt(input: {
   pageStart: number;
   filename: string;
 }): string {
-  return `Look at the page image of page ${input.pageStart} of ${input.filename}, not the embedded text layer.
+  return `Look at this PNG raster of page ${input.pageStart} of ${input.filename}. Read the pixels. Do not use a PDF text layer.
 
 A leading minus on a quantity (−15 °C, −20 °C, −50 RPM) is a sign, including a short stroke drawn in a table cell that the text layer omitted.
 A bullet, list dash, or range separator (15–130 °C) is not a sign.
