@@ -113,7 +113,10 @@ import {
   resolveReviewCoverageObjective,
 } from "@/lib/ai/chat/pending-plan";
 import { recapWriteNotReady } from "@/lib/ai/chat/plan-execution";
-import { retrievalQueriesForSearch } from "@/lib/ai/chat/retrieval-goals";
+import {
+  isUrsInventoryRequest,
+  retrievalQueriesForSearch,
+} from "@/lib/ai/chat/retrieval-goals";
 import { liveTableHeadersMismatch } from "@/lib/ai/chat/table-schema";
 import {
   dataUrlToBase64,
@@ -238,6 +241,7 @@ import {
   DOCUMENT_SEARCH_MODES,
   listDocumentPagesForReview,
   listReadyDocumentsForReport,
+  listUrsRequirementIds,
   loadDocumentPageEvidence,
   readDocumentOutline,
   readDocumentPage,
@@ -285,6 +289,7 @@ import {
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
 import {
+  documentFamilyFromFilename,
   qsrTableColumnLabel,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -996,33 +1001,90 @@ function buildSearchDocumentsTool(opts: {
         trustBoundary: DOCUMENT_TRUST_BOUNDARY,
       };
     }
+    const inventoryText = [opts.userText ?? "", input.query ?? "", ...(input.queries ?? [])].join(
+      "\n"
+    );
+    let discoveredUrsIds: string[] = [];
+    if (
+      isUrsInventoryRequest(inventoryText) &&
+      (!input.excludePages || input.excludePages.length === 0)
+    ) {
+      try {
+        discoveredUrsIds = await listUrsRequirementIds(reportId);
+      } catch {
+        discoveredUrsIds = [];
+      }
+    }
     const planned = retrievalQueriesForSearch({
       userText: opts.userText,
       query: input.query,
       queries: input.queries,
       excludePages: input.excludePages,
+      ursIds: discoveredUrsIds,
     });
-    const queryList = collectSearchQueries({ queries: planned.queries });
-    const queryPlan = queryList.map((query) => {
-      const plan = planDocumentSearchQuery(query, familySection);
-      return {
-        query,
-        phrases: plan.phrases,
-        tsQuery: plan.tsQuery,
-        families: plan.families,
-        tokens: plan.tokens,
-      };
-    });
-    const arms = await searchReportDocumentsMany({
-      reportId,
-      queries: queryList,
-      limit: input.limit,
-      attachmentIds: input.attachmentIds,
-      backfill: input.attachmentIds === undefined,
-      mode: input.mode,
-      excludePages: input.excludePages,
-      phraseFamilies,
-    });
+    const queryList =
+      planned.goals.length > 0
+        ? planned.goals.map((goal) => goal.query)
+        : collectSearchQueries({ queries: planned.queries });
+    const queryPlan = [...new Set(queryList.map((query) => query.toLowerCase()))].map(
+      (key) => {
+        const query = queryList.find((item) => item.toLowerCase() === key) ?? key;
+        const plan = planDocumentSearchQuery(query, familySection);
+        return {
+          query,
+          phrases: plan.phrases,
+          tsQuery: plan.tsQuery,
+          families: plan.families,
+          tokens: plan.tokens,
+        };
+      }
+    );
+    const familyFiles = new Map<string, string[]>();
+    if (
+      planned.goals.some((goal) => goal.family) &&
+      input.attachmentIds === undefined
+    ) {
+      try {
+        const ready = await listReadyDocumentsForReport(reportId);
+        for (const doc of ready) {
+          const family = documentFamilyFromFilename(doc.filename);
+          if (!family || family === "ds") continue;
+          const list = familyFiles.get(family) ?? [];
+          list.push(doc.attachmentId);
+          familyFiles.set(family, list);
+        }
+      } catch {
+        familyFiles.clear();
+      }
+    }
+    const groups = new Map<string, string[]>();
+    if (planned.goals.length > 0) {
+      for (const goal of planned.goals) {
+        const key = goal.family ?? "any";
+        const list = groups.get(key) ?? [];
+        list.push(goal.query);
+        groups.set(key, list);
+      }
+    } else {
+      groups.set("any", queryList);
+    }
+    const armGroups = await Promise.all(
+      [...groups.entries()].map(async ([family, queries]) => {
+        const scoped =
+          family !== "any" ? familyFiles.get(family) : undefined;
+        return searchReportDocumentsMany({
+          reportId,
+          queries,
+          limit: input.limit,
+          attachmentIds: scoped && scoped.length > 0 ? scoped : input.attachmentIds,
+          backfill: !(scoped && scoped.length > 0) && input.attachmentIds === undefined,
+          mode: input.mode,
+          excludePages: input.excludePages,
+          phraseFamilies,
+        });
+      })
+    );
+    const arms = armGroups.flat();
     const byId = new Map<string, (typeof arms)[number][number]>();
     for (const arm of arms) {
       for (const hit of arm) {
@@ -1056,7 +1118,9 @@ function buildSearchDocumentsTool(opts: {
     );
     return {
       results: identity.results,
-      queriesRun: queryList,
+      queriesRun: [...new Set(queryList.map((query) => query.toLowerCase()))].map(
+        (key) => queryList.find((query) => query.toLowerCase() === key) ?? key
+      ),
       ...(planned.goals.length > 0 ? { retrievalGoals: planned.goals } : {}),
       mode: input.mode ?? "hybrid",
       returnedCount: merged.length,

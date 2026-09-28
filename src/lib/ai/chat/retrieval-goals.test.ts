@@ -24,14 +24,27 @@ describe("planRetrievalGoals", () => {
     expect(goals.some((goal) => goal.query.includes("PQ"))).toBe(true);
   });
 
-  it("groups named URS ids into sets and still searches the protocols", () => {
-    const goals = planRetrievalGoals(
-      "fill the RTM for URS-1 URS-2 URS-3 URS-9"
-    );
-    expect(goals.some((goal) => goal.query.includes("URS-1 OR URS-2"))).toBe(
-      true
-    );
-    expect(goals.some((goal) => goal.goal.includes("Installation"))).toBe(true);
+  it("searches discovered URS ids in the URS and in each protocol family", () => {
+    const goals = planRetrievalGoals("draft table 5 with the complete list of URSes", [
+      "URS-10",
+      "URS-2",
+      "URS-1",
+    ]);
+    expect(goals.map((goal) => goal.goal)).toEqual([
+      "URS-1–URS-10 in the URS",
+      "URS-1–URS-10 in the IQ",
+      "URS-1–URS-10 in the OQ",
+      "URS-1–URS-10 in the PQ",
+      "URS-1–URS-10 in the DQ",
+    ]);
+    expect(goals[0]?.query).toBe("URS-1 OR URS-2 OR URS-10");
+    expect(goals.every((goal) => goal.query === goals[0]?.query)).toBe(true);
+  });
+
+  it("uses URS ids named in the request when the file list is not loaded yet", () => {
+    const goals = planRetrievalGoals("fill the RTM for URS-1 URS-2 URS-3 URS-9");
+    expect(goals[0]?.goal).toBe("URS-1–URS-9 in the URS");
+    expect(goals.some((goal) => goal.goal.endsWith("in the IQ"))).toBe(true);
     expect(goals.some((goal) => goal.goal.includes("Process requirement"))).toBe(
       false
     );

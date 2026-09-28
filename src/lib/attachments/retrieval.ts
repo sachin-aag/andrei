@@ -1502,6 +1502,35 @@ export async function listReadyDocumentsForReport(
   }));
 }
 
+/** URS-N ids stored on pages of attachments whose filename says URS. */
+export async function listUrsRequirementIds(reportId: string): Promise<string[]> {
+  const rows = await db
+    .select({ identifiers: documentPages.identifiers })
+    .from(documentPages)
+    .innerJoin(
+      reportAttachments,
+      eq(documentPages.attachmentId, reportAttachments.id)
+    )
+    .where(
+      and(
+        eq(documentPages.reportId, reportId),
+        isNull(reportAttachments.deletedAt),
+        sql`lower(${reportAttachments.filename}) like '%urs%'`
+      )
+    );
+  const ids = new Set<string>();
+  for (const row of rows) {
+    for (const raw of row.identifiers ?? []) {
+      const match = raw.toUpperCase().match(/^URS-(\d+)$/);
+      if (!match) continue;
+      ids.add(`URS-${match[1]}`);
+    }
+  }
+  return [...ids].sort(
+    (a, b) => Number(a.slice(4)) - Number(b.slice(4))
+  );
+}
+
 export async function verifyCitation(
   reportId: string,
   citationId: string

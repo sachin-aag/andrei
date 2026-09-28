@@ -238,7 +238,7 @@ describe("mergeExcludePages cap", () => {
 
 describe("search_documents URS fan-out", () => {
   it("runs requirement sets and protocol searches in one call", async () => {
-    searchReportDocumentsManyMock.mockResolvedValueOnce([[], [], [], [], [], [], [], []]);
+    searchReportDocumentsManyMock.mockResolvedValue([[]]);
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -251,9 +251,9 @@ describe("search_documents URS fan-out", () => {
     expect(result.retrievalGoals?.length).toBeGreaterThan(1);
     expect(result.queriesRun?.some((query) => query.includes("OQ"))).toBe(true);
     const calls = searchReportDocumentsManyMock.mock.calls as unknown as Array<
-      [{ queries?: string[] }]
+      [{ queries?: string[]; backfill?: boolean }]
     >;
-    expect(calls.at(-1)?.[0]?.queries?.length).toBeGreaterThan(1);
+    expect(calls.length).toBeGreaterThan(1);
   });
 });
 
