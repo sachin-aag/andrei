@@ -5,7 +5,10 @@ import {
 } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
-import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
+import {
+  glueOcrMinusSigns,
+  glueOcrUrsIds,
+} from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
   QSR_TABLE_HEADERS,
@@ -409,8 +412,14 @@ export function dateSupportedAsLabeledField(
 
 type UrsSpan = { id: string; at: number };
 
+/** Glue OCR-split `URS- 33` / `URS-\n33` so window offsets stay on one string. */
+function ursHaystack(quote: string): string {
+  return glueOcrUrsIds(quote);
+}
+
 function ursSpans(quote: string): UrsSpan[] {
-  return [...quote.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
+  const hay = ursHaystack(quote);
+  return [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
     id: match[0]!.toUpperCase(),
     at: match.index ?? 0,
   }));
@@ -437,14 +446,15 @@ type ColumnRun = {
  * A digit in the gap ends the block, so the values are not the last ID's sentence.
  */
 function columnRuns(quote: string): ColumnRun[] {
-  const spans = ursSpans(quote);
+  const hay = ursHaystack(quote);
+  const spans = ursSpans(hay);
   const runs: ColumnRun[] = [];
   let runStart = 0;
   for (let i = 1; i <= spans.length; i++) {
     const continues =
       i < spans.length &&
       isColumnLabelGap(
-        quote.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
+        hay.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
       );
     if (continues) continue;
     const runEnd = i - 1;
@@ -482,8 +492,9 @@ export function columnRunValueStart(quote: string): number | null {
 }
 
 function indexOfUrsId(quote: string, key: string): number {
+  const hay = ursHaystack(quote);
   const needle = key.toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`\\b${needle}\\b`, "i").exec(quote);
+  const match = new RegExp(`\\b${needle}\\b`, "i").exec(hay);
   return match?.index ?? -1;
 }
 
@@ -494,24 +505,26 @@ function indexOfUrsId(quote: string, key: string): number {
  * the previous row's range (`0 to 760 mmHg` sitting just before URS-36).
  * A two-column URS table (IDs, then the requirement text) stops before that
  * value column so the last ID does not own every sentence.
+ * OCR wrap at a table/footer (`URS- 33`) is glued before the window is cut.
  */
 export function quoteWindowAroundKey(quote: string, key: string): string | null {
   if (!quote.trim() || !key) return null;
-  const at = indexOfUrsId(quote, key);
+  const hay = ursHaystack(quote);
+  const at = indexOfUrsId(hay, key);
   if (at < 0) return null;
   const needle = key.toUpperCase();
-  const after = quote.slice(at + needle.length);
+  const after = hay.slice(at + needle.length);
   const next = after.match(/\bURS-\d+\b/i);
   let end =
     next && next.index != null
       ? at + needle.length + next.index
-      : Math.min(quote.length, at + needle.length + 240);
-  const columnStart = columnValueStartForSpan(quote, at);
+      : Math.min(hay.length, at + needle.length + 240);
+  const columnStart = columnValueStartForSpan(hay, at);
   if (columnStart != null && at < columnStart && end > columnStart) {
     end = columnStart;
   }
   if (end <= at) return null;
-  return quote.slice(at, end);
+  return hay.slice(at, end);
 }
 
 /**
@@ -524,9 +537,10 @@ export function pageLevelTokenAroundKey(
   key: string
 ): string | null {
   if (!quote.trim() || !key) return null;
-  const at = indexOfUrsId(quote, key);
+  const hay = ursHaystack(quote);
+  const at = indexOfUrsId(hay, key);
   if (at < 0) return null;
-  return quote.slice(at);
+  return hay.slice(at);
 }
 
 export function evidenceContainsFactNearKey(
@@ -539,9 +553,10 @@ export function evidenceContainsFactNearKey(
 }
 
 export function ursIdsInQuote(quote: string): string[] {
+  const hay = ursHaystack(quote);
   return [
     ...new Set(
-      [...quote.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
+      [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
     ),
   ];
 }
@@ -611,18 +626,19 @@ function otherUrsWindows(
 }
 
 function textOutsideOtherUrsWindows(quote: string, key: string): string {
+  const hay = ursHaystack(quote);
   const needle = key.toUpperCase();
   const ranges: Array<{ start: number; end: number }> = [];
-  for (const id of ursIdsInQuote(quote)) {
+  for (const id of ursIdsInQuote(hay)) {
     if (id === needle) continue;
-    const start = indexOfUrsId(quote, id);
+    const start = indexOfUrsId(hay, id);
     if (start < 0) continue;
-    const window = quoteWindowAroundKey(quote, id);
+    const window = quoteWindowAroundKey(hay, id);
     if (!window) continue;
     ranges.push({ start, end: start + window.length });
   }
   ranges.sort((a, b) => b.start - a.start);
-  let text = quote;
+  let text = hay;
   for (const range of ranges) {
     text = `${text.slice(0, range.start)}${" ".repeat(range.end - range.start)}${text.slice(range.end)}`;
   }

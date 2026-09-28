@@ -577,6 +577,57 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(text).toContain("3.5 Kg/cm²");
   });
 
+  it("proposes URS-33 when the URS page wraps the ID at the table footer", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 8,
+      transcript:
+        "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "8",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 8 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-33 from the URS page-8 table.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-32",
+          rows: [
+            [
+              "URS-33",
+              "Stage and location",
+              "Equipment intended for intermediate stage manufacturing operations.",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows[0]?.[0]).toBe("URS-33");
+    expect(rows.flat().join(" ")).toContain("Stage and location");
+    expect(rows.flat().join(" ")).toContain(
+      "intermediate stage manufacturing operations"
+    );
+  });
+
   it("proposes 3.5 Kg/cm² when OCR split the decimal on the URS page", async () => {
     mockSection("qsr_rtm_process");
     const tools = buildTools({ section: "qsr_rtm_process" });
