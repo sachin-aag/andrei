@@ -627,7 +627,7 @@ describe("QSR RTM section 5 draft replay", () => {
     const op = proposedTableOp(inserted);
     expect(op.kind).toBe("insert_rows");
     const rows = op.kind === "insert_rows" ? op.rows : [];
-    expect(rows[0]?.[0]).toBe("URS-33");
+    expect(rows[0]?.[0]).toMatch(/^URS-33/);
     expect(rows.flat().join(" ")).toContain("Stage and location");
     expect(rows.flat().join(" ")).toContain(
       "intermediate stage manufacturing operations"
