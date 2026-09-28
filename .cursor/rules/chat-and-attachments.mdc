@@ -172,7 +172,8 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
 instead of blocking the URS copy. An explicit empty `edit_cells` of filled
 Stage / Section / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A / not applicable
-becomes Remarks NA. Every pack uses `unsupportedFactPolicy: block`
+leaves Remarks blank (never NA). Complies when the result line supports
+the row even if another row on that page is N/A. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

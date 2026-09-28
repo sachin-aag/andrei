@@ -2001,4 +2001,98 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
     expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
   });
+
+  it("proposes Complies for URS-41 when the IQ page also has an N/A neighbour row", async () => {
+    const table7Rows = [
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+    ];
+    mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_gmp" });
+    await readIqPage(
+      tools,
+      42,
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified 13.7 Spare parts Result: N/A not applicable"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_gmp",
+        targetField: "table",
+        reasoning: "Fill missing Stage and Remarks for URS-41.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: `IQ [${IQ_FILENAME}, p. 42]`,
+              rowContext: `URS-41\nGaskets\nPTFE or Equivalent [1]`,
+            },
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: "Complies",
+              rowContext: `URS-41\nGaskets\nPTFE or Equivalent [1]`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(/\bNA\b/);
+  });
+
+  it("injects Complies for URS-41 when Agent only drafted Stage and the IQ page has a neighbour N/A", async () => {
+    const table7Rows = [
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+    ];
+    mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_gmp" });
+    await readIqPage(
+      tools,
+      42,
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified 13.7 Spare parts Result: N/A not applicable"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_gmp",
+        targetField: "table",
+        reasoning: "Fill missing Stage for URS-41.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 3,
+              rowKey: "URS-41",
+              expectedText: "",
+              insertText: `IQ [${IQ_FILENAME}, p. 42]`,
+              rowContext: `URS-41\nGaskets\nPTFE or Equivalent [1]`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("edit_cells");
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(/\bNA\b/);
+  });
 });

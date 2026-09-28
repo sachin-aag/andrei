@@ -472,11 +472,11 @@ The layer that catches a production overblock (QSR section 5 dropping cover-page
 
 | File | Focus |
 |------|--------|
-| `qsr-rtm-draft-replay.test.ts` | GLR-1301 section 5: cover `8000 L`, `760 mmHg` outside a neighbour window, `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour URS-37 still blocked, stock Complies still blocked, jacket IQ topic-match fills Stage/Section without a URS ID, IQ running header does not fill URS-1 Stage, 5.2 stays locked until a matching RTM finish, a 5.1 URS walk that skipped DQ unlocks 5.2 |
+| `qsr-rtm-draft-replay.test.ts` | GLR-1301 section 5: cover `8000 L`, `760 mmHg` outside a neighbour window, `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour URS-37 still blocked, stock Complies still blocked, jacket IQ topic-match fills Stage/Section without a URS ID, IQ running header does not fill URS-1 Stage, 5.2 stays locked until a matching RTM finish, a 5.1 URS walk that skipped DQ unlocks 5.2, URS-41 Remarks Complies when IQ Verified sits next to a neighbour N/A (including Stage-only drafts) |
 | `tools.test.ts` | Tool schemas, ELR inventory lock, placeholder bounce, document-review start shape |
 | `ground-draft.test.ts` / `qsr-row-grounding.test.ts` | Pure grounding helpers (no `edit_table`) |
 | `harness-scenarios.ts` | Layer-1 tool *availability* (greeting / rewrite / empty inventory) — not write-path grounding |
-| `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour block, unread URS fail-closed, jacket IQ topic-match Stage, IQ header-only Stage blocked, greeting / empty-inventory harness |
+| `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour block, unread URS fail-closed, jacket IQ topic-match Stage, IQ header-only Stage blocked, URS-41 Complies next to a neighbour N/A, greeting / empty-inventory harness |
 
 `restoreFromFinishedReview` zeros skip counts, so it cannot reproduce a floor-8 skipped-file deadlock. Use a real start → continue → finish for that class of bug. Copy `qsr-rtm-draft-replay.test.ts` for the next incident; do not dump it into `tools.test.ts`.
 

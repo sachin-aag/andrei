@@ -383,6 +383,33 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toEqual([]);
   });
 
+  it("treats Remarks NA / N/A as unsupported so they clear instead of persisting", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "IQ-GLR-1301.pdf",
+        pageNumber: 12,
+        attachmentId: "iq",
+        quote: "URS-5 N/A for this protocol section.",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "NA",
+        context: "URS-5\nIQ",
+        section: "qsr_rtm_safety",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("NA");
+    expect(
+      extraQsrUnsupported({
+        cell: "N/A",
+        context: "URS-5\nIQ",
+        section: "qsr_rtm_safety",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("N/A");
+  });
+
   it("blocks a stage cell when that protocol never names the row URS ID", () => {
     const ledger = ledgerFromPages([
       {
@@ -1117,7 +1144,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(cells.map((cell) => cell.col).toSorted()).toEqual([3, 4, 5]);
   });
 
-  it("sets DQ / Section 4 / NA from a Design Qualification N/A page", () => {
+  it("sets DQ / Section 4 and leaves Remarks blank from a Design Qualification N/A page", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1142,7 +1169,7 @@ describe("groundTableOperation optional RTM columns", () => {
     ).toMatchObject({
       stageLabel: "DQ",
       sectionHeading: "4",
-      remarks: "NA",
+      remarks: "",
     });
     const result = groundTableOperation({
       operation: {
@@ -1187,7 +1214,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(byCol.get(3)).toMatch(/^DQ\b/);
     expect(byCol.get(3)).toContain("Design Qualification.PDF");
     expect(byCol.get(4)).toBe("4");
-    expect(byCol.get(5)).toBe("NA");
+    expect(byCol.get(5) ?? "").toBe("");
   });
 
   it("rewrites DQ up to IQ when Installation Qualification also topic-matches", () => {
@@ -2008,6 +2035,162 @@ describe("groundTableOperation optional RTM columns", () => {
     const pick = pickRtmReference(ledger, "URS-41", "URS-41");
     expect(pick?.stageLabel).toBe("IQ");
     expect(pick?.remarks).toBe("Complies");
+  });
+
+  it("still writes Complies when a neighbour row on the same IQ page is N/A", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified 13.7 Spare parts list Result: N/A not applicable";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-41",
+        "URS-41\nGaskets\nPTFE or Equivalent [1]"
+      )
+    ).toMatchObject({
+      stageLabel: "IQ",
+      remarks: "Complies",
+    });
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 42]",
+            rowContext: "URS-41\nGaskets\nPTFE or Equivalent [1]",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext: "URS-41\nGaskets\nPTFE or Equivalent [1]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+  });
+
+  it("injects Complies when only Stage is drafted and the IQ page has a neighbour N/A", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified 13.7 Spare parts list Result: N/A not applicable";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 42]",
+            rowContext: "URS-41\nGaskets\nPTFE or Equivalent [1]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
+  });
+
+  it("rewrites Remarks NA to Complies when this row's IQ result is Verified", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified 13.7 Spare parts list Result: N/A not applicable";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 42]",
+            rowContext: "URS-41\nGaskets\nPTFE or Equivalent [1]",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "NA",
+            rowContext: "URS-41\nGaskets\nPTFE or Equivalent [1]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 5)?.insertText).toBe("Complies");
+  });
+
+  it("leaves Remarks blank when this URS window is N/A even if a later row is Verified", () => {
+    const dqQuote =
+      "URS-51 Spare parts list. Section 4. Result: N/A not applicable. URS-5 Installation check meets acceptance. Result: Verified";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 18,
+        attachmentId: "dq",
+        quote: dqQuote,
+      },
+    ]);
+    expect(
+      pickRtmReference(ledger, "URS-51", "URS-51\nSpare parts list")
+    ).toMatchObject({
+      stageLabel: "DQ",
+      remarks: "",
+    });
   });
 
   it("paints Complies when URS-41 is on the IQ page but Verified sits outside the ID window", () => {

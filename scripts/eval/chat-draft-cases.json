@@ -189,6 +189,31 @@
     }
   },
   {
+    "id": "qsr-rtm-urs41-complies-neighbour-na",
+    "task": "ground_draft",
+    "passCriteria": "URS-41 Complies persists when IQ records Verified even if a neighbour row on that page is N/A.",
+    "notes": "GLR-1301 RTM 5.1 Gaskets. A page-level N/A must not veto this row's pass token.",
+    "input": {
+      "text": "Complies",
+      "context": "URS-41\nGaskets\nIQ",
+      "section": "qsr_rtm_gmp",
+      "pages": [
+        {
+          "filename": "Installation Qualification.PDF",
+          "pageNumber": 42,
+          "attachmentId": "iq",
+          "quote": "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified 13.7 Spare parts list Result: N/A not applicable"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["Complies"],
+      "mustNotContain": ["NA", "N/A", "not applicable"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
     "id": "harness-greeting-no-tools",
     "task": "harness",
     "passCriteria": "A greeting must not search, review, or write.",

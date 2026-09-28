@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v151-labeled-column-dates");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v152-rtm-remarks-complies");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -27,6 +27,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("do not copy URS-37's range onto URS-5");
     expect(prompt).toContain("URS cover");
     expect(prompt).toContain("stock Complies / bare Section 13");
+    expect(prompt).toContain("never NA / N/A / not applicable");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");

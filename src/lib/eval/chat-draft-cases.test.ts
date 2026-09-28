@@ -68,6 +68,7 @@ describe("chat-draft-cases.json", () => {
     expect(ids.has("qsr-rtm-neighbour-urs37-blocked")).toBe(true);
     expect(ids.has("qsr-rtm-iq-jacket-topic-stage")).toBe(true);
     expect(ids.has("qsr-rtm-iq-header-only-stage-blocked")).toBe(true);
+    expect(ids.has("qsr-rtm-urs41-complies-neighbour-na")).toBe(true);
     expect(ids.has("harness-greeting-no-tools")).toBe(true);
   });
 

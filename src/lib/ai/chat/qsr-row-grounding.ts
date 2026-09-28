@@ -791,10 +791,23 @@ function protocolTopicBody(quote: string, context: string): string | null {
   return null;
 }
 
+function protocolResultHay(text: string): string {
+  return text.replace(/\bverified\s+by\b/gi, " ");
+}
+
 function hasProtocolPassToken(text: string): boolean {
-  const hay = text.replace(/\bverified\s+by\b/gi, " ");
-  if (NOT_APPLICABLE_RE.test(hay)) return false;
-  return PASS_TOKEN_RE.test(hay);
+  return PASS_TOKEN_RE.test(protocolResultHay(text));
+}
+
+function hasProtocolNaToken(text: string): boolean {
+  return NOT_APPLICABLE_RE.test(protocolResultHay(text));
+}
+
+/** This row's URS window is N/A and has no pass — do not steal a later row's Verified. */
+function tightWindowIsNaOnly(quote: string, key: string): boolean {
+  const tight = quoteWindowAroundKey(quote, key);
+  if (!tight) return false;
+  return hasProtocolNaToken(tight) && !hasProtocolPassToken(tight);
 }
 
 export function documentFamilyFromFilename(
@@ -898,50 +911,24 @@ function protocolPassWindow(
 ): string | null {
   for (const page of ledger.recordedPages()) {
     if (!filenameMatchesFamily(page.filename, family)) continue;
-    const window = pageLevelTokenAroundKey(page.quote, key);
-    if (window && hasProtocolPassToken(window)) return window;
+    if (tightWindowIsNaOnly(page.quote, key)) continue;
+    const tight = quoteWindowAroundKey(page.quote, key);
+    if (tight && hasProtocolPassToken(tight)) return tight;
     const topic = protocolTopicBody(page.quote, context);
     if (topic && hasProtocolPassToken(topic)) return topic;
-  }
-  return null;
-}
-
-function protocolNaWindow(
-  ledger: CitationPageLedger,
-  key: string,
-  family: QualDocFamily,
-  context: string
-): string | null {
-  for (const page of ledger.recordedPages()) {
-    if (!filenameMatchesFamily(page.filename, family)) continue;
     const window = pageLevelTokenAroundKey(page.quote, key);
-    if (window && NOT_APPLICABLE_RE.test(window)) return window;
-    const topic = protocolTopicBody(page.quote, context);
-    if (topic && NOT_APPLICABLE_RE.test(topic)) return topic;
+    if (window && hasProtocolPassToken(window)) return window;
   }
   return null;
 }
 
 function rtmRemarksForPick(
-  body: string | null,
   ledger: CitationPageLedger,
   key: string,
   family: QualDocFamily,
   context: string
 ): string {
-  if (
-    (body && NOT_APPLICABLE_RE.test(body)) ||
-    protocolNaWindow(ledger, key, family, context)
-  ) {
-    return "NA";
-  }
-  if (
-    (body && hasProtocolPassToken(body)) ||
-    protocolPassWindow(ledger, key, family, context)
-  ) {
-    return "Complies";
-  }
-  return "";
+  return protocolPassWindow(ledger, key, family, context) ? "Complies" : "";
 }
 
 function protocolMentionsKey(
@@ -1089,7 +1076,7 @@ export function pickRtmReference(
       filename: passPage.filename,
       pageNumber: passPage.pageNumber,
       sectionHeading: body ? protocolSectionHeading(body) : null,
-      remarks: rtmRemarksForPick(body, ledger, key, family, context),
+      remarks: rtmRemarksForPick(ledger, key, family, context),
     };
   }
   return null;
@@ -1305,6 +1292,10 @@ export function qsrRtmCellUnsupported(
   if (!key || !trimmed) return null;
 
   if (STOCK_BARE_SECTION_13_RE.test(trimmed)) {
+    return syntheticUnsupportedFact(trimmed);
+  }
+
+  if (/^(?:n\/?a\.?|not\s+applicable)$/i.test(trimmed)) {
     return syntheticUnsupportedFact(trimmed);
   }
 
