@@ -527,6 +527,46 @@ describe("advancePlanAfterTurn", () => {
     ).toEqual(["elr_objective", "elr_scope"]);
   });
 
+  it("puts a named conclusion last and does not pair it with an earlier section", () => {
+    const seeded = seedNamedSectionQueuePlan({
+      userText: "draft objective, overview, and conclusion",
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_objective: emptyQsrContent("qsr_objective"),
+        qsr_overview: emptyQsrContent("qsr_overview"),
+        qsr_conclusion: emptyQsrContent("qsr_conclusion"),
+      },
+      promptVersion: "chat-v157-plan-execution",
+    });
+    expect(seeded?.items.map((item) => item.sectionKey)).toEqual([
+      "qsr_objective",
+      "qsr_overview",
+      "qsr_conclusion",
+    ]);
+    expect(
+      currentPlanTurnSections(seeded!, "qualification_summary_report").map(
+        (item) => item.sectionKey
+      )
+    ).toEqual(["qsr_objective", "qsr_overview"]);
+  });
+
+  it("pairs adjacent QSR RTM siblings on one turn", () => {
+    const started = plan([
+      {
+        sectionKey: "qsr_rtm_process",
+        label: "5.1 Process",
+        state: "in_progress",
+      },
+      { sectionKey: "qsr_rtm_control", label: "5.2 Control", state: "queued" },
+      { sectionKey: "qsr_conclusion", label: "7 Conclusion", state: "queued" },
+    ]);
+    expect(
+      currentPlanTurnSections(started, "qualification_summary_report").map(
+        (item) => item.sectionKey
+      )
+    ).toEqual(["qsr_rtm_process", "qsr_rtm_control"]);
+  });
+
   it("does not pair Alarm Trends with Monitoring on one remaining-section turn", () => {
     const started = plan([
       { sectionKey: "elr_alarms", label: "Alarm Trends", state: "in_progress" },
@@ -610,6 +650,35 @@ describe("resolvePlanAtTurnStart", () => {
     });
     expect(seeded?.items.length).toBeGreaterThanOrEqual(2);
     expect(seeded?.objective).toBe("draft remaining report");
+  });
+
+  it("seeds the whole empty section list for draft the report", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "draft the report",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_objective: emptyQsrContent("qsr_objective"),
+        qsr_scope: emptyQsrContent("qsr_scope"),
+        qsr_conclusion: emptyQsrContent("qsr_conclusion"),
+      },
+      promptVersion: "chat-v157-plan-execution",
+      now: new Date("2026-09-28T00:00:00.000Z"),
+    });
+    const keys = seeded?.items.map((item) => item.sectionKey) ?? [];
+    expect(keys[0]).toBe("qsr_objective");
+    expect(keys.at(-1)).toBe("qsr_conclusion");
+    expect(keys.indexOf("qsr_conclusion")).toBeGreaterThan(keys.indexOf("qsr_scope"));
+    expect(seeded?.items[0]?.state).toBe("in_progress");
+  });
+
+  it("treats a short unnamed draft as the whole report", () => {
+    expect(isMultiSectionDraftRequest("draft it")).toBe(true);
+    expect(isMultiSectionDraftRequest("please write this up")).toBe(true);
+    expect(isMultiSectionDraftRequest("draft Purpose")).toBe(false);
+    expect(isMultiSectionDraftRequest("draft section 7")).toBe(false);
   });
 
   it("does not seed a named single-section draft", () => {

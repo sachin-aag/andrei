@@ -18,6 +18,13 @@ import {
 import { isQsrRtmSection } from "@/lib/ai/chat/qsr-row-grounding";
 import { getDocumentType } from "@/lib/document-types";
 import {
+  isDependentRecapSection,
+  orderPlanSectionItems,
+  planExecutionPromptLine,
+  shouldPairPlanSections,
+} from "@/lib/ai/chat/plan-execution";
+
+import {
   elrIncompleteSectionKeysFromParts,
   planEditToolLanded,
 } from "@/lib/document-types/elr/plan-complete";
@@ -85,10 +92,16 @@ export type ChatTurnContinuation = {
  * verb and the noun (`draft remaining report`), not only after it
  * (`draft the report`, `remaining sections`). "Go on to X and sections after
  * that" is the same ask — without this the turn is a write with no queue and
- * the model mills every leftover inventory until the 270s abort.
+ * the model mills every leftover inventory until the 270s abort. A bare
+ * "draft it" / "write this up" with no named section is the same whole-report
+ * ask: the context map already lists every section and every ready file.
  */
 const MULTI_SECTION_DRAFT_RE =
-  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining)|sections? after (?:that|this)|(?:the )?(?:rest|remaining) after (?:that|this)|and (?:then )?(?:the )?(?:rest|remaining sections?))\b/i;
+  /\b(?:remaining (?:sections?|report|document|elr)|all (?:the )?(?:empty )?sections?|every section|entire (?:report|document)|whole (?:report|document)|(?:draft|write|fill(?:\s+(?:in|out))?|populate|complete)\s+(?:the )?(?:remaining |rest of (?:the )?)?(?:report|document|elr)|fill(?:\s+(?:in|out))?\s+(?:the )?(?:rest|remaining)|sections? after (?:that|this)|(?:the )?(?:rest|remaining) after (?:that|this)|and (?:then )?(?:the )?(?:rest|remaining sections?)|(?:draft|write|fill(?:\s+in)?|complete|prepare|populate)\s+(?:it|this)(?:\s+up)?)\b/i;
+
+/** Named one section, so "draft Purpose" stays a single edit. */
+const NAMES_A_SECTION_SHAPE_RE =
+  /\b(?:section|sections|\d+(?:\.\d+)?|define|measure|analyze|improve|control|conclusion|purpose|scope|objective)\b/i;
 
 const RESUME_PLAN_RE =
   /\b(?:continue (?:the )?(?:remaining )?sections?|keep going|resume|finish (?:the )?(?:rest|remaining|report|draft))\b/i;
@@ -203,7 +216,14 @@ export function chatUserTurnIsAutoContinue(metadata: unknown): boolean {
 }
 
 export function isMultiSectionDraftRequest(userText: string): boolean {
-  return MULTI_SECTION_DRAFT_RE.test(userText.trim());
+  const text = userText.trim();
+  if (MULTI_SECTION_DRAFT_RE.test(text)) return true;
+  if (NAMES_A_SECTION_SHAPE_RE.test(text)) return false;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 8) return false;
+  return /^(?:please\s+|can you\s+|could you\s+)?(?:just\s+)?(?:draft|write|fill(?:\s+in)?|complete|prepare|populate)\b/i.test(
+    text
+  );
 }
 
 export function isPlanResumeRequest(userText: string): boolean {
@@ -354,6 +374,14 @@ export function seedSectionQueuePlan(input: {
   };
 }
 
+function startQueuedPlan(items: ChatPlanItem[]): ChatPlanItem[] {
+  if (items.length === 0) return items;
+  return items.map((item, index) => ({
+    ...item,
+    state: index === 0 ? ("in_progress" as const) : "queued",
+  }));
+}
+
 /**
  * Queue only the sections the engineer named ("draft 5.2, 5.3, 5.4"), not
  * every empty `draftOrder` leftover.
@@ -380,12 +408,13 @@ export function seedNamedSectionQueuePlan(input: {
     });
   }
   if (items.length < 2) return null;
-  const first = items[0];
-  if (first) first.state = "in_progress";
+  const ordered = startQueuedPlan(
+    orderPlanSectionItems(items, input.documentType)
+  );
   return {
     kind: "section_queue",
     objective: input.userText.trim().slice(0, 500),
-    items,
+    items: ordered,
     createdAt: (input.now ?? new Date()).toISOString(),
     promptVersion: input.promptVersion,
   };
@@ -480,7 +509,9 @@ export function currentPlanTurnSections(
 ): ChatPlanItem[] {
   const current = plan.items.find((item) => item.state === "in_progress");
   if (!current) return [];
-  const inventory = inventorySectionSet(documentType);
+  if (isDependentRecapSection(current.sectionKey, documentType)) {
+    return [current];
+  }
   const currentIndex = plan.items.findIndex(
     (item) => item.sectionKey === current.sectionKey
   );
@@ -488,8 +519,7 @@ export function currentPlanTurnSections(
   if (
     next &&
     next.state === "queued" &&
-    !inventory.has(current.sectionKey) &&
-    !inventory.has(next.sectionKey)
+    shouldPairPlanSections(current.sectionKey, next.sectionKey, documentType)
   ) {
     return [current, next];
   }
@@ -529,7 +559,7 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
       : "The engineer asked to draft several sections";
   return `## Multi-section plan
 ${origin} (${done} of ${total} done). This turn: ${labels}.
-Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${elrSiblingLine}`;
+Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${elrSiblingLine}${planExecutionPromptLine(plan.items, documentType)}`;
 }
 
 function toolNamesFromParts(parts: unknown): string[] {

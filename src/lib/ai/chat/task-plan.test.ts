@@ -43,6 +43,31 @@ describe("validateMakePlan", () => {
     expect(result.lookups).toEqual(["What is the batch number?"]);
   });
 
+  it("moves a terminal conclusion last and keeps other orchestrator order", () => {
+    const result = validateMakePlan(
+      {
+        objective: "Draft the report, conclusion first",
+        steps: [
+          { kind: "section", section: "qsr_conclusion" },
+          { kind: "section", section: "qsr_objective" },
+          { kind: "section", section: "qsr_scope" },
+        ],
+      },
+      {
+        ...ctx,
+        documentType: "qualification_summary_report",
+      }
+    );
+    expect(result.status).toBe("planned");
+    if (result.status !== "planned") return;
+    expect(result.plan.items.map((item) => item.sectionKey)).toEqual([
+      "qsr_objective",
+      "qsr_scope",
+      "qsr_conclusion",
+    ]);
+    expect(result.plan.items[0]?.state).toBe("in_progress");
+  });
+
   it("keeps the step order the orchestrator chose, not draftOrder", () => {
     const result = validateMakePlan(
       {

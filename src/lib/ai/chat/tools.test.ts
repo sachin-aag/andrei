@@ -5650,3 +5650,50 @@ describe("buildChatTools make_plan", () => {
     });
   });
 });
+
+describe("buildChatTools recap write gate", () => {
+  it("refuses QSR conclusion while an earlier empty section is this turn", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      recapWrite: {
+        emptySectionKeys: ["qsr_objective", "qsr_conclusion"],
+        namedSectionKeys: ["qsr_objective", "qsr_conclusion"],
+        plan: {
+          kind: "section_queue",
+          objective: "draft the report",
+          items: [
+            {
+              sectionKey: "qsr_objective",
+              label: "1.1 Objective",
+              state: "in_progress",
+            },
+            {
+              sectionKey: "qsr_conclusion",
+              label: "7 Conclusion",
+              state: "queued",
+            },
+          ],
+          createdAt: "2026-09-28T00:00:00.000Z",
+          promptVersion: "chat-v157-plan-execution",
+        },
+      },
+    });
+    const execute = tools.draft_field?.execute as (
+      input: unknown,
+      options: unknown
+    ) => Promise<{ status: string; message?: string }>;
+    const blocked = await execute(
+      {
+        section: "qsr_conclusion",
+        targetField: "narrative",
+        markdown: "The equipment is qualified.",
+        reasoning: "Close the report.",
+      },
+      {}
+    );
+    expect(blocked.status).toBe("recap_not_ready");
+    expect(blocked.message).toMatch(/1\.1 Objective/);
+  });
+});

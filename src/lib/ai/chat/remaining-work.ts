@@ -98,6 +98,9 @@ export type RemainingWorkContext = {
   /** Agent write turn with a multi-part ask and no live plan (`makePlanEligible`). */
   makePlanEligible?: boolean;
   promptVersion?: string;
+  namedSectionKeys?: readonly string[];
+  sectionScope?: string;
+  pendingPlan?: ChatPendingPlan | null;
 };
 
 export type UpdatePlanAction = {
@@ -170,6 +173,7 @@ const WRITE_FAIL_STATUSES = new Set([
   "review_incomplete",
   "use_edit_table",
   "rejected",
+  "recap_not_ready",
 ]);
 
 export function documentWriteProgressTools(): ReadonlySet<string> {

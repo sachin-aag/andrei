@@ -138,8 +138,15 @@ least two clause breaks). Steps are `section` (editable section key) or
 `lookup` (a question). The server takes 2–8 steps, at least one section,
 no duplicates, and rejects the call if a plan is already live. Section
 steps persist as the usual `pending_plan` section queue
-(`source: "make_plan"`, order preserved, first step `in_progress`), so
-the progress chip and auto-continue work unchanged. Lookup steps are
+(`source: "make_plan"`, recap/conclusion moved last, other order
+preserved, first step `in_progress`), so the progress chip and
+auto-continue work unchanged. "Draft the report" does not call
+`make_plan`: the context map already lists sections and ready files, and
+`seedSectionQueuePlan` queues the empty `draftOrder` with conclusion
+last (`plan-execution.ts`). Same-turn siblings are QSR RTM (and adjacent
+non-inventory prose). A terminal conclusion never pairs, and write tools
+return `recap_not_ready` while earlier empty bodies remain. Page
+extracts stay the parallel worker pool — there is no LLM subagent. Lookup steps are
 in-turn ledger items only (`lookup:plan:N`); they keep search open while
 a write is still due and are not persisted. Budget: one success, two
 attempts, and the tool is hidden after `ask_user` or once any document
@@ -203,9 +210,9 @@ persisted queue.
 
 ### Rules first, then `make_plan`
 
-"Draft 1, 2, 3" and "draft the remaining sections" must not spend a
-Gemini call — `seedNamedSectionQueuePlan` / `seedSectionQueuePlan`
-already get them right. The orchestrator writes a plan only when rules
+"Draft 1, 2, 3", "draft the report", and "draft the remaining sections"
+must not spend a Gemini call — `seedNamedSectionQueuePlan` /
+`seedSectionQueuePlan` already get them right from the section list. The orchestrator writes a plan only when rules
 cannot: mixed write+lookup+table ("draft Purpose, fix table 3's dates,
 and which batches failed"), or one section with real sub-steps.
 

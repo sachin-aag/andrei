@@ -323,8 +323,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
   (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
   Do not add a tool-step cap — users must never hit one. Do not persist
-  a “ran out of steps / ask me to continue” notice. Multi-section Agent
-  drafts persist a `pending_plan` on the chat session. After each turn
+  a “ran out of steps / ask me to continue” notice.   Multi-section Agent
+  drafts persist a `pending_plan` on the chat session. "Draft the report"
+  (and a short unnamed "draft it") seeds every empty `draftOrder` section
+  from the context map, conclusion last. A terminal conclusion write
+  returns `recap_not_ready` until that queue reaches it. QSR RTM siblings
+  may share a turn; page extracts stay the worker pool. After each turn
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
   sits **below** the transcript, above Working… / Resume — collapsed

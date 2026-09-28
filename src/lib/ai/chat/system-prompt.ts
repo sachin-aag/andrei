@@ -25,7 +25,7 @@ import {
 import { makePlanPromptBlock } from "@/lib/ai/chat/task-plan";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v156-identity-gaps";
+export const CHAT_PROMPT_VERSION = "chat-v157-plan-execution";
 
 export type ChatMode = "plan" | "agent";
 

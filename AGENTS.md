@@ -209,10 +209,17 @@ same-named tab). Report and
 Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
 abort still apply). Do not add a tool-call count limit. Report Agent may
 persist a remaining-section queue on `chat_sessions.pending_plan` when the
-engineer asks to fill several empty `draftOrder` sections. Numbered TOC
-asks (`draft 5.2, 5.3, 5.4`) seed only those named empty sections before
-the whole-report leftover queue. Each turn drafts
-the current item (or two adjacent non-inventory sections). MJ ELR evidence
+engineer asks to fill several empty `draftOrder` sections. "Draft the
+report", "draft it", and "write this up" (no named section) seed that
+same whole empty section list from the context map — conclusion last.
+Numbered TOC asks (`draft 5.2, 5.3, 5.4`) seed only those named empty
+sections before the whole-report leftover queue. Each turn drafts the
+current item. Adjacent non-inventory prose may share a turn; QSR RTM
+siblings (`qsr_rtm_*`) may share a turn after one URS walk; a terminal
+conclusion never shares a turn and `draft_field` / `edit_table` /
+`propose_edit` return `recap_not_ready` while earlier empty bodies
+remain (explicit "draft the conclusion" or `@` on that section still
+writes it). Page extracts stay the parallel worker pool. MJ ELR evidence
 sections stay in progress until that turn also drafts the assessment with a
 count (and `trend` / `overallGrade` / `recommendation` siblings); Access Control
 also stays in progress until every annexure Sr. row is copied, including the

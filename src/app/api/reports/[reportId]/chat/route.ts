@@ -49,7 +49,10 @@ import {
   sectionHasTable,
 } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
-import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
+import {
+  detectSectionIntentFromText,
+  detectSectionIntentsFromText,
+} from "@/lib/ai/chat/section-intent";
 import {
   DOCUMENT_WRITE_TOOLS,
   messageHasChatImage,
@@ -585,6 +588,12 @@ async function handleChatPost(
     writeToolNames: documentWriteProgressTools(),
     makePlanEligible: planEligible,
     promptVersion: CHAT_PROMPT_VERSION,
+    namedSectionKeys: detectSectionIntentsFromText(
+      userText,
+      report.documentType
+    ),
+    sectionScope,
+    pendingPlan,
   };
   const livingWorkSeed = seedLivingTurnWork({
     intent: userIntent.kind,

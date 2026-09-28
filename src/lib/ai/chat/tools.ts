@@ -109,8 +109,10 @@ import {
 import {
   emptyInventoryNeedsMatchingReview,
   isElrInventoryTableField,
+  currentPlanTurnSections,
   resolveReviewCoverageObjective,
 } from "@/lib/ai/chat/pending-plan";
+import { recapWriteNotReady } from "@/lib/ai/chat/plan-execution";
 import { liveTableHeadersMismatch } from "@/lib/ai/chat/table-schema";
 import {
   dataUrlToBase64,
@@ -364,6 +366,11 @@ export type OverclaimBounceResult = {
   overclaims: Array<{ phrase: string; kind: string }>;
 };
 
+export type RecapNotReadyResult = {
+  status: "recap_not_ready";
+  message: string;
+};
+
 export type ProposeEditResult =
   | {
       status: "proposed";
@@ -378,6 +385,7 @@ export type ProposeEditResult =
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "review_incomplete"; message: string }
+  | RecapNotReadyResult
   | OverclaimBounceResult
   | UnsupportedFactsToolResult;
 
@@ -423,6 +431,7 @@ export type EditTableResult =
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "review_incomplete"; message: string }
+  | RecapNotReadyResult
   | OverclaimBounceResult
   | UnsupportedFactsToolResult;
 
@@ -446,6 +455,7 @@ export type DraftFieldResult =
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
   | { status: "use_edit_table"; message: string }
+  | RecapNotReadyResult
   | { status: "invalid_value"; message: string }
   | { status: typeof NOT_A_REWRITE_STATUS; hint: string; coverage: number }
   | {
@@ -1325,9 +1335,50 @@ export function buildChatTools(opts: {
     work: LivingTurnWork;
     context: RemainingWorkContext;
   };
+  /**
+   * Refuse a terminal recap (QSR 7 Conclusion) while earlier empty
+   * draftOrder sections remain, unless this remaining-section turn reached it.
+   */
+  recapWrite?: {
+    emptySectionKeys: readonly string[];
+    namedSectionKeys: readonly string[];
+    sectionScope?: string | null;
+    plan?: RemainingWorkContext["pendingPlan"];
+    planTurnKeys?: readonly string[];
+  };
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
+  const remainingWork = opts.remainingWork;
+  const recapRefusal = (section: string): RecapNotReadyResult | null => {
+    const created = remainingWork?.work.createdPlan;
+    const plan = created ?? opts.recapWrite?.plan ?? remainingWork?.context.pendingPlan ?? null;
+    const turnKeys =
+      plan && !plan.paused
+        ? currentPlanTurnSections(plan, documentType).map((item) => item.sectionKey)
+        : (opts.recapWrite?.planTurnKeys ?? []);
+    const blocked = recapWriteNotReady({
+      section,
+      documentType,
+      emptySectionKeys:
+        opts.recapWrite?.emptySectionKeys ??
+        remainingWork?.context.emptySectionKeys ??
+        [],
+      namedSectionKeys:
+        opts.recapWrite?.namedSectionKeys ??
+        remainingWork?.context.namedSectionKeys ??
+        [],
+      sectionScope:
+        opts.recapWrite?.sectionScope ??
+        remainingWork?.context.sectionScope ??
+        opts.sectionScope ??
+        "all",
+      plan,
+      planTurnKeys: turnKeys,
+    });
+    return blocked ? { status: "recap_not_ready", message: blocked.message } : null;
+  };
+
   const attachRecord = <T extends object>(
     payload: T,
     sectionContent: Record<string, unknown>,
@@ -2568,6 +2619,8 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
+        const recapBlocked = recapRefusal(section);
+        if (recapBlocked) return recapBlocked;
         const resolvedField = resolveTargetField(section, targetField);
         if (!resolvedField) {
           return {
@@ -3710,6 +3763,8 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
+        const recapBlocked = recapRefusal(section);
+        if (recapBlocked) return recapBlocked;
         const resolvedField = resolveTargetField(section, targetField);
         if (!resolvedField) {
           return {
@@ -4064,6 +4119,8 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
+        const recapBlocked = recapRefusal(section);
+        if (recapBlocked) return recapBlocked;
         const resolvedField = resolveTargetField(section, targetField);
         const field = resolvedField
           ? chatTargetFields(section).find((f) => f.targetField === resolvedField)
@@ -4361,7 +4418,6 @@ export function buildChatTools(opts: {
     }),
   };
 
-  const remainingWork = opts.remainingWork;
   if (
     remainingWork &&
     remainingWork.context.queueLive &&

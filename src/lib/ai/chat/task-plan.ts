@@ -3,6 +3,7 @@ import { isChatEditableSection, sectionLabel } from "@/lib/ai/chat/fields";
 import type { ChatPendingPlan, ChatPlanItem } from "@/lib/ai/chat/pending-plan";
 import { detectSectionIntentsFromText } from "@/lib/ai/chat/section-intent";
 import { getDocumentType } from "@/lib/document-types";
+import { orderPlanSectionItems } from "@/lib/ai/chat/plan-execution";
 
 /**
  * General-purpose planner (stage 1). The orchestrator may call `make_plan`
@@ -101,7 +102,8 @@ export function parseMakePlanInput(value: unknown): MakePlanInput | null {
 /**
  * Validate a `make_plan` call. Section steps must be editable keys for this
  * document type (filled sections are allowed — "tighten 1, 2 and 3" is a
- * plan too). The first section step starts in progress.
+ * plan too). Recap/conclusion steps move last; other steps keep the
+ * orchestrator's order. The first remaining section starts in progress.
  */
 export function validateMakePlan(
   input: MakePlanInput,
@@ -173,15 +175,19 @@ export function validateMakePlan(
       "A plan needs at least one section step. Answer questions directly without a plan."
     );
   }
-  const first = items[0];
-  if (first) first.state = "in_progress";
+  const ordered = orderPlanSectionItems(items, ctx.documentType).map(
+    (item, index) => ({
+      ...item,
+      state: index === 0 ? ("in_progress" as const) : ("queued" as const),
+    })
+  );
   return {
     status: "planned",
     plan: {
       kind: "section_queue",
       source: "make_plan",
       objective: input.objective.slice(0, 500),
-      items,
+      items: ordered,
       createdAt: (ctx.now ?? new Date()).toISOString(),
       promptVersion: ctx.promptVersion,
     },
@@ -232,5 +238,5 @@ export function makePlanEligible(input: {
 
 export function makePlanPromptBlock(): string {
   return `## Planning
-This ask may have several parts. Before drafting, you may call make_plan once with 2–${MAKE_PLAN_MAX_STEPS} ordered steps: section steps (section key) and lookup steps (the question to answer this turn). Section steps become the remaining-section queue — this turn drafts the first (or first two short ones) and later steps continue automatically. Skip make_plan when one section edit covers the ask. Progress is automatic — never call it to mark a step done. If you are unsure which sections apply, ask_user once instead of planning.`;
+This ask may have several parts, and rules could not seed the section list. Before drafting, call make_plan once with 2–${MAKE_PLAN_MAX_STEPS} ordered steps: section steps (section key from the context map) and lookup steps (the question to answer this turn). Section steps become the remaining-section queue — this turn drafts the first (or first two independent siblings) and later steps continue automatically. Put recap/conclusion last; the server moves it last if you do not. Independent inventory siblings (same evidence family, e.g. QSR RTM 5.1–5.6) may share a turn after one review. A whole-report ask ("draft the report") is already a queue when the section list has empty items — do not replan it. Page extracts already run as a parallel worker pool. Skip make_plan when one section edit covers the ask. Progress is automatic — never call it to mark a step done. If you are unsure which sections apply, ask_user once instead of planning.`;
 }
