@@ -9,7 +9,17 @@ export type TableCellAdjustment = {
   saved: string;
 };
 
+/** Rows the suggestion card actually holds vs what the model asked for. */
+export type TableEditProposalMeta = {
+  requestedCellCount: number;
+  proposedCellCount: number;
+  requestedRowKeys: string[];
+  proposedRowKeys: string[];
+  droppedRowKeys: string[];
+};
+
 const MAX_ADJUSTMENTS = 24;
+const MAX_NAMED_KEYS = 12;
 
 function normalized(text: string | undefined): string {
   return (text ?? "").replace(/\s+/g, " ").trim();
@@ -99,11 +109,119 @@ export function tableCellAdjustments(
 export function tableCellAdjustmentsMessage(
   adjustments: readonly TableCellAdjustment[]
 ): string {
-  const cleared = adjustments.filter((adj) => !adj.saved).length;
-  const changed = adjustments.length - cleared;
+  const blanks = adjustments.filter((adj) => !adj.saved);
+  const changed = adjustments.length - blanks.length;
   const parts = [
-    cleared > 0 ? `${cleared} requested cell(s) were saved empty` : "",
+    blanks.length > 0 ? `${blanks.length} requested cell(s) were saved empty` : "",
     changed > 0 ? `${changed} were saved with different text` : "",
   ].filter(Boolean);
-  return `${parts.join(" and ")} because the retrieved pages did not support the requested value. Report the saved values in adjustedCells, not the requested ones; do not claim an empty cell was filled.`;
+  const named = blanks
+    .slice(0, 8)
+    .map((adj) => [adj.rowKey, adj.column].filter(Boolean).join(" "))
+    .filter(Boolean);
+  const blankList =
+    named.length > 0
+      ? ` Left blank: ${named.join("; ")}${blanks.length > named.length ? "…" : ""}.`
+      : "";
+  const kept = adjustments.filter((adj) => adj.saved);
+  const keptKeys = [
+    ...new Set(kept.map((adj) => adj.rowKey).filter(Boolean)),
+  ];
+  const keptNote =
+    keptKeys.length > 0
+      ? ` Non-empty saved replacements landed on ${keptKeys.slice(0, 8).join(", ")}${keptKeys.length > 8 ? "…" : ""} only — do not list requested URS rows whose saved Section is empty.`
+      : "";
+  return `${parts.join(" and ")} because the retrieved pages did not support the requested value.${blankList}${keptNote} Report the saved values in adjustedCells, not the requested ones; do not claim an empty cell was filled. Do not paste a markdown table of requested RTM rows in chat.`;
+}
+
+function uniqueKeys(keys: readonly (string | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of keys) {
+    const key = normalized(raw);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+function formatKeys(keys: readonly string[]): string {
+  if (keys.length === 0) return "(none)";
+  const shown = keys.slice(0, MAX_NAMED_KEYS);
+  const extra = keys.length - shown.length;
+  return extra > 0 ? `${shown.join(", ")} (+${extra} more)` : shown.join(", ");
+}
+
+function operationCellCount(operation: TableOperation): number {
+  switch (operation.kind) {
+    case "edit_cells":
+      return operation.cells.length;
+    case "insert_rows":
+      return operation.rows.length;
+    case "create_table":
+      return (operation.rows ?? []).length;
+    case "delete_rows":
+      return operation.rows.length;
+    case "insert_column":
+      return (operation.values ?? []).filter((value) => normalized(value)).length;
+    case "delete_column":
+    case "delete_table":
+      return 1;
+    default: {
+      const _exhaustive: never = operation;
+      return _exhaustive;
+    }
+  }
+}
+
+function operationRowKeys(operation: TableOperation): string[] {
+  switch (operation.kind) {
+    case "edit_cells":
+      return uniqueKeys(operation.cells.map((cell) => cell.rowKey));
+    case "insert_rows":
+    case "create_table":
+      return uniqueKeys((operation.rows ?? []).map((row) => row[0]));
+    case "delete_rows":
+    case "insert_column":
+    case "delete_column":
+    case "delete_table":
+      return [];
+    default: {
+      const _exhaustive: never = operation;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * What the open suggestion card actually contains, vs the model's request.
+ * Wrap-up must name proposedRowKeys only — one edit_table is one card.
+ */
+export function tableEditProposalMeta(
+  requested: TableOperation,
+  saved: TableOperation
+): TableEditProposalMeta {
+  const requestedRowKeys = operationRowKeys(requested);
+  const proposedRowKeys = operationRowKeys(saved);
+  const proposedSet = new Set(proposedRowKeys);
+  return {
+    requestedCellCount: operationCellCount(requested),
+    proposedCellCount: operationCellCount(saved),
+    requestedRowKeys,
+    proposedRowKeys,
+    droppedRowKeys: requestedRowKeys.filter((key) => !proposedSet.has(key)),
+  };
+}
+
+export function tableEditProposalMessage(meta: TableEditProposalMeta): string {
+  const card =
+    meta.proposedRowKeys.length === 0
+      ? `This card contains ${meta.proposedCellCount} cell(s) and no named rowKeys.`
+      : `This card contains ${meta.proposedCellCount} cell(s) on ${formatKeys(meta.proposedRowKeys)} only.`;
+  const mismatch =
+    meta.droppedRowKeys.length > 0
+      ? ` You requested ${meta.requestedRowKeys.length} rowKeys / ${meta.requestedCellCount} cells; dropped from the card: ${formatKeys(meta.droppedRowKeys)}. Do not list droppedRowKeys as updated.`
+      : ` One edit_table call is one suggestion card that already holds every saved cell — not one card per URS row.`;
+  return `${card}${mismatch} Wrap-up may name only proposedRowKeys.`;
 }
