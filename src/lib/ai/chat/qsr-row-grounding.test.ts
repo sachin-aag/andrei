@@ -8,6 +8,10 @@ import {
 } from "@/lib/ai/chat/ground-draft";
 import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import {
+  applyTableOperation,
+  summarizeTableOperation,
+} from "@/lib/suggestions/table-operation";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   dateSupportedAsLabeledField,
@@ -49,6 +53,37 @@ function ledgerFromPages(
     });
   }
   return ledger;
+}
+
+function rtmProcessDoc(rows: string[][]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [...QSR_RTM_HEADERS].map((header) => ({
+              type: "tableHeader" as const,
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: header }] },
+              ],
+            })),
+          },
+          ...rows.map((row) => ({
+            type: "tableRow" as const,
+            content: row.map((text) => ({
+              type: "tableCell" as const,
+              content: text
+                ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                : [{ type: "paragraph" }],
+            })),
+          })),
+        ],
+      },
+    ],
+  };
 }
 
 describe("quoteWindowAroundKey", () => {
@@ -2422,6 +2457,122 @@ describe("groundTableOperation optional RTM columns", () => {
         "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm"
       )?.sectionHeading
     ).toBe("8.2.1 – Physical verification");
+  });
+
+  it("elaborates a filled 8.2.3 instead of swapping in neighbour 8.2.4 or dropping the cell", () => {
+    const pqPage =
+      "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies. 8.2.4 Operational verification of agitator at varying RPM. Result: Complies";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote: pqPage,
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-1",
+        "URS-1\nReactor Capacity\n8000 L\n8.2.3",
+        "8.2.3"
+      )?.sectionHeading
+    ).toBe("8.2.3 – Heating Trial");
+
+    const fieldDoc = rtmProcessDoc([
+      [
+        "URS-1",
+        "Reactor Capacity",
+        "8000 L",
+        "PQ [Performance Qualification.PDF, p. 19]",
+        "8.2.3",
+        "Complies",
+      ],
+      [
+        "URS-2",
+        "MOC",
+        "High-quality Glass Lining and thickness should not be less than 1 mm",
+        "PQ [Performance Qualification.PDF, p. 19]",
+        "8.2.1",
+        "Complies",
+      ],
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-1",
+            expectedText: "",
+            insertText: "8.2.4 – Operational verification of agitator at varying RPM",
+            rowContext: "URS-1\nReactor Capacity\n8000 L",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-1",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext: "URS-1\nReactor Capacity\n8000 L",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-2",
+            expectedText: "",
+            insertText: "8.2.4 – Operational verification of agitator at varying RPM",
+            rowContext:
+              "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-2",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+      fieldDoc,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const sectionOf = (key: string) =>
+      cells.find((cell) => cell.rowKey === key && cell.col === 4)?.insertText ??
+      "";
+    expect(sectionOf("URS-1")).toBe("8.2.3 – Heating Trial");
+    expect(sectionOf("URS-2")).toBe("8.2.1 – Physical verification");
+    expect(cells.filter((cell) => cell.col === 5)).toEqual([]);
+
+    const applied = applyTableOperation(fieldDoc, result.operation, {
+      section: "qsr_rtm_process",
+      targetField: "table",
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.appliedOperation?.kind).toBe("edit_cells");
+    const appliedCells =
+      applied.appliedOperation?.kind === "edit_cells"
+        ? applied.appliedOperation.cells
+        : [];
+    expect(appliedCells).toHaveLength(2);
+    expect(summarizeTableOperation(applied.appliedOperation!)).toBe(
+      "Update 2 table cells on URS-1, URS-2"
+    );
+    expect(appliedCells.map((cell) => cell.rowKey).sort()).toEqual([
+      "URS-1",
+      "URS-2",
+    ]);
   });
 
   it("cites the PQ page that prints the dotted heading, not a later results page", () => {

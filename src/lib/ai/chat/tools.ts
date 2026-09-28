@@ -273,6 +273,7 @@ import {
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
+  tableEditLandedSummary,
   tableEditProposalMessage,
   tableEditProposalMeta,
   type TableCellAdjustment,
@@ -3891,9 +3892,10 @@ export function buildChatTools(opts: {
           ? citationAppendPart(stripped.citations, fieldText)
           : undefined;
 
+        const storedOperation = applied.appliedOperation ?? stripped.operation;
         const suggestionId = createId();
         const createTable =
-          stripped.operation.kind === "create_table" ? stripped.operation : null;
+          storedOperation.kind === "create_table" ? storedOperation : null;
         const appendTable = Boolean(
           createTable && isAppendBlock({ afterAnchor: createTable.afterAnchor })
         );
@@ -3901,7 +3903,7 @@ export function buildChatTools(opts: {
           deleteText: "",
           insertText: "",
           reasoning,
-          tableOperation: stripped.operation,
+          tableOperation: storedOperation,
           second,
           claimProvenance:
             groundedTable.provenance.claims.length > 0
@@ -3938,10 +3940,10 @@ export function buildChatTools(opts: {
               loaded.content as Record<string, unknown>,
               section,
               resolvedField,
-              { kind: "table", operation: stripped.operation }
+              { kind: "table", operation: storedOperation }
             )
           ),
-          anchorText: summarizeTableOperation(stripped.operation),
+          anchorText: summarizeTableOperation(storedOperation),
           contentPath: resolvedField,
           fromPos: null,
           toPos: null,
@@ -3970,12 +3972,12 @@ export function buildChatTools(opts: {
         );
         const adjustedCells = tableCellAdjustments(
           originalTableOp,
-          groundedTable.operation,
+          storedOperation,
           (col) => qsrTableColumnLabel(section, col)
         );
         const proposal = tableEditProposalMeta(
           originalTableOp,
-          groundedTable.operation
+          storedOperation
         );
         return proposedWithSupersession(
           {
@@ -3983,7 +3985,7 @@ export function buildChatTools(opts: {
             suggestionId,
             section,
             targetField: resolvedField,
-            summary: reasoning,
+            summary: tableEditLandedSummary(reasoning, proposal),
             ...(applied.tableNumber !== undefined
               ? { tableNumber: applied.tableNumber }
               : {}),
