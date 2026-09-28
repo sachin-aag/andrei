@@ -49,6 +49,8 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     expect(QSR_DRAFTING_GUIDANCE).toContain(
       "Fill each named column from the source field with the same label"
     );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Inner Surface area");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Equipment Dimensions (L x W x H)");
   });
 
   it("pairs protocol and report rows and forbids invented lifecycle types", () => {
