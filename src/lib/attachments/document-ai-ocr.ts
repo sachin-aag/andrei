@@ -202,15 +202,8 @@ export async function ocrPdfWithDocumentAi(input: {
   pdfBuffer: Buffer;
   filename?: string;
   attempt?: DocumentAiOcrAttempt;
-  /**
-   * Default true (embedded text). Sign overlay sets false so Document AI
-   * OCRs the rendered page instead of re-reading a text layer that already
-   * dropped the minus.
-   */
-  nativePdfParsing?: boolean;
 }): Promise<DocumentAiOcrResult> {
   const attempt = input.attempt ?? DOCUMENT_AI_COMPARE_ATTEMPTS[0]!;
-  const nativePdfParsing = input.nativePdfParsing ?? true;
   const chunks = await splitPdfByPageCount(input.pdfBuffer, attempt.chunkPages);
   const started = Date.now();
   const timings: DocumentAiChunkTiming[] = [];
@@ -225,9 +218,7 @@ export async function ocrPdfWithDocumentAi(input: {
         const payload = attempt.preRotate
           ? (await uprightRotatePdfPages(chunk.buffer)).buffer
           : chunk.buffer;
-        const document = await processDocumentAiPdf(payload, attempt, {
-          nativePdfParsing,
-        });
+        const document = await processDocumentAiPdf(payload, attempt);
         const mapped = mapDocumentAiPages(document, chunk.pageStart);
         return {
           mapped,
@@ -256,8 +247,7 @@ export async function ocrPdfWithDocumentAi(input: {
 
 async function processDocumentAiPdf(
   pdfBuffer: Buffer,
-  attempt: DocumentAiOcrAttempt,
-  options?: { nativePdfParsing?: boolean }
+  attempt: DocumentAiOcrAttempt
 ): Promise<DocumentAiDocument> {
   const processorName = resolveDocumentAiProcessorName();
   const location = processorName.split("/")[3];
@@ -266,7 +256,7 @@ async function processDocumentAiPdf(
   }
   const token = await getDocumentAiAccessToken();
   const ocrConfig: Record<string, unknown> = {
-    enableNativePdfParsing: options?.nativePdfParsing ?? true,
+    enableNativePdfParsing: true,
   };
   if (attempt.languageHint) {
     ocrConfig.hints = { languageHints: [attempt.languageHint] };

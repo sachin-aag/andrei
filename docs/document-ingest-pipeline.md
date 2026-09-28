@@ -119,7 +119,7 @@ flowchart TD
   E --> D
 ```
 
-Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v12`. The text-layer parser glues a hyphen-minus or unicode minus that sits immediately left of the digits. A leftover hyphen that might be a minus or a bullet, and an unsigned `N unit to M` range whose minus may have been a drawn stroke with no leftover glyph, get a page look (capped at 5): overlay a leading minus from (1) the insight pass when that batch is small enough to run one, (2) Document AI OCR only when a leftover hyphen or unmapped glyph is present (native PDF parsing off — OCR cannot see a drawn stroke), then (3) a Gemini look at a PNG raster of that page, not the PDF file. Overlay rasters with `@napi-rs/canvas` via `require` (the same NFT path charts use) and pdf.js `page.render` — not unpdf `renderPageAsImage`, which treats a defined `window` as a browser and never reaches Gemini. Overlay failures are logged and stored on the extract result; they do not invent a minus. Overlay only — they do not replace the text-layer transcript, and they do not invent a minus on a genuine unsigned range or a bullet.
+Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v5`.
 
 ## DOCX path
 

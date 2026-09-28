@@ -25,13 +25,6 @@ import {
   uprightRotatePage,
 } from "@/lib/attachments/pdf-split";
 import {
-  numericSignLookScore,
-  overlayLeadingMinuses,
-  pageNeedsNumericSignLook,
-  pageNeedsOcrSignLook,
-} from "@/lib/attachments/numeric-signs";
-import { renderPdfPagePng } from "@/lib/attachments/pdf-page-image";
-import {
   MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
   type PdfTextLayer,
@@ -55,7 +48,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v12";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v5";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -119,13 +112,6 @@ const insightBatchSchema = z.object({
   continuationNote: z.string().default(""),
 });
 
-const SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS = 1_000;
-const MAX_NUMERIC_SIGN_OVERLAY_PAGES = 5;
-
-const signedQuantityOverlaySchema = z.object({
-  signedQuantities: z.array(z.string().max(80)).max(24).default([]),
-});
-
 export type ExtractedPage = {
   pageNumber: number;
   transcript: string;
@@ -167,8 +153,6 @@ export type ExtractBatchResult = {
     inputTokens: number | undefined;
     outputTokens: number | undefined;
   };
-  /** Raster/vision overlay failures. Transcript is still stored unsigned. */
-  overlayErrors?: string[];
 };
 
 export type ExtractPdfBatchInput = {
@@ -302,9 +286,6 @@ async function extractFromTextLayer(
     (insights?.pages ?? []).map((page) => [page.pageNumber, page])
   );
 
-  const ambiguousByPage = new Map(
-    textLayer.pages.map((page) => [page.pageNumber, page.ambiguousMagnitudes])
-  );
   const pages: ExtractedPage[] = textLayer.pages.map((page) => {
     const insight = byPageNumber.get(page.pageNumber);
     const flags = visualPresenceFlags({
@@ -329,12 +310,6 @@ async function extractFromTextLayer(
     };
   });
 
-  const overlayErrors = await overlayAmbiguousNumericSigns(
-    input,
-    pages,
-    ambiguousByPage
-  );
-
   return {
     pages,
     batchSummary: truncate(
@@ -349,7 +324,6 @@ async function extractFromTextLayer(
     recovery: insights ? "none" : "text-layer-only",
     finishReason: insights?.finishReason,
     usage: insights?.usage,
-    overlayErrors,
   };
 }
 
@@ -468,14 +442,6 @@ async function extractMixedPagesWithDocumentAi(
     outputTokens += vision.usage?.outputTokens ?? 0;
   }
 
-  const overlayErrors = await overlayAmbiguousNumericSigns(
-    input,
-    pages,
-    new Map(
-      textLayer.pages.map((page) => [page.pageNumber, page.ambiguousMagnitudes])
-    )
-  );
-
   return {
     pages,
     batchSummary: synthesizeBatchSummary(pages),
@@ -484,7 +450,6 @@ async function extractMixedPagesWithDocumentAi(
     recovery,
     finishReason: lastFinishReason,
     usage: { inputTokens, outputTokens },
-    overlayErrors,
   };
 }
 
@@ -498,7 +463,6 @@ async function extractMixedPagesPerPage(
   });
 
   const pages: ExtractedPage[] = [];
-  const overlayErrors: string[] = [];
   let recovery: ExtractRecovery = "none";
   let inputTokens = 0;
   let outputTokens = 0;
@@ -530,7 +494,6 @@ async function extractMixedPagesPerPage(
     lastFinishReason = pageResult.finishReason;
     inputTokens += pageResult.usage?.inputTokens ?? 0;
     outputTokens += pageResult.usage?.outputTokens ?? 0;
-    overlayErrors.push(...(pageResult.overlayErrors ?? []));
   }
 
   return {
@@ -541,7 +504,6 @@ async function extractMixedPagesPerPage(
     recovery,
     finishReason: lastFinishReason,
     usage: { inputTokens, outputTokens },
-    overlayErrors,
   };
 }
 
@@ -1182,10 +1144,6 @@ function withAddedUsage(
   result: ExtractBatchResult,
   prior: ExtractBatchResult
 ): ExtractBatchResult {
-  const overlayErrors = [
-    ...(prior.overlayErrors ?? []),
-    ...(result.overlayErrors ?? []),
-  ];
   return {
     ...result,
     usage: {
@@ -1194,7 +1152,6 @@ function withAddedUsage(
       outputTokens:
         (prior.usage?.outputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
     },
-    overlayErrors: overlayErrors.length > 0 ? overlayErrors : undefined,
   };
 }
 
@@ -1308,233 +1265,6 @@ function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
   return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
 }
 
-function pagesNeedingNumericSignLook(
-  pages: ExtractedPage[],
-  ambiguousByPage: ReadonlyMap<number, readonly string[]>
-): ExtractedPage[] {
-  return pages.filter((page) =>
-    pageNeedsNumericSignLook(
-      page.transcript,
-      ambiguousByPage.get(page.pageNumber) ?? []
-    )
-  );
-}
-
-function selectNumericSignOverlayPages(
-  pages: ExtractedPage[],
-  ambiguousByPage: ReadonlyMap<number, readonly string[]>
-): ExtractedPage[] {
-  const needed = pagesNeedingNumericSignLook(pages, ambiguousByPage);
-  if (needed.length <= MAX_NUMERIC_SIGN_OVERLAY_PAGES) return needed;
-  return needed
-    .toSorted((left, right) => {
-      const leftScore = numericSignLookScore(
-        left.transcript,
-        ambiguousByPage.get(left.pageNumber) ?? []
-      );
-      const rightScore = numericSignLookScore(
-        right.transcript,
-        ambiguousByPage.get(right.pageNumber) ?? []
-      );
-      return rightScore - leftScore || left.pageNumber - right.pageNumber;
-    })
-    .slice(0, MAX_NUMERIC_SIGN_OVERLAY_PAGES)
-    .toSorted((left, right) => left.pageNumber - right.pageNumber);
-}
-
-function selectNumericSignOcrPages(
-  pages: ExtractedPage[],
-  ambiguousByPage: ReadonlyMap<number, readonly string[]>
-): ExtractedPage[] {
-  return selectNumericSignOverlayPages(pages, ambiguousByPage).filter((page) =>
-    pageNeedsOcrSignLook(
-      page.transcript,
-      ambiguousByPage.get(page.pageNumber) ?? []
-    )
-  );
-}
-
-/**
- * Restore a leading minus when insight visuals, OCR, or a page look already
- * saw a signed quantity. Used when a leftover hyphen may be a minus or a
- * bullet, or when an unsigned `N unit to M` range may have dropped a drawn
- * minus. Overlay only — never invent a sign.
- */
-async function overlayAmbiguousNumericSigns(
-  input: ResolvedInput,
-  pages: ExtractedPage[],
-  ambiguousByPage: ReadonlyMap<number, readonly string[]> = new Map()
-): Promise<string[] | undefined> {
-  for (const page of pages) {
-    page.transcript = overlayLeadingMinuses(
-      page.transcript,
-      page.visualInterpretation
-    );
-  }
-  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) {
-    return undefined;
-  }
-
-  await overlayAmbiguousNumericSignsFromDocumentAi(
-    input,
-    pages,
-    ambiguousByPage
-  );
-  if (pagesNeedingNumericSignLook(pages, ambiguousByPage).length === 0) {
-    return undefined;
-  }
-
-  return overlayAmbiguousNumericSignsFromVision(input, pages, ambiguousByPage);
-}
-
-async function overlayAmbiguousNumericSignsFromDocumentAi(
-  input: ResolvedInput,
-  pages: ExtractedPage[],
-  ambiguousByPage: ReadonlyMap<number, readonly string[]>
-): Promise<void> {
-  const dropped = selectNumericSignOcrPages(pages, ambiguousByPage);
-  if (dropped.length === 0 || !isDocumentAiConfigured()) return;
-
-  try {
-    const relativePages = dropped.map(
-      (page) => page.pageNumber - input.pageStart + 1
-    );
-    const ocr = await ocrPdfWithDocumentAi({
-      pdfBuffer: await copyPdfPages(input.pdfBuffer, relativePages),
-      filename: input.filename,
-      nativePdfParsing: false,
-    });
-    for (const ocrPage of ocr.pages) {
-      const relative = relativePages[ocrPage.pageNumber - 1];
-      if (relative == null) continue;
-      const target = pages.find(
-        (page) => page.pageNumber === input.pageStart + relative - 1
-      );
-      if (!target) continue;
-      target.transcript = overlayLeadingMinuses(
-        target.transcript,
-        ocrPage.transcript
-      );
-    }
-  } catch (error) {
-    console.warn(
-      `[document-extract] Document AI sign overlay failed for pages ${input.pageStart}-${input.pageEnd}`,
-      { error: error instanceof Error ? error.message : String(error) }
-    );
-  }
-}
-
-/**
- * Large text-layer batches skip the insight pass. Look at pages where a
- * leftover hyphen may be a minus or a bullet, or where an unsigned quantity
- * range may have dropped a drawn minus, and copy a minus only when the
- * model reports a signed quantity from a PNG raster of that page.
- */
-async function overlayAmbiguousNumericSignsFromVision(
-  input: ResolvedInput,
-  pages: ExtractedPage[],
-  ambiguousByPage: ReadonlyMap<number, readonly string[]>
-): Promise<string[] | undefined> {
-  const selected = selectNumericSignOverlayPages(pages, ambiguousByPage);
-  if (selected.length === 0) return undefined;
-  console.info("[document-extract] Signed-quantity overlay", {
-    filename: input.filename,
-    pages: selected.map((page) => page.pageNumber),
-  });
-  const overlayErrors: string[] = [];
-  for (const page of selected) {
-    const relative = page.pageNumber - input.pageStart + 1;
-    try {
-      const pagePdf = await copyPdfPage(input.pdfBuffer, relative);
-      const pageImage = await renderPdfPagePng(pagePdf);
-      console.info("[document-extract] Signed-quantity overlay raster", {
-        filename: input.filename,
-        page: page.pageNumber,
-        bytes: pageImage.length,
-      });
-      const evidence = await requestSignedQuantityOverlay({
-        ...input,
-        pdfBuffer: pagePdf,
-        pageStart: page.pageNumber,
-        pageEnd: page.pageNumber,
-        pageImage,
-      });
-      if (!evidence) continue;
-      page.transcript = overlayLeadingMinuses(page.transcript, evidence);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      overlayErrors.push(`page ${page.pageNumber}: ${message}`);
-      console.error(
-        `[document-extract] Vision sign overlay failed for page ${page.pageNumber}`,
-        { error: message }
-      );
-    }
-  }
-  return overlayErrors.length > 0 ? overlayErrors : undefined;
-}
-
-async function requestSignedQuantityOverlay(
-  input: ResolvedInput & { pageImage: Buffer }
-): Promise<string | null> {
-  try {
-    const result = await generateText({
-      model: input.model,
-      output: Output.object({ schema: signedQuantityOverlaySchema }),
-      system: buildSystemPrompt(),
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: buildSignedQuantityOverlayPrompt(input) },
-            {
-              type: "image",
-              image: new Uint8Array(input.pageImage),
-              mediaType: "image/png",
-            },
-          ],
-        },
-      ],
-      temperature: TEMPERATURE,
-      maxOutputTokens: SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS,
-      ...langfuseGenerateTextTelemetry({
-        functionId: "document-extract-signed-quantity-overlay",
-        metadata: {
-          feature: "document_extract",
-          filename: input.filename,
-          pageStart: input.pageStart,
-          pageEnd: input.pageEnd,
-          overlayMedia: "image/png",
-        },
-      }),
-    });
-
-    const usage = {
-      inputTokens: result.usage?.inputTokens,
-      outputTokens: result.usage?.outputTokens,
-    };
-    const structured = readStructuredOutput(signedQuantityOverlaySchema, result, {
-      pageStart: input.pageStart,
-      pageEnd: input.pageEnd,
-      finishReason: result.finishReason,
-      textLength: result.text?.length ?? 0,
-      usage,
-    });
-    if (!structured) return null;
-    const evidence = structured.data.signedQuantities
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join("\n");
-    return evidence || null;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(
-      `[document-extract] Signed-quantity overlay failed for page ${input.pageStart}`,
-      { error: message }
-    );
-    throw error instanceof Error ? error : new Error(message);
-  }
-}
-
 function finalizeExtractedBatch(result: ExtractBatchResult): ExtractBatchResult {
   const pages = result.pages.map(fillDerivedPageContext);
   const batchSummary = isPlaceholderPageContext(result.batchSummary)
@@ -1598,7 +1328,7 @@ function buildUserPrompt(input: {
 For each page, use the original document page number:
 - pageNumber: absolute 1-based PDF page number.
 - transcript: readable text, OCR text, labels, captions, and table text in natural reading order. Keep a leading minus on negative numbers (−15 °C is not 15 °C).
-- visualInterpretation: factual description of diagrams, charts, signatures, stamps, handwriting, and layout. If a table shows a negative temperature or RPM, keep the leading minus (−15 °C is not 15 °C). Max ${MAX_VISUAL_CHARS} characters.
+- visualInterpretation: factual description of diagrams, charts, signatures, stamps, handwriting, and layout. Max ${MAX_VISUAL_CHARS} characters.
 - pageContext: brief context for retrieval, including the page's role in the document. Max ${MAX_PAGE_CONTEXT_CHARS} characters.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 extraction confidence.
@@ -1635,22 +1365,6 @@ Return exactly one page entry:
 Leave visualInterpretation, pageContext, tables, and figures empty. Leave batchSummary and continuationNote empty.`;
 }
 
-function buildSignedQuantityOverlayPrompt(input: {
-  pageStart: number;
-  filename: string;
-}): string {
-  return `Look at this PNG raster of page ${input.pageStart} of ${input.filename}. Read the pixels. Do not use a PDF text layer.
-
-A leading minus on a quantity (−15 °C, −20 °C, −50 RPM) is a sign, including a short stroke drawn in a table cell that the text layer omitted.
-A bullet, list dash, or range separator (15–130 °C) is not a sign.
-
-List every visibly signed quantity. Empty list when none are visible.
-Do not invent a minus.
-
-Return:
-- signedQuantities: the signed strings only. Empty list when none are visible.`;
-}
-
 function buildInsightPrompt(input: {
   pageStart: number;
   pageEnd: number;
@@ -1660,13 +1374,11 @@ function buildInsightPrompt(input: {
 }): string {
   return `${buildCarryForward(input)}Describe pages ${input.pageStart}-${input.pageEnd} of ${input.filename}.
 
-The page text has already been extracted by a PDF parser. Do not transcribe or quote headings, paragraphs, or whole tables.
-
-Exception: if a table or label shows a signed quantity whose leading minus a text layer often drops (for example −15 °C, −20 °C, or −50 RPM), copy those signed values into visualInterpretation. Do not treat a bullet or list dash as a minus. Do not invent a minus on a range that has none.
+The page text has already been extracted by a PDF parser. Do not transcribe, quote, or repeat page text, table contents, or headings.
 
 For each page return:
 - pageNumber: absolute 1-based PDF page number.
-- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, and notable layout. Empty string when the page is plain text with no figures and no signed quantities. If you copy a signed quantity, keep the leading minus (−15 °C is not 15 °C). Max ${MAX_VISUAL_CHARS} characters.
+- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, and notable layout. Empty string when the page is plain text or tables. Max ${MAX_VISUAL_CHARS} characters.
 - pageContext: one sentence describing the page's role in the document. Max ${MAX_PAGE_CONTEXT_CHARS} characters.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 confidence that the page is faithfully described.

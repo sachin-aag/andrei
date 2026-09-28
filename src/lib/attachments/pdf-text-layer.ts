@@ -1,13 +1,5 @@
-import {
-  extractTextItems,
-  getDocumentProxy,
-  type StructuredTextItem,
-} from "unpdf";
-import {
-  CERTAIN_MINUS_CLASS,
-  LEADING_MINUS_CLASS,
-  glueImmediateMinusSigns,
-} from "@/lib/attachments/numeric-signs";
+import { extractText, getDocumentProxy } from "unpdf";
+import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
 
 /**
  * Below this many characters a page is treated as a scan: born-digital pages
@@ -18,12 +10,6 @@ export const MIN_TEXT_LAYER_CHARS = 180;
 export type PdfPageText = {
   pageNumber: number;
   text: string;
-  /**
-   * Leading digits of numbers whose left-hand dash is not a certain minus
-   * (unmapped glyph, space-width run, or en-dash with a gap). Overlay looks
-   * at those pages; it does not invent a sign.
-   */
-  ambiguousMagnitudes: string[];
 };
 
 export type PdfTextLayer = {
@@ -57,11 +43,10 @@ export async function readPdfTextLayer(
   ensureMathSumPrecise();
 
   const document = await getDocumentProxy(new Uint8Array(buffer));
-  const { items } = await extractTextItems(document);
-  const pages = items.map((pageItems, index) => ({
+  const { text } = await extractText(document, { mergePages: false });
+  const pages = text.map((raw, index) => ({
     pageNumber: pageStart + index,
-    text: reconstructPageText(pageItems),
-    ambiguousMagnitudes: ambiguousNumericMagnitudes(pageItems),
+    text: normalizePageText(raw),
   }));
 
   return {
@@ -85,199 +70,8 @@ export function classifyPdfExtractLayout(
   return "mixed";
 }
 
-const CERTAIN_MINUS_GLYPH_RE = new RegExp(`^${CERTAIN_MINUS_CLASS}$`);
-const MINUS_GLYPH_RE = new RegExp(`^${LEADING_MINUS_CLASS}$`);
-const UNMAPPED_DASH_RE = /^[\u0000\uFFFD\uE000-\uF8FF]$/;
-
-/**
- * Attach a hyphen-minus or unicode minus that sits immediately left of a
- * number, including one space away. An en-dash / unmapped glyph / space-width
- * run is not attached here — that may be a bullet, and overlay decides.
- */
-export function attachSpatialMinusSigns(
-  items: readonly StructuredTextItem[]
-): StructuredTextItem[] {
-  const next = items.map((item) => ({ ...item }));
-  const consumed = new Set<number>();
-
-  for (let i = 0; i < next.length; i++) {
-    const numberItem = next[i]!;
-    if (!/^\d/.test(numberItem.str.trim())) continue;
-    const leftIndex = nearestSignCandidateLeft(next, i, consumed);
-    if (leftIndex == null) continue;
-    const left = next[leftIndex]!;
-    if (/\d$/.test(left.str.trim())) continue;
-    const gap = numberItem.x - (left.x + Math.max(left.width, 0));
-    if (!isCertainSpatialMinus(left, gap)) continue;
-    if (isPrecededByDigit(next, leftIndex, consumed)) continue;
-    numberItem.str = `-${numberItem.str.replace(/^\s+/, "")}`;
-    consumed.add(leftIndex);
-  }
-
-  return next.filter((_, index) => !consumed.has(index));
-}
-
-export function reconstructPageText(
-  items: readonly StructuredTextItem[]
-): string {
-  return normalizePageText(
-    attachSpatialMinusSigns(items)
-      .map((item) => item.str + (item.hasEOL ? "\n" : ""))
-      .join("")
-  );
-}
-
-export function ambiguousNumericMagnitudes(
-  items: readonly StructuredTextItem[]
-): string[] {
-  const consumed = new Set<number>();
-  const magnitudes = new Set<string>();
-  for (let i = 0; i < items.length; i++) {
-    const numberItem = items[i]!;
-    const trimmed = numberItem.str.trim();
-    if (!/^\d/.test(trimmed)) continue;
-    const leftIndex = nearestSignCandidateLeft(items, i, consumed);
-    if (leftIndex == null) continue;
-    const left = items[leftIndex]!;
-    if (/\d$/.test(left.str.trim())) continue;
-    if (isPrecededByDigit(items, leftIndex, consumed)) continue;
-    const gap = numberItem.x - (left.x + Math.max(left.width, 0));
-    if (isCertainSpatialMinus(left, gap)) continue;
-    if (!isAmbiguousSpatialDash(left, gap)) continue;
-    const magnitude = trimmed.match(/^\d+(?:\.\d+)?/)?.[0];
-    if (magnitude) magnitudes.add(magnitude);
-  }
-  return [...magnitudes];
-}
-
-function itemEm(item: StructuredTextItem): number {
-  return item.fontSize > 0 ? item.fontSize : item.height > 0 ? item.height : 8;
-}
-
-function isWhitespaceItem(item: StructuredTextItem): boolean {
-  return item.str.length > 0 && /^\s*$/.test(item.str);
-}
-
-function isMinusGlyphItem(item: StructuredTextItem): boolean {
-  return MINUS_GLYPH_RE.test(item.str.trim());
-}
-
-function isUnmappedDashItem(item: StructuredTextItem): boolean {
-  const trimmed = item.str.trim();
-  return trimmed.length === 0 || UNMAPPED_DASH_RE.test(item.str);
-}
-
-/**
- * Closest item to the left of `anchorIndex` that could be a leading minus.
- * A word-space after `mm` is skipped. A dash-width space sitting alone in
- * the cell (one space left of the digits) is kept. A space *between* a
- * minus glyph and the number is skipped so the glyph is the candidate.
- */
-function nearestSignCandidateLeft(
-  items: readonly StructuredTextItem[],
-  anchorIndex: number,
-  consumed: ReadonlySet<number>
-): number | null {
-  const anchor = items[anchorIndex]!;
-  const size = itemEm(anchor);
-  const maxGap = size * 2.5;
-  const baselineTol = size * 0.35;
-  let best: { index: number; gap: number } | null = null;
-  for (let j = 0; j < items.length; j++) {
-    if (j === anchorIndex || consumed.has(j)) continue;
-    const left = items[j]!;
-    if (Math.abs(left.y - anchor.y) > baselineTol) continue;
-    if (shouldSkipLeftItem(items, j, consumed)) continue;
-    const gap = anchor.x - (left.x + Math.max(left.width, 0));
-    if (gap < -size * 0.2) continue;
-    if (gap > maxGap) continue;
-    if (!best || gap < best.gap) best = { index: j, gap };
-  }
-  return best?.index ?? null;
-}
-
-function shouldSkipLeftItem(
-  items: readonly StructuredTextItem[],
-  leftIndex: number,
-  consumed: ReadonlySet<number>
-): boolean {
-  const left = items[leftIndex]!;
-  if (!isWhitespaceItem(left)) return false;
-  const prevIndex = nearestContentLeft(items, leftIndex, consumed);
-  if (prevIndex == null) return false;
-  const prev = items[prevIndex]!;
-  if (isMinusGlyphItem(prev) || isUnmappedDashItem(prev)) return true;
-  return isWordAdjacentSpace(prev, left);
-}
-
-function nearestContentLeft(
-  items: readonly StructuredTextItem[],
-  fromIndex: number,
-  consumed: ReadonlySet<number>
-): number | null {
-  const from = items[fromIndex]!;
-  const size = itemEm(from);
-  const maxGap = size * 2.5;
-  const baselineTol = size * 0.35;
-  let best: { index: number; gap: number } | null = null;
-  for (let j = 0; j < items.length; j++) {
-    if (j === fromIndex || consumed.has(j)) continue;
-    const left = items[j]!;
-    if (isWhitespaceItem(left)) continue;
-    if (Math.abs(left.y - from.y) > baselineTol) continue;
-    const gap = from.x - (left.x + Math.max(left.width, 0));
-    if (gap < -size * 0.2) continue;
-    if (gap > maxGap) continue;
-    if (!best || gap < best.gap) best = { index: j, gap };
-  }
-  return best?.index ?? null;
-}
-
-function isWordAdjacentSpace(
-  prev: StructuredTextItem,
-  space: StructuredTextItem
-): boolean {
-  if (!/[A-Za-z0-9]$/.test(prev.str.trim())) return false;
-  const gap = space.x - (prev.x + Math.max(prev.width, 0));
-  return gap <= itemEm(space) * 0.5;
-}
-
-function isCertainMinusGlyph(item: StructuredTextItem): boolean {
-  return CERTAIN_MINUS_GLYPH_RE.test(item.str.trim());
-}
-
-function isCertainSpatialMinus(item: StructuredTextItem, gap: number): boolean {
-  if (isCertainMinusGlyph(item)) return true;
-  const trimmed = item.str.trim();
-  if (!MINUS_GLYPH_RE.test(trimmed)) return false;
-  const size = itemEm(item);
-  return gap <= size * 0.45;
-}
-
-function isAmbiguousSpatialDash(item: StructuredTextItem, gap: number): boolean {
-  if (isCertainSpatialMinus(item, gap)) return false;
-  if (MINUS_GLYPH_RE.test(item.str.trim())) return true;
-  if (!isUnmappedDashItem(item) && !isWhitespaceItem(item)) return false;
-  const size = itemEm(item);
-  if (item.width > 0) {
-    const ratio = item.width / size;
-    return ratio >= 0.15 && ratio <= 0.8;
-  }
-  return gap >= -size * 0.2 && gap <= size * 2.5;
-}
-
-function isPrecededByDigit(
-  items: readonly StructuredTextItem[],
-  dashIndex: number,
-  consumed: ReadonlySet<number>
-): boolean {
-  const leftIndex = nearestSignCandidateLeft(items, dashIndex, consumed);
-  if (leftIndex == null) return false;
-  return /\d$/.test(items[leftIndex]!.str.trim());
-}
-
 function normalizePageText(raw: string): string {
-  return glueImmediateMinusSigns(
+  return glueOcrMinusSigns(
     raw
       .replace(/\r\n/g, "\n")
       .replace(/[^\S\n]+/g, " ")
