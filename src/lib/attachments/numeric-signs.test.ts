@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   glueImmediateMinusSigns,
@@ -8,6 +10,22 @@ import {
   pageNeedsNumericSignLook,
   unsignedQuantityRangeCount,
 } from "./numeric-signs";
+
+/** Stored text layer from preview ingest `agcf0hgdaian9opdv807rg12` (v9). */
+const GLR_1301_URS_PAGE_6 = readFileSync(
+  path.join(
+    process.cwd(),
+    "src/lib/attachments/fixtures/glr-1301-urs-page-6.transcript.txt"
+  ),
+  "utf8"
+).trim();
+const GLR_1301_URS_PAGE_9 = readFileSync(
+  path.join(
+    process.cwd(),
+    "src/lib/attachments/fixtures/glr-1301-urs-page-9.transcript.txt"
+  ),
+  "utf8"
+).trim();
 
 describe("glueOcrMinusSigns", () => {
   it("turns a figure dash, em dash, or fullwidth minus into a hyphen", () => {
@@ -159,6 +177,35 @@ describe("pageNeedsNumericSignLook", () => {
     expect(
       pageNeedsNumericSignLook("slice 0 line 0 of verification evidence")
     ).toBe(false);
+  });
+
+  it("looks at the live GLR-1301 URS pages that stored unsigned 15 / 20 °C", () => {
+    expect(GLR_1301_URS_PAGE_6).toContain("15 °C to 130 °C");
+    expect(GLR_1301_URS_PAGE_6).not.toMatch(/-15 °C to 130 °C/);
+    expect(hasAmbiguousNumericDash(GLR_1301_URS_PAGE_6)).toBe(false);
+    expect(pageNeedsNumericSignLook(GLR_1301_URS_PAGE_6)).toBe(true);
+    expect(unsignedQuantityRangeCount(GLR_1301_URS_PAGE_6)).toBeGreaterThan(0);
+
+    expect(GLR_1301_URS_PAGE_9).toContain("20 °C to 150");
+    expect(GLR_1301_URS_PAGE_9).not.toMatch(/-20 °C/);
+    expect(hasAmbiguousNumericDash(GLR_1301_URS_PAGE_9)).toBe(false);
+    expect(pageNeedsNumericSignLook(GLR_1301_URS_PAGE_9)).toBe(true);
+    expect(unsignedQuantityRangeCount(GLR_1301_URS_PAGE_9)).toBeGreaterThan(0);
+  });
+
+  it("copies −15 / −20 onto those live URS pages only when evidence has the sign", () => {
+    expect(
+      overlayLeadingMinuses(GLR_1301_URS_PAGE_6, "−15 °C to 130 °C")
+    ).toMatch(/-15 °C to 130 °C/);
+    expect(
+      overlayLeadingMinuses(GLR_1301_URS_PAGE_6, "15 °C to 130 °C")
+    ).not.toMatch(/-15 °C to 130 °C/);
+    expect(
+      overlayLeadingMinuses(GLR_1301_URS_PAGE_9, "−20 °C to 150 °C")
+    ).toMatch(/-20 °C to 150/);
+    expect(
+      overlayLeadingMinuses(GLR_1301_URS_PAGE_9, "20 °C to 150 °C")
+    ).not.toMatch(/-20 °C/);
   });
 });
 

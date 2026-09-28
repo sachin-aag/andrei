@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { NoOutputGeneratedError, type LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -123,6 +123,29 @@ async function pdfWithAmbiguousEnDashRange(): Promise<Buffer> {
   lines.forEach((line, index) => {
     page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });
   });
+  return Buffer.from(await document.save());
+}
+
+/** Minus is a stroked rule, not a text glyph — the live URS failure mode. */
+async function pdfWithStrokedMinusCelsiusRange(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([600, 800]);
+  const lines = Array.from(
+    { length: 10 },
+    (_, index) => `URS requirement line ${index} of verification evidence`
+  );
+  lines.forEach((line, index) => {
+    page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });
+  });
+  page.drawLine({
+    start: { x: 40, y: 564 },
+    end: { x: 50, y: 564 },
+    thickness: 0.8,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText("15 °C to 130 °C", { x: 54, y: 560, size: 11, font });
+  page.drawText("15 °C to 130 °C", { x: 54, y: 544, size: 11, font });
   return Buffer.from(await document.save());
 }
 
@@ -816,6 +839,40 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages[5]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
     expect(result.pages[8]?.transcript).toContain("-20 °C to 150 °C");
     expect(result.pages[8]?.transcript).not.toMatch(/(?<![-\d])20 °C to 150 °C/);
+  });
+
+  it("looks at a page whose minus is a stroked rule, not leftover text", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        return resultWithOutput({ signedQuantities: ["−15 °C"] }, "stop");
+      }
+      return resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithStrokedMinusCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(
+      generateTextMock.mock.calls.some((call) =>
+        isSignedQuantityOverlayPrompt(userPrompt(call[0]))
+      )
+    ).toBe(true);
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
   });
 
   it("does not invent a minus when Gemini reports no signed quantities", async () => {

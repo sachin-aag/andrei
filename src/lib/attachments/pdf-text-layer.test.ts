@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import type { StructuredTextItem } from "unpdf";
 import {
@@ -216,5 +216,24 @@ describe("readPdfTextLayer signed temperatures", () => {
     );
     expect(layer.pages[0]?.text).toMatch(/- 15 C to 130 C/);
     expect(layer.pages[0]?.text).not.toMatch(/-15 C to 130 C/);
+  });
+
+  it("does not turn a stroked rule into a minus glyph", async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    const page = document.addPage([600, 800]);
+    page.drawLine({
+      start: { x: 40, y: 684 },
+      end: { x: 50, y: 684 },
+      thickness: 0.8,
+      color: rgb(0, 0, 0),
+    });
+    page.drawText("15 C to 130 C", { x: 54, y: 680, size: 11, font });
+    const layer = await readPdfTextLayer(
+      Buffer.from(await document.save())
+    );
+    expect(layer.pages[0]?.text).toContain("15 C to 130 C");
+    expect(layer.pages[0]?.text).not.toMatch(/-15/);
+    expect(layer.pages[0]?.ambiguousMagnitudes).toEqual([]);
   });
 });

@@ -1,0 +1,84 @@
+3xper
+EMPOWERING INNOVATION
+Document Number
+USER REQUIREMENT SPECIFICATION FOR GLASS LINED REACTOR
+URS/GLR-1301
+7. INSTRUMENT REQUIREMENT:
+URS ID #
+Parameters
+URS-34
+Desired level of instruments
+Revision Number
+00
+User requirements
+Temperature Indicator & Duplex RTD Sensor
+Pressure gauge for Inner vessel & Jacket and condenser utility
+jacket
+Vacuum gauge
+Rota meter for Nitrogen
+Data Logger (to record critical parameters)
+URS-34 a
+For solvent transfer
+Flowmeter
+URS-34 b
+For cleaning
+Water pressure jet is required
+8. CONTROL PHILOSOPHY:
+URS ID #
+Type of
+control
+Purpose
+Operation
+range
+Desired
+Least
+Extent of Instrumentation
+count Indication Recording Control
+To
+measure
+the
+URS-35 Vacuum gauge
+0 to 760 mmHg
+vacuum produced
+10 mm
+Hg
+Visual Manual Manual
+To
+measure
+the
+0.1
+URS-36 Pressure Gauge
+0-6 Kg/cm²
+Visual Manual Manual
+pressure produced
+kg/cm²
+To
+measure the
+URS-37 Temperature
+temperature
+20 °C to 150
+°C
+0.1°C
+Visual
+Auto
+Manual
+To
+control the
+URS-38 Rota meter
+0-10 LPM
+1 LPM Visual Manual
+Manual
+Nitrogen flow
+9. GMP REQUIREMENT:
+URS ID #
+Parameters
+URS-39 All contact parts
+User requirements
+All product contact parts shall be Glass-Lined or PTFE-coated
+Non-contact parts may be constructed from SS, MS, or CS as
+appropriate
+URS-40 Non-Contact parts
+URS-41 Gaskets
+PTFE or Equivalent
+Format. No.:-QAD-SOP-FS-003-F03-00
+Page 9 of 12
