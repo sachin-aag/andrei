@@ -75,6 +75,7 @@ import {
 import { recoverDocumentMentionIds } from "@/lib/ai/chat/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
+import { geminiSafeModelMessages } from "@/lib/ai/chat/gemini-messages";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   advertisedChatToolNames,
@@ -306,9 +307,11 @@ async function handleAnalyticsChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = messagesWithComposerModeReminder(
-      await convertToModelMessages(messages),
-      mode
+    const modelMessages = geminiSafeModelMessages(
+      messagesWithComposerModeReminder(
+        await convertToModelMessages(messages),
+        mode
+      )
     );
     setRouteObservationIO({
       input: {
@@ -339,6 +342,7 @@ async function handleAnalyticsChatPost(
         streamText({
       model,
       system,
+      allowSystemInMessages: false,
       messages: modelMessages,
       tools,
       activeTools: advertisedTools,
@@ -358,7 +362,9 @@ async function handleAnalyticsChatPost(
           intentReason: userIntent.reason,
           worksheetHasData,
         });
-        const compacted = compactInTurnModelMessages(messages);
+        const compacted = geminiSafeModelMessages(
+          compactInTurnModelMessages(messages)
+        );
         if (!prepared) return { messages: compacted };
         return {
           activeTools: prepared.activeTools,

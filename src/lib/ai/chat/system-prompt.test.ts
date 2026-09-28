@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v161-ask-to-agent-turn");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v162-gemini-mode-stamp");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {

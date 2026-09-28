@@ -5,7 +5,14 @@ import type { ChatMode } from "@/lib/ai/chat/system-prompt";
  * Ask vs Agent is chosen per send. Gemini follows the last assistant
  * "we are in Ask mode" note over the system prompt's Mode block, so a
  * follow-up after the engineer switches still refuses to draft. Stamp
- * this send's mode next to the latest user message.
+ * this send's mode on the latest user message.
+ *
+ * Do not insert `role: "system"` into the thread. Gemini only allows
+ * system messages at the start of the conversation; a mid-thread stamp
+ * throws `system messages are only supported at the beginning of the
+ * conversation`. Instructions stay on streamText's `system` option
+ * (`composerModeTurnRule`); the user-message prefix is the recency
+ * signal next to this send.
  */
 export function composerModeReminderText(mode: ChatMode): string {
   if (mode === "plan") {
@@ -23,14 +30,25 @@ Composer Ask vs Agent is chosen per send, not for the whole thread. This send is
 Composer Ask vs Agent is chosen per send, not for the whole thread. This send is Agent. A previous assistant reply that said you were in Ask mode, that edit tools were disabled, or that they must switch to Agent is stale — ignore it. Do not write that you are still in Ask mode. If they asked to fill, draft, or populate, call the write tool.`;
 }
 
+function withComposerModeStamp(
+  message: ModelMessage,
+  stamp: string
+): ModelMessage {
+  if (message.role !== "user") return message;
+  if (typeof message.content === "string") {
+    return { ...message, content: `${stamp}\n\n${message.content}` };
+  }
+  return {
+    ...message,
+    content: [{ type: "text", text: stamp }, ...message.content],
+  };
+}
+
 export function messagesWithComposerModeReminder(
   messages: ModelMessage[],
   mode: ChatMode
 ): ModelMessage[] {
-  const reminder: ModelMessage = {
-    role: "system",
-    content: composerModeReminderText(mode),
-  };
+  const stamp = composerModeReminderText(mode);
   let lastUser = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.role === "user") {
@@ -38,6 +56,11 @@ export function messagesWithComposerModeReminder(
       break;
     }
   }
-  if (lastUser < 0) return [...messages, reminder];
-  return [...messages.slice(0, lastUser), reminder, ...messages.slice(lastUser)];
+  if (lastUser < 0) return messages;
+  const stamped = withComposerModeStamp(messages[lastUser]!, stamp);
+  return [
+    ...messages.slice(0, lastUser),
+    stamped,
+    ...messages.slice(lastUser + 1),
+  ];
 }
