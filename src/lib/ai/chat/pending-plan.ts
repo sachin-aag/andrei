@@ -2,6 +2,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import {
   isChatEditableSection,
   isEmptyTableScaffoldDoc,
+  seedFieldDoc,
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
@@ -238,7 +239,10 @@ export function isEmptyInventoryTable(
   content: Record<string, unknown> | undefined
 ): boolean {
   if (!inventorySectionSet(documentType).has(section)) return false;
-  return isEmptyTableScaffoldDoc(getRichFieldValue(content ?? {}, "table"));
+  return isEmptyTableScaffoldDoc(
+    getRichFieldValue(content ?? {}, "table"),
+    seedFieldDoc(section, "table")
+  );
 }
 
 export function inventoryFinishSatisfiesEmptyTable(input: {

@@ -14,7 +14,7 @@ export type ChatStepWithTools = {
   toolResults: readonly ToolResultLike[];
 };
 
-export type TableEditLoopDirective = "continue" | "reread" | "finish";
+export type TableEditLoopDirective = "continue" | "reread" | "finish" | "review";
 
 function outputStatus(output: unknown): string | undefined {
   if (!output || typeof output !== "object" || Array.isArray(output)) {
@@ -24,10 +24,16 @@ function outputStatus(output: unknown): string | undefined {
   return typeof status === "string" ? status : undefined;
 }
 
+function isRecoverableTableEditStatus(status: string | undefined): boolean {
+  return status === "review_incomplete" || status === "unsupported_facts";
+}
+
 /**
  * Keep a failed structural edit from turning into a long, expensive retry loop.
  * One failed edit gets a forced fresh read; a second failure ends tool use so
  * the model can explain the blocker in plain language.
+ * `review_incomplete` is not structural — start the inventory walk instead of
+ * dumping the table in chat. `unsupported_facts` stays open for a search retry.
  */
 export function tableEditLoopDirective(
   steps: readonly ChatStepWithTools[]
@@ -36,6 +42,8 @@ export function tableEditLoopDirective(
   let latestFailureStep = -1;
   let latestSuccessfulEditStep = -1;
   let latestReadStep = -1;
+  let latestReviewIncompleteStep = -1;
+  let latestStartReviewStep = -1;
 
   steps.forEach((step, stepIndex) => {
     const resultByCallId = new Map(
@@ -47,11 +55,23 @@ export function tableEditLoopDirective(
         latestReadStep = stepIndex;
         continue;
       }
+      if (call.toolName === "start_document_review") {
+        latestStartReviewStep = stepIndex;
+        continue;
+      }
       if (call.toolName !== "edit_table") continue;
 
       const result = resultByCallId.get(call.toolCallId);
-      if (outputStatus(result?.output) === "proposed") {
+      const status = outputStatus(result?.output);
+      if (status === "proposed") {
         latestSuccessfulEditStep = stepIndex;
+        continue;
+      }
+      if (status === "review_incomplete") {
+        latestReviewIncompleteStep = stepIndex;
+        continue;
+      }
+      if (isRecoverableTableEditStatus(status)) {
         continue;
       }
       failureCount += 1;
@@ -59,7 +79,18 @@ export function tableEditLoopDirective(
     }
   });
 
-  if (latestSuccessfulEditStep > latestFailureStep) return "continue";
+  if (
+    latestSuccessfulEditStep > latestFailureStep &&
+    latestSuccessfulEditStep > latestReviewIncompleteStep
+  ) {
+    return "continue";
+  }
+  if (
+    latestReviewIncompleteStep > latestSuccessfulEditStep &&
+    latestReviewIncompleteStep > latestStartReviewStep
+  ) {
+    return "review";
+  }
   if (failureCount >= 2) return "finish";
   if (failureCount === 1 && latestReadStep < latestFailureStep) return "reread";
   return "continue";

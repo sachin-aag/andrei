@@ -559,6 +559,30 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
 }
 
 /**
+ * Every span of this URS-N, not only the first. Parser text plus a later
+ * visualInterpretation line (`transcript\nURS-3 … prints −15 °C`) must both
+ * count so a recovered minus wins over unsigned 15 in the text layer.
+ */
+function quoteWindowsAroundKey(quote: string, key: string): string[] {
+  if (!quote.trim() || !key) return [];
+  const hay = ursHaystack(quote);
+  const needle = key.toUpperCase();
+  const windows: string[] = [];
+  const seen = new Set<string>();
+  const add = (window: string | null) => {
+    if (!window || seen.has(window)) return;
+    seen.add(window);
+    windows.push(window);
+  };
+  add(quoteWindowAroundKey(hay, key));
+  for (const span of ursSpans(hay)) {
+    if (span.id !== needle) continue;
+    add(quoteWindowAroundKey(hay.slice(span.at), key));
+  }
+  return windows;
+}
+
+/**
  * Identifier slice plus the rest of the page after that ID.
  * Pass / Verified tokens are page-level — they must not stop at the
  * next URS ID the way neighbour-number isolation does.
@@ -1895,16 +1919,13 @@ function unsignedQuantityWhenEvidenceIsNegative(
   };
   const key = rowKeyFromContext(context);
   if (key) {
-    const windows = quotes
-      .map((quote) => quoteWindowAroundKey(quote, key))
-      .filter((window): window is string => Boolean(window));
-    const windowHasUnsigned = windows.some((quote) =>
-      evidenceContainsFact(quote, unsigned)
+    const windows = quotes.flatMap((quote) =>
+      quoteWindowsAroundKey(quote, key)
     );
     const windowHasNegative = windows.some((quote) =>
       evidenceContainsFact(quote, signed)
     );
-    if (windowHasNegative && !windowHasUnsigned) {
+    if (windowHasNegative) {
       return syntheticUnsupportedFact(cell);
     }
   }

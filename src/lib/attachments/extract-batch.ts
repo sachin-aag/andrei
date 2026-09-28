@@ -1376,9 +1376,11 @@ function buildInsightPrompt(input: {
 
 The page text has already been extracted by a PDF parser. Do not transcribe, quote, or repeat page text, table contents, or headings.
 
+Exception: if a leading minus or hyphen is visible on the page image immediately before a number (especially a temperature) but the parser text dropped that sign, put the signed value in visualInterpretation (e.g. "URS-3 shell operating temperature prints −15 °C to 130 °C"). A leading tilde or ≈ is approximate, not a minus — do not report ~50 RPM as −50. Leave visualInterpretation empty when no such dropped sign is visible and the page is otherwise plain text or tables.
+
 For each page return:
 - pageNumber: absolute 1-based PDF page number.
-- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, and notable layout. Empty string when the page is plain text or tables. Max ${MAX_VISUAL_CHARS} characters.
+- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, notable layout, and any dropped leading minus recovered from the image. Empty string when the page is plain text or tables and no dropped sign is visible. Max ${MAX_VISUAL_CHARS} characters.
 - pageContext: one sentence describing the page's role in the document. Max ${MAX_PAGE_CONTEXT_CHARS} characters.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 confidence that the page is faithfully described.

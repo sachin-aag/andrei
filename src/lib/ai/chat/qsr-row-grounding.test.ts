@@ -553,6 +553,33 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toEqual([]);
   });
 
+  it("blocks unsigned 15 °C on URS-3 when visualInterpretation recovered the dropped minus", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: `${COLUMN_URS_PAGE}\nURS-3 shell operating temperature prints −15 °C to 130 °C`,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C to 130 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "−15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("blocks unsigned 15 °C on URS-3 when the column-major value is −15 °C", () => {
     const signedColumn =
       "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm −15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";

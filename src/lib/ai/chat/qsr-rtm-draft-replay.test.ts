@@ -835,6 +835,76 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows.flat().join(" ")).toContain("−15 °C");
   });
 
+  it("blocks unsigned 15 °C on URS-3 when the parser dropped the minus and visualInterpretation recovered it", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript: COLUMN_QUOTE,
+      visualInterpretation:
+        "URS-3 shell operating temperature prints −15 °C to 130 °C",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const blocked = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-3",
+              "Shell Operating temperature",
+              "15 °C to 130 °C",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "unsupported_facts" });
+    const proposed = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the recovered signed temperature.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            [
+              "URS-3",
+              "Shell Operating temperature",
+              "−15 °C to 130 °C",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(proposed).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("−15 °C");
+  });
+
   it("blocks unsigned 15 °C on operating-range Minimum when URS-37 is also 15–130 °C", async () => {
     mockSection("qsr_operating_range");
     const tools = buildTools({ section: "qsr_operating_range" });

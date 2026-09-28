@@ -504,9 +504,19 @@ describe("extractPdfBatch with a text layer", () => {
     expect(generateTextMock).toHaveBeenCalledTimes(1);
 
     const [call] = generateTextMock.mock.calls.at(0) as [
-      { maxOutputTokens: number },
+      {
+        maxOutputTokens: number;
+        messages?: Array<{
+          content?: Array<{ type?: string; text?: string }>;
+        }>;
+      },
     ];
     expect(call.maxOutputTokens).toBe(6_000);
+    const insightPrompt = call.messages
+      ?.at(0)
+      ?.content?.find((part) => part.type === "text")?.text;
+    expect(insightPrompt).toContain("parser text dropped that sign");
+    expect(insightPrompt).toContain("~50 RPM as −50");
   });
 
   it("records table presence when the insight pass names a table", async () => {

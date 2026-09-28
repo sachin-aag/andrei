@@ -721,18 +721,14 @@ async function handleChatPost(
           ).some((section) => sectionHasTable(mergedSections[section], section)),
           retrievalPolicy: retrieval.policy,
           reviewPhase: documentReview.phase(),
-          requireInventoryReview:
-            alreadyDrafted != null
-              ? false
-              : inScopeEmptyInventoryNeedsReview({
-                  ...inventoryReviewInput,
-                  inventoryFinishSatisfiesDraft:
-                    documentReview.inventoryFinishSatisfiesDraft(),
-                }),
-          restartInventoryReview:
-            alreadyDrafted != null
-              ? false
-              : inScopeEmptyInventoryNeedsReview(inventoryReviewInput),
+          requireInventoryReview: inScopeEmptyInventoryNeedsReview({
+            ...inventoryReviewInput,
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
+          }),
+          restartInventoryReview: inScopeEmptyInventoryNeedsReview(
+            inventoryReviewInput
+          ),
           searchGate,
           forceListAttachments: shouldForceListAttachments(steps),
           forceFinishReview:
