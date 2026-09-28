@@ -288,7 +288,7 @@ export function searchLoopHideKind(
   if (
     shouldKeepRtmProtocolSearchOpen(rtmEvidence.queries, rtmEvidence.filenames)
   ) {
-    return "continue";
+    return "keep_open";
   }
 
   let emptySearches = 0;
