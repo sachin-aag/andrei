@@ -4,9 +4,11 @@ import {
   THREE_XPER_CITATION_HEADERS,
   THREE_XPER_CITATIONS_HEADING,
   qsrDocumentReferenceCatalog,
+  threeXperCitationIdentityKey,
   threeXperCitationRows,
   threeXperCitationsAppendixXml,
 } from "@/lib/export/3xper-citations-table";
+import { unifyReportCitationsForExport } from "@/lib/export/elr-unified-citations";
 import type { ReportSectionRecord } from "@/types/report";
 
 function paragraph(text?: string): JSONContent {
@@ -241,6 +243,135 @@ describe("qsrDocumentReferenceCatalog", () => {
     expect(catalog).toEqual([
       { name: "Design Qualification", number: "DQ/PB2/1" },
     ]);
+  });
+});
+
+describe("threeXperCitationIdentityKey", () => {
+  const catalogSections = [
+    section("qsr_qualification_documents", {
+      table: tableDoc(
+        [
+          "Document Name",
+          "Document Number",
+          "Revision",
+          "Status",
+          "Effective Date / Approved date",
+          "Remarks",
+        ],
+        [
+          [
+            "User Requirement Specification",
+            "URS/PB2/001/12345",
+            "00",
+            "Approved",
+            "01-01-2026",
+            "",
+          ],
+        ]
+      ),
+    }),
+  ];
+
+  it("treats catalog aliases of the same file and page as one cite", () => {
+    expect(
+      threeXperCitationIdentityKey(
+        "[User Requirement Specification.PDF, p. 2]",
+        catalogSections
+      )
+    ).toBe(threeXperCitationIdentityKey("[URS.pdf, p.2]", catalogSections));
+  });
+
+  it("keeps different pages of the same catalog document distinct", () => {
+    expect(
+      threeXperCitationIdentityKey(
+        "[User Requirement Specification.PDF, p. 2]",
+        catalogSections
+      )
+    ).not.toBe(
+      threeXperCitationIdentityKey(
+        "[User Requirement Specification.PDF, p. 3]",
+        catalogSections
+      )
+    );
+  });
+});
+
+describe("unifyReportCitationsForExport with 3xper identity", () => {
+  it("collapses catalog aliases onto one bibliography row and shared [n]", () => {
+    const sections = [
+      section("qsr_qualification_documents", {
+        table: tableDoc(
+          [
+            "Document Name",
+            "Document Number",
+            "Revision",
+            "Status",
+            "Effective Date / Approved date",
+            "Remarks",
+          ],
+          [
+            [
+              "User Requirement Specification",
+              "URS/PB2/001/12345",
+              "00",
+              "Approved",
+              "01-01-2026",
+              "",
+            ],
+          ]
+        ),
+      }),
+      section("qsr_objective", {
+        narrative: {
+          type: "doc",
+          content: [
+            paragraph("The URS was approved [1]."),
+            paragraph(),
+            paragraph("Citations:"),
+            paragraph("1. [User Requirement Specification.PDF, p. 2]"),
+          ],
+        },
+      }),
+      section("qsr_scope", {
+        narrative: {
+          type: "doc",
+          content: [
+            paragraph("Capacity matches the URS [1]."),
+            paragraph(),
+            paragraph("Citations:"),
+            paragraph("1. [URS.pdf, p.2]"),
+          ],
+        },
+      }),
+    ];
+    const { bibliography, sections: next } = unifyReportCitationsForExport(
+      sections,
+      ["qsr_qualification_documents", "qsr_objective", "qsr_scope"],
+      {
+        sourceIdentity: (source) =>
+          threeXperCitationIdentityKey(source, sections),
+      }
+    );
+    expect(bibliography).toEqual([
+      { number: 1, source: "[User Requirement Specification.PDF, p. 2]" },
+    ]);
+    const byKey = Object.fromEntries(next.map((row) => [row.section, row]));
+    const textOf = (doc: JSONContent) =>
+      (doc.content ?? [])
+        .map((node) =>
+          (node.content ?? [])
+            .map((child) => (child as { text?: string }).text ?? "")
+            .join("")
+        )
+        .join("\n");
+    expect(
+      textOf(
+        (byKey.qsr_objective?.content as { narrative: JSONContent }).narrative
+      )
+    ).toBe("The URS was approved [1].");
+    expect(
+      textOf((byKey.qsr_scope?.content as { narrative: JSONContent }).narrative)
+    ).toBe("Capacity matches the URS [1].");
   });
 });
 

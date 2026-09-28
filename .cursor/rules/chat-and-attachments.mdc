@@ -20,7 +20,9 @@ alwaysApply: false
 Follow the **latest user message**. Ask vs Agent is per send, not the
 whole thread — a prior "currently in Ask mode" assistant note is stale
 once the composer is Agent ("I switched to Agent" / yes after that copy
-is write). Agent mode may edit when they asked to
+is write). Stamp THIS SEND as a prefix on the latest user ModelMessage
+and in `composerModeTurnRule` — never as a mid-thread `role: "system"`
+message (Gemini: system messages only at the beginning). Agent mode may edit when they asked to
 write; empty sections and ready attachments are not a request to draft.
 Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
