@@ -1414,9 +1414,10 @@ function unsignedQuantityWhenEvidenceIsNegative(
   if (hasNegative && !hasUnsigned) {
     return syntheticUnsupportedFact(cell);
   }
-  // Operating Range has no URS-N row key. A neighbour process range of
+  // Operating Range has no URS-N row key. A neighbour unsigned range of
   // 15–130 °C must not licence Temperature Minimum 15 when the shell URS
-  // prints −15 °C.
+  // prints −15 °C. Live GLR-1301 URS-37 is −20 °C to 150 °C; that row is
+  // not this unsigned en-dash example.
   if (section === "qsr_operating_range" && hasNegative) {
     return syntheticUnsupportedFact(cell);
   }

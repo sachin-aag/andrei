@@ -36,6 +36,15 @@ describe("overlayLeadingMinuses", () => {
     ).toBe("than 1 mm\n-15 °C to 130 °C\nFull Vacuum");
   });
 
+  it("copies a leading minus onto URS-37's dropped −20 °C to 150 °C", () => {
+    expect(
+      overlayLeadingMinuses(
+        "URS-37 Temperature\n20 °C to 150\n°C\n0.1°C",
+        "To measure the temperature - 20 °C to 150 °C"
+      )
+    ).toBe("URS-37 Temperature\n-20 °C to 150\n°C\n0.1°C");
+  });
+
   it("does not invent a minus when evidence has none", () => {
     expect(
       overlayLeadingMinuses(
@@ -55,7 +64,9 @@ describe("overlayLeadingMinuses", () => {
 describe("textLayerDroppedCelsiusSign", () => {
   it("detects unsigned N °C to after a dropped minus", () => {
     expect(textLayerDroppedCelsiusSign("15 °C to 130 °C")).toBe(true);
+    expect(textLayerDroppedCelsiusSign("20 °C to 150\n°C")).toBe(true);
     expect(textLayerDroppedCelsiusSign("-15 °C to 130 °C")).toBe(false);
+    expect(textLayerDroppedCelsiusSign("-20 °C to 150 °C")).toBe(false);
     expect(textLayerDroppedCelsiusSign("Process temperature 15–130 °C")).toBe(
       false
     );

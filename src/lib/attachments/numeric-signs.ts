@@ -46,7 +46,7 @@ function signedCelsiusMagnitudes(text: string): Set<string> {
 /**
  * Copy a leading minus onto unsigned `N °C` in `base` only when `evidence`
  * already shows `-N °C`. Never invent a sign. An en-dash range (`15–130 °C`)
- * is not `N °C` and stays unsigned (URS-37).
+ * is not `N °C` and stays unsigned.
  */
 export function overlayLeadingMinuses(base: string, evidence: string): string {
   const gluedBase = glueOcrMinusSigns(base);
@@ -59,8 +59,9 @@ export function overlayLeadingMinuses(base: string, evidence: string): string {
 
 /**
  * True when the page still has an unsigned `N °C to` range whose magnitude is
- * not already signed on that page. That is the URS-3/URS-5 dropped-minus
- * form; genuine URS-37 `15–130 °C` (en-dash, no "to") does not match.
+ * not already signed on that page. That is the dropped-minus form on this URS
+ * (`15 °C to 130 °C`, `20 °C to 150 °C`). A genuine en-dash range (`15–130 °C`,
+ * no "to") does not match.
  */
 export function textLayerDroppedCelsiusSign(text: string): boolean {
   const glued = glueOcrMinusSigns(text);

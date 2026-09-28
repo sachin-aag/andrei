@@ -135,7 +135,7 @@ async function pdfWithEnDashCelsiusRange(): Promise<Buffer> {
       { length: 10 },
       (_, index) => `URS requirement line ${index} of verification evidence`
     ),
-    "URS-37 Process temperature 15–130 °C",
+    "URS-99 Process temperature 15–130 °C",
   ];
   lines.forEach((line, index) => {
     page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });

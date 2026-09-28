@@ -1431,7 +1431,7 @@ function buildInsightPrompt(input: {
 
 The page text has already been extracted by a PDF parser. Do not transcribe or quote headings, paragraphs, or whole tables.
 
-Exception: if a table or label shows a signed quantity whose leading minus a text layer often drops (for example −15 °C or −50 RPM), copy those signed values into visualInterpretation. Do not copy unsigned ranges such as 15–130 °C.
+Exception: if a table or label shows a signed quantity whose leading minus a text layer often drops (for example −15 °C, −20 °C, or −50 RPM), copy those signed values into visualInterpretation. Do not invent a minus on a range that has none.
 
 For each page return:
 - pageNumber: absolute 1-based PDF page number.

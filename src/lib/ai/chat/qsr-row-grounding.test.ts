@@ -29,6 +29,7 @@ import {
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 
+/** Synthetic neighbour-window page. Live GLR-1301 URS-37 is −20 °C to 150 °C. */
 const SHARED_URS_PAGE =
   "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.";
 
