@@ -40,7 +40,7 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 
-export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v6-missing-work";
+export const INTENT_CLASSIFIER_PROMPT_VERSION = "intent-v7-ask-to-agent";
 export const INTENT_CLASSIFIER_TIMEOUT_MS = 2_500;
 const INTENT_MIN_CONFIDENCE = 0.4;
 /** Stricter than kind-classification — the switch widget must be rare. */
@@ -179,6 +179,8 @@ function buildIntentClassifierPrompt(input: ResolveChatUserIntentInput): string 
     "kind=read: a question, plan, outline, writing advice, or lookup. Reply in chat. Do not edit the document or worksheet.",
     "kind=write: they asked to change the document or worksheet now (draft, insert, fill, edit, plot, extract into the grid, or yes to an offer to write).",
     "A yes / go for it / do it after you told them to switch to Analytics is write — continue the earlier extract/fill request. Do not classify that as social.",
+    "Composer Ask vs Agent is per send. When composerMode is agent, a prior assistant note that this thread is in Ask mode is stale.",
+    '"I switched to Agent" / yes / go ahead / ok after you told them to switch to Agent to populate the document is kind=write — deliver the earlier fill. Do not classify that as social or read.',
     '"Can you do the same for X" and "do that for Preventive Maintenance" are kind=write — they continue the previous edit. They are not questions.',
     '"Nothing was filled", "the table is still empty", "I don\'t see the change", "you said you filled it but it isn\'t there", "why isn\'t the table filled", "suggestions are not landing", and "it is refusing to make an edit" are kind=write in Agent — they want the missing work delivered. They are not lookups.',
     '"Can you tell me what is in the table" is read.',
