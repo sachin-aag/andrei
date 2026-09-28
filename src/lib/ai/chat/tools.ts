@@ -2292,7 +2292,7 @@ export function buildChatTools(opts: {
           .max(12)
           .optional()
           .describe(
-            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns), Qualification Summary Report Table 3 (omit so every attached URS / DQ / IQ / OQ / PQ cover is walked), and QSR RTM / Operating Range (omit so the server keeps the URS, not protocol bodies)."
+            "Optional attachment IDs. Defaults to tagged documents. Required when more than one untagged ready document exists, except ELR inventory tables (omit so the server keeps files that match this table's columns), Qualification Summary Report Table 3 (omit so every attached URS / DQ / IQ / OQ / PQ cover is walked), and QSR RTM / Operating Range / 1.3 References (omit so the server keeps the URS, not protocol bodies)."
           ),
       }),
       execute: async ({ objective, attachmentIds }) => {

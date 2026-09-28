@@ -17,6 +17,7 @@ import {
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
 import { elrPlanRequiredFields } from "@/lib/document-types/elr/plan-complete";
+import { tableHasEmptyIdentityValueCells } from "@/lib/ai/chat/identity-cells";
 
 /** Sections the drafting chat can read + edit (type-owned, not DMAIC-only). */
 export function chatEditableSections(
@@ -393,11 +394,52 @@ export function sectionFillState(
     : states.some((state) => state === "filled")
       ? "filled"
       : "partial";
-  return capVqSectionFillState(
+  return capIdentitySectionFillState(
     content,
     section,
-    capElrSectionFillState(content, section, aggregated)
+    capVqSectionFillState(
+      content,
+      section,
+      capElrSectionFillState(content, section, aggregated)
+    )
   );
+}
+
+/**
+ * Named rows with blank document / SOP / reference numbers are still a
+ * draft — char count from the filled identifiers must not mark the table
+ * filled while those cells are empty.
+ */
+export function sectionHasEmptyIdentityValueCells(
+  content: Record<string, unknown> | undefined,
+  section: SectionType
+): boolean {
+  const fields = chatTargetFields(section);
+  const targets =
+    fields.length > 0
+      ? fields.map((field) => field.targetField)
+      : [primaryFieldForSection(section)];
+  for (const targetField of targets) {
+    if (!isRichTargetField(section, targetField)) continue;
+    if (
+      tableHasEmptyIdentityValueCells(
+        getRichFieldValue(content ?? {}, targetField)
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function capIdentitySectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  aggregated: SectionFillState
+): SectionFillState {
+  if (aggregated === "empty") return aggregated;
+  if (sectionHasEmptyIdentityValueCells(content, section)) return "partial";
+  return aggregated;
 }
 
 function answersFillState(

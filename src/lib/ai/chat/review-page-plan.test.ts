@@ -222,6 +222,7 @@ describe("planReviewPages", () => {
     expect(
       coverageObjectiveDigest("qsr references for the qualification summary")
     ).toBe("qsr_references");
+    expect(coverageObjectiveDigest("1.3 References")).toBe("qsr_references");
     expect(
       coverageObjectiveDigest(
         "Extract all requirements for Control Philosophy (5.2), GMP Requirements (5.3), and Safety Requirements (5.4) from the URS."
@@ -681,7 +682,7 @@ describe("coverageKeySatisfiesObjective", () => {
 });
 
 describe("QSR lifecycle cover review", () => {
-  it("treats Table 3 and References as cover-page walks, not RTM", () => {
+  it("treats Table 3 as a cover-page walk and References as a URS walk", () => {
     expect(isQsrLifecycleCoverObjective("qsr_qualification_documents")).toBe(
       true
     );
@@ -689,7 +690,11 @@ describe("QSR lifecycle cover review", () => {
     expect(
       isQsrLifecycleCoverObjective("document number revision and status")
     ).toBe(true);
-    expect(isQsrLifecycleCoverObjective("qsr_references")).toBe(true);
+    expect(isQsrLifecycleCoverObjective("qsr_references")).toBe(false);
+    expect(isQsrUrsWalkObjective("qsr_references")).toBe(true);
+    expect(isQsrUrsWalkObjective("1.3 References")).toBe(true);
+    expect(isQsrInventoryReviewObjective("qsr_references")).toBe(true);
+    expect(isQsrInventoryReviewObjective("1.3 References")).toBe(true);
     expect(isQsrLifecycleCoverObjective("qsr_rtm_process")).toBe(false);
     expect(isQsrUrsWalkObjective("qsr_rtm_process")).toBe(true);
     expect(isQsrUrsWalkObjective("5.1 Process Requirements")).toBe(true);
@@ -753,6 +758,36 @@ describe("QSR lifecycle cover review", () => {
         "qualification documents"
       )
     ).toEqual(["urs", "dq", "iq"]);
+    expect(
+      qsrInventoryReadyIdsForObjective(ready, "qsr_references", "1.3 References")
+    ).toEqual(["urs"]);
+  });
+
+  it("walks the URS for 1.3 References instead of lifecycle covers", () => {
+    const files = [
+      { id: "urs", filename: "User Requirement Specification.PDF" },
+      { id: "dq", filename: "Design Qualification.PDF" },
+      { id: "iq", filename: "Installation Qualification.PDF" },
+    ];
+    const pages = files.flatMap((file) =>
+      Array.from({ length: 12 }, (_, i) => ({
+        attachmentId: file.id,
+        pageNumber: i + 1,
+        filename: file.filename,
+        transcript:
+          i === 4 && file.id === "urs"
+            ? "1.3 References Purchase Order P.O. 45001234 Design Specification / Data Sheet DS-GLR-1301"
+            : i < 2
+              ? `Protocol No. ${file.id.toUpperCase()}-P Report No. ${file.id.toUpperCase()}-R`
+              : `qualification body page ${i + 1}`,
+        outlineTitle: i < 2 ? "Cover" : "Body",
+        identifiers: i < 2 ? [`${file.id.toUpperCase()}-P`] : ([] as string[]),
+      }))
+    );
+    const selected = planReviewPages(pages, "qsr_references", 2500);
+    expect(selected.every((page) => page.attachmentId === "urs")).toBe(true);
+    expect(selected.some((page) => page.pageNumber === 5)).toBe(true);
+    expect(selected.some((page) => page.attachmentId === "iq")).toBe(false);
   });
 
   it("does not collapse mixed Table 3 + SOP identity onto a cover walk", () => {

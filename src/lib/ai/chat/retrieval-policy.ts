@@ -26,7 +26,7 @@ const COMPREHENSIVE_SHAPE_RE =
   /\b(traceability(?:\s+matrix)?|requirements?\s*(?:and|&|\/)\s*results?|results?\s+and\s+discussions|req(?:uirement)?[- ]?id|results?\s+table|inventory|complete\s+(?:list|table|review|pass|set(?:\s+of)?(?:\s+test)?\s+cases?|test\s+cases?)|every\s+(?:requirement|test|page|row)|all\s+(?:the\s+)?(?:requirements?|tests?|pages?|results?|answers)|comprehensive|full\s+(?:review|pass|inventory|table|matrix)|missing\s+tests?|don'?t miss|do not miss)\b/i;
 
 const KEEP_GOING_RE =
-  /\b(keep going|continue (?:the )?(?:review|reading|extraction|going)|you missed|still missing|what about|didn'?t (?:include|cover)|more (?:tests?|requirements?)|be comprehensive|look again|re-?check|re-?review)\b/i;
+  /\b(keep going|continue (?:the )?(?:review|reading|extraction|going)|you missed|still missing|what about|didn'?t (?:include|cover)|more (?:tests?|requirements?)|be comprehensive|look again|try to look|look for (?:them|it|those)|those are in the attachments|re-?check|re-?review)\b/i;
 
 /**
  * Explicit "you missed X / look again" — keep a comprehensive walk even when
@@ -34,7 +34,7 @@ const KEEP_GOING_RE =
  * about") still scores comprehensive, then coverage-delta may downgrade.
  */
 const PUSHBACK_RE =
-  /\b(?:you missed|still missing|look again|re-?check|re-?review|didn'?t (?:include|cover)|continue (?:the )?(?:review|reading|extraction)|more (?:tests?|requirements?)|be comprehensive)\b/i;
+  /\b(?:you missed|still missing|look again|try to look|look for (?:them|it|those)|those are in the attachments|re-?check|re-?review|didn'?t (?:include|cover)|continue (?:the )?(?:review|reading|extraction)|more (?:tests?|requirements?)|be comprehensive)\b/i;
 
 /** Standalone family codes, not a hyphenated requirement id like SW-LWB-4. */
 const TEST_FAMILY_RE = /(?<![\w-])(sst|sib|lwb|lcb|sdt)(?!-\d)/i;

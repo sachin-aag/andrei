@@ -315,6 +315,21 @@
     }
   },
   {
+    "id": "qsr-references-urs-walk-not-cover",
+    "task": "page_plan",
+    "passCriteria": "1.3 References walks the URS (PO / Design Spec live there), not lifecycle covers.",
+    "notes": "Live Agent session: draft 1.3 then look for PO/design spec walked 10 cover pages across 5 files and missed URS §1.3.",
+    "input": {
+      "objective": "1.3 References"
+    },
+    "expected": {
+      "pagePlan": "urs",
+      "coverageDigest": "qsr_references",
+      "isCoverWalk": false,
+      "isUrsWalk": true
+    }
+  },
+  {
     "id": "qsr-sop-title-list-keeps-search-open",
     "task": "identity_incomplete",
     "passCriteria": "A cited SOP title list without document numbers keeps search open so the next grep can find identifier values.",

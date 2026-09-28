@@ -57,6 +57,10 @@ describe("classifyRetrievalPolicy", () => {
     expect(isRetrievalPushback("you missed SST")).toBe(true);
     expect(isRetrievalPushback("look again")).toBe(true);
     expect(isRetrievalPushback("re-check")).toBe(true);
+    expect(isRetrievalPushback("those are in the attachments. try to look for them")).toBe(
+      true
+    );
+    expect(isRetrievalPushback("look for them")).toBe(true);
     expect(isRetrievalPushback("keep going")).toBe(false);
     expect(isRetrievalPushback("what about the conclusion")).toBe(false);
   });

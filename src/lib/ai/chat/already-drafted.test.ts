@@ -201,6 +201,90 @@ describe("detectAlreadyDraftedSection", () => {
       })
     ).toBeNull();
   });
+
+  it("treats a half-filled QSR 1.3 References table as a draft of empty cells", () => {
+    const found = detectAlreadyDraftedSection({
+      userText: "draft section 1.3",
+      userIntentKind: "write",
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_references: {
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "table",
+                content: [
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableHeader",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [
+                              { type: "text", text: "Name of the Document" },
+                            ],
+                          },
+                        ],
+                      },
+                      {
+                        type: "tableHeader",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [
+                              { type: "text", text: "Reference Number" },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  ...[
+                    ["User Requirement Specification", "URS/GLR-1301"],
+                    ["Design Specification / Data Sheet Document", ""],
+                    ["Purchase Order (P.O)", ""],
+                    ["Current version of “Validation Master Plan”,", "3XPER-VMP-001"],
+                  ].map(([name, number]) => ({
+                    type: "tableRow" as const,
+                    content: [
+                      {
+                        type: "tableCell" as const,
+                        content: [
+                          {
+                            type: "paragraph" as const,
+                            content: [{ type: "text" as const, text: name }],
+                          },
+                        ],
+                      },
+                      {
+                        type: "tableCell" as const,
+                        content: [
+                          {
+                            type: "paragraph" as const,
+                            content: number
+                              ? [{ type: "text" as const, text: number }]
+                              : [],
+                          },
+                        ],
+                      },
+                    ],
+                  })),
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(found).toEqual({
+      section: "qsr_references",
+      fillState: "partial",
+      emptyIdentityCells: true,
+    });
+  });
 });
 
 describe("sectionFillState", () => {
@@ -357,7 +441,24 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("hint field is an expected format");
     expect(block).toContain("Material gap only");
     expect(block).toContain("Empty cells they asked to fill");
+    expect(block).toContain("Empty required identity cells");
     expect(block).toContain("Omit-if conflict");
+  });
+
+  it("treats empty identity cells as the draft, not already drafted", () => {
+    const block = alreadyDraftedBlock(
+      {
+        section: "qsr_references",
+        fillState: "partial",
+        emptyIdentityCells: true,
+      },
+      "agent",
+      { kind: "all_met" }
+    );
+    expect(block).toContain("still fill empty identity cells");
+    expect(block).toContain("Purchase Order");
+    expect(block).toContain("Do not say the section is already drafted");
+    expect(block).not.toContain("strong signal there are no material gaps");
   });
 
   it("lists AI Check gap hints when provided", () => {

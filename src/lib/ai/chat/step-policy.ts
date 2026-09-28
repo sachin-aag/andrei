@@ -57,6 +57,11 @@ export type PrepareReportChatStepInput = {
   steps: readonly SearchLoopStep[];
   userIntentKind: ChatUserIntentKind;
   alreadyDrafted: boolean;
+  /**
+   * Named identity rows still lack document / SOP / reference numbers.
+   * Do not skip search / inventory review just because some cells are filled.
+   */
+  emptyIdentityCells?: boolean;
   hasReadSectionTool: boolean;
   inScopeHasTable: boolean;
   retrievalPolicy: RetrievalPolicy;
@@ -326,14 +331,16 @@ export function prepareReportChatStep(
     };
   }
 
+  const skipReviewForAlreadyDrafted =
+    input.alreadyDrafted && input.emptyIdentityCells !== true;
   const prepared = prepareDocumentReviewStep({
-    policy: input.alreadyDrafted ? "adaptive" : input.retrievalPolicy,
+    policy: skipReviewForAlreadyDrafted ? "adaptive" : input.retrievalPolicy,
     phase: input.reviewPhase,
     availableTools: input.advertisedTools,
-    requireInventoryReview: input.alreadyDrafted
+    requireInventoryReview: skipReviewForAlreadyDrafted
       ? false
       : input.requireInventoryReview,
-    restartInventoryReview: input.alreadyDrafted
+    restartInventoryReview: skipReviewForAlreadyDrafted
       ? false
       : (input.restartInventoryReview ?? input.requireInventoryReview),
   });
@@ -352,7 +359,10 @@ export function prepareReportChatStep(
       : null;
   const keepSearchForLookup =
     livingWork != null && livingWorkKeepsSearchOpen(livingWork, hideKind);
-  if (searchDirective === "read" && input.searchGate && !keepSearchForLookup) {
+  const keepSearchForIdentityCells =
+    input.emptyIdentityCells === true && hideKind === "cited_or_locate";
+  const keepSearchOpen = keepSearchForLookup || keepSearchForIdentityCells;
+  if (searchDirective === "read" && input.searchGate && !keepSearchOpen) {
     input.searchGate.closed = true;
   }
   const hideAskUser =
@@ -370,7 +380,7 @@ export function prepareReportChatStep(
     ) === "hide";
   const applyLoopHides = (tools: readonly string[]): string[] => {
     let next = [...tools];
-    if (!reviewActive && searchDirective === "read" && !keepSearchForLookup) {
+    if (!reviewActive && searchDirective === "read" && !keepSearchOpen) {
       next = withoutSearchTool(next);
     }
     if (hideAskUser) {

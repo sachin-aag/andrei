@@ -180,6 +180,86 @@ describe("prepareReportChatStep (characterization)", () => {
     expect(searchGate.closed).toBe(true);
   });
 
+  it("keeps search after a cited hit while identity cells are empty", () => {
+    const searchGate = createSearchGate();
+    const decision = prepareReportChatStep(
+      baseInput({
+        alreadyDrafted: true,
+        emptyIdentityCells: true,
+        steps: [
+          {
+            toolCalls: [{ toolName: "read_section", toolCallId: "r1" }],
+            toolResults: [
+              { toolName: "read_section", toolCallId: "r1", output: {} },
+            ],
+          },
+          searchStep(3),
+        ],
+        searchGate,
+      })
+    );
+    expect(decision.activeTools).toContain("search_documents");
+    expect(searchGate.closed).toBe(false);
+  });
+
+  it("hides search after a cited hit when identity cells are complete", () => {
+    const searchGate = createSearchGate();
+    const decision = prepareReportChatStep(
+      baseInput({
+        alreadyDrafted: true,
+        steps: [
+          {
+            toolCalls: [{ toolName: "read_section", toolCallId: "r1" }],
+            toolResults: [
+              { toolName: "read_section", toolCallId: "r1", output: {} },
+            ],
+          },
+          searchStep(3),
+        ],
+        searchGate,
+      })
+    );
+    expect(decision.activeTools).not.toContain("search_documents");
+    expect(searchGate.closed).toBe(true);
+  });
+
+  it("hides search after two empty greps even with empty identity cells", () => {
+    const searchGate = createSearchGate();
+    const decision = prepareReportChatStep(
+      baseInput({
+        emptyIdentityCells: true,
+        steps: [searchStep(0), searchStep(0)],
+        searchGate,
+      })
+    );
+    expect(decision.activeTools).not.toContain("search_documents");
+    expect(searchGate.closed).toBe(true);
+  });
+
+  it("does not skip inventory review when empty identity cells remain", () => {
+    const decision = prepareReportChatStep(
+      baseInput({
+        alreadyDrafted: true,
+        emptyIdentityCells: true,
+        requireInventoryReview: true,
+        retrievalPolicy: "adaptive",
+        steps: [
+          {
+            toolCalls: [{ toolName: "read_section", toolCallId: "r1" }],
+            toolResults: [
+              { toolName: "read_section", toolCallId: "r1", output: {} },
+            ],
+          },
+        ],
+      })
+    );
+    expect(decision.activeTools).toEqual(["start_document_review"]);
+    expect(decision.toolChoice).toEqual({
+      type: "tool",
+      toolName: "start_document_review",
+    });
+  });
+
   it("keeps search after a cited hit on mixed write-plus-lookup until a draft lands", () => {
     const searchGate = createSearchGate();
     const decision = prepareReportChatStep(

@@ -1397,6 +1397,82 @@ describe("buildChatTools document review", () => {
     ).toEqual([]);
   });
 
+  it("walks only the URS for QSR 1.3 References, not lifecycle covers", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.PDF",
+        description: null,
+        pageCount: 12,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_dq",
+        filename: "Design Qualification.PDF",
+        description: null,
+        pageCount: 40,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_iq",
+        filename: "Installation Qualification.PDF",
+        description: null,
+        pageCount: 194,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce(
+      Array.from({ length: 12 }, (_, i) => ({
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.PDF",
+        pageNumber: i + 1,
+        transcript:
+          i === 4
+            ? "1.3 References Purchase Order P.O. 45001234 Design Specification / Data Sheet DS-GLR-1301"
+            : `URS body page ${i + 1}`,
+        pageContext: null,
+        printedPageLabel: String(i + 1),
+      }))
+    );
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+      reviewCoverageObjective: "qsr_references",
+      sectionScope: "qsr_references",
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "1.3 References" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_urs"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_urs"],
+      queuedPages: 8,
+      totalPages: 8,
+    });
+    expect(
+      (result as { documents?: { filename: string }[] }).documents
+    ).toEqual([
+      {
+        attachmentId: "att_urs",
+        filename: "User Requirement Specification.PDF",
+        pageCount: 12,
+      },
+    ]);
+    expect(
+      (result as { skippedDocuments?: { attachmentId: string }[] })
+        .skippedDocuments
+    ).toEqual([]);
+  });
+
   it("blocks drafting until finish_document_review", async () => {
     const session = new DocumentReviewSession({
       extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),

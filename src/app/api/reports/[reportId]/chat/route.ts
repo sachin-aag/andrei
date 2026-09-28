@@ -759,11 +759,14 @@ async function handleChatPost(
           sectionKeys: inventoryTurnSections,
           finishedCoverageKey: documentReview.finishedCoverageKey(),
         };
+        const skipReviewForAlreadyDrafted =
+          alreadyDrafted != null && alreadyDrafted.emptyIdentityCells !== true;
         const decision = prepareReportChatStep({
           advertisedTools,
           steps,
           userIntentKind: userIntent.kind,
           alreadyDrafted: alreadyDrafted != null,
+          emptyIdentityCells: alreadyDrafted?.emptyIdentityCells === true,
           hasReadSectionTool: Boolean(tools.read_section),
           inScopeHasTable: chatSectionsInScope(
             sectionScope ?? "all",
@@ -771,18 +774,16 @@ async function handleChatPost(
           ).some((section) => sectionHasTable(mergedSections[section], section)),
           retrievalPolicy: retrieval.policy,
           reviewPhase: documentReview.phase(),
-          requireInventoryReview:
-            alreadyDrafted != null
-              ? false
-              : inScopeEmptyInventoryNeedsReview({
-                  ...inventoryReviewInput,
-                  inventoryFinishSatisfiesDraft:
-                    documentReview.inventoryFinishSatisfiesDraft(),
-                }),
-          restartInventoryReview:
-            alreadyDrafted != null
-              ? false
-              : inScopeEmptyInventoryNeedsReview(inventoryReviewInput),
+          requireInventoryReview: skipReviewForAlreadyDrafted
+            ? false
+            : inScopeEmptyInventoryNeedsReview({
+                ...inventoryReviewInput,
+                inventoryFinishSatisfiesDraft:
+                  documentReview.inventoryFinishSatisfiesDraft(),
+              }),
+          restartInventoryReview: skipReviewForAlreadyDrafted
+            ? false
+            : inScopeEmptyInventoryNeedsReview(inventoryReviewInput),
           searchGate,
           forceListAttachments: shouldForceListAttachments(steps),
           forceFinishReview:

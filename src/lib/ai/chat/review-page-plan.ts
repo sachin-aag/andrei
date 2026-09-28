@@ -96,13 +96,13 @@ export type QsrReviewPagePlan = "cover" | "urs" | "scored" | "mixed";
 
 const QSR_COVER_SECTIONS = new Set<string>([
   "qsr_qualification_documents",
-  "qsr_references",
 ]);
 
 const QSR_URS_SECTIONS = new Set<string>([
   ...QSR_RTM_SECTIONS,
   "qsr_operating_range",
   "qsr_rtm",
+  "qsr_references",
 ]);
 
 function pagePlanForQsrSection(section: string): Exclude<QsrReviewPagePlan, "mixed"> {
@@ -150,7 +150,8 @@ function addSopIdentity(normalized: string, found: Set<string>): void {
 function addReferencesIdentity(normalized: string, found: Set<string>): void {
   if (
     normalized === "qsr_references" ||
-    normalized.includes("qsr_references")
+    normalized.includes("qsr_references") ||
+    /\b1\.3\b/.test(normalized)
   ) {
     found.add("qsr_references");
     return;
@@ -277,10 +278,9 @@ function stableQsrCoverageObjective(normalized: string): string | null {
     return "qsr_rtm";
   }
   if (plans.size === 1 && plans.has("cover") && coverNamed.length > 0) {
-    if (coverNamed.includes("qsr_qualification_documents")) {
-      return "qsr_qualification_documents";
-    }
-    return "qsr_references";
+    return coverNamed.includes("qsr_qualification_documents")
+      ? "qsr_qualification_documents"
+      : coverNamed[0]!;
   }
   if (identities.length === 1) return identities[0]!;
   if (QSR_RTM_OBJECTIVE_PHRASES.some((phrase) => normalized.includes(phrase))) {
@@ -399,9 +399,11 @@ export const REVIEW_PREFERRED_MISSING_PAGE_CAP = 24;
  */
 export const REVIEW_INVENTORY_WALK_CAP = 48;
 /**
- * QSR Table 3 / References identity lives on protocol and report covers
- * (document number, revision, status, Protocol No. / Report No.). Walking
- * every IQ/OQ/PQ body page demotes URS and truncates at the ELR 48-page cap.
+ * QSR Table 3 identity lives on protocol and report covers (document
+ * number, revision, status, Protocol No. / Report No.). Walking every
+ * IQ/OQ/PQ body page demotes URS and truncates at the ELR 48-page cap.
+ * 1.3 References is not a cover walk — PO / design spec / ISPE live in
+ * the URS.
  */
 export const REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE = 2;
 
@@ -412,9 +414,11 @@ function qsrInventorySectionKeys(): readonly string[] {
 }
 
 /**
- * Table 3 (Qualification Documents) and References: covers, not protocol
- * bodies. RTM inventories are not covers — they need URS IDs throughout.
- * Mixed identities that also need body pages are not a cover walk.
+ * Table 3 (Qualification Documents): covers, not protocol bodies.
+ * References is a URS walk (the list including PO / data sheet lives
+ * in URS §1.3). RTM inventories are not covers — they need URS IDs
+ * throughout. Mixed identities that also need body pages are not a
+ * cover walk.
  */
 export function isQsrLifecycleCoverObjective(
   objective: string | null | undefined
@@ -433,6 +437,9 @@ function qsrInventorySectionForObjective(
   if (digest === "qsr_rtm") return "qsr_rtm_process";
   if (digest === "qsr_operating_range" || digest.includes("operating range")) {
     return "qsr_operating_range";
+  }
+  if (digest === "qsr_references" || digest.includes("qsr_references")) {
+    return "qsr_references";
   }
   if (keys.includes(digest)) return digest;
   if (
@@ -464,9 +471,9 @@ export function isQsrInventoryReviewObjective(
 }
 
 /**
- * QSR RTM / Operating Range evidence lives in the URS, not DQ/IQ/OQ/PQ
- * protocol bodies. Table 3 / References stay a cover-page walk of every
- * lifecycle file.
+ * QSR RTM / Operating Range / 1.3 References evidence lives in the URS,
+ * not DQ/IQ/OQ/PQ protocol bodies. Table 3 stays a cover-page walk of
+ * every lifecycle file.
  */
 export function isQsrUrsWalkObjective(
   ...objectives: Array<string | null | undefined>
@@ -731,9 +738,10 @@ function withNeighborFill<T extends ReviewPagePlanInput>(
  * with zero hits are still queued as a stratified sample (not every page
  * of a 200-page CCF / PRQR, up to `REVIEW_PREFERRED_MISSING_PAGE_CAP`).
  * Scored inventory pages are then capped at `REVIEW_INVENTORY_WALK_CAP`
- * (DV catalogs are not). QSR Table 3 / References take the first
+ * (DV catalogs are not). QSR Table 3 takes the first
  * `REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE` pages of each file. QSR RTM /
- * Operating Range keep the URS when one is attached — not protocol bodies.
+ * Operating Range / 1.3 References keep the URS when one is attached —
+ * not protocol bodies.
  */
 export function planReviewPages<T extends ReviewPagePlanInput>(
   pages: readonly T[],

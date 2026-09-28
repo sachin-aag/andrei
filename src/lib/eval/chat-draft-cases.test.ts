@@ -71,6 +71,7 @@ describe("chat-draft-cases.json", () => {
     expect(ids.has("qsr-mixed-identity-not-cover-walk")).toBe(true);
     expect(ids.has("qsr-draft-2-3-4-not-cover-walk")).toBe(true);
     expect(ids.has("qsr-table-3-only-still-cover-walk")).toBe(true);
+    expect(ids.has("qsr-references-urs-walk-not-cover")).toBe(true);
     expect(ids.has("qsr-sop-title-list-keeps-search-open")).toBe(true);
     expect(ids.has("harness-greeting-no-tools")).toBe(true);
   });

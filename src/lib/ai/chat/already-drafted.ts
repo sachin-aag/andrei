@@ -2,6 +2,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import {
   type ChatSectionScope,
   sectionFillState,
+  sectionHasEmptyIdentityValueCells,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
@@ -20,6 +21,8 @@ const EXPLICIT_DOCUMENT_EDIT_RE =
 export type AlreadyDraftedSection = {
   section: SectionType;
   fillState: "partial" | "filled";
+  /** Named rows still lack a document / SOP / reference number. */
+  emptyIdentityCells?: boolean;
 };
 
 export type AlreadyDraftedGapHint = {
@@ -80,9 +83,15 @@ export function alreadyDraftedGapHints(
   return { kind: "gaps", gaps };
 }
 
-function formatGapHintsBlock(hints: AlreadyDraftedGapHints): string {
+function formatGapHintsBlock(
+  hints: AlreadyDraftedGapHints,
+  emptyIdentityCells: boolean
+): string {
   if (hints.kind === "not_evaluated") {
     return "AI Check: this section has not been evaluated yet — use the quality criteria list after read_section.";
+  }
+  if (hints.kind === "all_met" && emptyIdentityCells) {
+    return "AI Check: all criteria met for this section — still fill empty identity cells (blank document / SOP / reference numbers on named rows). That is the draft request.";
   }
   if (hints.kind === "all_met") {
     return "AI Check: all criteria met for this section — strong signal there are no material gaps unless read_section clearly contradicts it.";
@@ -97,7 +106,7 @@ function formatGapHintsBlock(hints: AlreadyDraftedGapHints): string {
 
 const GAP_REVIEW_RULES = `Gap rules:
 - Material gap only: a criterion clearly not met, or a required fact the section structure says must appear when true. Ignore "could be more detailed" without a failing criterion.
-- Empty cells they asked to fill (missing columns / blank Stage, Section, or Remarks) are material gaps even when AI Check is all met. Search attachments for each row; fill only cells a cited page supports; leave a cell empty when that parameter is not there. Do not paste a mapping table in chat.
+- Empty cells they asked to fill (missing columns / blank Stage, Section, or Remarks) are material gaps even when AI Check is all met. Empty required identity cells (blank Reference Number, SOP Number, or Document Number on a named row) are material gaps when they asked to draft or fill the section — including a bare "draft 1.3". A half-filled identity table is not already drafted. Search attachments for each empty row name; fill only cells a cited page supports; leave a cell empty when that identifier is not there. Do not paste a mapping table in chat.
 - No padding: do not expand length; respect the section structure and any length the engineer asked for. Current text length is a soft ceiling unless they want more.
 - Omit-if conflict: if filling a gap would violate an omit-if rule, ask once whether to include it (yes/no) — do not quiz them for facts already in the section or evidence.`;
 
@@ -138,7 +147,15 @@ export function detectAlreadyDraftedSection(input: {
 
   const fillState = sectionFillState(input.sections[section], section);
   if (fillState === "empty") return null;
-  return { section, fillState };
+  const emptyIdentityCells = sectionHasEmptyIdentityValueCells(
+    input.sections[section],
+    section
+  );
+  return {
+    section,
+    fillState: emptyIdentityCells ? "partial" : fillState,
+    ...(emptyIdentityCells ? { emptyIdentityCells: true } : {}),
+  };
 }
 
 /** Drop draft_field while the already-drafted gate is active. */
@@ -154,21 +171,30 @@ export function alreadyDraftedBlock(
   gapHints: AlreadyDraftedGapHints = { kind: "not_evaluated" }
 ): string {
   const label = sectionLabel(already.section);
+  const emptyIdentity = already.emptyIdentityCells === true;
   const reviewThen =
     mode === "plan"
       ? `Call read_section on "${already.section}" FIRST. Do not call search_documents or ask_user yet.
 Then compare the current text to that section's quality criteria (and AI Check hints below, if any) and answer from it.
-- No material gaps: say the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change. Do not invite a rewrite.
+${
+  emptyIdentity
+    ? `- Empty identity cells: those named rows still need document / SOP / reference numbers. That is the draft — name the empty rows. Do not say the section is already drafted.`
+    : `- No material gaps: say the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change. Do not invite a rewrite.`
+}
 - Gaps found: name the gaps. Do not quiz them for facts already in the section.`
       : `Call read_section on "${already.section}" FIRST. Do not call search_documents or ask_user yet.
 Then compare the current text to that section's quality criteria (and AI Check hints below, if any):
 - They asked to insert, apply, or edit the document (a cell, a row, or wording they already described): that is the change. After read_section, call edit_table for a table or propose_edit for prose. Do not stop at a summary. Do not paste a markdown table or the replacement text for them to copy. Do not say write tools are disabled or that this session is read-only.
-- No specific change and no material gaps: do not rewrite and do not ask_user. Reply that the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change.
+${
+  emptyIdentity
+    ? `- Empty identity cells (blank Reference Number / SOP Number / Document Number on a named row): that is the draft they asked for. After read_section, search attachments for each empty row name (Purchase Order, Design Specification / Data Sheet, …) and edit_table only those cells. Do not overwrite filled identifiers. Do not say the section is already drafted.`
+    : `- No specific change and no material gaps: do not rewrite and do not ask_user. Reply that the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change.`
+}
 - Gaps found, and they did not already name the change: search attachments only for the missing facts, then make a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.`;
 
   return `## Already drafted (review first)
 The engineer asked to draft **${label}** [${already.section}], which the context map marks **${already.fillState}**.
-${formatGapHintsBlock(gapHints)}
+${formatGapHintsBlock(gapHints, emptyIdentity)}
 ${reviewThen}
 ${GAP_REVIEW_RULES}
 Never call ask_user for a fact already in the section, retrieved evidence, or a hint you would write. If you know the answer, use it. The hint field is an expected format, never the answer itself.`;

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v155-task-planner");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v156-identity-gaps");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -521,6 +521,23 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Material gap only");
   });
 
+  it("treats empty identity cells as the draft, not already drafted", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      alreadyDrafted: {
+        section: "qsr_references",
+        fillState: "partial",
+        emptyIdentityCells: true,
+      },
+      alreadyDraftedGapHints: { kind: "all_met" },
+    });
+    expect(prompt).toContain("still fill empty identity cells");
+    expect(prompt).toContain("Purchase Order");
+    expect(prompt).toContain("Do not say the section is already drafted");
+    expect(prompt).not.toContain("strong signal there are no material gaps");
+  });
+
   it("includes the report context and criteria in both modes", () => {
     for (const mode of ["plan", "agent"] as const) {
       const prompt = buildChatSystemPrompt({ ...opts, mode });
@@ -592,6 +609,8 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("the server keeps the URS");
     expect(prompt).toContain("A 12-page URS is a 12-page walk");
+    expect(prompt).toContain("1.3 References");
+    expect(prompt).toContain("URS §1.3");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("One review per section this turn");
     expect(prompt).toContain(

@@ -24,6 +24,7 @@ import {
   listFieldTables,
   fieldFillState,
   sectionFillState,
+  sectionHasEmptyIdentityValueCells,
   sectionHasTable,
   sectionLabel,
   sectionFieldForChat,
@@ -186,6 +187,67 @@ describe("fieldFillState seeded tables", () => {
     };
     expect(fieldFillState(content, "traceability", "table")).not.toBe("empty");
     expect(sectionFillState(content, "traceability")).not.toBe("empty");
+  });
+
+  it("treats a half-filled QSR 1.3 References table as partial", () => {
+    const content = {
+      table: {
+        type: "doc" as const,
+        content: [
+          {
+            type: "table" as const,
+            content: [
+              {
+                type: "tableRow" as const,
+                content: ["Name of the Document", "Reference Number"].map(
+                  (text) => ({
+                    type: "tableHeader" as const,
+                    content: [
+                      {
+                        type: "paragraph" as const,
+                        content: [{ type: "text" as const, text }],
+                      },
+                    ],
+                  })
+                ),
+              },
+              ...[
+                ["User Requirement Specification", "URS/GLR-1301"],
+                ["Design Specification / Data Sheet Document", ""],
+                ["Design Qualification Report Number", "DQR/GLR-1301"],
+                ["Installation Qualification Report Number", "IQR/GLR-1301"],
+                ["Purchase Order (P.O)", ""],
+                [
+                  "Current version of “Validation Master Plan”,",
+                  "3XPER-VMP-001",
+                ],
+                [
+                  "Standard operating procedure for carrying out qualification activity",
+                  "QAD-SOP-FS-003",
+                ],
+              ].map((row) => ({
+                type: "tableRow" as const,
+                content: row.map((text) => ({
+                  type: "tableCell" as const,
+                  content: [
+                    {
+                      type: "paragraph" as const,
+                      content: text
+                        ? [{ type: "text" as const, text }]
+                        : [],
+                    },
+                  ],
+                })),
+              })),
+            ],
+          },
+        ],
+      },
+    };
+    expect(sectionHasEmptyIdentityValueCells(content, "qsr_references")).toBe(
+      true
+    );
+    expect(sectionFillState(content, "qsr_references")).toBe("partial");
   });
 
   it("treats the QSR process-requirements template as empty", () => {
