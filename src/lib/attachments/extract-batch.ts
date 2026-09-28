@@ -52,7 +52,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v7";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v8";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -114,6 +114,12 @@ const insightBatchSchema = z.object({
   pages: z.array(insightPageSchema),
   batchSummary: z.string().default(""),
   continuationNote: z.string().default(""),
+});
+
+const SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS = 1_000;
+
+const signedQuantityOverlaySchema = z.object({
+  signedQuantities: z.array(z.string().max(80)).max(24).default([]),
 });
 
 export type ExtractedPage = {
@@ -1273,9 +1279,14 @@ function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
   return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
 }
 
+function pagesWithDroppedCelsiusSign(pages: ExtractedPage[]): ExtractedPage[] {
+  return pages.filter((page) => textLayerDroppedCelsiusSign(page.transcript));
+}
+
 /**
- * Restore a leading minus on unsigned `N °C to` when OCR or the insight pass
- * still saw `-N °C`. Overlay only — the parser transcript stays canonical.
+ * Restore a leading minus on unsigned `N °C to` when insight visuals, OCR,
+ * or a targeted Gemini look at the page still saw `-N °C`. Overlay only —
+ * the parser transcript stays canonical. Never invent a sign.
  */
 async function overlayDroppedCelsiusSigns(
   input: ResolvedInput,
@@ -1287,9 +1298,19 @@ async function overlayDroppedCelsiusSigns(
       page.visualInterpretation
     );
   }
-  const dropped = pages.filter((page) =>
-    textLayerDroppedCelsiusSign(page.transcript)
-  );
+  if (pagesWithDroppedCelsiusSign(pages).length === 0) return;
+
+  await overlayDroppedCelsiusSignsFromDocumentAi(input, pages);
+  if (pagesWithDroppedCelsiusSign(pages).length === 0) return;
+
+  await overlayDroppedCelsiusSignsFromVision(input, pages);
+}
+
+async function overlayDroppedCelsiusSignsFromDocumentAi(
+  input: ResolvedInput,
+  pages: ExtractedPage[]
+): Promise<void> {
+  const dropped = pagesWithDroppedCelsiusSign(pages);
   if (dropped.length === 0 || !isDocumentAiConfigured()) return;
 
   try {
@@ -1299,6 +1320,7 @@ async function overlayDroppedCelsiusSigns(
     const ocr = await ocrPdfWithDocumentAi({
       pdfBuffer: await copyPdfPages(input.pdfBuffer, relativePages),
       filename: input.filename,
+      nativePdfParsing: false,
     });
     for (const ocrPage of ocr.pages) {
       const relative = relativePages[ocrPage.pageNumber - 1];
@@ -1317,6 +1339,100 @@ async function overlayDroppedCelsiusSigns(
       `[document-extract] Document AI sign overlay failed for pages ${input.pageStart}-${input.pageEnd}`,
       { error: error instanceof Error ? error.message : String(error) }
     );
+  }
+}
+
+/**
+ * 12-page URS ingest skips the insight pass, and Document AI native PDF
+ * parsing can re-read the same unsigned text layer. Look at those 1–2 pages
+ * and copy a minus only when the model reports a signed quantity.
+ */
+async function overlayDroppedCelsiusSignsFromVision(
+  input: ResolvedInput,
+  pages: ExtractedPage[]
+): Promise<void> {
+  for (const page of pagesWithDroppedCelsiusSign(pages)) {
+    const relative = page.pageNumber - input.pageStart + 1;
+    try {
+      const evidence = await requestSignedQuantityOverlay({
+        ...input,
+        pdfBuffer: await copyPdfPage(input.pdfBuffer, relative),
+        pageStart: page.pageNumber,
+        pageEnd: page.pageNumber,
+      });
+      if (!evidence) continue;
+      page.transcript = overlayLeadingMinuses(page.transcript, evidence);
+    } catch (error) {
+      console.warn(
+        `[document-extract] Vision sign overlay failed for page ${page.pageNumber}`,
+        { error: error instanceof Error ? error.message : String(error) }
+      );
+    }
+  }
+}
+
+async function requestSignedQuantityOverlay(
+  input: ResolvedInput
+): Promise<string | null> {
+  try {
+    const result = await generateText({
+      model: input.model,
+      output: Output.object({ schema: signedQuantityOverlaySchema }),
+      system: buildSystemPrompt(),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: buildSignedQuantityOverlayPrompt(input) },
+            {
+              type: "file",
+              data: input.pdfBuffer,
+              mediaType: "application/pdf",
+              filename: batchFilename(
+                input.filename,
+                input.pageStart,
+                input.pageEnd
+              ),
+            },
+          ],
+        },
+      ],
+      temperature: TEMPERATURE,
+      maxOutputTokens: SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS,
+      ...langfuseGenerateTextTelemetry({
+        functionId: "document-extract-signed-quantity-overlay",
+        metadata: {
+          feature: "document_extract",
+          filename: input.filename,
+          pageStart: input.pageStart,
+          pageEnd: input.pageEnd,
+        },
+      }),
+    });
+
+    const usage = {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+    };
+    const structured = readStructuredOutput(signedQuantityOverlaySchema, result, {
+      pageStart: input.pageStart,
+      pageEnd: input.pageEnd,
+      finishReason: result.finishReason,
+      textLength: result.text?.length ?? 0,
+      usage,
+    });
+    if (!structured) return null;
+    const evidence = structured.data.signedQuantities
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join("\n");
+    return evidence || null;
+  } catch (error) {
+    console.warn(
+      `[document-extract] Signed-quantity overlay failed for page ${input.pageStart}`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+    return null;
   }
 }
 
@@ -1418,6 +1534,20 @@ Return exactly one page entry:
 - confidence: 0 to 1 extraction confidence.
 
 Leave visualInterpretation, pageContext, tables, and figures empty. Leave batchSummary and continuationNote empty.`;
+}
+
+function buildSignedQuantityOverlayPrompt(input: {
+  pageStart: number;
+  filename: string;
+}): string {
+  return `Look at the page image of page ${input.pageStart} of ${input.filename}, not only the embedded text layer.
+
+List every visibly signed quantity whose leading minus is drawn on the page (for example −15 °C, −20 °C, or −50 RPM).
+
+Do not invent a minus on an unsigned range such as 15–130 °C or 15 °C to 130 °C when no minus is visible.
+
+Return:
+- signedQuantities: the signed strings only. Empty list when none are visible.`;
 }
 
 function buildInsightPrompt(input: {

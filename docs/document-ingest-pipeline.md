@@ -119,7 +119,7 @@ flowchart TD
   E --> D
 ```
 
-Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v7`. Born-digital pages that still show unsigned `N °C to` after the parser overlay signed values from the insight pass or a targeted Document AI OCR of those pages only — they do not replace the text-layer transcript.
+Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v8`. Born-digital pages that still show unsigned `N °C to` overlay a leading minus from (1) the insight pass when that batch is small enough to run one, (2) a targeted Document AI OCR of those pages with native PDF parsing off, then (3) a Gemini look at those 1–2 page images. Overlay only — they do not replace the text-layer transcript, and they do not invent a minus on a genuine unsigned range.
 
 ## DOCX path
 
