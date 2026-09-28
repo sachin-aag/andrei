@@ -10,6 +10,7 @@ import {
   QSR_DEFAULT_METADATA,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  ensureVolumetricFormRows,
   isQsrSectionKey,
   isQsrTableSectionKey,
   qsrMetadataFrom,
@@ -116,7 +117,11 @@ function mergeQsrSection(key: string, raw: unknown): unknown {
   const base = (EMPTY_QSR_CONTENT[key] as Record<string, unknown>)[field];
   const value =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
-  return { [field]: normalizeRichField(value ?? base) };
+  const doc = normalizeRichField(value ?? base);
+  if (key === "qsr_volumetric_details") {
+    return { [field]: ensureVolumetricFormRows(doc) };
+  }
+  return { [field]: doc };
 }
 
 export const qualificationSummaryReportDefinition: DocumentTypeDefinition = {

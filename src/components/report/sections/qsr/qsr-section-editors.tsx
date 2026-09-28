@@ -10,6 +10,7 @@ import {
   EMPTY_QSR_CONTENT,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  ensureVolumetricFormRows,
   isQsrTableSectionKey,
   shapeOperatingRangeTable,
   type QsrSectionContent,
@@ -24,13 +25,12 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
     (value as QsrSectionContent | undefined) ?? EMPTY_QSR_CONTENT[section];
   const field = isQsrTableSectionKey(section) ? "table" : "narrative";
   const doc = (content as Record<string, JSONContent | undefined>)[field];
-  const shown = useMemo(
-    () =>
-      section === "qsr_operating_range" && doc
-        ? shapeOperatingRangeTable(doc)
-        : doc,
-    [section, doc]
-  );
+  const shown = useMemo(() => {
+    if (!doc) return doc;
+    if (section === "qsr_operating_range") return shapeOperatingRangeTable(doc);
+    if (section === "qsr_volumetric_details") return ensureVolumetricFormRows(doc);
+    return doc;
+  }, [section, doc]);
 
   return (
     <SectionShell

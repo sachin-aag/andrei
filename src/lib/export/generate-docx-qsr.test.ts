@@ -177,6 +177,54 @@ describe("qualification summary report DOCX export", () => {
     );
     expect(document).not.toContain("PRIMARY CONDENSER");
     expect(document).not.toContain("MOTOR & GEARBOX");
+    expect(body).toContain("Inner Surface area");
+    expect(body).toContain("Equipment Dimensions (L x W x H)");
+  });
+
+  it("appends Table 11 extra rows when exporting an older six-row volumetric seed", async () => {
+    const olderMain = tableDoc(
+      ["S.No", "Parameter", "Details"],
+      [
+        ["1", "Minimum stirring volume (L)", ""],
+        ["2", "Minimum temperature sensing volume without stirring (L)", ""],
+        ["3", "Minimum temperature sensing volume with stirring (L)", ""],
+        ["4", "Minimum sampling volume (L)- If applicable", ""],
+        ["5", "Full volume (L)", ""],
+        ["6", "Over flow volume (L)", ""],
+      ]
+    );
+    const auxiliary = tableDoc(
+      ["S.No", "Parameter", "Details"],
+      [
+        ["1", "Dead volume (L)", ""],
+        ["2", "Full volume (L)", ""],
+        ["3", "Over flow volume (L)", ""],
+      ]
+    );
+    const { document } = await exportXml(
+      sectionsWith({
+        qsr_volumetric_details: {
+          narrative: {
+            type: "doc",
+            content: [
+              { type: "paragraph" },
+              olderMain.content![0],
+              {
+                type: "paragraph",
+                content: [text("Auxiliary Equipment: ")],
+              },
+              auxiliary.content![0],
+            ],
+          },
+        },
+      })
+    );
+    const body = visibleText(document);
+    expect(body).toContain("Inner Surface area");
+    expect(body).toContain("Equipment Dimensions (L x W x H)");
+    expect(rowContaining(document, "Dead volume (L)")).not.toContain(
+      "Inner Surface area"
+    );
   });
 
   it("keeps user text that looks like a template tag literal", async () => {
