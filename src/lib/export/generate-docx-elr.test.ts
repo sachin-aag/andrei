@@ -93,31 +93,31 @@ const QUALIFICATION_ROWS = [
 
 function qualificationTableSlice(xml: string): string {
   const start = xml.indexOf("3.4 QUALIFICATION");
-  const end = xml.indexOf("3.5 MEDIA FILL");
+  const end = xml.indexOf("3.5 PROCESS VALIDATION");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
 }
 
 function monitoringSlice(xml: string): string {
-  const start = xml.indexOf("3.7 MONITORING");
-  const end = xml.indexOf("3.8 CALIBRATION");
+  const start = xml.indexOf("3.10 MONITORING");
+  const end = xml.indexOf("3.11 CALIBRATION");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
 }
 
 function breakdownSlice(xml: string): string {
-  const start = xml.indexOf("3.10 BREAKDOWNS");
-  const end = xml.indexOf("3.11 QMS");
+  const start = xml.indexOf("3.13 BREAKDOWNS");
+  const end = xml.indexOf("3.14 QMS");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
 }
 
 function alarmSlice(xml: string): string {
-  const start = xml.indexOf("3.6 ALARM TRENDS");
-  const end = xml.indexOf("3.7 MONITORING");
+  const start = xml.indexOf("3.9 ALARM TRENDS");
+  const end = xml.indexOf("3.10 MONITORING");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return xml.slice(start, end);
@@ -191,15 +191,25 @@ describe("ELR DOCX template", () => {
     const xml = zip.file("word/document.xml")?.asText() ?? "";
     expect(xml).not.toContain("TABLE OF CONTENTS");
     expect(xml).toContain("1.0 PURPOSE");
-    expect(xml.indexOf("3.6 ALARM TRENDS")).toBeGreaterThan(-1);
-    expect(xml.indexOf("3.6 ALARM TRENDS")).toBeLessThan(
-      xml.indexOf("3.7 MONITORING")
+    expect(xml.indexOf("3.9 ALARM TRENDS")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.5 PROCESS VALIDATION REVIEW")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.5 PROCESS VALIDATION REVIEW")).toBeLessThan(
+      xml.indexOf("3.6 CLEANING VALIDATION REVIEW")
     );
-    expect(xml.indexOf("3.7 MONITORING")).toBeLessThan(
-      xml.indexOf("3.10 BREAKDOWNS AND TRENDS")
+    expect(xml.indexOf("3.6 CLEANING VALIDATION REVIEW")).toBeLessThan(
+      xml.indexOf("3.7 QUALITY RISK ASSESSMENT REVIEW")
     );
-    expect(xml.indexOf("3.10 BREAKDOWNS AND TRENDS")).toBeLessThan(
-      xml.indexOf("3.11 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION")
+    expect(xml.indexOf("3.7 QUALITY RISK ASSESSMENT REVIEW")).toBeLessThan(
+      xml.indexOf("3.8 MEDIA FILL")
+    );
+    expect(xml.indexOf("3.9 ALARM TRENDS")).toBeLessThan(
+      xml.indexOf("3.10 MONITORING")
+    );
+    expect(xml.indexOf("3.10 MONITORING")).toBeLessThan(
+      xml.indexOf("3.13 BREAKDOWNS AND TRENDS")
+    );
+    expect(xml.indexOf("3.13 BREAKDOWNS AND TRENDS")).toBeLessThan(
+      xml.indexOf("3.14 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION")
     );
   });
 });
@@ -239,7 +249,12 @@ describe("ELR DOCX export", () => {
     expect(paragraphStyle(xml, "1.0 PURPOSE")).toBe("Heading1");
     expect(paragraphStyle(xml, "3.0 OBSERVATIONS AND RESULTS")).toBe("Heading1");
     expect(paragraphStyle(xml, "3.1 RESPONSIBILITY")).toBe("Heading2");
-    expect(paragraphStyle(xml, "3.10.1 BREAKDOWN TREND SUMMARY")).toBe("Heading3");
+    expect(paragraphStyle(xml, "3.5 PROCESS VALIDATION REVIEW")).toBe("Heading2");
+    expect(paragraphStyle(xml, "3.6 CLEANING VALIDATION REVIEW")).toBe("Heading2");
+    expect(paragraphStyle(xml, "3.7 QUALITY RISK ASSESSMENT REVIEW")).toBe(
+      "Heading2"
+    );
+    expect(paragraphStyle(xml, "3.13.1 BREAKDOWN TREND SUMMARY")).toBe("Heading3");
     expect(paragraphStyle(xml, "5.0 SUMMARY AND CONCLUSION")).toBe("Heading1");
     expect(paragraphStyle(xml, "5.1 SYSTEM TRENDS AND PATTERNS")).toBe("Heading2");
     expect(paragraphStyle(xml, "5.2 RISK ASSESSMENT AND PRIORITIZED ACTIONS")).toBe(
@@ -346,7 +361,7 @@ describe("ELR DOCX export", () => {
 
     const breakdown = breakdownSlice(xml);
     const breakdownNarrative = breakdown.indexOf("Two breakdowns this period");
-    const breakdownHeading = breakdown.indexOf("3.10.1 BREAKDOWN TREND SUMMARY");
+    const breakdownHeading = breakdown.indexOf("3.13.1 BREAKDOWN TREND SUMMARY");
     const breakdownTrend = breakdown.indexOf("Recurring peristaltic pump");
     const breakdownTable = breakdown.indexOf("<w:tbl");
     expect(breakdownNarrative).toBeGreaterThan(-1);
@@ -356,7 +371,7 @@ describe("ELR DOCX export", () => {
 
     const alarms = alarmSlice(xml);
     const alarmNarrative = alarms.indexOf("Alarm 1951 repeated");
-    const alarmHeading = alarms.indexOf("3.6.1 ALARM TREND SUMMARY");
+    const alarmHeading = alarms.indexOf("3.9.1 ALARM TREND SUMMARY");
     const alarmTrend = alarms.indexOf("The trended alarm set still covers");
     const alarmTable = alarms.indexOf("<w:tbl");
     expect(alarmNarrative).toBeGreaterThan(-1);

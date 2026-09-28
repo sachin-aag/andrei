@@ -8,6 +8,9 @@ import {
 describe("elrPlanRequiredFields", () => {
   it("requires an assessment on evidence sections and siblings on trend/risk/conclusion", () => {
     expect(elrPlanRequiredFields("elr_calibration")).toEqual(["narrative"]);
+    expect(elrPlanRequiredFields("elr_process_validation")).toEqual(["narrative"]);
+    expect(elrPlanRequiredFields("elr_cleaning_validation")).toEqual(["narrative"]);
+    expect(elrPlanRequiredFields("elr_qra_review")).toEqual(["narrative"]);
     expect(elrPlanRequiredFields("elr_media_fill")).toEqual(["narrative"]);
     expect(elrPlanRequiredFields("elr_breakdowns")).toEqual([
       "narrative",

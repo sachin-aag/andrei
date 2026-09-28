@@ -263,43 +263,55 @@ const ELR_TOC: TableOfContentsEntry[] = [
         sectionKey: "elr_qualification",
       },
       {
-        label: "3.5 Media Fill / Aseptic Process Simulation",
+        label: "3.5 Process Validation Review",
+        sectionKey: "elr_process_validation",
+      },
+      {
+        label: "3.6 Cleaning Validation Review",
+        sectionKey: "elr_cleaning_validation",
+      },
+      {
+        label: "3.7 Quality Risk Assessment Review",
+        sectionKey: "elr_qra_review",
+      },
+      {
+        label: "3.8 Media Fill / Aseptic Process Simulation",
         sectionKey: "elr_media_fill",
       },
       {
-        label: "3.6 Alarm Trends",
+        label: "3.9 Alarm Trends",
         sectionKey: "elr_alarms",
         children: [
-          { label: "3.6.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
+          { label: "3.9.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
         ],
       },
-      { label: "3.7 Monitoring", sectionKey: "elr_monitoring" },
+      { label: "3.10 Monitoring", sectionKey: "elr_monitoring" },
       {
-        label: "3.8 Calibration of Associated Instruments",
+        label: "3.11 Calibration of Associated Instruments",
         sectionKey: "elr_calibration",
       },
       {
-        label: "3.9 Preventive Maintenance",
+        label: "3.12 Preventive Maintenance",
         sectionKey: "elr_preventive_maintenance",
       },
       {
-        label: "3.10 Breakdowns and Trends",
+        label: "3.13 Breakdowns and Trends",
         sectionKey: "elr_breakdowns",
         children: [
           {
-            label: "3.10.1 Breakdown Trend Summary",
+            label: "3.13.1 Breakdown Trend Summary",
             sectionKey: "elr_breakdowns",
           },
         ],
       },
       {
-        label: "3.11 QMS Records since Last Periodic Re-Qualification",
+        label: "3.14 QMS Records since Last Periodic Re-Qualification",
         sectionKey: "elr_qms",
       },
-      { label: "3.12 Access Control", sectionKey: "elr_access_control" },
-      { label: "3.13 Audit Trail Review", sectionKey: "elr_audit_trail" },
+      { label: "3.15 Access Control", sectionKey: "elr_access_control" },
+      { label: "3.16 Audit Trail Review", sectionKey: "elr_audit_trail" },
       {
-        label: "3.14 Computerized System Validation Status",
+        label: "3.17 Computerized System Validation Status",
         sectionKey: "elr_csv_status",
       },
     ],

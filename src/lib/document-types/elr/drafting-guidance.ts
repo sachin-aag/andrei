@@ -4,12 +4,15 @@ import {
   ELR_AUDIT_TRAIL_HEADERS,
   ELR_BREAKDOWN_HEADERS,
   ELR_CALIBRATION_HEADERS,
+  ELR_CLEANING_VALIDATION_HEADERS,
   ELR_CSV_STATUS_HEADERS,
   ELR_FORMAT_APPLICABILITY,
   ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
+  ELR_PROCESS_VALIDATION_HEADERS,
   ELR_QMS_HEADERS,
+  ELR_QRA_REVIEW_HEADERS,
   ELR_QUALIFICATION_HEADERS,
   ELR_RISK_ACTION_HEADERS,
   ELR_SECTION_LABELS,
@@ -18,6 +21,9 @@ import {
 
 const TABLE_SCHEMAS: readonly (readonly [string, readonly string[]])[] = [
   ["elr_qualification", ELR_QUALIFICATION_HEADERS],
+  ["elr_process_validation", ELR_PROCESS_VALIDATION_HEADERS],
+  ["elr_cleaning_validation", ELR_CLEANING_VALIDATION_HEADERS],
+  ["elr_qra_review", ELR_QRA_REVIEW_HEADERS],
   ["elr_media_fill", ELR_MEDIA_FILL_HEADERS],
   ["elr_alarms", ELR_ALARM_HEADERS],
   ["elr_monitoring", ELR_MONITORING_HEADERS],
@@ -152,6 +158,11 @@ from periodFrom, last PRQ date, or document FY digits (\`PRQR-25\` → 1 April
 
 - Qualification history (elr_qualification): **cumulative**, the whole life of
   the equipment. No date cut-off.
+- Process validation (elr_process_validation), cleaning validation
+  (elr_cleaning_validation) and quality risk assessment review
+  (elr_qra_review): the **current** work products for this equipment and
+  format. An empty table is not enough — write an explicit Not Applicable
+  row if none applies.
 - QMS records (elr_qms): from the **completion date of the last PRQ** to the
   ELR end date (31 March of the following year). Not a quarter.
 - Everything else, including monitoring **Period Covered**: that same window
@@ -182,7 +193,7 @@ which ELR this is.
   first PRQR.
 - After they answer, draft only that format. Counterpart-format rows stay out.
 
-Mark every qualification and QMS row with one of:
+Mark every qualification, process-validation, cleaning-validation and QMS row with one of:
 ${ELR_FORMAT_APPLICABILITY.join(" | ")}
 
 "Line-common" means the record belongs to the equipment or the line rather than
@@ -208,6 +219,8 @@ These pairings are checked. Draft them consistently:
 - An audit trail anomaly (Y) must carry a deviation reference.
 - A computerized system changed since the last PRQ (Y) must carry a change
   control reference.
+- A quality risk assessment changed since the last PRQ (Y) must carry a change
+  control reference.
 - A computerized system's Revalidation Due Date that has passed must be
   named in the assessment as overdue.
 - A QMS record marked as affecting the qualified state (Y) must be referenced
@@ -229,8 +242,12 @@ Do not recap that the section was reviewed. Reason from the rows:
   APS still needs that closer — n=1 is not a skip.
 
 Suggest only actions that follow from these rows. If the table is empty, say
-none occurred — do **not** insert a Nil / None / NA / "nothing happened" row.
-Those cells fail the document-reference check. Omit the row.
+none occurred — do **not** insert a Nil / None / NA / "nothing happened" row
+on event tables (monitoring, breakdowns, alarms, QMS, calibration). Those
+cells fail the document-reference check. Omit the row. Process validation,
+cleaning validation, quality risk assessment review, and CSV status are
+current-status inventories: an empty table is not enough — write one explicit
+Not Applicable row if none applies.
 
 Do not fill Result or Status with Pass or Closed as a stand-in for a
 certificate you have not read. Leave the cell or skip the row until that page
@@ -283,7 +300,7 @@ must not advance on a filled table with an empty assessment.
   for the assessment.
 - \`elr_risk_actions\`: draft \`overallGrade\` in the same turn (\`low\` / \`medium\` /
   \`high\` — the stored enum, not "Low risk").
-- \`elr_conclusion\`: draft a bulleted recap in \`narrative\` (3.1–3.14, 4.0, 5.1, 5.2), \`recommendation\`, and a dated \`recommendationNarrative\` in the same turn
+- \`elr_conclusion\`: draft a bulleted recap in \`narrative\` (3.1–3.17, 4.0, 5.1, 5.2), \`recommendation\`, and a dated \`recommendationNarrative\` in the same turn
   (\`continue\` / \`early_requalification\` / \`capa\` / \`other\`). The 6.0
   sentence names calendar dates and how often each follow-up runs. Do not put
   the enum's label into \`recommendation\` as free text.
@@ -302,7 +319,7 @@ write \`[[table]]\` (this section) or \`[[table:Section]]\` (another
 section key or label). Those display as Table N and update when a table
 is inserted above (Word REF). Do not type the returned tableNumber.
 
-Breakdowns and alarms still have a separate \`trend\` field (3.6.1 / 3.10.1)
+Breakdowns and alarms still have a separate \`trend\` field (3.9.1 / 3.13.1)
 for grouping failure modes / whether the trended alarm set is still
 appropriate. That is not a substitute for the assessment above the table.
 
@@ -322,11 +339,11 @@ initial qualification (21 CFR Part 11) from periodic verification this period
 \`elr_system_trends\` (5.1) is a recap table of every previous Observations
 subsection and Discrepancy, then a short narrative of what cuts across them.
 
-- The seeded table already has one row per section: 3.1–3.14 and 4.0. Skip
+- The seeded table already has one row per section: 3.1–3.17 and 4.0. Skip
   Purpose (1.0) and Scope (2.0). Do not delete those rows. Fill \`Summary\`
   with \`edit_cells\` — a sentence of what that section found. Nil events still
   get a recap ("none this period"), not a blank cell.
-- 3.6.1 / 3.10.1 stay inside the 3.6 / 3.10 rows; do not add extra rows for
+- 3.9.1 / 3.13.1 stay inside the 3.9 / 3.13 rows; do not add extra rows for
   those sub-headings.
 - Trend / impact / Risk ID stay on the row so 5.2 can carry actions. Use
   \`none\` when there is no trend.
@@ -352,7 +369,7 @@ Medium/High row or over downtime.
 ## Conclusion
 
 \`elr_conclusion\` (5.3) opens with a **bulleted list** recapping each previous
-section: 3.1–3.14, 4.0 Discrepancy, 5.1 System Trends, and 5.2 Risk
+section: 3.1–3.17, 4.0 Discrepancy, 5.1 System Trends, and 5.2 Risk
 Assessment. Skip Purpose and Scope. Each bullet names the section number and
 summarises what it found (including "none this period"). After the list,
 state whether the equipment remains in its qualified state for this container
@@ -419,7 +436,8 @@ the tool result). Do not start a complete page-by-page review to draft
 Objective, Scope, Responsibilities, or Equipment description; grep for the
 procedure language only when you need a copied make/model or similar record
 fact. Full-document review is for the inventory tables (qualification
-history, monitoring, calibration, QMS, alarms, CSV). An empty inventory table
+history, process validation, cleaning validation, quality risk assessment,
+monitoring, calibration, QMS, alarms, CSV). An empty inventory table
 (header-only seeded grid) is not draftable until that section's review has
 finished — a finished qualification walk does not unlock Associated
 Instruments. A floor-8 finish that skipped selected documents (CSV-OQ / RTM
