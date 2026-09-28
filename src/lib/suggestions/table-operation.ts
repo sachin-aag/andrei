@@ -839,6 +839,24 @@ function agreedSiblingRowKey(
   return [...keys][0] ?? "";
 }
 
+/** Stage / Section / Remarks indexes on a QSR RTM header row. */
+function qsrRtmReferenceColumns(
+  headers: readonly string[]
+): ReadonlySet<number> | null {
+  let stage = -1;
+  let section = -1;
+  let remarks = -1;
+  for (let i = 0; i < headers.length; i++) {
+    const name = headers[i]!.toLowerCase();
+    if (name.includes("qualification stage")) stage = i;
+    else if (name.includes("reference") && name.includes("section")) {
+      section = i;
+    } else if (name === "remarks") remarks = i;
+  }
+  if (stage < 0 || section < 0 || remarks < 0) return null;
+  return new Set([stage, section, remarks]);
+}
+
 /**
  * Rematch each edit_cells cell onto its own live URS / first-cell row, then
  * drop cells whose insertText already equals the live cell (identity). Empty
@@ -854,6 +872,8 @@ function agreedSiblingRowKey(
  * the suggestion stale and skip inline preview for the empty remainder.
  * A mixed fill-empty batch also skips rewriting filled cells so the empty
  * remainder still lands; a batch that only rewrites filled cells still applies.
+ * QSR RTM Stage / Section / Remarks are the exception: a follow-up may
+ * overwrite a filled number with the cited heading (13.6 → 13.6 – Gasket material verified as PTFE).
  */
 export function resolveEditCells(
   rows: readonly JSONContent[],
@@ -999,9 +1019,13 @@ export function resolveEditCells(
     if (liveCellIsEmpty(live)) fillsEmpty.push(cell);
     else rewritesFilled.push(cell);
   }
+  const rtmCols = qsrRtmReferenceColumns(headers);
   const applied =
     fillsEmpty.length > 0 && rewritesFilled.length > 0
-      ? fillsEmpty
+      ? [
+          ...fillsEmpty,
+          ...rewritesFilled.filter((cell) => rtmCols?.has(cell.col) === true),
+        ]
       : changing;
   if (applied.length === 0) {
     if (sawStale && !sawIdentity) {
@@ -2309,9 +2333,23 @@ export function summarizeTableOperation(operation: TableOperation): string {
   switch (operation.kind) {
     case "edit_cells": {
       const n = operation.cells.length;
+      const keys: string[] = [];
+      const seen = new Set<string>();
+      for (const cell of operation.cells) {
+        const key = cell.rowKey?.replace(/\s+/g, " ").trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        keys.push(key);
+      }
+      const shown = keys.slice(0, 3);
+      const extra = keys.length - shown.length;
+      const onRows =
+        shown.length === 0
+          ? ""
+          : ` on ${shown.join(", ")}${extra > 0 ? ` (+${extra} more)` : ""}`;
       return n === 1
-        ? `Update 1 table cell`
-        : `Update ${n} table cells`;
+        ? `Update 1 table cell${onRows}`
+        : `Update ${n} table cells${onRows}`;
     }
     case "insert_rows": {
       const n = operation.rows.length;

@@ -65,6 +65,20 @@ const STOCK_COMPLIES_RE = /\bcomplies\b/i;
 const STOCK_BARE_SECTION_13_RE = /^section\s*13$/i;
 const PASS_WORD_CELL_RE = /^(?:complies|verified)$/i;
 const SECTION_NUMBER_CELL_RE = /^(?:section\s+)?\d+(?:\.\d+)+$/i;
+/** Titled Section cells: `8.2.3 – Heating trial at 8000 L` or `Section 4. Vendor documentation`. */
+/** `8.2.4`, `8.2.4 / 8.8`, `8.5 & 8.6` — not a page counter like `16`. */
+const RTM_DOTTED_SECTION_HEAD_RE =
+  /(?:\d+\.\d+(?:\.\d+)*)(?:\s*[\/&]\s*\d+\.\d+(?:\.\d+)*)*/;
+/** After `12.72` in a thermal log: `°C`, `kg/cm²`, `mm`, `L`, `rpm`. */
+const MEASURED_UNIT_AFTER_RE =
+  /^\s*(?:°\s*c|º\s*c|deg(?:rees?)?\s*c|celsius|\bc(?:\b|elsius)|kg(?:\s*\/\s*cm)?|mm\b|cm(?:\s*[²2])?\b|bar\b|rpm\b|kpa\b|%\b|\bl(?:it(?:er|re)s?)?\b)/i;
+const RTM_SECTION_DETAIL_CELL_RE = new RegExp(
+  `^(?:section\\s+\\d+(?:\\.\\d+)*|${RTM_DOTTED_SECTION_HEAD_RE.source})(?:\\s*[;:.–—-]\\s+|\\s+)[A-Za-z]`,
+  "i"
+);
+const SECTION_HEADING_STOP_RE =
+  /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|uncontrolled)\b/i;
+const SAME_AS_PROTOCOL_RE = /\bsame as that of\s+(DQ|IQ|OQ|PQ)\b/i;
 const PASS_TOKEN_RE =
   /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable|verified)\b/i;
 const NOT_APPLICABLE_RE = /\b(?:n\/?a|not\s+applicable)\b/i;
@@ -143,6 +157,9 @@ const PROTOCOL_RUNNING_HEADER_RES: readonly RegExp[] = [
   /(?:^|\n)\s*[a-z][a-z0-9 ]{2,60}(?=\s+(?:capacity\s*\/\s*size|dqp\s*\/|iqp\s*\/|oqp\s*\/|pqp\s*\/))/gi,
   /uncontrolled copy/gi,
   /page\s+\d+\s+of\s+\d+/gi,
+  /page\s*no\.?\s*\d{1,3}\s+of\s+\d+/gi,
+  // Printed "16 of 51" / "25 of 60" after the Page No. label (not "3 of 5").
+  /(?:^|\s)\d{1,3}\s+of\s+\d{2,3}(?=\s|$)/gi,
   /capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
   /\b(?:dqp|iqp|oqp|pqp)\s*\/\s*[a-z0-9-]+/gi,
   /equipment name[:\s]+[a-z0-9 ]{0,48}/gi,
@@ -729,6 +746,13 @@ export function descriptionSupportedNearKey(
   if (STAGE_ONLY_RE.test(trimmed)) return true;
   if (PASS_WORD_CELL_RE.test(trimmed)) return true;
   if (SECTION_NUMBER_CELL_RE.test(trimmed)) return true;
+  if (isRtmSectionCellText(trimmed) || rtmCellSectionNumber(trimmed)) {
+    // The one-liner is a paraphrase of the test. Ground the protocol
+    // section number(s); do not require words like "stability" to appear
+    // beside that URS ID (protocol pages usually omit the URS number).
+    if (rtmSectionNumbersCited(trimmed, quotes)) return true;
+    if (rtmCellSectionNumber(trimmed)) return false;
+  }
   if (new RegExp(`^${key}$`, "i").test(trimmed)) return true;
   const tokens = significantDescriptionTokens(trimmed);
   const alphaTokens = tokens.filter((token) => /[a-z]/.test(token));
@@ -777,7 +801,42 @@ function isRtmReferenceMetaLine(line: string): boolean {
   if (PASS_WORD_CELL_RE.test(stripped)) return true;
   if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
   if (SECTION_NUMBER_CELL_RE.test(stripped)) return true;
+  if (isRtmSectionCellText(stripped)) return true;
   return false;
+}
+
+function isRtmSectionCellText(text: string): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
+  // Labeled `Section 4` is a DQ chapter. A bare `16` is a page counter.
+  // `12.72 °C` is a sensor reading, not a protocol heading.
+  if (/^section\s+\d+(?:\.\d+)*$/i.test(stripped)) {
+    return Boolean(rtmCellSectionNumber(stripped));
+  }
+  if (
+    SECTION_NUMBER_CELL_RE.test(stripped) ||
+    /^\d+(?:\.\d+)+$/i.test(stripped) ||
+    RTM_SECTION_DETAIL_CELL_RE.test(stripped)
+  ) {
+    return Boolean(rtmCellSectionNumber(stripped));
+  }
+  return false;
+}
+
+function rtmSectionNumber(text: string): string {
+  const m = text
+    .replace(/\[[^\]]*\]/g, "")
+    .trim()
+    .replace(/^section\s+/i, "")
+    .match(/^(\d+(?:\.\d+)*)/);
+  return m?.[1] ?? "";
+}
+
+function sameRtmSectionCell(a: string, b: string): boolean {
+  const left = rtmSectionNumber(a);
+  const right = rtmSectionNumber(b);
+  if (left && right) return left === right;
+  return a.trim() === b.trim();
 }
 
 /**
@@ -1024,16 +1083,302 @@ function protocolMentionsKey(
   });
 }
 
-function protocolSectionHeading(body: string): string | null {
+function headingTitleAfterNumber(rest: string): string {
+  let text = rest;
+  const same = SAME_AS_PROTOCOL_RE.exec(text);
+  if (same && same.index != null) text = text.slice(0, same.index);
+  const sentence = text.search(/\.\s+[A-Z]/);
+  if (sentence !== -1) text = text.slice(0, sentence);
+  const cut = text.search(SECTION_HEADING_STOP_RE);
+  const raw = (cut === -1 ? text : text.slice(0, cut)).trim();
+  return raw.replace(/[.:;,-]+$/g, "").replace(/\s+/g, " ").trim();
+}
+
+function formatRtmSectionHeading(number: string, rest: string): string {
+  const title = cleanRtmSectionDescription(headingTitleAfterNumber(rest));
+  return title ? `${number} – ${title}` : number;
+}
+
+const RTM_SECTION_DESCRIPTION_MAX_WORDS = 18;
+/**
+ * Page furniture a model or OCR heading can pick up instead of the test:
+ * `Page 21 of 51`, the Capacity/Size / Effective Date header block, signed
+ * dates, and a word cut off mid-token (`… Block S`).
+ */
+const RTM_SECTION_JUNK_RES: readonly RegExp[] = [
+  /\bof\s+\d+\b/i,
+  /\bpage\b/i,
+  /\beffective\s+date\b/i,
+  /\bcapacity\s*\/\s*size\b/i,
+  /\bproduction\s+block\b/i,
+  /\b(?:supersedes|uncontrolled|document\s+no|format\s+no)\b/i,
+  /\b(?:prepared|reviewed|approved|checked|verified)\s+by\b/i,
+  /\b\d{1,2}([-/.])\d{1,2}\1(?:\d{4}|\d{2})\b/,
+  // A lone trailing letter is a cut-off word unless it is a unit (8000 L).
+  /(?:^|[^\d\s])\s[A-Za-z]$/,
+];
+
+/** One plain line about the test performed, or "" when it is page furniture. */
+function cleanRtmSectionDescription(raw: string): string {
+  let text = raw
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[;:.,–—-]+\s*/, "");
+  // An ALL-CAPS protocol label (PROCEDURE, TEST) ahead of the sentence.
+  text = text.replace(/^(?:[A-Z]{4,}\s+)+(?=[A-Z][a-z])/, "");
+  // `Gr. 380` / `No. 12` are abbreviations, not sentence ends.
+  const sentenceEnd = text.search(/\.\s+[A-Z]|; /);
+  if (sentenceEnd !== -1) text = text.slice(0, sentenceEnd);
+  text = text.replace(/[.:;,–—-]+$/g, "").trim();
+  if (!text || !/[A-Za-z]{3,}/.test(text) || /[<>]/.test(text)) return "";
+  if (text.split(/\s+/).length > RTM_SECTION_DESCRIPTION_MAX_WORDS) return "";
+  if (RTM_SECTION_JUNK_RES.some((re) => re.test(text))) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Two-level `12.72` / `25.0` are sensor readings and page-like quantities,
+ * not IQ 13.7 / OQ 10.5 / PQ 8.2. Three-or-more-level `13.3.5` stays.
+ */
+function isMeasuredReadingNumber(number: string): boolean {
+  const parts = number.split(".").filter(Boolean);
+  if (parts.length !== 2) return false;
+  const first = Number(parts[0]);
+  const last = Number(parts[1]);
+  if (!Number.isFinite(first) || !Number.isFinite(last)) return false;
+  return last >= 20 || first >= 20;
+}
+
+function followingLooksLikeMeasurement(after: string): boolean {
+  return MEASURED_UNIT_AFTER_RE.test(after);
+}
+
+function isUsableProtocolSectionNumber(number: string, after = ""): boolean {
+  if (!number || isMeasuredReadingNumber(number)) return false;
+  if (followingLooksLikeMeasurement(after)) return false;
+  return true;
+}
+
+function usableDottedParts(head: string, after = ""): string {
+  const parts = head
+    .split(/\s*[\/&]\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part && isUsableProtocolSectionNumber(part, after));
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0]!;
+  const joiner = /\s*&\s*/.test(head) ? " & " : " / ";
+  return parts.join(joiner);
+}
+
+/**
+ * Protocol section number(s): `8.2.3`, `8.2.4 / 8.8`, `8.5 & 8.6`,
+ * DQ `Section 4`. A bare `16` / `14` is a printed page counter, not a
+ * PQ/OQ/IQ section — those families only accept a dotted number.
+ * `12.72` is a thermal-log reading (Bottomsensor- 12.72 °C), not clause 72.
+ */
+function rtmCellSectionNumber(
+  text: string,
+  family?: RtmStageFamily | null
+): string {
+  const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
+  const labeled = trimmed.match(/^section\s+(\d+(?:\.\d+)*)/i);
+  if (labeled?.[1]) {
+    const after = trimmed.slice(labeled[0].length);
+    if (/\./.test(labeled[1])) {
+      return isUsableProtocolSectionNumber(labeled[1], after) ? labeled[1] : "";
+    }
+    // `Section 4` is DQ. PQ/OQ/IQ never use a labeled integer chapter.
+    if (family == null || family === "dq") return labeled[1];
+    return "";
+  }
+  const match = trimmed.match(
+    new RegExp(`^(${RTM_DOTTED_SECTION_HEAD_RE.source})`)
+  )?.[1];
+  if (match && !/^\s*of\s+\d/i.test(trimmed.slice(match.length))) {
+    const usable = usableDottedParts(match, trimmed.slice(match.length));
+    if (usable) return usable.replace(/\s+/g, " ").trim();
+  }
+  if (family === "dq") {
+    const integer = trimmed.match(/^(\d{1,2})(?!\.\d)/);
+    if (
+      integer?.[1] &&
+      !/^\s*of\s+\d/i.test(trimmed.slice(integer[1].length))
+    ) {
+      return integer[1];
+    }
+  }
+  return "";
+}
+
+function rtmSectionNumbersCited(
+  text: string,
+  quotes: readonly string[]
+): boolean {
+  const labeled = text
+    .replace(/\[[^\]]*\]/g, "")
+    .trim()
+    .match(/^section\s+(\d+(?:\.\d+)*)/i);
+  if (labeled?.[1]) {
+    const number = labeled[1];
+    if (!isUsableProtocolSectionNumber(number)) return false;
+    const labeledRe = new RegExp(
+      `\\bsection\\s+${number.replace(/\./g, "\\.")}\\b`,
+      "i"
+    );
+    return quotes.some(
+      (quote) => labeledRe.test(quote) || quote.includes(number)
+    );
+  }
+  const head = rtmCellSectionNumber(text);
+  if (!head) return false;
+  const numbers = head.split(/\s*[\/&]\s*/).filter(Boolean);
+  return numbers.some((number) => {
+    if (!isUsableProtocolSectionNumber(number)) return false;
+    return quotes.some((quote) => quote.includes(number));
+  });
+}
+
+function preferredRtmSectionNumber(
+  requested: string,
+  heading: string,
+  family?: RtmStageFamily | null
+): string {
+  const fromHeading = rtmCellSectionNumber(heading, family);
+  const fromRequested = rtmCellSectionNumber(requested, family);
+  if (/[\/&]/.test(fromRequested)) {
+    if (!fromHeading) return fromRequested;
+    const parts = fromRequested.split(/\s*[\/&]\s*/);
+    if (parts.includes(fromHeading)) return fromRequested;
+  }
+  return fromHeading || fromRequested;
+}
+
+function rtmCellDescription(text: string): string {
+  const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
+  const rest = trimmed
+    .replace(/^section\s+\d+(?:\.\d+)*\.?/i, "")
+    .replace(
+      new RegExp(`^${RTM_DOTTED_SECTION_HEAD_RE.source}\\.?`),
+      ""
+    )
+    // Model prefix from Page N of M: `16 – Water batch`, `14. Thermal trial`.
+    .replace(/^\d{1,3}(?!\.\d)\s*(?:of\s+\d+\s*)?[–—:.-]+\s*/, "")
+    .replace(/^\d{1,3}(?!\.\d)\s+of\s+\d+\s*/, "");
+  return cleanRtmSectionDescription(rest);
+}
+
+/**
+ * Reference – Section is `{protocol section number} – {one line about the
+ * test}`. The number comes from the matched protocol heading when there is
+ * one; the model's one-line description is kept when it is clean, else the
+ * heading title. Printed page counters (`16`, `14`) and logged readings
+ * (`12.72 °C`) never persist, even as a description-only cell.
+ */
+export function rtmSectionCellText(
+  requested: string,
+  pick: {
+    sectionHeading?: string | null;
+    family?: RtmStageFamily | null;
+  } | null
+): string {
+  const heading = pick?.sectionHeading ?? "";
+  const family = pick?.family ?? null;
+  const number = preferredRtmSectionNumber(requested, heading, family);
+  const description = rtmCellDescription(requested) || rtmCellDescription(heading);
+  if (number && description) return `${number} – ${description}`;
+  return number;
+}
+
+function rtmSectionNumberParts(text: string): string[] {
+  const number = rtmCellSectionNumber(text);
+  return number ? number.split(/\s*[\/&]\s*/).filter(Boolean) : [];
+}
+
+/** Filled `13.6` vs neighbour `13.7.5` — not an IQ→PQ rank-up. */
+function conflictingFilledSectionNumber(live: string, next: string): boolean {
+  const liveNum = rtmCellSectionNumber(live);
+  const nextNum = rtmCellSectionNumber(next);
+  if (!liveNum || !nextNum) return false;
+  if (liveNum === nextNum) return false;
+  return !rtmSectionNumberParts(next).includes(liveNum);
+}
+
+const MULTI_LEVEL_HEADING_RE = /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Z])/g;
+
+/**
+ * A PQ page often prints several tests (8.2.1 Physical verification …
+ * 8.2.3 Heating Trial …). Pick the heading whose block names this row's
+ * topic so Reactor Capacity is not labelled with the first test on the page.
+ */
+function rowMatchedSectionHeading(stripped: string, context: string): string | null {
+  const starts = [...stripped.matchAll(MULTI_LEVEL_HEADING_RE)].map((m) => ({
+    number: m[1]!,
+    at: m.index! + m[0].indexOf(m[1]!),
+  }));
+  if (starts.length < 2) return null;
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (tokens.length === 0) return null;
+  let best: { number: string; block: string; score: number } | null = null;
+  for (let index = 0; index < starts.length; index++) {
+    const start = starts[index]!;
+    const end = starts[index + 1]?.at ?? stripped.length;
+    const block = stripped.slice(start.at + start.number.length, end);
+    const score = tokens.filter((token) => windowHasToken(block, token)).length;
+    if (score > 0 && (!best || score > best.score)) {
+      best = { number: start.number, block, score };
+    }
+  }
+  if (!best) return null;
+  return formatRtmSectionHeading(best.number, best.block.replace(/^\.?\s+/, ""));
+}
+
+function protocolSectionHeading(
+  body: string,
+  context = "",
+  family?: RtmStageFamily | null
+): string | null {
   const stripped = protocolBodyQuote(body);
+  const matched = context ? rowMatchedSectionHeading(stripped, context) : null;
+  if (matched && rtmCellSectionNumber(matched, family)) return matched;
+  const multiTitle = stripped.match(
+    /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
+  );
+  if (
+    multiTitle?.[1] &&
+    multiTitle[2] &&
+    isUsableProtocolSectionNumber(multiTitle[1], multiTitle[2])
+  ) {
+    return formatRtmSectionHeading(multiTitle[1], multiTitle[2]);
+  }
   const multi = stripped.match(/(?:^|[\s])(\d+(?:\.\d+){2,4})\.?(?:\s|$)/);
-  if (multi?.[1]) return multi[1];
-  const titled = stripped.match(/(?:^|[\s])(\d+\.\d+)\.?\s+[A-Z]/);
-  if (titled?.[1]) return titled[1];
-  const labeled = stripped.match(/\bsection\s+(\d+(?:\.\d+)*)/i);
-  if (labeled?.[1]) return labeled[1];
-  const titledInt = stripped.match(/(?:^|[\s])(\d+)\.\s+[A-Z]/);
-  return titledInt?.[1] ?? null;
+  if (multi?.[1] && isUsableProtocolSectionNumber(multi[1])) {
+    return formatRtmSectionHeading(multi[1], "");
+  }
+  const twoLevel = /(?:^|[\s])(\d+\.\d+)(?!\.\d)\.?/g;
+  let titled: RegExpExecArray | null;
+  while ((titled = twoLevel.exec(stripped))) {
+    const number = titled[1]!;
+    const after = stripped.slice(titled.index + titled[0].length);
+    if (!isUsableProtocolSectionNumber(number, after)) continue;
+    if (!/^\s+[A-Z]/.test(after)) continue;
+    return formatRtmSectionHeading(number, after);
+  }
+  const labeled = stripped.match(
+    /\bsection\s+(\d+(?:\.\d+)*)\.?(?:\s+([\s\S]*))?/i
+  );
+  if (labeled?.[1]) {
+    const after = (labeled[2] ?? "").trim();
+    if (/^\s*of\s+\d/i.test(after)) return null;
+    // PQ/OQ/IQ print dotted 8.x / 13.x. A labeled integer is DQ `Section 4`,
+    // not printed page 16.
+    if (!/\./.test(labeled[1]) && family && family !== "dq") return null;
+    if (/\./.test(labeled[1]) && !isUsableProtocolSectionNumber(labeled[1], after)) {
+      return null;
+    }
+    return formatRtmSectionHeading(labeled[1], labeled[2] ?? "");
+  }
+  return null;
 }
 
 function matchingProtocolPages(
@@ -1067,7 +1412,7 @@ function stageRankIndex(family: RtmStageFamily): number {
 function firstSectionNumberLine(text: string): string {
   for (const line of text.split("\n")) {
     const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
-    if (SECTION_NUMBER_CELL_RE.test(trimmed)) {
+    if (isRtmSectionCellText(trimmed)) {
       return trimmed.replace(/^section\s+/i, "");
     }
   }
@@ -1109,7 +1454,7 @@ function pickWouldReplaceFilledReference(
   if (
     floor.sectionText &&
     pick.sectionHeading &&
-    floor.sectionText !== pick.sectionHeading
+    !sameRtmSectionCell(floor.sectionText, pick.sectionHeading)
   ) {
     // DQ pages print every URS ID. A heading clash with a filled Section
     // means this pick must not stamp empty Stage / Remarks beside it.
@@ -1131,6 +1476,67 @@ function stickyRtmPick(
   return pick;
 }
 
+function headingNumberOnPage(quote: string, number: string): boolean {
+  if (!number) return false;
+  const body = ` ${protocolBodyQuote(quote)} `;
+  return number
+    .split(/\s*[\/&]\s*/)
+    .filter(Boolean)
+    .some((part) => {
+      if (!isUsableProtocolSectionNumber(part)) return false;
+      const escaped = part.replace(/\./g, "\\.");
+      return new RegExp(
+        `(?:^|\\s)(?:section\\s+)?${escaped}(?!\\.\\d)\\.?\\s`,
+        "i"
+      ).test(body);
+    });
+}
+
+function sectionHeadingFromQuote(
+  quote: string,
+  context: string,
+  family: RtmStageFamily
+): string | null {
+  const body = protocolBodyQuote(quote);
+  if (!body) return null;
+  const heading = protocolSectionHeading(body, context, family);
+  if (!heading) return null;
+  const number = rtmCellSectionNumber(heading, family);
+  if (!number) return null;
+  return heading;
+}
+
+function citePageForSectionHeading(
+  pages: readonly { filename: string; pageNumber: number; quote: string }[],
+  passPage: { filename: string; pageNumber: number; quote: string },
+  context: string,
+  family: RtmStageFamily
+): {
+  page: { filename: string; pageNumber: number; quote: string };
+  heading: string | null;
+} {
+  const passHeading = sectionHeadingFromQuote(passPage.quote, context, family);
+  if (passHeading) {
+    const number = rtmCellSectionNumber(passHeading, family);
+    if (number && headingNumberOnPage(passPage.quote, number)) {
+      return { page: passPage, heading: passHeading };
+    }
+    const home = pages.find(
+      (page) => number && headingNumberOnPage(page.quote, number)
+    );
+    if (home) return { page: home, heading: passHeading };
+  }
+  for (const page of pages) {
+    const heading = sectionHeadingFromQuote(page.quote, context, family);
+    if (!heading) continue;
+    const number = rtmCellSectionNumber(heading, family);
+    if (number && headingNumberOnPage(page.quote, number)) {
+      return { page, heading };
+    }
+  }
+  return { page: passPage, heading: passHeading };
+}
+
 export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
@@ -1146,6 +1552,7 @@ export function pickRtmReference(
         const topic = protocolTopicBody(page.quote, context);
         return topic != null && hasProtocolPassToken(topic);
       }) ?? pages[0]!;
+    const cited = citePageForSectionHeading(pages, passPage, context, family);
     const body =
       protocolTopicBody(passPage.quote, context) ??
       quoteWindowAroundKey(passPage.quote, key) ??
@@ -1153,9 +1560,9 @@ export function pickRtmReference(
     return {
       family,
       stageLabel: STAGE_LABEL[family],
-      filename: passPage.filename,
-      pageNumber: passPage.pageNumber,
-      sectionHeading: body ? protocolSectionHeading(body) : null,
+      filename: cited.page.filename,
+      pageNumber: cited.page.pageNumber,
+      sectionHeading: cited.heading,
       remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }
@@ -1195,7 +1602,7 @@ function applyPickToRow(
     return next;
   }
   next[cols.stage] = formatRtmStageCell(pick);
-  next[cols.section] = pick.sectionHeading ?? "";
+  next[cols.section] = rtmSectionCellText(next[cols.section] ?? "", pick);
   next[cols.remarks] = pick.remarks;
   return next;
 }
@@ -1221,11 +1628,9 @@ function rankEditCells(
     );
     if (!touchesRef) return [cell];
     if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
-    if (optionalRefExpectedFilled(cell)) {
-      // Explicit clear of a live Stage / Section / Remarks cell. Fill-empty
-      // mixed batches still skip a non-empty rewrite of a filled sibling.
-      if (!cell.insertText.trim()) return [cell];
-      return [];
+    if (optionalRefExpectedFilled(cell) && !cell.insertText.trim()) {
+      // Explicit clear of a live Stage / Section / Remarks cell.
+      return [cell];
     }
     const context = editCellsSiblingContext(siblings, key);
     const rowKey = key.startsWith("__row:")
@@ -1237,13 +1642,36 @@ function rankEditCells(
     if (!pick) {
       // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
       if (rawPick) return [];
-      return [cell];
+      if (cell.col !== cols.section) return [cell];
+      const text = rtmSectionCellText(cell.insertText, null);
+      if (!text && optionalRefExpectedFilled(cell)) return [];
+      if (text.trim() === (cell.expectedText ?? "").trim()) return [];
+      return [{ ...cell, insertText: text }];
     }
     if (cell.col === cols.stage) {
       return [{ ...cell, insertText: formatRtmStageCell(pick) }];
     }
     if (cell.col === cols.section) {
-      return [{ ...cell, insertText: pick.sectionHeading ?? "" }];
+      const text = rtmSectionCellText(cell.insertText, pick);
+      const live = (cell.expectedText ?? "").trim();
+      const floor = liveReferenceFloor(siblings, cols);
+      const rankingUp = Boolean(
+        floor.stageFamily &&
+          stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
+      );
+      if (!rankingUp && conflictingFilledSectionNumber(live, text)) {
+        return [];
+      }
+      if (!text.trim() && optionalRefExpectedFilled(cell)) {
+        // Drop a logged reading / page counter the engineer already accepted
+        // so the next card can replace it; do not keep `12.72` as Section.
+        if (!rtmCellSectionNumber(live, pick.family)) {
+          return [{ ...cell, insertText: "" }];
+        }
+        return [];
+      }
+      if (text.trim() === live) return [];
+      return [{ ...cell, insertText: text }];
     }
     if (cell.col === cols.remarks) {
       return [{ ...cell, insertText: pick.remarks }];
@@ -1269,28 +1697,37 @@ function rankEditCells(
     );
     if (!pick) continue;
     const template = siblings[0]!;
-    const liveFilled = (col: number) => {
-      if (col === cols.section && floor.sectionText) return true;
-      if (col === cols.stage && floor.stageFamily) return true;
+    const liveText = (col: number): string => {
+      if (col === cols.section && floor.sectionText) return floor.sectionText;
       const sib = siblings.find((cell) => cell.col === col);
-      return sib != null && optionalRefExpectedFilled(sib);
+      return (sib?.expectedText ?? "").trim();
     };
     const add = (col: number, insertText: string) => {
       if (!insertText.trim()) return;
-      if (liveFilled(col)) return;
+      const live = liveText(col);
+      if (live === insertText.trim()) return;
       if (present.has(`${key}:${col}`)) return;
       present.add(`${key}:${col}`);
       extra.push({
         row: template.row,
         col,
         rowKey: template.rowKey ?? key,
-        expectedText: "",
+        expectedText: live,
         insertText,
         ...(template.rowContext ? { rowContext: template.rowContext } : {}),
       });
     };
     add(cols.stage, formatRtmStageCell(pick));
-    add(cols.section, pick.sectionHeading ?? "");
+    const rankingUp = Boolean(
+      floor.stageFamily &&
+        stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
+    );
+    const sectionText = rtmSectionCellText("", pick);
+    if (!rankingUp && conflictingFilledSectionNumber(floor.sectionText, sectionText)) {
+      // Keep the filled number; still fill empty Stage / Remarks.
+    } else {
+      add(cols.section, sectionText);
+    }
     add(cols.remarks, pick.remarks);
   }
   return {

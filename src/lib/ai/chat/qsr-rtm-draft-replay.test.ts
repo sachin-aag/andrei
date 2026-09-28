@@ -1970,7 +1970,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(blob).not.toMatch(/\bDQ\b/);
     expect(blob).not.toContain("12.3");
     const section = cells.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toBe("13.6");
+    if (section) expect(section.insertText).toContain("13.6");
     if (cells.length === 0) return;
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-dq",
@@ -1995,7 +1995,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(sectionCell).not.toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 paints IQ / Complies and leaves filled 13.6 unstruck when IQ and DQ were both read", async () => {
+  it("fill-empty URS-41 paints IQ / Complies and overwrites filled 13.6 with the IQ heading title", async () => {
     const table7Rows = [
       ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
       ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
@@ -2064,7 +2064,9 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(blob).toMatch(/Complies/i);
     expect(blob).not.toMatch(/\bDQ\b/);
     expect(blob).not.toContain("12.3");
-    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+    const section = cells.find((cell) => cell.col === 4);
+    expect(section?.insertText).toContain("13.6");
+    expect(section?.insertText).toContain("Gaskets");
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-fill-empty",
       authorId: "ai",
@@ -2081,8 +2083,9 @@ describe("QSR RTM section 5 draft replay", () => {
     );
     const sectionCell = JSON.stringify(cellsInRow[4]);
     expect(sectionCell).toContain("13.6");
+    expect(sectionCell).toContain("Gaskets");
     expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
     expect(JSON.stringify(cellsInRow[3])).toMatch(/\bIQ\b/);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
   });

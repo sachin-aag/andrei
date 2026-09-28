@@ -952,6 +952,45 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 1, 4)).toContain("Within limits");
   });
 
+  it("overwrites a filled QSR RTM Section cell in a mixed fill-empty batch", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [["URS-41", "Gaskets", "PTFE or Equivalent", "", "13.6", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-41",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-41",
+          expectedText: "13.6",
+          insertText: "13.6; Gaskets PTFE or equivalent",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-41",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("IQ");
+    expect(cellText(result.doc, 1, 4)).toBe("13.6; Gaskets PTFE or equivalent");
+    expect(cellText(result.doc, 1, 5)).toBe("Complies");
+  });
+
   it("still rewrites a filled cell when the batch has no empty fills", () => {
     const doc = tableDoc(
       [...DV_TRACEABILITY_HEADERS],
@@ -2476,5 +2515,19 @@ describe("summarizeTableOperation", () => {
     expect(
       summarizeTableOperation({ kind: "delete_table", tableIndex: 0 })
     ).toBe("Delete table");
+  });
+
+  it("names the URS rows on an edit_cells card", () => {
+    expect(
+      summarizeTableOperation({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2 – Simulation" },
+          { row: 1, col: 5, rowKey: "URS-1", insertText: "Complies" },
+          { row: 6, col: 4, rowKey: "URS-6", insertText: "10.5 – Jacket" },
+        ],
+      })
+    ).toBe("Update 3 table cells on URS-1, URS-6");
   });
 });

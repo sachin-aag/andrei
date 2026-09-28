@@ -17,7 +17,10 @@ alwaysApply: false
 
 # Chat and attachments
 
-Follow the **latest user message**. Agent mode may edit when they asked to
+Follow the **latest user message**. Ask vs Agent is per send, not the
+whole thread — a prior "currently in Ask mode" assistant note is stale
+once the composer is Agent ("I switched to Agent" / yes after that copy
+is write). Agent mode may edit when they asked to
 write; empty sections and ready attachments are not a request to draft.
 Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
@@ -187,14 +190,19 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
   is a pass with no pass word; an unexecuted template (no signature date)
   is not, and a fail / does-not-meet statement vetoes every pass. Unsupported Stage /
   Section / Remarks cells clear
-instead of blocking the URS copy. An explicit empty `edit_cells` of filled
+instead of blocking the URS copy. PQ/OQ/IQ Reference – Section numbers are
+dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
+`Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and Stage `[file, p. N]` cites the page that
+prints that heading. An explicit empty `edit_cells` of filled
 Stage / Section / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
 only at row level (labeled Result / Remarks N/A, `not applicable for this
 …`, or a bare N/A inside that URS-N window) — a stray `Model Number NA`
 spec cell does not. When a saved cell differs from the request, the
 `edit_table` `proposed` result carries `adjustedCells` (`requested` /
-`saved`) so the wrap-up reports what landed. Every pack uses `unsupportedFactPolicy: block`
+`saved`) plus `proposedRowKeys` / `proposedCellCount` / `droppedRowKeys`
+so the wrap-up names only the rows on the card (one `edit_table` is one
+card, not one card per URS row). Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

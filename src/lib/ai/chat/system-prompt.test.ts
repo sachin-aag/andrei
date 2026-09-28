@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v156-qsr-rpm-tilde");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v162-qsr-rpm-tilde");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -27,21 +27,31 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("do not copy URS-37's range onto URS-5");
     expect(prompt).toContain("URS cover");
     expect(prompt).toContain("stock Complies / bare Section 13");
+    expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
+    expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
+    expect(prompt).toContain("never the printed page counter");
+    expect(prompt).toContain("12.72 °C");
+    expect(prompt).toContain("Bottomsensor");
+    expect(prompt).toContain("page that prints that dotted heading");
     expect(prompt).toContain("one insert_rows");
     expect(prompt).toContain("Open cards stack");
     expect(prompt).toContain("Apply does not unlock the next insert");
     expect(prompt).toContain("Installation Qualification");
-    expect(prompt).toContain(
-      "Do not paste a protocol-to-URS mapping in chat"
-    );
+    expect(prompt).toContain("8.2.4 / 8.8");
+    expect(prompt).toContain("Never paste a markdown table of RTM rows in chat");
+    expect(prompt).toContain("Do not list URS-N rows as updated");
+    expect(prompt).toContain("proposedRowKeys");
+    expect(prompt).toContain("droppedRowKeys");
+    expect(prompt).toContain("not one card per URS row");
+    expect(prompt).toContain("Do not write Stage as PQ/OQ or PQ/IQ");
     expect(prompt).toContain(
       "leave those three cells empty for that row"
     );
     expect(prompt).toContain("Never write `<remarks>`");
     expect(prompt).toContain("<qualification stage>");
     expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
-    expect(prompt).toContain("fill empty cells");
-    expect(prompt).toContain("including a filled Reference – Section");
+    expect(prompt).toContain("fill or update RTM Reference cells");
+    expect(prompt).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");
     expect(prompt).toContain(
       "one requirement ID is not one grep when filling RTM Stage"
     );
@@ -364,6 +374,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("propose a short outline");
     expect(prompt).not.toContain("switch to Agent mode to generate");
     expect(prompt).not.toContain("Mode: AGENT");
+    expect(prompt).toContain("This send is Ask");
+    expect(prompt).toContain("Do not say the whole session is locked in Ask");
   });
 
   it("agent mode enables drafting with draft_field and placeholder heuristics", () => {
@@ -372,6 +384,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: ASK");
+    expect(prompt).toContain("This send is Agent");
+    expect(prompt).toContain("Do not write that you are still in Ask mode");
   });
 
   it("sends a small change in a filled field back to propose_edit", () => {

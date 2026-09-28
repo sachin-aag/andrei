@@ -273,6 +273,8 @@ import {
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
+  tableEditProposalMessage,
+  tableEditProposalMeta,
   type TableCellAdjustment,
 } from "@/lib/ai/chat/table-cell-adjustments";
 import {
@@ -403,6 +405,12 @@ export type EditTableResult =
       warning?: string;
       adjustedCells?: TableCellAdjustment[];
       adjustmentNote?: string;
+      requestedCellCount?: number;
+      proposedCellCount?: number;
+      requestedRowKeys?: string[];
+      proposedRowKeys?: string[];
+      droppedRowKeys?: string[];
+      proposalNote?: string;
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -3965,6 +3973,10 @@ export function buildChatTools(opts: {
           groundedTable.operation,
           (col) => qsrTableColumnLabel(section, col)
         );
+        const proposal = tableEditProposalMeta(
+          originalTableOp,
+          groundedTable.operation
+        );
         return proposedWithSupersession(
           {
             status: "proposed" as const,
@@ -3978,6 +3990,12 @@ export function buildChatTools(opts: {
             ...(tableOverclaims.warning
               ? { warning: tableOverclaims.warning }
               : {}),
+            requestedCellCount: proposal.requestedCellCount,
+            proposedCellCount: proposal.proposedCellCount,
+            requestedRowKeys: proposal.requestedRowKeys,
+            proposedRowKeys: proposal.proposedRowKeys,
+            droppedRowKeys: proposal.droppedRowKeys,
+            proposalNote: tableEditProposalMessage(proposal),
             ...(adjustedCells.length > 0
               ? {
                   adjustedCells,

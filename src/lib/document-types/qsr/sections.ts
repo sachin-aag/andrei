@@ -132,6 +132,20 @@ export const QSR_SOP_HEADERS = ["SOP Name", "SOP Number", "Effective Date"] as c
 
 export const QSR_VOLUMETRIC_HEADERS = ["S.No", "Parameter", "Details"] as const;
 
+/** Table 11 Other Details of Equipment — Parameter / Details. */
+export const QSR_OTHER_DETAILS_HEADERS = ["Parameter", "Details"] as const;
+
+export const QSR_OTHER_DETAILS_ROWS = [
+  ["Total Heat Transfer Area"],
+  ["Agitator Type"],
+  ["Type of Agitator"],
+  ["Pump Type"],
+  ["Type of Mechanical Seal"],
+  ["Mechanical Seal Flushing Media"],
+  ["Mechanical Seal Flushing Pressure"],
+  ["Mechanical Seal Flushing Flow"],
+] as const;
+
 /**
  * Flat grid the export still accepts. The form itself has no Range header:
  * Details spans that column, and Temperature's Minimum / Maximum are body cells.
@@ -477,7 +491,7 @@ function volumetricDoc(): JSONContent {
 }
 
 function otherDetailsDoc(): JSONContent {
-  return { type: "doc", content: [textParagraph("Agitator Type: ", true)] };
+  return tableDoc(QSR_OTHER_DETAILS_HEADERS, QSR_OTHER_DETAILS_ROWS);
 }
 
 export const QSR_STANDARD_SCOPE =
