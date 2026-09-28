@@ -160,11 +160,17 @@ describe("detectSectionIntentFromText", () => {
       "qsr_sops",
     ]);
     expect(
+      detectSectionIntentFromText(
+        "draft table 4",
+        "qualification_summary_report"
+      )
+    ).toBe("qsr_rtm_process");
+    expect(
       detectSectionIntentsFromText(
         "populate tables 3 and 4",
         "qualification_summary_report"
       )
-    ).toEqual(["qsr_qualification_documents", "qsr_sops"]);
+    ).toEqual(["qsr_sops", "qsr_rtm_process"]);
     expect(
       detectSectionIntentFromText("5.2", "equipment_lifecycle_report")
     ).toBeNull();

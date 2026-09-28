@@ -131,7 +131,11 @@ export function detectAlreadyDraftedSection(input: {
   if (isExplicitSectionRewrite(input.userText)) return null;
 
   const documentType = input.documentType ?? "investigation_report";
-  const fromIntent = detectSectionIntentFromText(input.userText, documentType);
+  const fromIntent = detectSectionIntentFromText(
+    input.userText,
+    documentType,
+    { sections: input.sections }
+  );
   const scope = input.sectionScope ?? "all";
   const section = fromIntent ?? (scope !== "all" ? scope : null);
   if (!section) return null;

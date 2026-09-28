@@ -8,7 +8,6 @@ import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import {
   glueOcrMinusSigns,
   glueOcrUrsIds,
-  LEADING_MINUS_CLASS,
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
@@ -87,9 +86,7 @@ const REVISION_CELL_RE = /^0?\d{1,2}$/;
 const RPM_PARAMETER_RE = /\bagitator\b|\brpm\b/i;
 const RANGE_PARAMETER_RE =
   /\bpressure\b|\bvacuum\b|\btemperature\b|\bagitator\b|\brpm\b/i;
-const LEADING_QUANTITY_RE = new RegExp(
-  `^(?:[~≈±]|${LEADING_MINUS_CLASS})?\\s*\\d+(?:\\.\\d+)?`
-);
+const LEADING_QUANTITY_RE = /^(?:[~≈±]|[-−–])?\s*\d+(?:\.\d+)?/;
 
 export const QSR_RTM_SECTIONS = [
   "qsr_rtm_process",
@@ -1412,10 +1409,9 @@ export function qsrOperatingRangeUnsupported(
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (RPM_PARAMETER_RE.test(context)) {
     const hasRpm = quotes.some((quote) =>
-      new RegExp(
-        `(?<![A-Za-z0-9.])${LEADING_MINUS_CLASS}?\\s*\\d+(?:\\.\\d+)?\\s*(?:±|\\+\\/-|\\+\\-|plus\\/minus)?\\s*\\d*\\s*rpm\\b`,
-        "i"
-      ).test(quote)
+      /(?<![A-Za-z0-9.])(?:[~≈]|[-−–])?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
+        quote
+      )
     );
     if (hasRpm && !/\brpm\b/i.test(trimmed) && !/\d/.test(trimmed)) {
       return syntheticUnsupportedFact(trimmed);
@@ -1426,7 +1422,7 @@ export function qsrOperatingRangeUnsupported(
 
 /**
  * Operating Range / RTM "15 °C" or "50 ± 10 RPM" when the URS prints −15 °C
- * or −50 ± 10 RPM. A leading en-dash read as ~ / ± is the same miss.
+ * or −50 ± 10 RPM. A leading tilde / ≈ is approximate, not a dropped minus.
  */
 function unsignedQuantityWhenEvidenceIsNegative(
   cell: string,
@@ -1439,7 +1435,10 @@ function unsignedQuantityWhenEvidenceIsNegative(
   if (!isTemp && !isRpm) return null;
   const match = LEADING_QUANTITY_RE.exec(cell);
   if (!match) return null;
-  const token = glueOcrMinusSigns(match[0].replace(/^[~≈±]+/, "").replace(/\s+/g, ""));
+  // Live GLR-1301 URS-10 is ~50±10 RPM. Do not strip that tilde and treat
+  // 50 as unsigned against a hypothetical −50.
+  if (/^[~≈]/.test(match[0].trim())) return null;
+  const token = glueOcrMinusSigns(match[0].replace(/^[±]+/, "").replace(/\s+/g, ""));
   if (!token || token.startsWith("-")) return null;
   const unit = isTemp ? " °C" : " RPM";
   const kind = isTemp ? ("temperature" as const) : ("number" as const);

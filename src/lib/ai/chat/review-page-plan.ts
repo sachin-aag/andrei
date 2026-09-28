@@ -130,8 +130,7 @@ function addQualDocIdentity(normalized: string, found: Set<string>): void {
     normalized.includes("qsr_qualification_documents") ||
     normalized.includes("qualification document") ||
     normalized.includes("qsr_qualification") ||
-    normalized.includes("lifecycle document") ||
-    /\btable(?:s)?\s+3\b/.test(normalized)
+    normalized.includes("lifecycle document")
   ) {
     found.add("qsr_qualification_documents");
   }
@@ -140,8 +139,7 @@ function addQualDocIdentity(normalized: string, found: Set<string>): void {
 function addSopIdentity(normalized: string, found: Set<string>): void {
   if (
     normalized === "qsr_sops" ||
-    normalized.includes("qsr_sops") ||
-    /\btable(?:s)?\s+4\b/.test(normalized)
+    normalized.includes("qsr_sops")
   ) {
     found.add("qsr_sops");
   }

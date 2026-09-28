@@ -584,17 +584,36 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toContain("50+-10 RPM");
     expect(
       extraQsrUnsupported({
-        cell: "~50 ± 10 RPM",
-        context: "Agitator RPM",
-        section: "qsr_operating_range",
-        ledger,
-      }).map((fact) => fact.text)
-    ).toContain("~50 ± 10 RPM");
-    expect(
-      extraQsrUnsupported({
         cell: "–50 ± 10 RPM",
         context: "URS-10\nRPM requirement",
         section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("accepts ~50±10 RPM when the URS shows a tilde, not a minus", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-10 RPM requirement ~50±10 RPM",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "~50±10 RPM",
+        context: "URS-10\nRPM requirement",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+    expect(
+      extraQsrUnsupported({
+        cell: "~50 ± 10 RPM",
+        context: "Agitator RPM",
+        section: "qsr_operating_range",
         ledger,
       })
     ).toEqual([]);

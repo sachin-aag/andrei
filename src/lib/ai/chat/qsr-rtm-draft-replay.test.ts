@@ -967,6 +967,46 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows.flat().join(" ")).toMatch(/10\s*RPM/i);
   });
 
+  it("proposes ~50±10 RPM on URS-10 when the URS shows a tilde", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript: "URS-10 RPM requirement ~50±10 RPM",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-10 RPM from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-10", "RPM requirement", "~50±10 RPM", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("~50");
+    expect(rows.flat().join(" ")).not.toMatch(/[-−–]50/);
+  });
+
   it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", async () => {
     mockSection("qsr_rtm_process");
     const tools = buildTools({ section: "qsr_rtm_process" });
