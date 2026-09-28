@@ -10,6 +10,13 @@ import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
 const EXPLICIT_REWRITE_RE =
   /\b(?:re-?write|replace(?:\s+(?:the|this|it))?|start over|from scratch|full(?:y)?\s+replace)\b/i;
 
+/**
+ * The engineer named a document change to land now ("insert the suggestion",
+ * "edit the document"). That is the task — not a review that stops at a summary.
+ */
+const EXPLICIT_DOCUMENT_EDIT_RE =
+  /\b(?:insert|apply|land)\b.{0,60}\b(?:the\s+)?(?:suggestion|edit|change|update)\b|\bedit the document\b|\bmake the edit\b|\bput (?:it|that|this) in the (?:document|report|table|section)\b|\b(?:suggestion|card)s?\b.{0,40}\b(?:not landing|did(?:n't| not) land|aren'?t landing|never land(?:ed|ing)?)\b|\brefus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)\b|\bonly summar(?:ising|izing|ised|ized)\b/i;
+
 export type AlreadyDraftedSection = {
   section: SectionType;
   fillState: "partial" | "filled";
@@ -102,6 +109,11 @@ export function isExplicitSectionRewrite(text: string): boolean {
   return EXPLICIT_REWRITE_RE.test(text.trim());
 }
 
+/** True when this turn is "put that change in the document", not a review. */
+export function isExplicitDocumentEdit(text: string): boolean {
+  return EXPLICIT_DOCUMENT_EDIT_RE.test(text.replace(/\s+/g, " ").trim());
+}
+
 /**
  * When a write lands on a field that already has content, the assistant should
  * read and review it — not search attachments or quiz the engineer for facts
@@ -150,8 +162,9 @@ Then compare the current text to that section's quality criteria (and AI Check h
 - Gaps found: name the gaps. Do not quiz them for facts already in the section.`
       : `Call read_section on "${already.section}" FIRST. Do not call search_documents or ask_user yet.
 Then compare the current text to that section's quality criteria (and AI Check hints below, if any):
-- No material gaps: do not rewrite and do not ask_user. Reply that the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change.
-- Gaps found: search attachments only for the missing facts, then make a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.`;
+- They asked to insert, apply, or edit the document (a cell, a row, or wording they already described): that is the change. After read_section, call edit_table for a table or propose_edit for prose. Do not stop at a summary. Do not paste a markdown table or the replacement text for them to copy. Do not say write tools are disabled or that this session is read-only.
+- No specific change and no material gaps: do not rewrite and do not ask_user. Reply that the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change.
+- Gaps found, and they did not already name the change: search attachments only for the missing facts, then make a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.`;
 
   return `## Already drafted (review first)
 The engineer asked to draft **${label}** [${already.section}], which the context map marks **${already.fillState}**.

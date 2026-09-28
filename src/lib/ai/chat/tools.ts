@@ -135,6 +135,7 @@ import {
   coerceTableOperationInput,
   countFilledTablesInDocument,
   defaultTableCaptionTitle,
+  dropLeftoverPlaceholderCells,
   filledTableNumberInDocument,
   parseTableOperation,
   prefixTableCaptionMarkdown,
@@ -269,6 +270,7 @@ import {
   isQsrInventoryReviewObjective,
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
+import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
 import {
   planDocumentSearchQuery,
   phraseFamiliesForSection,
@@ -287,7 +289,7 @@ import {
   groundDraftText,
   groundTableOperation,
   tableOperationContainsPlaceholders,
-  tablePlaceholderLabels,
+  tableLookupPlaceholderLabels,
   tableOperationPlainText,
   tablePlaceholderLookupMessage,
   unsupportedFactsToolResult,
@@ -558,6 +560,19 @@ const tableOperationStrictSchema = z.discriminatedUnion("kind", [
           col: z.number().int().min(0),
           expectedText: z.string().optional(),
           insertText: z.string(),
+          rowKey: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              "First-cell text of the live row (e.g. URS-13). Prefer this over row — numeric indexes shift after banners or earlier inserts. Each cell needs its own rowKey; do not reuse one dummy row number for every URS."
+            ),
+          rowContext: z
+            .string()
+            .optional()
+            .describe(
+              "Sibling cell text on this row. Optional; the server captures it when omitted."
+            ),
         })
       )
       .min(1),
@@ -986,6 +1001,10 @@ function buildSearchDocumentsTool(opts: {
       .map(withSourceCitation);
     const annotated = annotateDividerSearchHits(cited);
     const continuation = annotateContinuationSearchHits(annotated.results);
+    const rtmProtocolOpen = shouldKeepRtmProtocolSearchOpen(
+      queryList,
+      merged.map((hit) => hit.filename)
+    );
     return {
       results: continuation.results,
       queriesRun: queryList,
@@ -1008,7 +1027,9 @@ function buildSearchDocumentsTool(opts: {
       ...(continuation.continuationHits > 0
         ? { continuationHint: PAGE_CONTINUATION_SEARCH_HINT }
         : {}),
-      ...(annotated.keepSearchOpen || continuation.keepSearchOpen
+      ...(annotated.keepSearchOpen ||
+      continuation.keepSearchOpen ||
+      rtmProtocolOpen
         ? { keepSearchOpen: true as const }
         : {}),
     };
@@ -3623,7 +3644,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3726,6 +3747,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
+          fieldDoc,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3744,6 +3766,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            fieldDoc,
           });
         }
         if (groundedTable.blocked) {
@@ -3754,6 +3777,7 @@ export function buildChatTools(opts: {
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
             clearOptionalOnBlock: true,
+            fieldDoc,
           });
           if (!clearedOptional.blocked) {
             groundedTable = clearedOptional;
@@ -3773,7 +3797,9 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
           });
         }
-        const leftoverLabels = tablePlaceholderLabels(groundedTable.operation);
+        const leftoverLabels = tableLookupPlaceholderLabels(
+          groundedTable.operation
+        );
         if (leftoverLabels.length > 0 && !tablePlaceholderLookupBounced) {
           tablePlaceholderLookupBounced = true;
           return unsupportedFactsToolResult({
@@ -3782,6 +3808,26 @@ export function buildChatTools(opts: {
             ...repairResultFields(repair.hits),
             message: tablePlaceholderLookupMessage(leftoverLabels),
           });
+        }
+        if (leftoverLabels.length > 0) {
+          const strippedPlaceholders = dropLeftoverPlaceholderCells(
+            groundedTable.operation
+          );
+          groundedTable = {
+            ...groundedTable,
+            operation: strippedPlaceholders,
+          };
+          if (
+            strippedPlaceholders.kind === "edit_cells" &&
+            strippedPlaceholders.cells.length === 0
+          ) {
+            return unsupportedFactsToolResult({
+              unsupported: groundedTable.unsupported,
+              draftWithPlaceholders: leftoverLabels.join("; "),
+              ...repairResultFields(repair.hits),
+              message: tablePlaceholderLookupMessage(leftoverLabels),
+            });
+          }
         }
         // Cell text overclaims the same way prose does — a Remark column
         // reading "all batches compliant" is the case that prompted this.
@@ -3824,6 +3870,9 @@ export function buildChatTools(opts: {
           };
         }
         if (!applied.ok) {
+          if (applied.status === "already_present") {
+            return { status: "empty_edit", hint: applied.hint };
+          }
           return { status: applied.status, hint: applied.hint };
         }
         const second = citationsAtEndOfSection

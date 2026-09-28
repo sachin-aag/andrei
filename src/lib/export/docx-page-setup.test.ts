@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_A4_PAGE_SETUP,
   loadDocxPageSetupFromZip,
+  moveSectionBreakBeforeTableCaptions,
   tableNeedsLandscapePage,
   toLandscapeSectPr,
 } from "@/lib/export/docx-page-setup";
@@ -52,5 +53,48 @@ describe("docx page setup", () => {
     expect(tableNeedsLandscapePage(15, 10469)).toBe(true);
     expect(tableNeedsLandscapePage(19, 10469)).toBe(true);
     expect(tableNeedsLandscapePage(1, 10469)).toBe(false);
+  });
+
+  it("moves a landscape section break to before the table name and title", () => {
+    const breakXml =
+      `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>` +
+      `<w:sectPr><w:pgSz w:w="11909" w:h="16834"/></w:sectPr></w:pPr></w:p>`;
+    const xml =
+      `<?xml version="1.0"?><w:document><w:body>` +
+      `<w:p><w:r><w:t>Nine stages were reviewed.</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Table 3. Qualification history</w:t></w:r></w:p>` +
+      breakXml +
+      `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>grid</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+      `<w:sectPr><w:pgSz w:w="16834" w:h="11909" w:orient="landscape"/></w:sectPr>` +
+      `</w:body></w:document>`;
+    const out = moveSectionBreakBeforeTableCaptions(xml);
+    const assessmentAt = out.indexOf("Nine stages");
+    const breakAt = out.indexOf("<w:p><w:pPr>");
+    const captionAt = out.indexOf("Table 3. Qualification history");
+    const tableAt = out.indexOf("<w:tbl>");
+    expect(breakAt).toBeGreaterThan(assessmentAt);
+    expect(captionAt).toBeGreaterThan(breakAt);
+    expect(tableAt).toBeGreaterThan(captionAt);
+  });
+
+  it("moves the break before a split table name and title in the template", () => {
+    const breakXml =
+      `<w:p><w:pPr><w:sectPr><w:pgSz w:w="11909" w:h="16834"/></w:sectPr></w:pPr></w:p>`;
+    const xml =
+      `<?xml version="1.0"?><w:document><w:body>` +
+      `<w:p><w:r><w:t>Table 4:</w:t></w:r></w:p>` +
+      `<w:p><w:r><w:t>Requirements Verified</w:t></w:r></w:p>` +
+      breakXml +
+      `<w:tbl><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>` +
+      `<w:sectPr><w:pgSz w:w="16834" w:h="11909" w:orient="landscape"/></w:sectPr>` +
+      `</w:body></w:document>`;
+    const out = moveSectionBreakBeforeTableCaptions(xml);
+    expect(out.indexOf("Table 4:")).toBeGreaterThan(out.indexOf("<w:sectPr>"));
+    expect(out.indexOf("Requirements Verified")).toBeGreaterThan(
+      out.indexOf("Table 4:")
+    );
+    expect(out.indexOf("<w:tbl>")).toBeGreaterThan(
+      out.indexOf("Requirements Verified")
+    );
   });
 });

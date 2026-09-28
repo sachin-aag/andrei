@@ -75,6 +75,237 @@ export const QUALIFICATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<Qualificat
     { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
   ];
 
+export type ProcessValidationColumnId =
+  | "serial"
+  | "stage"
+  | "documentNo"
+  | "productProcess"
+  | "formatApplicability"
+  | "dateCompleted"
+  | "outcome"
+  | "deviationRef"
+  | "nextDueDate"
+  | "remarks";
+
+export const PROCESS_VALIDATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<ProcessValidationColumnId>[] =
+  [
+    serialFor<ProcessValidationColumnId>(),
+    {
+      id: "stage",
+      label: "Validation Stage",
+      aliases: ["validation stage", "stage", "ppq", "cpv"],
+    },
+    {
+      id: "documentNo",
+      label: "Protocol / Report No.",
+      aliases: [
+        "protocol report no",
+        "protocol no",
+        "report no",
+        "document no",
+        "document reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "productProcess",
+      label: "Product / Process",
+      aliases: ["product process", "product", "process"],
+    },
+    {
+      id: "formatApplicability",
+      label: "Format Applicability",
+      aliases: ["format applicability", "format", "applicability"],
+    },
+    {
+      id: "dateCompleted",
+      label: "Date Completed",
+      aliases: ["date completed", "completion date", "date"],
+    },
+    {
+      id: "outcome",
+      label: "Outcome",
+      aliases: ["outcome", "result", "status"],
+      inferFromContent: "passFail",
+    },
+    {
+      id: "deviationRef",
+      label: "Linked Deviation / Change Control Ref.",
+      aliases: [
+        "linked deviation change control ref",
+        "linked deviation ref",
+        "change control ref",
+        "deviation ref",
+      ],
+    },
+    {
+      id: "nextDueDate",
+      label: "Next Due / Review Date",
+      aliases: [
+        "next due review date",
+        "next due date",
+        "review date",
+        "due date",
+      ],
+    },
+    { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
+  ];
+
+export type CleaningValidationColumnId =
+  | "serial"
+  | "stage"
+  | "documentNo"
+  | "productResidue"
+  | "cleaningMethod"
+  | "formatApplicability"
+  | "dateCompleted"
+  | "outcome"
+  | "deviationRef"
+  | "nextDueDate"
+  | "remarks";
+
+export const CLEANING_VALIDATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<CleaningValidationColumnId>[] =
+  [
+    serialFor<CleaningValidationColumnId>(),
+    {
+      id: "stage",
+      label: "Validation Stage",
+      aliases: ["validation stage", "stage"],
+    },
+    {
+      id: "documentNo",
+      label: "Protocol / Report No.",
+      aliases: [
+        "protocol report no",
+        "protocol no",
+        "report no",
+        "document no",
+        "document reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "productResidue",
+      label: "Product / Residue",
+      aliases: ["product residue", "product", "residue"],
+    },
+    {
+      id: "cleaningMethod",
+      label: "Cleaning Method",
+      aliases: ["cleaning method", "method", "sop"],
+    },
+    {
+      id: "formatApplicability",
+      label: "Format Applicability",
+      aliases: ["format applicability", "format", "applicability"],
+    },
+    {
+      id: "dateCompleted",
+      label: "Date Completed",
+      aliases: ["date completed", "completion date", "date"],
+    },
+    {
+      id: "outcome",
+      label: "Outcome",
+      aliases: ["outcome", "result", "status"],
+      inferFromContent: "passFail",
+    },
+    {
+      id: "deviationRef",
+      label: "Linked Deviation / Change Control Ref.",
+      aliases: [
+        "linked deviation change control ref",
+        "linked deviation ref",
+        "change control ref",
+        "deviation ref",
+      ],
+    },
+    {
+      id: "nextDueDate",
+      label: "Next Due / Review Date",
+      aliases: [
+        "next due review date",
+        "next due date",
+        "review date",
+        "due date",
+      ],
+    },
+    { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
+  ];
+
+export type QraReviewColumnId =
+  | "serial"
+  | "documentNo"
+  | "title"
+  | "dateApproved"
+  | "highestResidualRisk"
+  | "reviewDueDate"
+  | "changeSinceLastPrq"
+  | "changeControlRef"
+  | "remarks";
+
+export const QRA_REVIEW_COLUMN_SCHEMA: readonly MatrixColumnSchema<QraReviewColumnId>[] =
+  [
+    serialFor<QraReviewColumnId>(),
+    {
+      id: "documentNo",
+      label: "QRA / Document No.",
+      aliases: [
+        "qra document no",
+        "qra no",
+        "document no",
+        "document reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "title",
+      label: "Title / Scope",
+      aliases: ["title scope", "title", "scope"],
+    },
+    {
+      id: "dateApproved",
+      label: "Date Approved",
+      aliases: ["date approved", "approved", "approval date"],
+    },
+    {
+      id: "highestResidualRisk",
+      label: "Highest residual risk",
+      aliases: [
+        "highest residual risk",
+        "residual risk",
+        "highest risk",
+        "risk grade",
+      ],
+    },
+    {
+      id: "reviewDueDate",
+      label: "Review / Reassessment Due",
+      aliases: [
+        "review reassessment due",
+        "reassessment due",
+        "review due",
+        "due date",
+      ],
+    },
+    {
+      id: "changeSinceLastPrq",
+      label: "Change since last PRQ (Y/N)",
+      aliases: [
+        "change since last prq y n",
+        "change since last prq",
+        "change since last rq",
+        "change",
+      ],
+    },
+    {
+      id: "changeControlRef",
+      label: "Change Control Ref.",
+      aliases: ["change control ref", "change control", "ccf"],
+    },
+    { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
+  ];
+
 export type MediaFillColumnId =
   | "serial"
   | "mediaFillNo"

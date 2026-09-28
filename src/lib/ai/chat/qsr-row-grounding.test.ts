@@ -1,8 +1,16 @@
+import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { extractHardFacts } from "@/lib/ai/chat/claim-facts";
-import { groundTableOperation } from "@/lib/ai/chat/ground-draft";
 import {
+  groundTableOperation,
+  tablePlaceholderLabels,
+} from "@/lib/ai/chat/ground-draft";
+import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
+import {
+  dateSupportedAsLabeledField,
   descriptionSupportedNearKey,
   protocolBodyQuote,
   documentFamilyFromContext,
@@ -10,9 +18,15 @@ import {
   extraQsrUnsupported,
   factSupportedForRowKey,
   isQsrRtmOptionalReferenceColumn,
+  pickRtmReference,
   qsrFailClosedReason,
+  qsrTableColumnLabel,
   quoteWindowAroundKey,
+  pageLevelTokenAroundKey,
   rowKeyFromContext,
+  rtmReferenceColumnIndexes,
+  dropQsrRtmPlaceholderCells,
+  shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 
 const SHARED_URS_PAGE =
@@ -53,6 +67,22 @@ describe("quoteWindowAroundKey", () => {
   });
 });
 
+describe("pageLevelTokenAroundKey", () => {
+  it("includes a pass token after the next URS ID on the same page", () => {
+    const quote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
+    expect(quoteWindowAroundKey(quote, "URS-41")).not.toMatch(/Verified/i);
+    expect(pageLevelTokenAroundKey(quote, "URS-41")).toMatch(/Verified/i);
+    expect(pageLevelTokenAroundKey(quote, "URS-41")).not.toContain("760");
+  });
+
+  it("does not steal a neighbour number from an earlier URS window", () => {
+    const quote =
+      "Vacuum gauge 0 to 760 mmHg. URS-36 Pressure Gauge for the shell.";
+    expect(pageLevelTokenAroundKey(quote, "URS-36")).not.toContain("760");
+  });
+});
+
 const COLUMN_URS_PAGE =
   "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm 15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
 
@@ -90,6 +120,22 @@ describe("quoteWindowAroundKey column-major URS pages", () => {
     expect(quoteWindowAroundKey(page, "URS-13")).toContain("Jacket Type");
     expect(quoteWindowAroundKey(page, "URS-13")).not.toContain("Limpet");
     expect(quoteWindowAroundKey(page, "URS-20")).not.toContain("Limpet");
+  });
+
+  it("finds URS-33 when OCR wraps the ID into the page footer", () => {
+    const page =
+      "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.";
+    expect(quoteWindowAroundKey(page, "URS-33")).not.toBeNull();
+    expect(
+      descriptionSupportedNearKey("Stage and location", [page], "URS-33")
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "Equipment intended for intermediate stage manufacturing operations.",
+        [page],
+        "URS-33"
+      )
+    ).toBe(true);
   });
 
   it("still rejects a range that sits inside a neighbour URS sentence", () => {
@@ -205,6 +251,45 @@ describe("column-major descriptions across pages", () => {
     });
     expect(result.blocked).toBe(false);
     expect(result.unsupported).toEqual([]);
+  });
+
+  it("proposes URS-33 from a column-major page whose ID wraps at the footer", () => {
+    const page =
+      "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations.";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: page,
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-33",
+            "Stage and location",
+            "Equipment intended for intermediate stage manufacturing operations. [User Requirement Specification.PDF, p. 8]",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.unsupported).toEqual([]);
+    expect(result.operation.kind).toBe("insert_rows");
+    if (result.operation.kind === "insert_rows") {
+      expect(result.operation.rows[0]?.[0]).toBe("URS-33");
+      expect(result.operation.rows[0]?.[1]).toContain("Stage and location");
+    }
   });
 });
 
@@ -336,6 +421,104 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toContain("VFD compatible");
   });
 
+  it("blocks unsigned 15 °C on Temperature Minimum when the URS shows −15 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "15",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15");
+    expect(
+      extraQsrUnsupported({
+        cell: "−15 °C",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote:
+          "URS-37 Temperature To measure the temperature - 20 °C to 150 °C",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "20 °C",
+        context: "URS-37\nTemperature",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("20 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "-20 °C to 150 °C",
+        context: "URS-37\nTemperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 50±10 RPM when the URS shows −50 ± 10 RPM", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 7,
+        attachmentId: "urs",
+        quote: "URS-10 RPM requirement –50 ± 10 RPM",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "50+-10 RPM",
+        context: "URS-10\nRPM requirement",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("50+-10 RPM");
+    expect(
+      extraQsrUnsupported({
+        cell: "~50 ± 10 RPM",
+        context: "Agitator RPM",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("~50 ± 10 RPM");
+    expect(
+      extraQsrUnsupported({
+        cell: "–50 ± 10 RPM",
+        context: "URS-10\nRPM requirement",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("does not extra-block a URS-1 capacity cell cited to the cover", () => {
     const ledger = ledgerFromPages([
       {
@@ -382,6 +565,33 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
         ledger,
       }).map((fact) => fact.text)
     ).toContain("IQ");
+  });
+
+  it("keeps Complies when IQ Verified sits outside the URS-ID window and rowContext still names DQ", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote:
+          "URS-40 URS-41 URS-42 13.7.5 Material of Construction Verification Nozzles & Manhole Gasket PTFE or equivalent Result: Verified",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote: "URS-41 12.3 MOC Details Nozzles & Manhole Gasket Result: Verified",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "Complies",
+        context:
+          "URS-41\nGaskets\nPTFE or Equivalent\nIQ [Installation Qualification.PDF, p. 42]\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+        section: "qsr_rtm_gmp",
+        ledger,
+      })
+    ).toEqual([]);
   });
 
   it("keeps IQ when the IQ body describes jacket without a URS ID", () => {
@@ -482,6 +692,16 @@ describe("row helpers", () => {
     expect(isQsrRtmOptionalReferenceColumn("qsr_operating_range", 3)).toBe(
       false
     );
+    expect(rtmReferenceColumnIndexes("qsr_rtm_process")).toEqual({
+      stage: 3,
+      section: 4,
+      remarks: 5,
+    });
+    expect(rtmReferenceColumnIndexes("qsr_rtm_control")).toEqual({
+      stage: 4,
+      section: 5,
+      remarks: 6,
+    });
   });
 
   it("still extracts a temperature that lives only in a neighbour window", () => {
@@ -508,7 +728,7 @@ describe("groundTableOperation optional RTM columns", () => {
         quote: SHARED_URS_PAGE,
       },
     ]);
-    const blocked = groundTableOperation({
+    const result = groundTableOperation({
       operation: {
         kind: "insert_rows",
         tableIndex: 0,
@@ -520,30 +740,13 @@ describe("groundTableOperation optional RTM columns", () => {
       policy: "block",
       grounding: { section: "qsr_rtm_process" },
     });
-    expect(blocked.blocked).toBe(true);
-
-    const cleared = groundTableOperation({
-      operation: {
-        kind: "insert_rows",
-        tableIndex: 0,
-        rows: [
-          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
-        ],
-      },
-      ledger,
-      policy: "block",
-      grounding: { section: "qsr_rtm_process" },
-      clearOptionalOnBlock: true,
-    });
-    expect(cleared.blocked).toBe(false);
-    const clearedRow =
-      cleared.operation.kind === "insert_rows"
-        ? cleared.operation.rows[0]!
-        : [];
-    expect(clearedRow[0]).toContain("URS-5");
-    expect(clearedRow[1]).toBe("Jacket temperature");
-    expect(clearedRow[2]).toContain("20-25 °C");
-    expect(clearedRow.slice(3)).toEqual(["", "", ""]);
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-5");
+    expect(keptRow[1]).toBe("Jacket temperature");
+    expect(keptRow[2]).toContain("20-25 °C");
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
   });
 
   it("keeps IQ / Complies when Installation Qualification names that URS ID", () => {
@@ -772,7 +975,7 @@ describe("groundTableOperation optional RTM columns", () => {
     );
   });
 
-  it("clears bare Section 13 even when the jacket IQ page topic-matches", () => {
+  it("rewrites stock Section 13 to the jacket IQ heading", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -805,7 +1008,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toContain("IQ");
-    expect(keptRow[4]).toBe("");
+    expect(keptRow[4]).toContain("13.3.5.1");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -863,5 +1066,1397 @@ describe("groundTableOperation optional RTM columns", () => {
     });
     expect(result.blocked).toBe(true);
     expect(result.operation).toMatchObject({ kind: "edit_cells", cells: [] });
+  });
+
+  it("keeps an explicit clear of filled Stage / Section / Remarks as a card", () => {
+    const ledger = new CitationPageLedger();
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 2,
+            col: 3,
+            rowKey: "URS-9",
+            expectedText: "PQ [Performance Qualification.PDF, p. 8]",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+          {
+            row: 2,
+            col: 4,
+            rowKey: "URS-9",
+            expectedText: "8.1",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+          {
+            row: 2,
+            col: 5,
+            rowKey: "URS-9",
+            expectedText: "Complies",
+            insertText: "",
+            rowContext: "URS-9\nPQ\n8.1\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        attachedFilenames: ["User Requirement Specification.PDF"],
+      },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells).toHaveLength(3);
+    expect(cells.every((cell) => cell.insertText === "")).toBe(true);
+    expect(cells.map((cell) => cell.col).toSorted()).toEqual([3, 4, 5]);
+  });
+
+  it("sets DQ / Section 4 / NA from a Design Qualification N/A page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 9,
+        attachmentId: "urs",
+        quote: "URS-51 Spare parts list to be provided by the vendor.",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 18,
+        attachmentId: "dq",
+        quote:
+          "URS-51 Spare parts list. Section 4. Vendor documentation. Result: N/A not applicable for this protocol.",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-51",
+        "URS-51\nSpare parts list\nDQ\n4\nNA"
+      )
+    ).toMatchObject({
+      stageLabel: "DQ",
+      sectionHeading: "4",
+      remarks: "NA",
+    });
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 6,
+            col: 3,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "DQ",
+            rowContext: "URS-51\nSpare parts list",
+          },
+          {
+            row: 6,
+            col: 4,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "4",
+            rowContext: "URS-51\nSpare parts list",
+          },
+          {
+            row: 6,
+            col: 5,
+            rowKey: "URS-51",
+            expectedText: "",
+            insertText: "NA",
+            rowContext: "URS-51\nSpare parts list",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
+    expect(byCol.get(3)).toMatch(/^DQ\b/);
+    expect(byCol.get(3)).toContain("Design Qualification.PDF");
+    expect(byCol.get(4)).toBe("4");
+    expect(byCol.get(5)).toBe("NA");
+  });
+
+  it("rewrites DQ up to IQ when Installation Qualification also topic-matches", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq",
+        quote:
+          "12.1 Jacket Design Temperature −28.8/220 Jacket volume 773 L",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-5",
+            "Jacket temperature",
+            "20-25 °C",
+            "DQ",
+            "12.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/^IQ\b/);
+    expect(keptRow[3]).toContain("Installation Qualification.PDF");
+    expect(keptRow[3]).not.toMatch(/\bDQ\b/);
+    expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("prefers PQ over IQ when Performance Qualification also topic-matches", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 20,
+        attachmentId: "pq",
+        quote:
+          "8.2 Heating and cooling simulation Jacket temperature 20-25 °C Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-5",
+            "Jacket temperature",
+            "20-25 °C",
+            "IQ",
+            "13.3.5.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/^PQ\b/);
+    expect(keptRow[3]).toContain("Performance Qualification.PDF");
+    expect(keptRow[3]).not.toMatch(/\bIQ\b/);
+    expect(keptRow[4]).toContain("8.2");
+    expect(keptRow[5]).toMatch(/Complies/i);
+  });
+
+  it("does not invent Stage when the URS copy left the three cells empty", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [["URS-5", "Jacket temperature", "20-25 °C", "", "", ""]],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+  });
+
+  it("does not let MOC alone pick a neighbour DQ material row", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: COLUMN_URS_PAGE,
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq",
+        quote:
+          "12.1 Material of Construction MOC SA 516 Gr.70 for the shell",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-2",
+        "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm\nDQ"
+      )
+    ).toBeNull();
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-2",
+            "MOC",
+            "High-quality Glass Lining and thickness should not be less than 1 mm",
+            "DQ",
+            "12.1",
+            "Complies",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-2");
+    expect(keptRow[2]).toContain("Glass Lining");
+    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+  });
+
+  it("keeps leftover <remarks> when no protocol page matches so lookup can search", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-4 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² URS-13 Jacket Type Limpet/Plain",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-4",
+            expectedText: "",
+            insertText: "<remarks>",
+            rowContext: "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    expect(tablePlaceholderLabels(result.operation)).toContain("<remarks>");
+    expect(
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells.map((cell) => cell.insertText)
+        : []
+    ).toContain("<remarks>");
+  });
+
+  it("fills dummy-row Table 5 Stage/Section per rowKey from protocol pages, not <remarks>", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-4 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² URS-13 Jacket Type Limpet/Plain",
+      },
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 10,
+        attachmentId: "oq",
+        quote:
+          "8.1 Shell Operating pressure Full Vacuum to 3.5 Kg/cm² Result: Verified",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote: "13.3.5.1 Jacket Type Limpet Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "<qualification stage>",
+            rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "<section>",
+            rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "<remarks>",
+            rowContext: "URS-13\nJacket Type\nLimpet/Plain",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-4",
+            expectedText: "",
+            insertText: "<remarks>",
+            rowContext:
+              "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    expect(tablePlaceholderLabels(result.operation)).toEqual([]);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const byKey = (key: string) =>
+      cells.filter(
+        (cell) =>
+          cell.rowKey === key || (cell.rowContext ?? "").includes(`${key}\n`)
+      );
+    const urs13 = byKey("URS-13")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    const urs4 = byKey("URS-4")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    expect(urs13).toMatch(/\bIQ\b/);
+    expect(urs13).toContain("13.3.5.1");
+    expect(urs13).toContain("Installation Qualification.PDF");
+    expect(urs13).not.toContain("<remarks>");
+    expect(urs13).not.toContain("8.1");
+    expect(urs4).toMatch(/\bOQ\b/);
+    expect(urs4).toContain("8.1");
+    expect(urs4).toContain("Operational Qualification.PDF");
+    expect(urs4).not.toContain("13.3.5.1");
+    expect(urs4).not.toContain("<remarks>");
+  });
+
+  it("keeps Table 7 URS-41 IQ / 13.6 / Complies from live Gaskets when rowContext is only URS-41 / IQ / Complies", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+    ]);
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            ...[
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+            ].map((row) => ({
+              type: "tableRow" as const,
+              content: row.map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            })),
+          ],
+        },
+      ],
+    };
+    const cellsWithMetaRowContext = [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-41",
+        expectedText: "",
+        insertText: "IQ [Installation Qualification.PDF, p. 42]",
+        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
+      },
+      {
+        row: 1,
+        col: 4,
+        rowKey: "URS-41",
+        expectedText: "",
+        insertText: "13.6",
+        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
+      },
+      {
+        row: 1,
+        col: 5,
+        rowKey: "URS-41",
+        expectedText: "",
+        insertText: "Complies",
+        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
+      },
+    ];
+    const droppedWithoutLiveRow = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: cellsWithMetaRowContext,
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+    });
+    const droppedTexts =
+      droppedWithoutLiveRow.operation.kind === "edit_cells"
+        ? droppedWithoutLiveRow.operation.cells.map((cell) => cell.insertText)
+        : [];
+    expect(droppedTexts.join(" ")).toContain("13.6");
+    expect(droppedTexts.join(" ")).not.toMatch(/\bIQ\b/);
+    expect(droppedTexts.join(" ")).not.toMatch(/Complies/i);
+
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: cellsWithMetaRowContext,
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells
+      .filter((cell) => cell.rowKey === "URS-41")
+      .map((cell) => cell.insertText)
+      .join(" ");
+    expect(urs41).toMatch(/\bIQ\b/);
+    expect(urs41).toContain("13.6");
+    expect(urs41).toContain("Installation Qualification.PDF");
+    expect(urs41).toMatch(/Complies/i);
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const urs41Row = JSON.stringify(rows[2]);
+    expect(urs41Row).toContain(suggestionInsertMarkName);
+    expect(urs41Row).toMatch(/\bIQ\b/);
+    expect(urs41Row).toContain("13.6");
+    expect(urs41Row).toMatch(/Complies/i);
+  });
+
+  it("does not replace Table 7 URS-41 IQ 13.6 with DQ 12.3 from a URS-ID hit on Design Qualification", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-40 Contact parts SS 304. URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified. URS-42",
+      },
+    ]);
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            ...[
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+            ].map((row) => ({
+              type: "tableRow" as const,
+              content: row.map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            })),
+          ],
+        },
+      ],
+    };
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-41",
+        "URS-41\nGaskets\nPTFE or Equivalent [1]\n13.6\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies"
+      )?.stageLabel
+    ).toBe("DQ");
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "12.3",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
+    const blob = urs41.map((cell) => cell.insertText).join(" ");
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    expect(blob).not.toMatch(/Complies/i);
+    const section = urs41.find((cell) => cell.col === 4);
+    if (section) expect(section.insertText).toBe("13.6");
+    if (urs41.length === 0) return;
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41-dq",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    if (!preview.ok) {
+      expect(preview.status).toBe("already_present");
+      return;
+    }
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const sectionCell = JSON.stringify(
+      (rows[2]?.content ?? []).filter(
+        (node) => node.type === "tableCell" || node.type === "tableHeader"
+      )[4]
+    );
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain("12.3");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("fill-empty URS-41 only edits empty Stage/Remarks from IQ, not filled 13.6", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-40 Contact parts SS 304. URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified. URS-42",
+      },
+    ]);
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            ...[
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+            ].map((row) => ({
+              type: "tableRow" as const,
+              content: row.map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            })),
+          ],
+        },
+      ],
+    };
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "12.3",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
+    const blob = urs41.map((cell) => cell.insertText).join(" ");
+    expect(blob).toMatch(/\bIQ\b/);
+    expect(blob).toMatch(/Complies/i);
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    const section = urs41.find((cell) => cell.col === 4);
+    expect(section).toBeUndefined();
+    expect(urs41.some((cell) => cell.col === 3)).toBe(true);
+    expect(urs41.some((cell) => cell.col === 5)).toBe(true);
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41-fill-empty",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const cellsInRow = (rows[2]?.content ?? []).filter(
+      (node) => node.type === "tableCell" || node.type === "tableHeader"
+    );
+    const sectionCell = JSON.stringify(cellsInRow[4]);
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain("12.3");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    const stageCell = JSON.stringify(cellsInRow[3]);
+    expect(stageCell).toMatch(/\bIQ\b/);
+    expect(stageCell).toContain(suggestionInsertMarkName);
+    const remarksCell = JSON.stringify(cellsInRow[5]);
+    expect(remarksCell).toMatch(/Complies/i);
+    expect(remarksCell).toContain(suggestionInsertMarkName);
+  });
+
+  it("does not stamp DQ Stage beside a filled Section heading from another family", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts Result: Verified",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            rowContext: "URS-41\nGaskets\n13.6",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "12.3",
+            rowContext: "URS-41\nGaskets\n13.6",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [...QSR_RTM_HEADERS].map((header) => ({
+                  type: "tableHeader" as const,
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: header }],
+                    },
+                  ],
+                })),
+              },
+              {
+                type: "tableRow",
+                content: [
+                  "URS-41",
+                  "Gaskets",
+                  "PTFE or Equivalent [1]",
+                  "",
+                  "13.6",
+                  "",
+                ].map((text) => ({
+                  type: "tableCell" as const,
+                  content: text
+                    ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                    : [{ type: "paragraph" }],
+                })),
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const blob = cells.map((cell) => cell.insertText).join(" ");
+    expect(blob).not.toMatch(/\bDQ\b/);
+    expect(blob).not.toContain("12.3");
+    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+  });
+
+  it("treats Verified after the next URS ID as a page-level pass token without topic match", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    expect(quoteWindowAroundKey(iqQuote, "URS-41")).not.toMatch(/Verified/i);
+    const pick = pickRtmReference(ledger, "URS-41", "URS-41");
+    expect(pick?.stageLabel).toBe("IQ");
+    expect(pick?.remarks).toBe("Complies");
+  });
+
+  it("paints Complies when URS-41 is on the IQ page but Verified sits outside the ID window", () => {
+    const iqQuote =
+      "URS-40 URS-41 URS-42 13.6 Gaskets PTFE or equivalent Result: Verified";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-41 Gaskets PTFE or Equivalent for non-product contact.",
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: iqQuote,
+      },
+    ]);
+    expect(quoteWindowAroundKey(iqQuote, "URS-41")).not.toMatch(/Verified/i);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-41",
+      "URS-41\nGaskets\nPTFE or Equivalent [1]\n13.6"
+    );
+    expect(pick?.stageLabel).toBe("IQ");
+    expect(pick?.remarks).toBe("Complies");
+
+    const table7: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...QSR_RTM_HEADERS].map((header) => ({
+                type: "tableHeader" as const,
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: header }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: [
+                "URS-41",
+                "Gaskets",
+                "PTFE or Equivalent [1]",
+                "",
+                "13.6",
+                "",
+              ].map((text) => ({
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              })),
+            },
+          ],
+        },
+      ],
+    };
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 42]",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-41",
+            expectedText: "13.6",
+            insertText: "13.7.5",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-41",
+            expectedText: "",
+            insertText: "Complies",
+            rowContext:
+              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_gmp" },
+      clearOptionalOnBlock: true,
+      fieldDoc: table7,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
+    expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
+    expect(urs41.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+    expect(urs41.find((cell) => cell.col === 4)).toBeUndefined();
+
+    const preview = buildTableOperationPreviewDoc(table7, result.operation, {
+      id: "sug-table7-urs41-complies-outside-id-window",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const table = (preview.doc.content ?? []).find((node) => node.type === "table");
+    const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
+    const cellsInRow = (rows[1]?.content ?? []).filter(
+      (node) => node.type === "tableCell" || node.type === "tableHeader"
+    );
+    const remarksCell = JSON.stringify(cellsInRow[5]);
+    expect(remarksCell).toMatch(/Complies/i);
+    expect(remarksCell).toContain(suggestionInsertMarkName);
+    const sectionCell = JSON.stringify(cellsInRow[4]);
+    expect(sectionCell).toContain("13.6");
+    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 42,
+        attachmentId: "iq",
+        quote: "13.6 Gaskets PTFE or equivalent Result: Verified",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 13,
+        attachmentId: "dq",
+        quote:
+          "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified",
+      },
+    ]);
+    const pick = pickRtmReference(
+      ledger,
+      "URS-41",
+      "URS-41\nGaskets\nPTFE or Equivalent [1]\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies"
+    );
+    expect(pick?.stageLabel).toBe("IQ");
+    expect(pick?.sectionHeading).toContain("13.6");
+    expect(pick?.filename).toContain("Installation Qualification");
+  });
+
+  it("drops leftover RTM placeholders so <remarks> never persist after lookup", () => {
+    const dropped = dropQsrRtmPlaceholderCells(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-4",
+            insertText: "Full Vacuum to 3.5 Kg/cm²",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-4",
+            insertText: "<section>",
+          },
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-4",
+            insertText: "<remarks>",
+          },
+        ],
+      }
+    );
+    expect(dropped).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          col: 2,
+          insertText: "Full Vacuum to 3.5 Kg/cm²",
+        },
+      ],
+    });
+  });
+});
+
+describe("shouldKeepRtmProtocolSearchOpen", () => {
+  it("keeps search open after an identifier-only hit on Design Qualification", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41"],
+        ["Design Qualification.PDF"]
+      )
+    ).toBe(true);
+  });
+
+  it("keeps search open after an IQ hit until PQ and OQ are queried", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41", "installation qualification gaskets"],
+        ["Design Qualification.PDF", "Installation Qualification.PDF"]
+      )
+    ).toBe(true);
+  });
+
+  it("closes once every higher protocol family than the best hit was queried", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        [
+          "URS-41",
+          "installation qualification gaskets",
+          "operational qualification gaskets",
+          "performance qualification gaskets",
+        ],
+        ["Installation Qualification.PDF"]
+      )
+    ).toBe(false);
+  });
+
+  it("closes when PQ is already the best hit", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["performance qualification gaskets"],
+        ["Performance Qualification.PDF"]
+      )
+    ).toBe(false);
+  });
+
+  it("does not keep search open for a non-protocol identifier hit", () => {
+    expect(
+      shouldKeepRtmProtocolSearchOpen(
+        ["URS-41"],
+        ["User Requirement Specification.PDF"]
+      )
+    ).toBe(false);
+  });
+});
+
+const OQ_SOP_HEADER_PAGE = [
+  "Operational Qualification Glass Lined Reactor",
+  "Document No. OQP/GLR-1301 Effective Date 16-05-2026 Format No. QAD-SOP-FS-003-F02 Page 51 of 85",
+  "Observation: visual inspection completed. Date 19 May 2026",
+  "Done By Sign & Date 19-05-2026 Checked By Sign & Date 19-05-2026",
+].join("\n");
+
+describe("dateSupportedAsLabeledField", () => {
+  it("keeps the date next to Effective Date when a signature date is also on the page", () => {
+    const labeled = extractHardFacts("16-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        OQ_SOP_HEADER_PAGE,
+        labeled,
+        "Effective Date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        OQ_SOP_HEADER_PAGE,
+        signature,
+        "Effective Date"
+      )
+    ).toBe(false);
+  });
+
+  it("uses the first date after the label when a signature date sits in the same window", () => {
+    const quote = "Effective Date 16-05-2026 Sign & Date 19-05-2026";
+    const labeled = extractHardFacts("16-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(dateSupportedAsLabeledField(quote, labeled, "Effective Date")).toBe(
+      true
+    );
+    expect(
+      dateSupportedAsLabeledField(quote, signature, "Effective Date")
+    ).toBe(false);
+  });
+
+  it("fails open when the page has no matching date label", () => {
+    const fact = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        "Done By Sign & Date 19-05-2026",
+        fact,
+        "Effective Date"
+      )
+    ).toBeNull();
+  });
+
+  it("accepts either half of an Effective Date / Approved date header", () => {
+    const quote =
+      "Cover. Effective Date 01-04-2026. Protocol approved date 02-04-2026.";
+    const effective = extractHardFacts("01-04-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const approved = extractHardFacts("02-04-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    const other = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        effective,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        `${quote} Sign & Date 19-05-2026`,
+        other,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+});
+
+describe("groundTableOperation QSR SOP Effective Date", () => {
+  const ledger = () =>
+    ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 51,
+        attachmentId: "att-oq",
+        quote: OQ_SOP_HEADER_PAGE,
+      },
+    ]);
+
+  it("rejects a signature date in the Effective Date column", () => {
+    expect(qsrTableColumnLabel("qsr_sops", 2)).toBe("Effective Date");
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            insertText:
+              "19-05-2026 [Operational Qualification.PDF, p. 51]",
+          },
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.operation).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          insertText: expect.stringContaining("<date>"),
+        },
+      ],
+    });
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).not.toContain("19-05-2026");
+  });
+
+  it("accepts the labeled Effective Date from the same cited page", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            insertText:
+              "16-05-2026 [Operational Qualification.PDF, p. 51]",
+          },
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("16-05-2026");
+    expect(cell).not.toContain("<date>");
+  });
+
+  it("still presence-grounds a SOP Number on that page", () => {
+    const numbered = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "att-oq-sop",
+        quote: "SOP Number SOP/PR/OQ/014 Effective Date 16-05-2026",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            insertText: "SOP/PR/OQ/014 [Operational Qualification.PDF, p. 11]",
+          },
+        ],
+      },
+      ledger: numbered,
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("SOP/PR/OQ/014");
   });
 });

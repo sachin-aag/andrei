@@ -23,6 +23,9 @@ import {
 } from "@/lib/analyze/method";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import { getDocumentType } from "@/lib/document-types";
+import { outlineLabelsForSection } from "@/lib/document-types/convergent/table-of-contents";
+import { orderedSectionContents } from "@/lib/suggestions/document-table-number";
+import { filledTableNumberInDocument } from "@/lib/suggestions/table-operation";
 import { isGraphAnalysisKind } from "@/lib/statistical-analysis/insertable-graphs";
 import {
   isTimeSeriesAnalysis,
@@ -136,8 +139,11 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
   }
   lines.push(
     "Sections (empty = draft after searching attachments; filled/partial = already drafted — read_section first):",
-    "Live table N headers are this report's schema — call read_section and copy fields[].tables[].headers before edit_table or draft_field. Do not assume another pack's columns."
+    "The heading on each section is the Contents outline. Use that number in replies. On an Equipment Lifecycle Report, 3.10 is Monitoring, 3.12 is Preventive Maintenance, and 3.15 is Access Control. If the engineer names a section in words, edit that section even when the number they used does not match — then say the Contents number. Do not switch sections just to make their number match.",
+    "Live table headers are this report's schema — call read_section and copy fields[].tables[].headers before edit_table or draft_field. Do not assume another pack's columns. tableIndex is the field index, not the printed caption. A printed Table N is shown only when this map says so. Never invent a table number."
   );
+
+  const documentContents = orderedSectionContents({ documentType, sections });
 
   for (const section of chatEditableSections(documentType)) {
     const content = sections[section] ?? {};
@@ -163,8 +169,10 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
       dismissedFixes > 0 ? `${dismissedFixes} dismissed` : "",
     ].filter(Boolean);
 
+    const outline = outlineLabelsForSection(documentType, section);
+    const heading = outline[0] ?? sectionLabel(section);
     lines.push(
-      `- ${sectionLabel(section)} [${section}] — ${state} (${charCount} chars` +
+      `- ${heading} [${section}] — ${state} (${charCount} chars` +
         (imageCount > 0
           ? `, ${imageCount} image${imageCount === 1 ? "" : "s"}`
           : "") +
@@ -188,8 +196,23 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           formatLiveHeaders(table.headers),
           400
         );
+        const printed =
+          fieldState !== "empty"
+            ? filledTableNumberInDocument({
+                contents: documentContents,
+                target: {
+                  section,
+                  targetField: field.targetField,
+                  tableIndex: table.tableIndex,
+                },
+              })
+            : undefined;
+        const printedNote =
+          printed != null
+            ? ` · printed Table ${printed}`
+            : " · no printed Table N yet";
         lines.push(
-          `    table ${table.tableIndex} headers: ${headerLine || "(empty)"} (${table.dataRowCount} data row${table.dataRowCount === 1 ? "" : "s"})`
+          `    table ${table.tableIndex} headers: ${headerLine || "(empty)"} (${table.dataRowCount} data row${table.dataRowCount === 1 ? "" : "s"})${printedNote}`
         );
       }
     }

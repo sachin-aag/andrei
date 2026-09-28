@@ -397,7 +397,6 @@ function sixpackRows(analysis: StatisticalAnalysisSummary): SheetSection[] {
   if (!isSixpackAnalysis(analysis)) return [];
   const { config, results } = analysis;
   const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
-  const cap = results.capability;
   return [
     [
       ["Field", "Value"],

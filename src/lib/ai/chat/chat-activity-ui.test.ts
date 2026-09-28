@@ -216,8 +216,23 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thought");
     expect(blocks[0].node.thoughtText).toBe("Planning the next edit.");
     expect(blocks[0].node.children).toEqual([]);
+  });
+
+  it("labels a streaming thought as Thinking even before any text arrives", () => {
+    const blocks = buildChatActivityBlocks([
+      { type: "reasoning", text: "", state: "streaming" },
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thinking…");
+    expect(blocks[0].node.pending).toBe(true);
+    expect(blocks[0].node.thoughtText).toBe("");
   });
 
   it("collapses edit failures to Edit attempted with hidden detail", () => {

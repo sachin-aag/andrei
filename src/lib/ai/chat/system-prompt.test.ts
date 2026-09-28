@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v145-living-remaining-work");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v153-living-remaining-work");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -32,13 +32,30 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Apply does not unlock the next insert");
     expect(prompt).toContain("Installation Qualification");
     expect(prompt).toContain(
-      "do not paste a protocol-to-URS mapping in chat"
+      "Do not paste a protocol-to-URS mapping in chat"
     );
     expect(prompt).toContain(
       "leave those three cells empty for that row"
     );
+    expect(prompt).toContain("Never write `<remarks>`");
+    expect(prompt).toContain("<qualification stage>");
+    expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(prompt).toContain("fill empty cells");
+    expect(prompt).toContain("including a filled Reference – Section");
+    expect(prompt).toContain(
+      "one requirement ID is not one grep when filling RTM Stage"
+    );
+    expect(prompt).toContain(
+      "An IQ protocol hit is not enough while PQ or OQ have not been queried"
+    );
+    expect(prompt).toContain("do not rewrite a filled cell in the same batch");
     expect(prompt).toContain(
       "Do not tell them to accept a card and type 3.5"
+    );
+    expect(prompt).toContain("−15 °C is not 15 °C");
+    expect(prompt).toContain("−50 ± 10 RPM");
+    expect(prompt).toContain(
+      "When filling a named column, copy the value printed next to that same label"
     );
     expect(prompt).toContain(
       "Never quote attachment ids, analysis ids, or suggestion-card ids"
@@ -392,6 +409,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("A large rewrite is stored as a rewrite, not refused");
     expect(prompt).toContain("Never use that fallback for tables or images");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
+    expect(prompt).toContain("prefer rowKey");
+    expect(prompt).toContain("Give every cell its own rowKey");
     expect(prompt).toContain("never a single representative row");
     expect(prompt).toContain(
       "put every affected cell in one edit_cells call (source and destination together)"
@@ -738,6 +757,8 @@ describe("buildChatSystemPrompt", () => {
       'Never reason "they want it inserted directly, so a suggestion is not what they asked for"'
     );
     expect(prompt).toContain("Never say the edit tools are disabled");
+    expect(prompt).toContain("3.12 Preventive Maintenance");
+    expect(prompt).toContain("3.10 Monitoring");
     expect(prompt).toContain("Never tell the engineer to switch to Agent mode");
     expect(prompt).toContain("for them to copy by hand instead of calling the tool");
     expect(prompt).toContain(

@@ -262,6 +262,10 @@ describe("classifyChatUserIntent", () => {
       "why isn't the table filled?",
       "didn't fill anything",
       "nothing showed up",
+      "suggestions are not landing",
+      "it is refusing to make an edit",
+      "despite being in agent mode, it did not have write capabilities",
+      "it is only summarising stuff in chat",
     ]) {
       expect(classifyChatUserIntent({ userText: text, mode: "agent" })).toEqual({
         kind: "write",

@@ -140,6 +140,160 @@ describe("buildTableOperationPreviewDoc", () => {
     expect(rowHasInsertMark(preview.doc, 3)).toBe(true);
   });
 
+  it("paints edit_cells on the rematched URS-13 row, not a stale numeric row", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["URS ID", "Stage"],
+        [
+          ["URS-1", ""],
+          ["URS-8", ""],
+          ["URS-13", ""],
+        ]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "PQ",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 1)).toEqual([]);
+    expect(cellRuns(preview.doc, 3, 1)).toEqual([
+      { text: "PQ", insert: true, deleted: false },
+    ]);
+    expect(rowHasInsertMark(preview.doc, 1)).toBe(false);
+    expect(rowHasInsertMark(preview.doc, 3)).toBe(true);
+  });
+
+  it("paints each rowKey on its own URS when the dummy numeric row is reused", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["URS ID", "Stage", "Section"],
+        [
+          ["URS-1", "", ""],
+          ["URS-13", "", ""],
+          ["URS-64", "", ""],
+        ]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "IQ",
+          },
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "13.3.5.1",
+          },
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-64",
+            expectedText: "",
+            insertText: "IQ",
+          },
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-64",
+            expectedText: "",
+            insertText: "13.2",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 1)).toEqual([]);
+    expect(cellRuns(preview.doc, 1, 2)).toEqual([]);
+    expect(cellRuns(preview.doc, 2, 1)).toEqual([
+      { text: "IQ", insert: true, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 2, 2)).toEqual([
+      { text: "13.3.5.1", insert: true, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 3, 1)).toEqual([
+      { text: "IQ", insert: true, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 3, 2)).toEqual([
+      { text: "13.2", insert: true, deleted: false },
+    ]);
+  });
+
+  it("paints empty remainder cells when a dummy-row sibling is already filled", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["URS ID", "Stage", "Section"],
+        [
+          ["URS-1", "PQ [28]", ""],
+          ["URS-13", "", ""],
+          ["URS-64", "", ""],
+        ]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-1",
+            expectedText: "",
+            insertText: "IQ",
+          },
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-13",
+            expectedText: "",
+            insertText: "IQ",
+          },
+          {
+            row: 1,
+            col: 1,
+            rowKey: "URS-64",
+            expectedText: "",
+            insertText: "IQ",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 1)).toEqual([
+      { text: "PQ [28]", insert: false, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 2, 1)).toEqual([
+      { text: "IQ", insert: true, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 3, 1)).toEqual([
+      { text: "IQ", insert: true, deleted: false },
+    ]);
+  });
+
   it("marks only the added suffix on edit_cells, not the original cell text", () => {
     const preview = buildTableOperationPreviewDoc(
       tableDoc(

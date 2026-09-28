@@ -35,7 +35,7 @@ export function withUnsupportedChatToolFallback(tools: ToolSet): ToolSet {
 export function unsupportedChatToolHint(requestedTool: string): string {
   const name = requestedTool.trim() || "that tool";
   if (WRITE_TOOL_SET.has(name)) {
-    return `${name} is not available this step. If they asked to change the document or worksheet, retry ${name} on the next step — write tools unlock after this signal. Do not paste a markdown table as a stand-in.`;
+    return `${name} is not available this step. Retry ${name} only if write tools are listed on the next step — they unlock after a read or review. If no tools are listed, do not retry ${name} and do not call it again; the table edit already failed, so explain the blocker in chat. Do not paste a markdown table as a stand-in.`;
   }
   return `${name} is not available this turn. Use only the tools listed for this step. Do not invent tool names. Continue with a loaded tool, or reply in chat.`;
 }

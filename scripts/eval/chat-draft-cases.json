@@ -72,6 +72,30 @@
     }
   },
   {
+    "id": "qsr-rtm-urs33-footer-wrap",
+    "task": "ground_draft",
+    "passCriteria": "URS-33 Stage and location persists when OCR wraps the ID at the page-8 table footer.",
+    "notes": "GLR-1301 RTM 5.1. URS-34 on page 9 is a clean token; URS-33 sits on the footer boundary as URS- 33.",
+    "input": {
+      "text": "Stage and location [User Requirement Specification.PDF, p. 8]",
+      "context": "URS-33\nStage and location",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 8,
+          "attachmentId": "urs",
+          "quote": "URS ID # Parameters User requirements URS-30 Batch Size URS-31 Type of Operation URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00 Page 8 of 12 Equipment intended for intermediate stage manufacturing operations."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["Stage and location"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
     "id": "qsr-rtm-neighbour-urs37-blocked",
     "task": "ground_draft",
     "passCriteria": "URS-37 process temperature must not land on the URS-5 jacket row.",

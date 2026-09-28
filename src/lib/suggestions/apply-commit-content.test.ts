@@ -135,6 +135,26 @@ describe("applyCommitToSectionContent", () => {
     expect(raw.dataRows[0]?.[0]).toBe("SYS-006");
   });
 
+  it("maps identity edit_cells to empty_edit", () => {
+    const result = applyCommitToSectionContent({
+      content: { table: seededTableDoc(DV_TRACEABILITY_HEADERS) },
+      section: "traceability",
+      targetField: "table",
+      documentType: "design_verification",
+      input: {
+        kind: "table",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "" }],
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("empty_edit");
+  });
+
   it("returns placeholder_conflict when a redraft would wipe a filled placeholder", () => {
     const result = applyCommitToSectionContent({
       content: {

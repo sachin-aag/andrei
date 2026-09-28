@@ -148,6 +148,20 @@ export function richDocsMatchIgnoringAiPreview(
 }
 
 /**
+ * True when the engineer typed visible text (not TipTap table chrome such as
+ * colwidth). Focused RTM tables otherwise look dirty and skip the first inject.
+ */
+export function richFieldHasLocalTextEdits(
+  live: JSONContent,
+  canonical: JSONContent
+): boolean {
+  return (
+    plainTextFromTiptapJson(stripPendingSuggestionsExcept(live, null)) !==
+    plainTextFromTiptapJson(stripPendingSuggestionsExcept(canonical, null))
+  );
+}
+
+/**
  * Skip rewriting the live editor doc (inject / strip / setContent) while the
  * reviewer is typing. Replacing the doc on each keystroke drops the caret and
  * the new letters — which is what "cannot type next to an unaccepted AI

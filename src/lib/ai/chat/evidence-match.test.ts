@@ -72,6 +72,80 @@ describe("evidenceContainsFact", () => {
     expect(evidenceContainsFact("Fill volume 3 mL cartridge.", threeMl)).toBe(true);
   });
 
+  it("does not treat 15 °C as present because the URS shows −15 °C", () => {
+    const fifteen = fact("Minimum 15 °C", "temperature");
+    expect(fifteen.text).toContain("15");
+    expect(fifteen.text).not.toMatch(/[-−]/);
+    expect(
+      evidenceContainsFact(
+        "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        fifteen
+      )
+    ).toBe(false);
+    expect(
+      evidenceContainsFact(
+        "URS-3 Shell Operating temperature -15 °C to 130 °C",
+        fifteen
+      )
+    ).toBe(false);
+    const minusFifteen = fact("Minimum −15 °C", "temperature");
+    expect(
+      evidenceContainsFact(
+        "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        minusFifteen
+      )
+    ).toBe(true);
+    expect(
+      evidenceContainsFact(
+        "URS-3 Shell Operating temperature - 15 °C to 130 °C",
+        minusFifteen
+      )
+    ).toBe(true);
+  });
+
+  it("still matches an unsigned 15–130 °C range", () => {
+    const range = fact("15–130 °C", "temperature");
+    expect(evidenceContainsFact("Process temperature 15–130 °C", range)).toBe(
+      true
+    );
+  });
+
+  it("does not treat 20 °C as present because URS-37 shows −20 °C to 150 °C", () => {
+    const twenty = fact("20 °C", "temperature");
+    const quote =
+      "URS-37 Temperature To measure the temperature - 20 °C to 150 °C";
+    expect(evidenceContainsFact(quote, twenty)).toBe(false);
+    const unsignedRange = fact("20 °C to 150 °C", "temperature");
+    expect(evidenceContainsFact(quote, unsignedRange)).toBe(false);
+    const signedRange = fact("-20 °C to 150 °C", "temperature");
+    expect(evidenceContainsFact(quote, signedRange)).toBe(true);
+    expect(
+      evidenceContainsFact(
+        "URS-37 Temperature To measure the temperature - 20 °C to 150\n°C",
+        signedRange
+      )
+    ).toBe(true);
+  });
+
+  it("does not treat 50 ± 10 RPM as present because the URS shows −50 ± 10 RPM", () => {
+    const unsigned = fact("50 ± 10 RPM", "number");
+    expect(unsigned.text).toContain("50");
+    expect(unsigned.text).not.toMatch(/^[-−]/);
+    expect(
+      evidenceContainsFact("URS-10 RPM requirement –50 ± 10 RPM", unsigned)
+    ).toBe(false);
+    expect(
+      evidenceContainsFact("URS-10 RPM requirement 50+-10 RPM", unsigned)
+    ).toBe(true);
+    const signed = fact("–50 ± 10 RPM", "number");
+    expect(
+      evidenceContainsFact("URS-10 RPM requirement –50 ± 10 RPM", signed)
+    ).toBe(true);
+    expect(
+      evidenceContainsFact("URS-10 RPM requirement -50 ± 10 RPM", signed)
+    ).toBe(true);
+  });
+
   it("matches OCR-split 3.5 Kg/cm² from the URS pressure row", () => {
     const pressure = fact("Full Vacuum to 3.5 Kg/cm²", "number");
     expect(pressure.text).toContain("3.5");
@@ -88,10 +162,21 @@ describe("evidenceContainsFact", () => {
       )
     ).toBe(true);
     expect(
+      evidenceContainsFact("URS-4 Shell Operating pressure Full Vacuum to 3 · 5 Kg/cm2", pressure)
+    ).toBe(true);
+  });
+
+  it("matches URS-33 when OCR wraps the hyphen at a table footer", () => {
+    const id = fact("URS-33");
+    expect(id.kind).toBe("identifier");
+    expect(
       evidenceContainsFact(
-        "URS-4 Shell Operating pressure Full Vacuum to 3 · 5 Kg/cm2",
-        pressure
+        "URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00",
+        id
       )
+    ).toBe(true);
+    expect(
+      evidenceContainsFact("URS-32 Location URS-\n33 Stage and location", id)
     ).toBe(true);
   });
 

@@ -19,6 +19,9 @@ export const ELR_SECTION_KEYS = [
   "elr_abbreviations",
   "elr_system_description",
   "elr_qualification",
+  "elr_process_validation",
+  "elr_cleaning_validation",
+  "elr_qra_review",
   "elr_media_fill",
   "elr_alarms",
   "elr_monitoring",
@@ -70,6 +73,45 @@ export const ELR_QUALIFICATION_HEADERS = [
   "Outcome",
   "Discrepancy / QDF Ref.",
   "Next Due Date",
+  "Remarks",
+] as const;
+
+export const ELR_PROCESS_VALIDATION_HEADERS = [
+  "Sr. No.",
+  "Validation Stage",
+  "Protocol / Report No.",
+  "Product / Process",
+  "Format Applicability",
+  "Date Completed",
+  "Outcome",
+  "Linked Deviation / Change Control Ref.",
+  "Next Due / Review Date",
+  "Remarks",
+] as const;
+
+export const ELR_CLEANING_VALIDATION_HEADERS = [
+  "Sr. No.",
+  "Validation Stage",
+  "Protocol / Report No.",
+  "Product / Residue",
+  "Cleaning Method",
+  "Format Applicability",
+  "Date Completed",
+  "Outcome",
+  "Linked Deviation / Change Control Ref.",
+  "Next Due / Review Date",
+  "Remarks",
+] as const;
+
+export const ELR_QRA_REVIEW_HEADERS = [
+  "Sr. No.",
+  "QRA / Document No.",
+  "Title / Scope",
+  "Date Approved",
+  "Highest residual risk",
+  "Review / Reassessment Due",
+  "Change since last PRQ (Y/N)",
+  "Change Control Ref.",
   "Remarks",
 ] as const;
 
@@ -218,8 +260,8 @@ export type ElrSectionRecapSource = {
 
 /**
  * 5.1 table recap of every Observations subsection and Discrepancy.
- * Purpose (1.0) and Scope (2.0) are omitted on purpose. 3.6.1 / 3.10.1
- * stay inside 3.6 / 3.10 rather than extra rows.
+ * Purpose (1.0) and Scope (2.0) are omitted on purpose. 3.9.1 / 3.13.1
+ * stay inside 3.9 / 3.13 rather than extra rows.
  */
 export const ELR_TREND_RECAP_SOURCES: readonly ElrSectionRecapSource[] = [
   { key: "elr_responsibilities", number: "3.1", label: "Responsibilities" },
@@ -235,33 +277,48 @@ export const ELR_TREND_RECAP_SOURCES: readonly ElrSectionRecapSource[] = [
     label: "Qualification and Periodic Re-Qualification History",
   },
   {
-    key: "elr_media_fill",
+    key: "elr_process_validation",
     number: "3.5",
+    label: "Process Validation Review",
+  },
+  {
+    key: "elr_cleaning_validation",
+    number: "3.6",
+    label: "Cleaning Validation Review",
+  },
+  {
+    key: "elr_qra_review",
+    number: "3.7",
+    label: "Quality Risk Assessment Review",
+  },
+  {
+    key: "elr_media_fill",
+    number: "3.8",
     label: "Media Fill / Aseptic Process Simulation",
   },
-  { key: "elr_alarms", number: "3.6", label: "Alarm Trends" },
-  { key: "elr_monitoring", number: "3.7", label: "Monitoring" },
+  { key: "elr_alarms", number: "3.9", label: "Alarm Trends" },
+  { key: "elr_monitoring", number: "3.10", label: "Monitoring" },
   {
     key: "elr_calibration",
-    number: "3.8",
+    number: "3.11",
     label: "Calibration of Associated Instruments",
   },
   {
     key: "elr_preventive_maintenance",
-    number: "3.9",
+    number: "3.12",
     label: "Preventive Maintenance",
   },
-  { key: "elr_breakdowns", number: "3.10", label: "Breakdowns and Trends" },
+  { key: "elr_breakdowns", number: "3.13", label: "Breakdowns and Trends" },
   {
     key: "elr_qms",
-    number: "3.11",
+    number: "3.14",
     label: "QMS Records since Last Periodic Re-Qualification",
   },
-  { key: "elr_access_control", number: "3.12", label: "Access Control" },
-  { key: "elr_audit_trail", number: "3.13", label: "Audit Trail Review" },
+  { key: "elr_access_control", number: "3.15", label: "Access Control" },
+  { key: "elr_audit_trail", number: "3.16", label: "Audit Trail Review" },
   {
     key: "elr_csv_status",
-    number: "3.14",
+    number: "3.17",
     label: "Computerized System Validation Status",
   },
   { key: "elr_discrepancies", number: "4.0", label: "Discrepancy / Deviations" },
@@ -287,8 +344,8 @@ export const ELR_RECAP_MIN_SUMMARY_CHARS = 12;
 
 /**
  * Match a 5.1 Section cell or a 5.3 bullet to a recap source. Prefer the
- * first numbered heading (`3.7`, `4.0`) so "monitoring" in an Alarm Trends
- * bullet cannot steal 3.7. `3.6.1` still belongs to 3.6; `3.10.1` to 3.10.
+ * first numbered heading (`3.10`, `4.0`) so "monitoring" in an Alarm Trends
+ * bullet cannot steal 3.10. `3.9.1` still belongs to 3.9; `3.13.1` to 3.13.
  */
 export function recapSourceMatchesText(
   source: ElrSectionRecapSource,
@@ -323,6 +380,9 @@ export const ELR_TABLE_CAPTION_TITLES = {
   elr_responsibilities: "Departments and responsibilities",
   elr_abbreviations: "Abbreviations",
   elr_qualification: "Qualification and periodic re-qualification history",
+  elr_process_validation: "Process validation review",
+  elr_cleaning_validation: "Cleaning validation review",
+  elr_qra_review: "Quality risk assessment review",
   elr_media_fill: "Media fill / aseptic process simulation",
   elr_monitoring: "Monitoring records",
   elr_calibration: "Associated instruments",
@@ -343,6 +403,9 @@ const ELR_TABLE_HEADERS: Partial<Record<ElrSectionKey, readonly string[]>> = {
   elr_responsibilities: ELR_RESPONSIBILITIES_HEADERS,
   elr_abbreviations: ELR_ABBREVIATIONS_HEADERS,
   elr_qualification: ELR_QUALIFICATION_HEADERS,
+  elr_process_validation: ELR_PROCESS_VALIDATION_HEADERS,
+  elr_cleaning_validation: ELR_CLEANING_VALIDATION_HEADERS,
+  elr_qra_review: ELR_QRA_REVIEW_HEADERS,
   elr_media_fill: ELR_MEDIA_FILL_HEADERS,
   elr_monitoring: ELR_MONITORING_HEADERS,
   elr_calibration: ELR_CALIBRATION_HEADERS,
@@ -429,6 +492,9 @@ export type ElrSectionMap = {
   elr_abbreviations: ElrTableSection;
   elr_system_description: ElrNarrativeSection;
   elr_qualification: ElrNarrativeTableSection;
+  elr_process_validation: ElrNarrativeTableSection;
+  elr_cleaning_validation: ElrNarrativeTableSection;
+  elr_qra_review: ElrNarrativeTableSection;
   elr_media_fill: ElrNarrativeTableSection;
   elr_monitoring: ElrNarrativeTableSection;
   elr_calibration: ElrNarrativeTableSection;
@@ -455,6 +521,9 @@ export const ELR_SECTION_LABELS: Record<ElrSectionKey, string> = {
   elr_abbreviations: "Abbreviations",
   elr_system_description: "Equipment and System Description",
   elr_qualification: "Qualification and Periodic Re-Qualification History",
+  elr_process_validation: "Process Validation Review",
+  elr_cleaning_validation: "Cleaning Validation Review",
+  elr_qra_review: "Quality Risk Assessment Review",
   elr_media_fill: "Media Fill / Aseptic Process Simulation",
   elr_monitoring: "Monitoring",
   elr_calibration: "Calibration of Associated Instruments",
@@ -482,13 +551,17 @@ const ELR_STARTER_ABBREVIATIONS: readonly (readonly [string, string])[] = [
   ["APS", "Aseptic Process Simulation"],
   ["CAPA", "Corrective Action and Preventive Action"],
   ["CC", "Change Control"],
+  ["CPV", "Continued Process Verification"],
   ["CSV", "Computerized System Validation"],
+  ["CV", "Cleaning Validation"],
   ["ELR", "Equipment Lifecycle Report"],
   ["IQ / OQ / PQ", "Installation / Operational / Performance Qualification"],
   ["OOS / OOT", "Out of Specification / Out of Trend"],
   ["PM", "Preventive Maintenance"],
+  ["PPQ", "Process Performance Qualification"],
   ["PRQ", "Periodic Re-Qualification"],
   ["QMS", "Quality Management System"],
+  ["QRA", "Quality Risk Assessment"],
   ["SLIA", "System Level Impact Assessment"],
 ];
 
@@ -561,6 +634,18 @@ export const EMPTY_ELR_CONTENT: ElrSectionMap = {
   elr_qualification: {
     narrative: emptyDoc(),
     table: seededTableDoc(ELR_QUALIFICATION_HEADERS),
+  },
+  elr_process_validation: {
+    narrative: emptyDoc(),
+    table: seededTableDoc(ELR_PROCESS_VALIDATION_HEADERS),
+  },
+  elr_cleaning_validation: {
+    narrative: emptyDoc(),
+    table: seededTableDoc(ELR_CLEANING_VALIDATION_HEADERS),
+  },
+  elr_qra_review: {
+    narrative: emptyDoc(),
+    table: seededTableDoc(ELR_QRA_REVIEW_HEADERS),
   },
   elr_media_fill: {
     narrative: emptyDoc(),

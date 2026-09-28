@@ -1,4 +1,5 @@
 import { extractText, getDocumentProxy } from "unpdf";
+import { glueOcrMinusSigns } from "@/lib/attachments/numeric-signs";
 
 /**
  * Below this many characters a page is treated as a scan: born-digital pages
@@ -70,14 +71,16 @@ export function classifyPdfExtractLayout(
 }
 
 function normalizePageText(raw: string): string {
-  return raw
-    .replace(/\r\n/g, "\n")
-    .replace(/[^\S\n]+/g, " ")
-    .split("\n")
-    .map((line) => line.trim())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return glueOcrMinusSigns(
+    raw
+      .replace(/\r\n/g, "\n")
+      .replace(/[^\S\n]+/g, " ")
+      .split("\n")
+      .map((line) => line.trim())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 }
 
 type MathWithSumPrecise = Math & {

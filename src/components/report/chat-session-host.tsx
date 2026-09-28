@@ -134,7 +134,9 @@ export function ChatSessionHost({
   const [pendingPlan, setPendingPlan] = useState<ChatPendingPlan | null>(null);
   const [planChaining, setPlanChaining] = useState(false);
   const surfaceRef = useRef<WorkProductView>("report");
-  pendingPlanRef.current = pendingPlan;
+  useEffect(() => {
+    pendingPlanRef.current = pendingPlan;
+  }, [pendingPlan]);
 
   const hydrateFromServer = useCallback(async (opts?: {
     force?: boolean;
@@ -265,21 +267,24 @@ export function ChatSessionHost({
     return planHasRemainingWork(plan) && plan?.paused !== true;
   };
 
-  const announceCompletedTurn = (
-    view: ChatSessionView | null | undefined,
-    parts?: UIMessage["parts"]
-  ) => {
-    const startedAt = agentRunStartedAtRef.current;
-    agentRunStartedAtRef.current = null;
-    const last = lastAssistant(view);
-    const live = livePlanProgressFromParts(parts ?? last?.parts);
-    onTurnCompletedRef.current(startedAt, {
-      sectionLabel: completedPlanSectionLabel(
-        view?.pendingPlan ?? pendingPlanRef.current,
-        live
-      ),
-    });
-  };
+  const announceCompletedTurn = useCallback(
+    (
+      view: ChatSessionView | null | undefined,
+      parts?: UIMessage["parts"]
+    ) => {
+      const startedAt = agentRunStartedAtRef.current;
+      agentRunStartedAtRef.current = null;
+      const last = lastAssistant(view);
+      const live = livePlanProgressFromParts(parts ?? last?.parts);
+      onTurnCompletedRef.current(startedAt, {
+        sectionLabel: completedPlanSectionLabel(
+          view?.pendingPlan ?? pendingPlanRef.current,
+          live
+        ),
+      });
+    },
+    []
+  );
 
   const { messages, sendMessage, setMessages, status, error, stop, clearError } =
     useChat({
@@ -532,7 +537,15 @@ export function ChatSessionHost({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [api, backgroundTurn, maybeAutoContinue, sessionId, setMessages, streamBusy]);
+  }, [
+    announceCompletedTurn,
+    api,
+    backgroundTurn,
+    maybeAutoContinue,
+    sessionId,
+    setMessages,
+    streamBusy,
+  ]);
 
   const stopTurn = useCallback(() => {
     cancelPlanRef.current = true;

@@ -5,6 +5,7 @@ import {
   cellPlainText,
   ensureCaptionOnFilledTable,
   normalizeTableCellText,
+  resolveEditCells,
   resolveInsertAfterRow,
   type TableCellEdit,
   type TableOperation,
@@ -330,7 +331,9 @@ export function buildTableOperationPreviewDoc(
       const originalTable = collectTables(preview)[operation.tableIndex];
       if (!originalTable) return applied;
       const originalRows = tableRows(originalTable);
-      for (const cell of operation.cells) {
+      const resolved = resolveEditCells(originalRows, operation.cells);
+      if (!resolved.ok) return applied;
+      for (const cell of resolved.cells) {
         const node = rowCells(originalRows[cell.row] ?? {})[cell.col];
         if (node) paintCellEditPreview(node, cell, attrs);
       }
