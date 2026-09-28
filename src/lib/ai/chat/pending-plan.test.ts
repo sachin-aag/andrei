@@ -1124,6 +1124,18 @@ describe("plan prompt and metadata", () => {
         documentType: "qualification_summary_report",
       })
     ).toBe("qsr_rtm_control");
+    expect(
+      planCoverageObjective(
+        null,
+        "Fill qualification documents and standard operating procedures",
+        { documentType: "qualification_summary_report" }
+      )
+    ).toBe("Fill qualification documents and standard operating procedures");
+    expect(
+      planCoverageObjective(null, "Draft section 2,3,4", {
+        documentType: "qualification_summary_report",
+      })
+    ).toBe("Draft section 2,3,4");
   });
 
   it("stamps the section being drafted, not a leftover plan pointer", () => {

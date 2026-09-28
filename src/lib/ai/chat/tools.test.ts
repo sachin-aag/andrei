@@ -4907,6 +4907,38 @@ describe("buildChatTools annexure continuation", () => {
     expect(result.keepSearchOpen).toBe(true);
   });
 
+  it("keeps search open when a cited page lists SOP titles without numbers", async () => {
+    searchReportDocumentsManyMock.mockResolvedValueOnce([
+      [
+        {
+          attachmentId: "att-iq",
+          filename: "Installation Qualification.PDF",
+          description: null,
+          pageNumber: 49,
+          chunkId: "c49",
+          sourceKind: "hybrid",
+          text: "Standard operating procedure for operation & cleaning. Standard operating procedure for Instruments calibration program.",
+          quote:
+            "Standard operating procedure for operation & cleaning. Standard operating procedure for Instruments calibration program.",
+          citationId: "att:att-iq:p:49",
+          ingestRunId: "run",
+        },
+      ],
+    ]);
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.search_documents!.execute!(
+      { query: "standard operating procedure" },
+      TEST_TOOL_OPTIONS
+    )) as {
+      keepSearchOpen?: boolean;
+      identityIncompleteHits?: number;
+      results?: Array<{ identityIncomplete?: boolean }>;
+    };
+    expect(result.keepSearchOpen).toBe(true);
+    expect(result.identityIncompleteHits).toBe(1);
+    expect(result.results?.[0]?.identityIncomplete).toBe(true);
+  });
+
   it("attaches the next page when a read is Page N of M", async () => {
     readDocumentPageMock
       .mockResolvedValueOnce({

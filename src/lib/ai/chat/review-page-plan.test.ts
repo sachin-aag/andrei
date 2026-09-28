@@ -13,6 +13,7 @@ import {
   objectiveTokens,
   planReviewPages,
   qsrInventoryReadyIdsForObjective,
+  qsrReviewPagePlan,
   REVIEW_LIFECYCLE_COVER_PAGES_PER_FILE,
   samplePagesAcrossAttachment,
   scoreReviewPage,
@@ -752,5 +753,64 @@ describe("QSR lifecycle cover review", () => {
         "qualification documents"
       )
     ).toEqual(["urs", "dq", "iq"]);
+  });
+
+  it("does not collapse mixed Table 3 + SOP identity onto a cover walk", () => {
+    const mixed =
+      "Extract qualification document numbers, SOP numbers, and effective dates for tables 3 and 4";
+    expect(qsrReviewPagePlan(mixed)).toBe("mixed");
+    expect(coverageObjectiveDigest(mixed)).not.toBe(
+      "qsr_qualification_documents"
+    );
+    expect(isQsrLifecycleCoverObjective(mixed)).toBe(false);
+    expect(isQsrUrsWalkObjective(mixed)).toBe(false);
+    expect(
+      coverageKeySatisfiesObjective(
+        `att:10:run|obj:${coverageObjectiveDigest(mixed)}`,
+        "qsr_qualification_documents"
+      )
+    ).toBe(false);
+
+    const pages = [
+      ...Array.from({ length: 40 }, (_, i) => ({
+        attachmentId: "iq",
+        pageNumber: i + 1,
+        filename: "Installation Qualification.PDF",
+        transcript:
+          i < 2
+            ? "Protocol No. IQ-P Report No. IQ-R Rev 01"
+            : `qualification body page ${i + 1} acceptance criteria`,
+        outlineTitle: i < 2 ? "Cover" : "Protocol body",
+        identifiers: i < 2 ? ["IQ-P"] : ([] as string[]),
+      })),
+      ...Array.from({ length: 10 }, (_, i) => ({
+        attachmentId: "oq",
+        pageNumber: 80 + i,
+        filename: "Operational Qualification.PDF",
+        transcript:
+          "Standard operating procedure for operation & cleaning PRD-SOP-PS-019-00 SOP Number",
+        outlineTitle: "SOP list",
+        identifiers: ["PRD-SOP-PS-019-00"],
+      })),
+    ];
+    const selected = planReviewPages(pages, mixed, 2500);
+    expect(selected.some((page) => (page.pageNumber ?? 0) > 2)).toBe(true);
+    expect(selected.some((page) => page.attachmentId === "oq")).toBe(true);
+  });
+
+  it("still cover-walks a Table 3-only objective and URS-walks RTM family copy", () => {
+    expect(
+      qsrReviewPagePlan("QSR Table 3 qualification document numbers")
+    ).toBe("cover");
+    expect(
+      qsrReviewPagePlan(
+        "Extract all requirements for Control Philosophy (5.2), GMP Requirements (5.3), and Safety Requirements (5.4) from the URS."
+      )
+    ).toBe("urs");
+    expect(
+      qsrReviewPagePlan("standard operating procedures SOP numbers")
+    ).toBe("scored");
+    expect(qsrReviewPagePlan("Draft section 2,3,4")).toBe("mixed");
+    expect(qsrReviewPagePlan("populate tables 3 and 4")).toBe("mixed");
   });
 });
