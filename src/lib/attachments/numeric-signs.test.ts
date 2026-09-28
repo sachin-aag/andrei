@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { glueOcrMinusSigns, glueOcrUrsIds } from "./numeric-signs";
+import {
+  glueOcrMinusSigns,
+  glueOcrUrsIds,
+  overlayLeadingMinuses,
+  textLayerDroppedCelsiusSign,
+} from "./numeric-signs";
 
 describe("glueOcrMinusSigns", () => {
   it("turns a figure dash, em dash, or fullwidth minus into a hyphen", () => {
@@ -18,6 +23,42 @@ describe("glueOcrMinusSigns", () => {
   it("keeps an en-dash range separator between digits", () => {
     expect(glueOcrMinusSigns("15–130 °C")).toBe("15–130 °C");
     expect(glueOcrMinusSigns("-15–130 °C")).toBe("-15–130 °C");
+  });
+});
+
+describe("overlayLeadingMinuses", () => {
+  it("copies a leading minus onto unsigned N °C when evidence has -N °C", () => {
+    expect(
+      overlayLeadingMinuses(
+        "than 1 mm\n15 °C to 130 °C\nFull Vacuum",
+        "Shell Operating temperature −15 °C to 130 °C"
+      )
+    ).toBe("than 1 mm\n-15 °C to 130 °C\nFull Vacuum");
+  });
+
+  it("does not invent a minus when evidence has none", () => {
+    expect(
+      overlayLeadingMinuses(
+        "15 °C to 130 °C",
+        "User requirement 15 °C to 130 °C"
+      )
+    ).toBe("15 °C to 130 °C");
+  });
+
+  it("does not turn an en-dash process range into a signed temperature", () => {
+    expect(
+      overlayLeadingMinuses("Process temperature 15–130 °C", "-15 °C to 130 °C")
+    ).toBe("Process temperature 15–130 °C");
+  });
+});
+
+describe("textLayerDroppedCelsiusSign", () => {
+  it("detects unsigned N °C to after a dropped minus", () => {
+    expect(textLayerDroppedCelsiusSign("15 °C to 130 °C")).toBe(true);
+    expect(textLayerDroppedCelsiusSign("-15 °C to 130 °C")).toBe(false);
+    expect(textLayerDroppedCelsiusSign("Process temperature 15–130 °C")).toBe(
+      false
+    );
   });
 });
 

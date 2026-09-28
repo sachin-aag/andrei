@@ -98,7 +98,8 @@ export function attachSpatialMinusSigns(
     if (leftIndex == null) continue;
     const left = next[leftIndex]!;
     if (/\d$/.test(left.str.trim())) continue;
-    if (!isSpatialMinus(left)) continue;
+    const gap = numberItem.x - (left.x + Math.max(left.width, 0));
+    if (!isSpatialMinus(left, gap)) continue;
     if (isPrecededByDigit(next, leftIndex, consumed)) continue;
     numberItem.str = `-${numberItem.str.replace(/^\s+/, "")}`;
     consumed.add(leftIndex);
@@ -149,17 +150,22 @@ function isPrecededByDigit(
   return /\d$/.test(items[leftIndex]!.str.trim());
 }
 
-function isSpatialMinus(item: StructuredTextItem): boolean {
+function isSpatialMinus(item: StructuredTextItem, gap: number): boolean {
   const trimmed = item.str.trim();
   if (MINUS_GLYPH_RE.test(trimmed)) return true;
   if (trimmed.length > 1) return false;
   const unmapped =
     trimmed.length === 0 || UNMAPPED_DASH_RE.test(item.str);
   if (!unmapped) return false;
-  const em = item.fontSize > 0 ? item.fontSize : item.height;
-  if (!(em > 0) || !(item.width > 0)) return false;
-  const ratio = item.width / em;
-  return ratio >= 0.15 && ratio <= 0.8;
+  const em =
+    item.fontSize > 0 ? item.fontSize : item.height > 0 ? item.height : 8;
+  if (item.width > 0) {
+    const ratio = item.width / em;
+    return ratio >= 0.15 && ratio <= 0.8;
+  }
+  // PDF.js maps some subset-font minuses to an empty .notdef with width 0.
+  // Keep a small gap so a coincident empty item is not treated as a sign.
+  return gap >= em * 0.05 && gap <= em * 1.25;
 }
 
 function normalizePageText(raw: string): string {

@@ -118,6 +118,16 @@ describe("reconstructPageText", () => {
     ).toContain("-15 °C to 130 °C");
   });
 
+  it("restores a minus that PDF.js emitted as a width-0 empty glyph before 15", () => {
+    expect(
+      reconstructPageText([
+        pdfItem("1 mm ", 10),
+        pdfItem("", 80, 200, { width: 0, fontSize: 10, height: 0 }),
+        pdfItem("15 °C to 130 °C", 85),
+      ])
+    ).toContain("-15 °C to 130 °C");
+  });
+
   it("glues a minus item that is spatially left of 15 even if stream order is later", () => {
     const items = [
       pdfItem("URS-3 Shell Operating temperature ", 10),

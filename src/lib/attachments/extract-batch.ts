@@ -25,6 +25,10 @@ import {
   uprightRotatePage,
 } from "@/lib/attachments/pdf-split";
 import {
+  overlayLeadingMinuses,
+  textLayerDroppedCelsiusSign,
+} from "@/lib/attachments/numeric-signs";
+import {
   MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
   type PdfTextLayer,
@@ -48,7 +52,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v6";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v7";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -310,6 +314,8 @@ async function extractFromTextLayer(
     };
   });
 
+  await overlayDroppedCelsiusSigns(input, pages);
+
   return {
     pages,
     batchSummary: truncate(
@@ -441,6 +447,8 @@ async function extractMixedPagesWithDocumentAi(
     inputTokens += vision.usage?.inputTokens ?? 0;
     outputTokens += vision.usage?.outputTokens ?? 0;
   }
+
+  await overlayDroppedCelsiusSigns(input, pages);
 
   return {
     pages,
@@ -1265,6 +1273,53 @@ function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
   return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
 }
 
+/**
+ * Restore a leading minus on unsigned `N °C to` when OCR or the insight pass
+ * still saw `-N °C`. Overlay only — the parser transcript stays canonical.
+ */
+async function overlayDroppedCelsiusSigns(
+  input: ResolvedInput,
+  pages: ExtractedPage[]
+): Promise<void> {
+  for (const page of pages) {
+    page.transcript = overlayLeadingMinuses(
+      page.transcript,
+      page.visualInterpretation
+    );
+  }
+  const dropped = pages.filter((page) =>
+    textLayerDroppedCelsiusSign(page.transcript)
+  );
+  if (dropped.length === 0 || !isDocumentAiConfigured()) return;
+
+  try {
+    const relativePages = dropped.map(
+      (page) => page.pageNumber - input.pageStart + 1
+    );
+    const ocr = await ocrPdfWithDocumentAi({
+      pdfBuffer: await copyPdfPages(input.pdfBuffer, relativePages),
+      filename: input.filename,
+    });
+    for (const ocrPage of ocr.pages) {
+      const relative = relativePages[ocrPage.pageNumber - 1];
+      if (relative == null) continue;
+      const target = pages.find(
+        (page) => page.pageNumber === input.pageStart + relative - 1
+      );
+      if (!target) continue;
+      target.transcript = overlayLeadingMinuses(
+        target.transcript,
+        ocrPage.transcript
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `[document-extract] Document AI sign overlay failed for pages ${input.pageStart}-${input.pageEnd}`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+  }
+}
+
 function finalizeExtractedBatch(result: ExtractBatchResult): ExtractBatchResult {
   const pages = result.pages.map(fillDerivedPageContext);
   const batchSummary = isPlaceholderPageContext(result.batchSummary)
@@ -1374,11 +1429,13 @@ function buildInsightPrompt(input: {
 }): string {
   return `${buildCarryForward(input)}Describe pages ${input.pageStart}-${input.pageEnd} of ${input.filename}.
 
-The page text has already been extracted by a PDF parser. Do not transcribe, quote, or repeat page text, table contents, or headings.
+The page text has already been extracted by a PDF parser. Do not transcribe or quote headings, paragraphs, or whole tables.
+
+Exception: if a table or label shows a signed quantity whose leading minus a text layer often drops (for example −15 °C or −50 RPM), copy those signed values into visualInterpretation. Do not copy unsigned ranges such as 15–130 °C.
 
 For each page return:
 - pageNumber: absolute 1-based PDF page number.
-- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, and notable layout. Empty string when the page is plain text or tables. Max ${MAX_VISUAL_CHARS} characters.
+- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, and notable layout. Empty string when the page is plain text with no figures and no signed quantities. If you copy a signed quantity, keep the leading minus (−15 °C is not 15 °C). Max ${MAX_VISUAL_CHARS} characters.
 - pageContext: one sentence describing the page's role in the document. Max ${MAX_PAGE_CONTEXT_CHARS} characters.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 confidence that the page is faithfully described.

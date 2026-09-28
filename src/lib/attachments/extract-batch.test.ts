@@ -108,6 +108,41 @@ async function pdfWithMixedTextPages(): Promise<Buffer> {
   return Buffer.from(await document.save());
 }
 
+async function pdfWithUnsignedCelsiusRange(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([600, 800]);
+  const lines = [
+    ...Array.from(
+      { length: 10 },
+      (_, index) => `URS requirement line ${index} of verification evidence`
+    ),
+    "URS-3 Shell Operating temperature 15 °C to 130 °C",
+    "URS-5 Jacket Operating Temperature 15 °C to 130 °C",
+  ];
+  lines.forEach((line, index) => {
+    page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });
+  });
+  return Buffer.from(await document.save());
+}
+
+async function pdfWithEnDashCelsiusRange(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([600, 800]);
+  const lines = [
+    ...Array.from(
+      { length: 10 },
+      (_, index) => `URS requirement line ${index} of verification evidence`
+    ),
+    "URS-37 Process temperature 15–130 °C",
+  ];
+  lines.forEach((line, index) => {
+    page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });
+  });
+  return Buffer.from(await document.save());
+}
+
 function insightPayload(pageNumber: number) {
   return {
     pageNumber,
@@ -471,6 +506,8 @@ describe("extractPdfBatch", () => {
 describe("extractPdfBatch with a text layer", () => {
   beforeEach(() => {
     generateTextMock.mockReset();
+    ocrPdfWithDocumentAiMock.mockReset();
+    isDocumentAiConfiguredMock.mockReturnValue(false);
   });
 
   it("transcribes with the parser and asks the model only for context", async () => {
@@ -507,6 +544,103 @@ describe("extractPdfBatch with a text layer", () => {
       { maxOutputTokens: number },
     ];
     expect(call.maxOutputTokens).toBe(6_000);
+    expect(userPrompt(call)).toContain("signed quantity");
+  });
+
+  it("overlays a leading minus from the insight pass onto unsigned N °C to", async () => {
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        {
+          pages: [
+            {
+              ...insightPayload(1),
+              visualInterpretation: "Signed range −15 °C to 130 °C",
+            },
+          ],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      )
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+  });
+
+  it("overlays a leading minus from Document AI when the text layer dropped it", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      )
+    );
+    ocrPdfWithDocumentAiMock.mockResolvedValueOnce({
+      pages: [
+        {
+          pageNumber: 1,
+          transcript: "URS-3 Shell Operating temperature -15 °C to 130 °C",
+          confidence: 0.94,
+        },
+      ],
+      elapsedMs: 20,
+      chunks: [],
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(ocrPdfWithDocumentAiMock).toHaveBeenCalledTimes(1);
+    expect(result.pages[0]?.transcript).toContain("URS requirement line 0");
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
+  });
+
+  it("does not OCR an en-dash process range and does not invent a minus", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      )
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithEnDashCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+    expect(result.pages[0]?.transcript).toMatch(/15/);
+    expect(result.pages[0]?.transcript).not.toMatch(/-15/);
   });
 
   it("records table presence when the insight pass names a table", async () => {
