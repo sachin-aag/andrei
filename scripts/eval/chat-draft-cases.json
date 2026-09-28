@@ -189,6 +189,35 @@
     }
   },
   {
+    "id": "qsr-rtm-iq-executed-record-complies",
+    "task": "ground_draft",
+    "passCriteria": "Remarks Complies persists on an IQ row when the cited IQ page is an executed record (Actual observation / Verified By with signature dates) that prints no pass word and has a stray Model Number NA cell (Langfuse trace 256f0e5d).",
+    "input": {
+      "text": "Complies",
+      "context": "URS-7\nAgitator\nAgitator motor flame proof flange mounted\nIQ [Installation Qualification.PDF, p. 25]\n13.3.5.4",
+      "section": "qsr_rtm_process",
+      "pages": [
+        {
+          "filename": "User Requirement Specification.PDF",
+          "pageNumber": 6,
+          "attachmentId": "urs",
+          "quote": "URS ID # Parameters User requirements URS-7 Agitator URS-8 Agitator Sweep diameter"
+        },
+        {
+          "filename": "Installation Qualification.PDF",
+          "pageNumber": 25,
+          "attachmentId": "iq",
+          "quote": "INSTALLATION QUALIFICATION Issued On 30/04/202619:20 IQP/GLR-1301 13.3.5.4. Agitator Motor Specifications Capacity/Size Effective Date 25 of 60 Production Block-2 8000 L 30-04-2026 Sr. No Parameters 1. Make Actual Verification Verified By Design specifications observations Source (Sign & Date) Design Crompton Crompton 2. Type mounted 3. Model Number NA 4. Motor speed 1470 rpm Flame proof, Flange mounted Design qualification R. Ajith 01-05-2026 5. Motor Power 15 HP (11 KW) GA Drawing R.Alith 01-05-2026"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["Complies"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
     "id": "harness-greeting-no-tools",
     "task": "harness",
     "passCriteria": "A greeting must not search, review, or write.",

@@ -204,8 +204,23 @@ describe("3xper VQ DOCX export", () => {
     expect(citationsAt).toBeGreaterThan(xml.indexOf("Impurities are controlled"));
     expect(xml).toContain('<w:vertAlign w:val="superscript"/>');
     expect(body).not.toContain("Citations:");
-    expect(body).toContain("1. [audit.pdf, p. 3]");
-    expect(body).toContain("2. [ra.pdf, p. 1]");
+    expect(body).not.toContain("1. [audit.pdf, p. 3]");
+    const citationsTable = (xml.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        xml.indexOf(tbl) > citationsAt &&
+        (tbl.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? []).join("").includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const tableText = Array.from(
+      citationsTable!.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g),
+      (m) => m[1] ?? ""
+    ).join("");
+    expect(tableText).toContain("Document reference #");
+    expect(tableText).toContain("audit");
+    expect(tableText).toContain("Page # 3");
+    expect(tableText).toContain("ra");
+    expect(tableText).toContain("Page # 1");
+    expect(citationsTable).toContain('w:fill="D9D9D9"');
   });
 
   it("names the exported file for the VQ type", () => {
