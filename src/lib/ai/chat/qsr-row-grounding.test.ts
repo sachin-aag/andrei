@@ -2814,6 +2814,115 @@ describe("groundTableOperation optional RTM columns", () => {
     );
   });
 
+  it("keeps a grounded chat Section line on filled 8.2.3 instead of the pick heading title", () => {
+    const pqPage =
+      "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies. 8.2.4 Operational verification of agitator at varying RPM. Result: Complies";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote: pqPage,
+      },
+    ]);
+    const fieldDoc = rtmProcessDoc([
+      [
+        "URS-1",
+        "Reactor Capacity",
+        "8000 L",
+        "PQ [Performance Qualification.PDF, p. 19]",
+        "8.2.3",
+        "Complies",
+      ],
+    ]);
+    const requested = "8.2.3 – Heating trial at 8000 L working volume";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-1",
+            expectedText: "",
+            insertText: requested,
+            rowContext: "URS-1\nReactor Capacity\n8000 L",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+      fieldDoc,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(requested);
+    expect(cells.find((cell) => cell.col === 4)?.insertText).not.toBe(
+      "8.2.3 – Heating Trial"
+    );
+  });
+
+  it("keeps a grounded empty-row Section request instead of a neighbour pick heading", () => {
+    const pqPage =
+      "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked at 50 ± 10. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies. 8.2.4 Operational verification of agitator at varying RPM. Result: Complies";
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "pq",
+        quote: pqPage,
+      },
+    ]);
+    const fieldDoc = rtmProcessDoc([
+      [
+        "URS-1",
+        "Reactor Capacity",
+        "8000 L",
+        "PQ [Performance Qualification.PDF, p. 19]",
+        "8.2.3",
+        "Complies",
+      ],
+      ["URS-10", "Agitator RPM", "50 ± 10 RPM", "", "", ""],
+    ]);
+    const requested = "8.2.2 – Agitator Trial at 50 ± 10 RPM";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-10",
+            expectedText: "",
+            insertText: requested,
+            rowContext: "URS-10\nAgitator RPM\n50 ± 10 RPM",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+      fieldDoc,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(
+      cells.find((cell) => cell.rowKey === "URS-10" && cell.col === 4)
+        ?.insertText
+    ).toBe(requested);
+    expect(
+      cells.find((cell) => cell.rowKey === "URS-10" && cell.col === 4)
+        ?.insertText
+    ).not.toMatch(/8\.2\.4/);
+  });
+
   it("elaborates a filled 8.2.3 with a procedure line when the section has no heading title", () => {
     const pqPage =
       "8.2 Test Procedure 8.2.1 verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 rpm checked at 50 ± 10. Result: Complies. 8.2.3 fill the reactor to 8000 L working volume and heat. Reactor Capacity. Result: Complies. 8.2.4 operational verification of agitator at varying RPM. Result: Complies";
