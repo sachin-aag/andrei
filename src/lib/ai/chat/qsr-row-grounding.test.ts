@@ -34,6 +34,7 @@ import {
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 
+/** Synthetic neighbour-window page. Live GLR-1301 URS-37 is −20 °C to 150 °C. */
 const SHARED_URS_PAGE =
   "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.";
 
@@ -536,6 +537,112 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toEqual([]);
   });
 
+  it("blocks Temperature Minimum 15 even when URS-37 on the ledger is 15–130 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C",
+        context: "Temperature\nMinimum",
+        section: "qsr_operating_range",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C");
+  });
+
+  it("still allows URS-37 15–130 °C when the shell URS is −15 °C", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15–130 °C",
+        context: "URS-37\nProcess temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 15 °C on URS-3 when visualInterpretation recovered the dropped minus", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: `${COLUMN_URS_PAGE}\nURS-3 shell operating temperature prints −15 °C to 130 °C`,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C to 130 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "−15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("blocks unsigned 15 °C on URS-3 when the column-major value is −15 °C", () => {
+    const signedColumn =
+      "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm −15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: signedColumn,
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("15 °C to 130 °C");
+    expect(
+      extraQsrUnsupported({
+        cell: "−15 °C to 130 °C",
+        context: "URS-3\nShell Operating temperature",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", () => {
     const ledger = ledgerFromPages([
       {
@@ -583,17 +690,36 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toContain("50+-10 RPM");
     expect(
       extraQsrUnsupported({
-        cell: "~50 ± 10 RPM",
-        context: "Agitator RPM",
-        section: "qsr_operating_range",
-        ledger,
-      }).map((fact) => fact.text)
-    ).toContain("~50 ± 10 RPM");
-    expect(
-      extraQsrUnsupported({
         cell: "–50 ± 10 RPM",
         context: "URS-10\nRPM requirement",
         section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("accepts ~50±10 RPM when the URS shows a tilde, not a minus", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote: "URS-10 RPM requirement ~50±10 RPM",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "~50±10 RPM",
+        context: "URS-10\nRPM requirement",
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+    expect(
+      extraQsrUnsupported({
+        cell: "~50 ± 10 RPM",
+        context: "Agitator RPM",
+        section: "qsr_operating_range",
         ledger,
       })
     ).toEqual([]);

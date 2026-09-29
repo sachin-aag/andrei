@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { NoOutputGeneratedError, type LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as pdfPageImage from "@/lib/attachments/pdf-page-image";
 
 const generateTextMock = vi.fn();
 const { ocrPdfWithDocumentAiMock, isDocumentAiConfiguredMock } = vi.hoisted(
@@ -106,6 +107,97 @@ async function pdfWithMixedTextPages(): Promise<Buffer> {
   document.addPage([600, 800]);
   addTextPage("gamma");
   return Buffer.from(await document.save());
+}
+
+async function pdfWithUnsignedCelsiusRange(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([600, 800]);
+  const lines = [
+    ...Array.from(
+      { length: 10 },
+      (_, index) => `URS requirement line ${index} of verification evidence`
+    ),
+    "URS-3 Shell Operating temperature 15 °C to 130 °C",
+    "URS-5 Jacket Operating Temperature 15 °C to 130 °C",
+    "~50+/-10 RPM",
+  ];
+  lines.forEach((line, index) => {
+    page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });
+  });
+  return Buffer.from(await document.save());
+}
+
+/** 12-page URS-sized batch: insight is skipped; pages 6 and 9 are unsigned ranges. */
+async function pdfWithTwelvePageUrsTemperatures(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const addFiller = (marker: string) => {
+    const page = document.addPage([600, 800]);
+    for (let line = 0; line < 12; line += 1) {
+      page.drawText(`${marker} line ${line} of verification evidence`, {
+        x: 40,
+        y: 740 - line * 16,
+        size: 11,
+        font,
+      });
+    }
+  };
+  const addRequirementPage = (lines: string[]) => {
+    const page = document.addPage([600, 800]);
+    lines.forEach((line, index) => {
+      page.drawText(line, { x: 40, y: 740 - index * 16, size: 11, font });
+    });
+  };
+
+  for (let index = 0; index < 5; index += 1) addFiller(`p${index + 1}`);
+  addRequirementPage([
+    ...Array.from(
+      { length: 10 },
+      (_, index) => `URS requirement line ${index} of verification evidence`
+    ),
+    "URS-3 Shell Operating temperature",
+    "15 °C to 130 °C",
+    "URS-5 Jacket Operating Temperature",
+    "15 °C to 130 °C",
+    "~50+/-10 RPM",
+  ]);
+  addFiller("p7");
+  addFiller("p8");
+  addRequirementPage([
+    ...Array.from(
+      { length: 10 },
+      (_, index) => `Process requirement line ${index} of verification evidence`
+    ),
+    "URS-37 Temperature",
+    "20 °C to 150 °C",
+  ]);
+  addFiller("p10");
+  addFiller("p11");
+  addFiller("p12");
+  return Buffer.from(await document.save());
+}
+
+function isSignedQuantityOverlayPrompt(text: string): boolean {
+  return text.includes("visibly signed quantity");
+}
+
+function overlayMediaTypes(args: unknown): string[] {
+  const call = args as {
+    messages?: Array<{
+      content?: Array<{ type?: string; mediaType?: string }>;
+    }>;
+  };
+  return (call.messages?.[0]?.content ?? [])
+    .filter((part) => part.type === "image" || part.type === "file")
+    .map((part) => `${part.type}:${part.mediaType ?? ""}`);
+}
+
+function overlayCallMediaTypes(): string[] {
+  return generateTextMock.mock.calls.flatMap((call) => {
+    if (!isSignedQuantityOverlayPrompt(userPrompt(call[0]))) return [];
+    return overlayMediaTypes(call[0]);
+  });
 }
 
 function insightPayload(pageNumber: number) {
@@ -504,9 +596,19 @@ describe("extractPdfBatch with a text layer", () => {
     expect(generateTextMock).toHaveBeenCalledTimes(1);
 
     const [call] = generateTextMock.mock.calls.at(0) as [
-      { maxOutputTokens: number },
+      {
+        maxOutputTokens: number;
+        messages?: Array<{
+          content?: Array<{ type?: string; text?: string }>;
+        }>;
+      },
     ];
     expect(call.maxOutputTokens).toBe(6_000);
+    const insightPrompt = call.messages
+      ?.at(0)
+      ?.content?.find((part) => part.type === "text")?.text;
+    expect(insightPrompt).toContain("parser text dropped that sign");
+    expect(insightPrompt).toContain("~50 RPM as −50");
   });
 
   it("records table presence when the insight pass names a table", async () => {
@@ -786,6 +888,225 @@ describe("gap extracted pages", () => {
       "Could not fully index page(s) 4. Search still works for the rest."
     );
     expect(extractionWarningForGaps([pagePayload(1)])).toBeNull();
+  });
+});
+
+describe("extractPdfBatch signed-quantity overlay", () => {
+  beforeEach(() => {
+    generateTextMock.mockReset();
+    ocrPdfWithDocumentAiMock.mockReset();
+    isDocumentAiConfiguredMock.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("overlays a leading minus from the insight pass onto an unsigned Celsius range", async () => {
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        {
+          pages: [
+            {
+              ...insightPayload(1),
+              visualInterpretation: "Signed range −15 °C to 130 °C",
+            },
+          ],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      )
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
+    expect(result.pages[0]?.transcript).toContain("~50+/-10 RPM");
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+  });
+
+  it("overlays −15 and −20 on a 12-page URS batch that skipped the insight pass", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (!isSignedQuantityOverlayPrompt(text)) {
+        throw new Error(`unexpected generateText prompt: ${text}`);
+      }
+      if (text.includes("page 6 of")) {
+        return resultWithOutput({ signedQuantities: ["−15 °C"] }, "stop");
+      }
+      if (text.includes("page 9 of")) {
+        return resultWithOutput({ signedQuantities: ["−20 °C"] }, "stop");
+      }
+      return resultWithOutput({ signedQuantities: [] }, "stop");
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithTwelvePageUrsTemperatures(),
+      pageStart: 1,
+      pageEnd: 12,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.mode).toBe("text-layer");
+    expect(result.recovery).toBe("text-layer-only");
+    expect(result.pages).toHaveLength(12);
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+    expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(overlayCallMediaTypes()).toEqual([
+      "image:image/png",
+      "image:image/png",
+    ]);
+    expect(result.pages[5]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[5]?.transcript).not.toMatch(/(?<![-\d])15 °C to 130 °C/);
+    expect(result.pages[5]?.transcript).toContain("~50+/-10 RPM");
+    expect(result.pages[8]?.transcript).toContain("-20 °C to 150 °C");
+    expect(result.pages[8]?.transcript).not.toMatch(/(?<![-\d])20 °C to 150 °C/);
+  });
+
+  it("keeps ~50+/-10 RPM when the overlay hallucinates −50 RPM", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        return resultWithOutput(
+          { signedQuantities: ["−15 °C", "−50 RPM"] },
+          "stop"
+        );
+      }
+      return resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).toContain("~50+/-10 RPM");
+    expect(result.pages[0]?.transcript).not.toMatch(/-50±10 RPM/);
+  });
+
+  it("does not invent a minus when Gemini reports no signed quantities", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        return resultWithOutput({ signedQuantities: [] }, "stop");
+      }
+      return resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(
+      generateTextMock.mock.calls.some((call) =>
+        isSignedQuantityOverlayPrompt(userPrompt(call[0]))
+      )
+    ).toBe(true);
+    expect(result.pages[0]?.transcript).toMatch(/15 °C to 130 °C/);
+    expect(result.pages[0]?.transcript).not.toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).toContain("~50+/-10 RPM");
+  });
+
+  it("records a raster failure and does not invent a minus", async () => {
+    vi.spyOn(pdfPageImage, "renderPdfPagePng").mockRejectedValue(
+      new Error("native canvas missing")
+    );
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        throw new Error("overlay generateText must not run after raster failure");
+      }
+      return resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(overlayCallMediaTypes()).toEqual([]);
+    expect(result.overlayErrors).toEqual(["page 1: native canvas missing"]);
+    expect(result.pages[0]?.transcript).toMatch(/15 °C to 130 °C/);
+    expect(result.pages[0]?.transcript).not.toContain("-15 °C to 130 °C");
+    expect(result.pages[0]?.transcript).toContain("~50+/-10 RPM");
+  });
+
+  it("skips Document AI on unsigned-range pages and still sends a PNG", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (isSignedQuantityOverlayPrompt(text)) {
+        return resultWithOutput({ signedQuantities: ["−15 °C"] }, "stop");
+      }
+      return resultWithOutput(
+        {
+          pages: [insightPayload(1)],
+          batchSummary: "summary",
+          continuationNote: "note",
+        },
+        "stop"
+      );
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithUnsignedCelsiusRange(),
+      pageStart: 1,
+      pageEnd: 1,
+      filename: "urs.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(ocrPdfWithDocumentAiMock).not.toHaveBeenCalled();
+    expect(overlayCallMediaTypes()).toEqual(["image:image/png"]);
+    expect(result.pages[0]?.transcript).toContain("-15 °C to 130 °C");
   });
 });
 

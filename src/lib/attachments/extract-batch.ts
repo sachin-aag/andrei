@@ -25,6 +25,12 @@ import {
   uprightRotatePage,
 } from "@/lib/attachments/pdf-split";
 import {
+  numericSignLookScore,
+  overlayLeadingMinuses,
+  pageNeedsNumericSignLook,
+} from "@/lib/attachments/numeric-signs";
+import { renderPdfPagePng } from "@/lib/attachments/pdf-page-image";
+import {
   MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
   type PdfTextLayer,
@@ -48,7 +54,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v5";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v13";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -62,7 +68,14 @@ const TRANSCRIPT_ONLY_MAX_OUTPUT_TOKENS = 8_000;
  * Keeping it small is what stops dense pages from truncating the response.
  */
 const INSIGHT_MAX_OUTPUT_TOKENS = 6_000;
+const SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS = 1_000;
+/** Live 12-page URS needs at most pages 6 and 9; keep the overlay cheap. */
+const MAX_NUMERIC_SIGN_OVERLAY_PAGES = 5;
 const TEMPERATURE = 0;
+
+const signedQuantityOverlaySchema = z.object({
+  signedQuantities: z.array(z.string().max(80)).max(24).default([]),
+});
 
 const MAX_VISUAL_CHARS = 1_500;
 const MAX_PAGE_CONTEXT_CHARS = 400;
@@ -153,6 +166,8 @@ export type ExtractBatchResult = {
     inputTokens: number | undefined;
     outputTokens: number | undefined;
   };
+  /** Raster/vision overlay failures. Transcript is still stored unsigned. */
+  overlayErrors?: string[];
 };
 
 export type ExtractPdfBatchInput = {
@@ -229,6 +244,14 @@ export async function extractPdfBatch(
     result = finalizeExtractedBatch(await extractScannedPages(resolved));
   } else {
     result = finalizeExtractedBatch(await extractMixedPages(resolved, textLayer));
+  }
+
+  const overlayErrors = await overlayAmbiguousNumericSigns(
+    resolved,
+    result.pages
+  );
+  if (overlayErrors && overlayErrors.length > 0) {
+    result = { ...result, overlayErrors };
   }
 
   await recordAiUsage({
@@ -1265,6 +1288,161 @@ function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
   return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
 }
 
+function pagesNeedingNumericSignLook(pages: ExtractedPage[]): ExtractedPage[] {
+  return pages.filter((page) => pageNeedsNumericSignLook(page.transcript));
+}
+
+function selectNumericSignOverlayPages(pages: ExtractedPage[]): ExtractedPage[] {
+  const needed = pagesNeedingNumericSignLook(pages);
+  if (needed.length <= MAX_NUMERIC_SIGN_OVERLAY_PAGES) return needed;
+  return needed
+    .toSorted((left, right) => {
+      const leftScore = numericSignLookScore(left.transcript);
+      const rightScore = numericSignLookScore(right.transcript);
+      return rightScore - leftScore || left.pageNumber - right.pageNumber;
+    })
+    .slice(0, MAX_NUMERIC_SIGN_OVERLAY_PAGES)
+    .toSorted((left, right) => left.pageNumber - right.pageNumber);
+}
+
+/**
+ * Restore a leading Celsius minus when insight visuals or a PNG page look
+ * already saw a signed temperature. Parser transcript stays the source of
+ * truth — overlay copies a minus onto matching unsigned °C quantities only.
+ * A tilde / ≈ is approximate, not a minus. Never invent a sign.
+ */
+async function overlayAmbiguousNumericSigns(
+  input: ResolvedInput,
+  pages: ExtractedPage[]
+): Promise<string[] | undefined> {
+  for (const page of pages) {
+    page.transcript = overlayLeadingMinuses(
+      page.transcript,
+      page.visualInterpretation
+    );
+  }
+  if (pagesNeedingNumericSignLook(pages).length === 0) {
+    return undefined;
+  }
+  return overlayAmbiguousNumericSignsFromVision(input, pages);
+}
+
+/**
+ * Large text-layer batches skip the insight pass. Look at pages with an
+ * unsigned Celsius range (or a leftover hyphen before a number) and copy a
+ * minus only when the model reports a signed temperature from a PNG raster.
+ * Sending the PDF itself lets Gemini read the unsigned text layer.
+ */
+async function overlayAmbiguousNumericSignsFromVision(
+  input: ResolvedInput,
+  pages: ExtractedPage[]
+): Promise<string[] | undefined> {
+  const selected = selectNumericSignOverlayPages(pages);
+  if (selected.length === 0) return undefined;
+  console.info("[document-extract] Signed-quantity overlay", {
+    filename: input.filename,
+    pages: selected.map((page) => page.pageNumber),
+  });
+  const overlayErrors: string[] = [];
+  for (const page of selected) {
+    const relative = page.pageNumber - input.pageStart + 1;
+    try {
+      const pagePdf = await copyPdfPage(input.pdfBuffer, relative);
+      const pageImage = await renderPdfPagePng(pagePdf);
+      console.info("[document-extract] Signed-quantity overlay raster", {
+        filename: input.filename,
+        page: page.pageNumber,
+        bytes: pageImage.length,
+      });
+      const evidence = await requestSignedQuantityOverlay({
+        ...input,
+        pdfBuffer: pagePdf,
+        pageStart: page.pageNumber,
+        pageEnd: page.pageNumber,
+        pageImage,
+      });
+      if (!evidence) continue;
+      page.transcript = overlayLeadingMinuses(page.transcript, evidence);
+      if (evidence.trim()) {
+        const visual = page.visualInterpretation.trim();
+        page.visualInterpretation = visual
+          ? `${visual}\n${evidence}`
+          : evidence;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      overlayErrors.push(`page ${page.pageNumber}: ${message}`);
+      console.error(
+        `[document-extract] Vision sign overlay failed for page ${page.pageNumber}`,
+        { error: message }
+      );
+    }
+  }
+  return overlayErrors.length > 0 ? overlayErrors : undefined;
+}
+
+async function requestSignedQuantityOverlay(
+  input: ResolvedInput & { pageImage: Buffer }
+): Promise<string | null> {
+  try {
+    const result = await generateText({
+      model: input.model,
+      output: Output.object({ schema: signedQuantityOverlaySchema }),
+      system: buildSystemPrompt(),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: buildSignedQuantityOverlayPrompt(input) },
+            {
+              type: "image",
+              image: new Uint8Array(input.pageImage),
+              mediaType: "image/png",
+            },
+          ],
+        },
+      ],
+      temperature: TEMPERATURE,
+      maxOutputTokens: SIGNED_QUANTITY_OVERLAY_MAX_OUTPUT_TOKENS,
+      ...langfuseGenerateTextTelemetry({
+        functionId: "document-extract-signed-quantity-overlay",
+        metadata: {
+          feature: "document_extract",
+          filename: input.filename,
+          pageStart: input.pageStart,
+          pageEnd: input.pageEnd,
+          overlayMedia: "image/png",
+        },
+      }),
+    });
+
+    const usage = {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+    };
+    const structured = readStructuredOutput(signedQuantityOverlaySchema, result, {
+      pageStart: input.pageStart,
+      pageEnd: input.pageEnd,
+      finishReason: result.finishReason,
+      textLength: result.text?.length ?? 0,
+      usage,
+    });
+    if (!structured) return null;
+    const evidence = structured.data.signedQuantities
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join("\n");
+    return evidence || null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[document-extract] Signed-quantity overlay failed for page ${input.pageStart}`,
+      { error: message }
+    );
+    throw error instanceof Error ? error : new Error(message);
+  }
+}
+
 function finalizeExtractedBatch(result: ExtractBatchResult): ExtractBatchResult {
   const pages = result.pages.map(fillDerivedPageContext);
   const batchSummary = isPlaceholderPageContext(result.batchSummary)
@@ -1342,6 +1520,22 @@ Also return:
 Return one entry for every page in the range, even if a page is blank.`;
 }
 
+function buildSignedQuantityOverlayPrompt(input: {
+  pageStart: number;
+  filename: string;
+}): string {
+  return `Look at this PNG raster of page ${input.pageStart} of ${input.filename}. Read the pixels. Do not use a PDF text layer.
+
+List every visibly signed quantity that is a negative Celsius temperature: a leading minus, hyphen, or short stroke drawn immediately before the number in a table cell (−15 °C, −20 °C). The text layer often drops that stroke.
+
+A leading tilde or ≈ is approximate, not a minus. Do not report ~50 RPM as −50 RPM. A bullet, list dash, or range separator (15–130 °C) is not a sign.
+
+Return signed temperature strings only. Empty list when none are visible. Do not invent a minus.
+
+Return:
+- signedQuantities: the signed Celsius strings only. Empty list when none are visible.`;
+}
+
 function buildTranscriptOnlyPrompt(
   input: {
     pageStart: number;
@@ -1376,9 +1570,11 @@ function buildInsightPrompt(input: {
 
 The page text has already been extracted by a PDF parser. Do not transcribe, quote, or repeat page text, table contents, or headings.
 
+Exception: if a leading minus or hyphen is visible on the page image immediately before a number (especially a temperature) but the parser text dropped that sign, put the signed value in visualInterpretation (e.g. "URS-3 shell operating temperature prints −15 °C to 130 °C"). A leading tilde or ≈ is approximate, not a minus — do not report ~50 RPM as −50. Leave visualInterpretation empty when no such dropped sign is visible and the page is otherwise plain text or tables.
+
 For each page return:
 - pageNumber: absolute 1-based PDF page number.
-- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, and notable layout. Empty string when the page is plain text or tables. Max ${MAX_VISUAL_CHARS} characters.
+- visualInterpretation: factual description of diagrams, charts, photos, signatures, stamps, handwriting, notable layout, and any dropped leading minus recovered from the image. Empty string when the page is plain text or tables and no dropped sign is visible. Max ${MAX_VISUAL_CHARS} characters.
 - pageContext: one sentence describing the page's role in the document. Max ${MAX_PAGE_CONTEXT_CHARS} characters.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 confidence that the page is faithfully described.

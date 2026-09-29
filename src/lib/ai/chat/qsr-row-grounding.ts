@@ -570,6 +570,30 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
 }
 
 /**
+ * Every span of this URS-N, not only the first. Parser text plus a later
+ * visualInterpretation line (`transcript\nURS-3 … prints −15 °C`) must both
+ * count so a recovered minus wins over unsigned 15 in the text layer.
+ */
+function quoteWindowsAroundKey(quote: string, key: string): string[] {
+  if (!quote.trim() || !key) return [];
+  const hay = ursHaystack(quote);
+  const needle = key.toUpperCase();
+  const windows: string[] = [];
+  const seen = new Set<string>();
+  const add = (window: string | null) => {
+    if (!window || seen.has(window)) return;
+    seen.add(window);
+    windows.push(window);
+  };
+  add(quoteWindowAroundKey(hay, key));
+  for (const span of ursSpans(hay)) {
+    if (span.id !== needle) continue;
+    add(quoteWindowAroundKey(hay.slice(span.at), key));
+  }
+  return windows;
+}
+
+/**
  * Identifier slice plus the rest of the page after that ID.
  * Pass / Verified tokens are page-level — they must not stop at the
  * next URS ID the way neighbour-number isolation does.
@@ -1762,7 +1786,7 @@ export function qsrOperatingRangeUnsupported(
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (RPM_PARAMETER_RE.test(context)) {
     const hasRpm = quotes.some((quote) =>
-      /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
+      /(?<![A-Za-z0-9.])(?:[~≈]|[-−–])?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
         quote
       )
     );
@@ -1775,19 +1799,23 @@ export function qsrOperatingRangeUnsupported(
 
 /**
  * Operating Range / RTM "15 °C" or "50 ± 10 RPM" when the URS prints −15 °C
- * or −50 ± 10 RPM. A leading en-dash read as ~ / ± is the same miss.
+ * or −50 ± 10 RPM. A leading tilde / ≈ is approximate, not a dropped minus.
  */
 function unsignedQuantityWhenEvidenceIsNegative(
   cell: string,
   context: string,
-  quotes: readonly string[]
+  quotes: readonly string[],
+  section?: string
 ): HardFact | null {
   const isTemp = /\btemperature\b/i.test(context);
   const isRpm = RPM_PARAMETER_RE.test(context);
   if (!isTemp && !isRpm) return null;
   const match = LEADING_QUANTITY_RE.exec(cell);
   if (!match) return null;
-  const token = glueOcrMinusSigns(match[0].replace(/^[~≈±]+/, "").replace(/\s+/g, ""));
+  // Live GLR-1301 URS-10 is ~50±10 RPM. Do not strip that tilde and treat
+  // 50 as unsigned against a hypothetical −50.
+  if (/^[~≈]/.test(match[0].trim())) return null;
+  const token = glueOcrMinusSigns(match[0].replace(/^[±]+/, "").replace(/\s+/g, ""));
   if (!token || token.startsWith("-")) return null;
   const unit = isTemp ? " °C" : " RPM";
   const kind = isTemp ? ("temperature" as const) : ("number" as const);
@@ -1805,6 +1833,18 @@ function unsignedQuantityWhenEvidenceIsNegative(
     text: `-${token}${unit}`,
     normalized: `-${token}${normalizedUnit}`,
   };
+  const key = rowKeyFromContext(context);
+  if (key) {
+    const windows = quotes.flatMap((quote) =>
+      quoteWindowsAroundKey(quote, key)
+    );
+    const windowHasNegative = windows.some((quote) =>
+      evidenceContainsFact(quote, signed)
+    );
+    if (windowHasNegative) {
+      return syntheticUnsupportedFact(cell);
+    }
+  }
   const hasUnsigned = quotes.some((quote) =>
     evidenceContainsFact(quote, unsigned)
   );
@@ -1812,6 +1852,13 @@ function unsignedQuantityWhenEvidenceIsNegative(
     evidenceContainsFact(quote, signed)
   );
   if (hasNegative && !hasUnsigned) {
+    return syntheticUnsupportedFact(cell);
+  }
+  // Operating Range has no URS-N row key. A neighbour unsigned range of
+  // 15–130 °C must not licence Temperature Minimum 15 when the shell URS
+  // prints −15 °C. Live GLR-1301 URS-37 is −20 °C to 150 °C; that row is
+  // not this unsigned en-dash example.
+  if (section === "qsr_operating_range" && hasNegative) {
     return syntheticUnsupportedFact(cell);
   }
   return null;
@@ -1916,7 +1963,8 @@ export function extraQsrUnsupported(input: {
     unsignedQuantityWhenEvidenceIsNegative(
       input.cell.trim(),
       input.context,
-      input.ledger.recordedPages().map((page) => page.quote)
+      input.ledger.recordedPages().map((page) => page.quote),
+      input.section
     )
   );
   add(

@@ -253,6 +253,47 @@ describe("groundDraftText QSR row windows", () => {
     expect(result.text).toMatch(/[-−–]50/);
   });
 
+  it("accepts ~50±10 RPM on URS-10 when the URS shows a tilde", () => {
+    const result = groundDraftText({
+      text: "~50±10 RPM",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "urs",
+          quote: "URS-10 RPM requirement ~50±10 RPM",
+        },
+      ]),
+      policy: "block",
+      context: "URS-10\nRPM requirement",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("~50");
+    expect(result.text).not.toMatch(/[-−–]50/);
+  });
+
+  it("blocks invented −50 RPM on URS-10 when the URS shows ~50±10 RPM", () => {
+    const result = groundDraftText({
+      text: "–50 ± 10 RPM",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "urs",
+          quote: "URS-10 RPM requirement ~50±10 RPM",
+        },
+      ]),
+      policy: "block",
+      context: "URS-10\nRPM requirement",
+      grounding: { section: "qsr_rtm_process" },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.unsupported.map((fact) => fact.text).join(" ")).toMatch(
+      /50/
+    );
+  });
+
   it("accepts 8000 L from the URS cover on the URS-1 row", () => {
     const result = groundDraftText({
       text: "8000 L [User Requirement Specification.PDF, p. 1]",

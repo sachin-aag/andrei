@@ -1,10 +1,18 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { getDocumentType } from "@/lib/document-types";
+import { EMPTY_QSR_CONTENT } from "@/lib/document-types/qsr/sections";
+import { orderedSectionContents } from "@/lib/suggestions/document-table-number";
+import { sectionForPrintedTableNumber } from "@/lib/suggestions/table-operation";
 
 type SectionHit = {
   section: SectionType;
   count: number;
   earliest: number;
+};
+
+export type SectionIntentContext = {
+  /** Live section bodies. Used to map "table 4" to the printed caption. */
+  sections?: Partial<Record<SectionType, unknown>>;
 };
 
 function firstMatchIndex(text: string, pattern: RegExp): number {
@@ -15,7 +23,10 @@ function firstMatchIndex(text: string, pattern: RegExp): number {
 }
 
 const OUTLINE_NUMBER_LIST_RE =
-  /\b(?:draft|fill|populate|complete|sections?|tables?)\b[\s\w,]{0,48}?(\d+(?:\.\d+)?(?:\s*(?:,|&|and)\s*(?:and\s+)?\d+(?:\.\d+)?)+)/gi;
+  /\b(?:draft|fill|populate|complete|sections?)\b[\s\w,]{0,48}?(\d+(?:\.\d+)?(?:\s*(?:,|&|and)\s*(?:and\s+)?\d+(?:\.\d+)?)+)/gi;
+
+const PRINTED_TABLE_LIST_RE =
+  /\b(?:draft|fill|populate|complete|edit)\b[\s\w,]{0,48}?\btables?\s+(\d+(?:\s*(?:,|&|and)\s*(?:and\s+)?\d+)*)/gi;
 
 function outlineNumberFromLabel(label: string): string | null {
   const match = label.trim().match(/^(\d+(?:\.\d+)*)\b/);
@@ -27,7 +38,7 @@ function outlineNumberMatches(userNum: string, labelNum: string): boolean {
   return !userNum.includes(".") && labelNum.startsWith(`${userNum}.`);
 }
 
-/** "draft 2,3,4" / "tables 3 and 4" → Contents numbers in mention order. */
+/** "draft 2,3,4" / "section 3 and 4" → Contents numbers in mention order. */
 function listedOutlineNumbers(
   text: string
 ): Array<{ number: string; index: number }> {
@@ -36,6 +47,7 @@ function listedOutlineNumbers(
   for (const match of text.matchAll(OUTLINE_NUMBER_LIST_RE)) {
     const blob = match[1] ?? "";
     const full = match[0] ?? "";
+    if (/\btables?\s+\d/i.test(full)) continue;
     const blobIndex = (match.index ?? 0) + Math.max(0, full.indexOf(blob));
     let cursor = 0;
     for (const part of blob.split(/\s*(?:,|&|and)\s*/i)) {
@@ -52,9 +64,62 @@ function listedOutlineNumbers(
   return found;
 }
 
+/** "table 4" / "tables 3 and 4" → printed Table N in mention order. */
+function listedPrintedTables(
+  text: string
+): Array<{ number: number; index: number }> {
+  const found: Array<{ number: number; index: number }> = [];
+  const seen = new Set<number>();
+  for (const match of text.matchAll(PRINTED_TABLE_LIST_RE)) {
+    const blob = match[1] ?? "";
+    const full = match[0] ?? "";
+    const blobIndex = (match.index ?? 0) + Math.max(0, full.indexOf(blob));
+    let cursor = 0;
+    for (const part of blob.split(/\s*(?:,|&|and)\s*/i)) {
+      const n = part.trim();
+      if (!/^\d+$/.test(n)) continue;
+      const value = Number(n);
+      const local = blob.indexOf(n, cursor);
+      const index = blobIndex + (local >= 0 ? local : 0);
+      cursor = (local >= 0 ? local : cursor) + n.length;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      found.push({ number: value, index });
+    }
+  }
+  return found;
+}
+
+function sectionsForPrintedTables(
+  documentType: DocumentType,
+  sections: Partial<Record<SectionType, unknown>> | undefined
+): Partial<Record<string, unknown>> {
+  if (sections && Object.keys(sections).length > 0) return sections;
+  if (documentType === "qualification_summary_report") return EMPTY_QSR_CONTENT;
+  return {};
+}
+
+function addHit(
+  hits: SectionHit[],
+  bySection: Map<SectionType, SectionHit>,
+  section: SectionType,
+  index: number
+): void {
+  const existing = bySection.get(section);
+  if (existing) {
+    existing.count += 1;
+    if (index < existing.earliest) existing.earliest = index;
+    return;
+  }
+  const hit = { section, count: 1, earliest: index };
+  hits.push(hit);
+  bySection.set(section, hit);
+}
+
 function sectionHitsFromText(
   text: string,
-  documentType: DocumentType
+  documentType: DocumentType,
+  context?: SectionIntentContext
 ): SectionHit[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -79,6 +144,19 @@ function sectionHitsFromText(
     }
   }
 
+  const printedContents = orderedSectionContents({
+    documentType,
+    sections: sectionsForPrintedTables(documentType, context?.sections),
+  });
+  for (const listed of listedPrintedTables(trimmed)) {
+    const section = sectionForPrintedTableNumber(
+      printedContents,
+      listed.number
+    ) as SectionType | undefined;
+    if (!section) continue;
+    addHit(hits, bySection, section, listed.index);
+  }
+
   for (const listed of listedOutlineNumbers(trimmed)) {
     for (const section of def.sections) {
       if (!section.editable || section.virtual) continue;
@@ -86,19 +164,7 @@ function sectionHitsFromText(
       if (!labelNum || !outlineNumberMatches(listed.number, labelNum)) {
         continue;
       }
-      const existing = bySection.get(section.key);
-      if (existing) {
-        existing.count += 1;
-        if (listed.index < existing.earliest) existing.earliest = listed.index;
-        continue;
-      }
-      const hit = {
-        section: section.key,
-        count: 1,
-        earliest: listed.index,
-      };
-      hits.push(hit);
-      bySection.set(section.key, hit);
+      addHit(hits, bySection, section.key, listed.index);
     }
   }
   return hits;
@@ -107,9 +173,10 @@ function sectionHitsFromText(
 /** Best-effort section intent from the user's message (null if unclear). */
 export function detectSectionIntentFromText(
   text: string,
-  documentType: DocumentType = "investigation_report"
+  documentType: DocumentType = "investigation_report",
+  context?: SectionIntentContext
 ): SectionType | null {
-  const hits = sectionHitsFromText(text, documentType);
+  const hits = sectionHitsFromText(text, documentType, context);
   if (hits.length === 0) return null;
   hits.sort((a, b) => b.count - a.count || a.earliest - b.earliest);
   return hits[0]?.section ?? null;
@@ -122,9 +189,10 @@ export function detectSectionIntentFromText(
  */
 export function detectSectionIntentsFromText(
   text: string,
-  documentType: DocumentType = "investigation_report"
+  documentType: DocumentType = "investigation_report",
+  context?: SectionIntentContext
 ): SectionType[] {
-  return sectionHitsFromText(text, documentType)
+  return sectionHitsFromText(text, documentType, context)
     .toSorted((a, b) => a.earliest - b.earliest)
     .map((hit) => hit.section);
 }
