@@ -439,6 +439,27 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toEqual([]);
   });
 
+  it("keeps Remarks Complies without an IQ/DQ label when that protocol passed", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 12,
+        attachmentId: "iq",
+        quote:
+          "URS-5 Installation check meets acceptance. Section 8.1. Result: complies.",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "Complies",
+        context: "URS-5\nJacket temperature\n20-25 °C\n8.1",
+        section: "qsr_rtm_process",
+        tableCol: 7,
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("blocks a stage cell when that protocol never names the row URS ID", () => {
     const ledger = ledgerFromPages([
       {
@@ -1917,7 +1938,6 @@ describe("groundTableOperation optional RTM columns", () => {
     const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
     const urs41Row = JSON.stringify(rows[2]);
     expect(urs41Row).toContain(suggestionInsertMarkName);
-    expect(urs41Row).toMatch(/\bIQ\b/);
     expect(urs41Row).toContain("13.6");
     expect(urs41Row).toMatch(/Complies/i);
   });
@@ -2012,9 +2032,9 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     const blob = urs41.map((cell) => cell.insertText).join(" ");
-    expect(blob).toMatch(/\bDQ\b/);
+    expect(blob).toContain("Design Qualification.PDF");
     expect(blob).toContain("12.3");
-    const section = urs41.find((cell) => cell.col === 4);
+    const section = urs41.find((cell) => cell.col === 3);
     expect(section?.insertText).toContain("12.3");
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
@@ -2033,7 +2053,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const sectionCell = JSON.stringify(
       (rows[2]?.content ?? []).filter(
         (node) => node.type === "tableCell" || node.type === "tableHeader"
-      )[4]
+      )[3]
     );
     expect(sectionCell).toContain(suggestionInsertMarkName);
   });
@@ -2673,9 +2693,9 @@ describe("groundTableOperation optional RTM columns", () => {
         cells: [
           {
             row: 1,
-            col: 4,
+            col: 6,
             rowKey: "URS-1",
-            expectedText: "",
+            expectedText: "8.2.3",
             insertText: requested,
             rowContext: "URS-1\nReactor Capacity\n8000 L",
           },
@@ -2690,10 +2710,9 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(requested);
-    expect(cells.find((cell) => cell.col === 4)?.insertText).not.toBe(
-      "8.2.3 – Heating Trial"
-    );
+    const landed = cells.find((cell) => cell.col === 6)?.insertText ?? "";
+    expect(landed.startsWith(requested)).toBe(true);
+    expect(landed).not.toBe("8.2.3 – Heating Trial");
   });
 
   it("keeps a grounded empty-row Section request instead of a neighbour pick heading", () => {

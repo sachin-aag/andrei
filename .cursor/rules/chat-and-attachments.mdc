@@ -208,7 +208,10 @@ card, not one card per URS row). The card title counts only cells that
 actually change — identity Remarks and dummy leftover cells are dropped
 before persist. QSR RTM family columns / Remarks on the card are the
 grounded cells from chat (`edit_table` insertText) — there is no family
-ranker that rewrites IQ to PQ or swaps a neighbour heading. A page
+ranker that rewrites IQ to PQ or swaps a neighbour heading. Existing
+Table 5–10 rows stored Stage + Section: open / export / chat merge keeps
+URS identity and Remarks, drops Stage / Section, and leaves DQ/IQ/OQ/PQ
+blank so the assistant can refill (no SQL). A page
 counter (`16`) or logged reading (`12.72 °C`) in Section still clears.
 Wrap-up quotes `adjustedCells.saved`
 Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`

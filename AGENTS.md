@@ -87,7 +87,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   that actually change (identity Remarks Complies is not in N). QSR RTM
   family columns / Remarks on the card are the grounded cells from chat
   (`edit_table` insertText) — there is no family ranker that rewrites IQ
-  to PQ or swaps a neighbour heading. A page counter (`16`) or logged
+  to PQ or swaps a neighbour heading. Existing Table 5–10 rows stored
+  Stage + Section: open / export / chat merge keeps URS identity and
+  Remarks, drops Stage / Section, and leaves DQ/IQ/OQ/PQ blank so the
+  assistant can refill (no SQL). A page counter (`16`) or logged
   reading (`12.72 °C`) in Section still clears. Wrap-up quotes
   `adjustedCells.saved` Section, not a different test heading. "Insert the suggestion" / "edit
   the document" reads the section, then calls `edit_table` or `propose_edit`

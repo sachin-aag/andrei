@@ -73,7 +73,6 @@ describe("tableCellAdjustments", () => {
       ).map((adj) => [adj.col, adj.saved])
     ).toEqual([
       [3, ""],
-      [4, "13.3.5.1 [IQ.pdf, p. 22]"],
       [7, ""],
     ]);
   });

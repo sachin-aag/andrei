@@ -1770,11 +1770,30 @@ export function syntheticUnsupportedFact(text: string): HardFact {
   };
 }
 
+/**
+ * Families that may justify Remarks Complies. A family column only
+ * accepts a pass from that column's protocol. Remarks used to require
+ * an `IQ` / `DQ` label in the row (the old Stage cell). Family columns
+ * no longer write that label, so Remarks checks every protocol that
+ * actually passed this URS ID.
+ */
+function compliesFamiliesToCheck(options?: {
+  section?: string;
+  tableCol?: number;
+}): readonly RtmStageFamily[] {
+  const fromCol =
+    options?.tableCol != null
+      ? rtmFamilyAtColumn(options.section, options.tableCol)
+      : null;
+  return fromCol ? [fromCol] : QSR_STAGE_RANK;
+}
+
 /** Remarks / family cells that must not persist stock language. */
 export function qsrRtmCellUnsupported(
   cell: string,
   context: string,
-  ledger: CitationPageLedger
+  ledger: CitationPageLedger,
+  options?: { section?: string; tableCol?: number }
 ): HardFact | null {
   const key = rowKeyFromContext(context);
   const trimmed = cell.trim();
@@ -1786,8 +1805,12 @@ export function qsrRtmCellUnsupported(
   }
 
   if (STOCK_COMPLIES_RE.test(trimmed)) {
-    const stage = stageFamilyFromCell(rowStageFromContext(context));
-    if (!stage || !protocolPassWindow(ledger, key, stage, context)) {
+    const families = compliesFamiliesToCheck(options);
+    if (
+      !families.some((family) =>
+        protocolPassWindow(ledger, key, family, context)
+      )
+    ) {
       return syntheticUnsupportedFact(trimmed);
     }
     return null;
@@ -1798,15 +1821,6 @@ export function qsrRtmCellUnsupported(
     return syntheticUnsupportedFact(trimmed);
   }
   return null;
-}
-
-function rowStageFromContext(context: string): string {
-  for (const family of QSR_STAGE_RANK) {
-    if (new RegExp(`\\b${STAGE_LABEL[family]}\\b`).test(context)) {
-      return STAGE_LABEL[family];
-    }
-  }
-  return "";
 }
 
 export function qsrOperatingRangeUnsupported(
@@ -1977,7 +1991,12 @@ export function extraQsrUnsupported(input: {
     seen.add(fact.normalized);
     out.push(fact);
   };
-  add(qsrRtmCellUnsupported(input.cell, input.context, input.ledger));
+  add(
+    qsrRtmCellUnsupported(input.cell, input.context, input.ledger, {
+      section: input.section,
+      tableCol: input.tableCol,
+    })
+  );
   const family =
     input.tableCol != null
       ? rtmFamilyAtColumn(input.section, input.tableCol)

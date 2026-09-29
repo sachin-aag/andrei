@@ -54,6 +54,7 @@ import {
   isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
+  rtmFamilyAtColumn,
   qsrTableColumnLabel,
   rowKeyFromContext,
   editCellsGroupKey,
@@ -465,7 +466,8 @@ function retargetMarkerAfterFact(
 function applyMovedCitations(
   text: string,
   facts: readonly HardFact[],
-  records: readonly ClaimProvenanceRecord[]
+  records: readonly ClaimProvenanceRecord[],
+  pinCitationsToEnd = false
 ): string {
   let next = text;
   const insertions: Array<{ at: number; cite: string }> = [];
@@ -515,7 +517,9 @@ function applyMovedCitations(
     }
     if (!replaced) {
       insertions.push({
-        at: citationSiteOffset(text, fact.end),
+        at: pinCitationsToEnd
+          ? text.length
+          : citationSiteOffset(text, fact.end),
         cite: ` ${neu}`,
       });
     }
@@ -597,7 +601,17 @@ export function groundDraftText(input: {
       }),
     });
   });
-  const withMoved = applyMovedCitations(cited, facts, records);
+  const withMoved = applyMovedCitations(
+    cited,
+    facts,
+    records,
+    Boolean(
+      rtmFamilyAtColumn(
+        input.grounding?.section,
+        input.grounding?.tableCol ?? -1
+      )
+    )
+  );
   const unsourcedFacts = facts.filter(
     (_, index) => records[index]?.status === "unsourced"
   );

@@ -470,6 +470,8 @@ describe("QSR RTM section 5 draft replay", () => {
               "",
               "",
               "",
+              "",
+              "",
             ],
           ],
         },
@@ -1159,7 +1161,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows[0]?.[0]).toContain("URS-5");
     expect(rows[0]?.[1]).toBe("Jacket temperature");
     expect(rows[0]?.[2]).toContain("20-25 °C");
-    expect(rows[0]?.slice(3)).toEqual(["", "", ""]);
+    expect(rows[0]?.slice(3)).toEqual(["", "", "", "", ""]);
     expect(rows.flat().join(" ")).not.toMatch(/Complies/i);
   });
 
@@ -1377,7 +1379,7 @@ describe("QSR RTM section 5 draft replay", () => {
         reasoning: "Fill control philosophy.",
         operation: {
           kind: "insert_rows",
-          rows: [["URS-35", "Vacuum gauge", "", "0 to 760 mmHg", "", "", ""]],
+          rows: [["URS-35", "Vacuum gauge", "", "0 to 760 mmHg", "", "", "", "", ""]],
         },
       },
       TEST_TOOL_OPTIONS
@@ -1523,6 +1525,8 @@ describe("QSR RTM section 5 draft replay", () => {
               "",
               "",
               "",
+              "",
+              "",
             ],
           ],
         },
@@ -1631,6 +1635,8 @@ describe("QSR RTM section 5 draft replay", () => {
               "Vacuum gauge",
               "Vacuum gauge to measure the vacuum produced",
               "0 to 760 mmHg",
+              "",
+              "",
               "",
               "",
               "",

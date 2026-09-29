@@ -274,7 +274,9 @@ describe("qualification summary report DOCX export", () => {
         qsr_rtm_process: { table: seeded },
       })
     );
-    expect(banner).toContain('<w:gridSpan w:val="8"/>');
+    expect(rowContaining(document, "ANY SPECIFIC REQUIREMENTS")).toContain(
+      '<w:gridSpan w:val="8"/>'
+    );
   });
 
   it("spans Details across a blank Range cell on the operating range table", async () => {
