@@ -20,7 +20,9 @@ alwaysApply: false
 Follow the **latest user message**. Ask vs Agent is per send, not the
 whole thread — a prior "currently in Ask mode" assistant note is stale
 once the composer is Agent ("I switched to Agent" / yes after that copy
-is write). Agent mode may edit when they asked to
+is write). Stamp THIS SEND as a prefix on the latest user ModelMessage
+and in `composerModeTurnRule` — never as a mid-thread `role: "system"`
+message (Gemini: system messages only at the beginning). Agent mode may edit when they asked to
 write; empty sections and ready attachments are not a request to draft.
 Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
@@ -203,7 +205,14 @@ spec cell does not. When a saved cell differs from the request, the
 `edit_table` `proposed` result carries `adjustedCells` (`requested` /
 `saved`) plus `proposedRowKeys` / `proposedCellCount` / `droppedRowKeys`
 so the wrap-up names only the rows on the card (one `edit_table` is one
-card, not one card per URS row). Every pack uses `unsupportedFactPolicy: block`
+card, not one card per URS row). The card title counts only cells that
+actually change — identity Remarks and dummy leftover cells are dropped
+before persist. A filled RTM Section number is elaborated with any
+one audit line from that protocol section (`8.2.3` → `8.2.3 – Heating Trial`
+or `8.2.3 – Fill the reactor to 8000 L`; a heading title is not required),
+not replaced with a neighbour heading. Empty Reference – Section cells on
+other live URS rows still get that audit line from retrieved protocol pages
+even when the card only named two rows. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover

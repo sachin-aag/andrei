@@ -435,4 +435,56 @@ describe("qualification summary report DOCX export", () => {
       tableText.indexOf("IQ/PB2/003/9")
     );
   });
+
+  it("dedupes the same file and page in the CITATIONS table", async () => {
+    function cited(body: string, source: string): JSONContent {
+      return {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [text(body)] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [text("Citations:")] },
+          { type: "paragraph", content: [text(`1. ${source}`)] },
+        ],
+      };
+    }
+    const { document } = await exportXml(
+      sectionsWith({
+        qsr_qualification_documents: {
+          table: tableDoc(QSR_QUALIFICATION_DOCUMENT_HEADERS, [
+            [
+              "User Requirement Specification",
+              "URS/PB2/001/12345",
+              "00",
+              "Approved",
+              "01/01/2026",
+              "",
+            ],
+          ]),
+        },
+        qsr_objective: {
+          narrative: cited(
+            "The URS was approved [1].",
+            "[User Requirement Specification.PDF, p. 2]"
+          ),
+        },
+        qsr_scope: {
+          narrative: cited("Capacity matches the URS [1].", "[URS.pdf, p.2]"),
+        },
+      })
+    );
+    const headingAt = document.indexOf("CITATIONS");
+    const citationsTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        document.indexOf(tbl) > headingAt &&
+        visibleText(tbl).includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const tableText = visibleText(citationsTable!);
+    expect(tableText.match(/URS\/PB2\/001\/12345/g)).toHaveLength(1);
+    expect(tableText.match(/Page # 2/g)).toHaveLength(1);
+    const body = visibleText(document);
+    expect(body).toContain("The URS was approved");
+    expect(body).toContain("Capacity matches the URS");
+  });
 });

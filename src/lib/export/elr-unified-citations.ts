@@ -1,6 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
+import { citationDisplayFilename } from "@/lib/citations/citation-filename";
 import { ELR_SECTION_KEYS } from "@/lib/document-types/elr/sections";
-import { canonicalizeSourceCitationBracket } from "@/lib/placeholders/citation-bracket";
+import {
+  canonicalizeSourceCitationBracket,
+  parseSourceCitation,
+} from "@/lib/placeholders/citation-bracket";
 import {
   applyGlobalCitationNumbersToContent,
   orderedCitationSourcesFromContent,
@@ -38,20 +42,50 @@ function sectionsInDocumentOrder(
   );
 }
 
-function sourceKey(source: string): string {
-  return canonicalizeSourceCitationBracket(source);
+function basenameLower(filename: string): string {
+  return citationDisplayFilename(filename)
+    .replace(/^.*[/\\]/, "")
+    .trim()
+    .toLowerCase();
 }
+
+/** Written page list so `p. 4` and `p.4` match; ranges stay `1-3`. */
+function pageIdentityFromSource(source: string): string {
+  const inner = source.trim().replace(/^\[/, "").replace(/\]$/, "");
+  const suffix = /,\s*p\.\s*(.+)$/i.exec(inner);
+  if (!suffix) return "";
+  return suffix[1]
+    .replace(/\s*,\s*p\.\s*/gi, ",")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+/**
+ * Same attached file + same page list. Ignores case, download stamps, and
+ * spacing around `p.`. Different pages of one file stay distinct.
+ */
+export function citationSourceIdentityKey(source: string): string {
+  const canonical = canonicalizeSourceCitationBracket(source);
+  const parsed = parseSourceCitation(canonical);
+  if (!parsed?.filename.trim()) {
+    return canonical.trim().toLowerCase();
+  }
+  return `${basenameLower(parsed.filename)}\0${pageIdentityFromSource(canonical)}`;
+}
+
+export type ReportBibliographyIdentity = (source: string) => string;
 
 /** First-appearance sources across sections, then one global number each. */
 export function collectReportBibliography(
   sections: readonly ReportSectionRecord[],
-  sectionKeys: readonly string[]
+  sectionKeys: readonly string[],
+  sourceIdentity: ReportBibliographyIdentity = citationSourceIdentityKey
 ): ElrBibliographyEntry[] {
   const bibliography: ElrBibliographyEntry[] = [];
   const seen = new Set<string>();
   for (const row of sectionsInDocumentOrder(sections, sectionKeys)) {
     for (const source of orderedCitationSourcesFromContent(row.content)) {
-      const key = sourceKey(source);
+      const key = sourceIdentity(source);
       if (!key || seen.has(key)) continue;
       seen.add(key);
       bibliography.push({ number: bibliography.length + 1, source });
@@ -68,12 +102,40 @@ export function collectElrBibliography(
 }
 
 export function elrSourceToGlobalMap(
-  bibliography: readonly ElrBibliographyEntry[]
+  bibliography: readonly ElrBibliographyEntry[],
+  sourceIdentity: ReportBibliographyIdentity = citationSourceIdentityKey
 ): Map<string, number> {
   const map = new Map<string, number>();
   for (const { number, source } of bibliography) {
     map.set(source, number);
-    map.set(sourceKey(source), number);
+    map.set(canonicalizeSourceCitationBracket(source), number);
+    map.set(sourceIdentity(source), number);
+  }
+  return map;
+}
+
+function reportSourceToGlobalMap(
+  sections: readonly ReportSectionRecord[],
+  sectionKeys: readonly string[],
+  bibliography: readonly ElrBibliographyEntry[],
+  sourceIdentity: ReportBibliographyIdentity
+): Map<string, number> {
+  const byIdentity = new Map<string, number>();
+  for (const { number, source } of bibliography) {
+    byIdentity.set(sourceIdentity(source), number);
+  }
+  const map = elrSourceToGlobalMap(bibliography, sourceIdentity);
+  const remember = (source: string, number: number) => {
+    map.set(source, number);
+    map.set(canonicalizeSourceCitationBracket(source), number);
+    map.set(sourceIdentity(source), number);
+  };
+  for (const row of sectionsInDocumentOrder(sections, sectionKeys)) {
+    for (const source of orderedCitationSourcesFromContent(row.content)) {
+      const number = byIdentity.get(sourceIdentity(source));
+      if (number == null) continue;
+      remember(source, number);
+    }
   }
   return map;
 }
@@ -84,13 +146,24 @@ export function elrSourceToGlobalMap(
  */
 export function unifyReportCitationsForExport(
   sections: ReportSectionRecord[],
-  sectionKeys: readonly string[]
+  sectionKeys: readonly string[],
+  options?: { sourceIdentity?: ReportBibliographyIdentity }
 ): { sections: ReportSectionRecord[]; bibliography: ElrBibliographyEntry[] } {
-  const bibliography = collectReportBibliography(sections, sectionKeys);
+  const sourceIdentity = options?.sourceIdentity ?? citationSourceIdentityKey;
+  const bibliography = collectReportBibliography(
+    sections,
+    sectionKeys,
+    sourceIdentity
+  );
   if (bibliography.length === 0) {
     return { sections, bibliography };
   }
-  const sourceToGlobal = elrSourceToGlobalMap(bibliography);
+  const sourceToGlobal = reportSourceToGlobalMap(
+    sections,
+    sectionKeys,
+    bibliography,
+    sourceIdentity
+  );
   return {
     bibliography,
     sections: sections.map((row) => ({

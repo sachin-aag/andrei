@@ -136,7 +136,14 @@ export type TableOperationStatus =
   | "already_present";
 
 export type TableOperationResult =
-  | { ok: true; status: "ok"; doc: JSONContent; tableNumber?: number }
+  | {
+      ok: true;
+      status: "ok";
+      doc: JSONContent;
+      tableNumber?: number;
+      /** Cells that actually change the live table (identity / dummy leftovers dropped). */
+      appliedOperation?: TableOperation;
+    }
   | { ok: false; status: Exclude<TableOperationStatus, "ok">; hint: string };
 
 export const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s+/i;
@@ -599,6 +606,9 @@ function captionAfterFill(
     doc: captioned.doc,
     ...(captioned.tableNumber !== undefined
       ? { tableNumber: captioned.tableNumber }
+      : {}),
+    ...(result.appliedOperation
+      ? { appliedOperation: result.appliedOperation }
       : {}),
   };
 }
@@ -1483,7 +1493,12 @@ function applyEditCells(
     const node = rowCells(rows[cell.row]!)[cell.col]!;
     setCellText(node, cell.insertText);
   }
-  return { ok: true, status: "ok", doc };
+  return {
+    ok: true,
+    status: "ok",
+    doc,
+    appliedOperation: { ...operation, cells: resolved.cells },
+  };
 }
 
 function applyInsertRows(

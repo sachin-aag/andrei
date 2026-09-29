@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v163-qsr-rtm-land");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v165-qsr-rtm-land");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -28,6 +28,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("URS cover");
     expect(prompt).toContain("stock Complies / bare Section 13");
     expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
+    expect(prompt).toContain(
+      "empty Reference – Section cells on other URS rows"
+    );
     expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
     expect(prompt).toContain("never the printed page counter");
     expect(prompt).toContain("12.72 °C");
@@ -53,6 +56,11 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
     expect(prompt).toContain("fill or update RTM Reference cells");
     expect(prompt).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");
+    expect(prompt).toContain("8.2.3 may become 8.2.3 – Heating Trial");
+    expect(prompt).toContain("8.2.3 – Fill the reactor to 8000 L");
+    expect(prompt).toContain("a title next to the number is not required");
+    expect(prompt).toContain("do not replace 8.2.3 with a neighbour 8.2.4");
+    expect(prompt).toContain("counts only cells that actually change");
     expect(prompt).toContain(
       "one requirement ID is not one grep when filling RTM Stage"
     );

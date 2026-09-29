@@ -5,6 +5,7 @@ import {
   composerModeTurnRule,
   messagesWithComposerModeReminder,
 } from "./composer-mode-reminder";
+import { geminiSafeModelMessages } from "./gemini-messages";
 
 describe("composerModeReminderText", () => {
   it("tells Agent to ignore a stale Ask-mode note", () => {
@@ -32,7 +33,7 @@ describe("composerModeTurnRule", () => {
 });
 
 describe("messagesWithComposerModeReminder", () => {
-  it("inserts the stamp immediately before the latest user message", () => {
+  it("prefixes the latest user message and never inserts a system role", () => {
     const messages: ModelMessage[] = [
       { role: "user", content: "what goes in these rows?" },
       {
@@ -43,20 +44,47 @@ describe("messagesWithComposerModeReminder", () => {
       { role: "user", content: "I switched to Agent — fill them" },
     ];
     const next = messagesWithComposerModeReminder(messages, "agent");
-    expect(next).toHaveLength(4);
+    expect(next).toHaveLength(3);
+    expect(next.some((message) => message.role === "system")).toBe(false);
     expect(next[2]).toEqual({
-      role: "system",
-      content: composerModeReminderText("agent"),
+      role: "user",
+      content: `${composerModeReminderText("agent")}\n\nI switched to Agent — fill them`,
     });
-    expect(next[3]).toEqual(messages[2]);
     expect(next[0]).toEqual(messages[0]);
     expect(next[1]).toEqual(messages[1]);
+    expect(geminiSafeModelMessages(next)).toEqual(next);
   });
 
-  it("appends when there is no user message", () => {
-    const next = messagesWithComposerModeReminder([], "plan");
-    expect(next).toEqual([
-      { role: "system", content: composerModeReminderText("plan") },
-    ]);
+  it("prefixes a multipart user message with a text part", () => {
+    const messages: ModelMessage[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "fill the table" },
+          {
+            type: "file",
+            mediaType: "image/png",
+            data: "data:image/png;base64,aaa",
+          },
+        ],
+      },
+    ];
+    const next = messagesWithComposerModeReminder(messages, "agent");
+    expect(next[0]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: composerModeReminderText("agent") },
+        { type: "text", text: "fill the table" },
+        {
+          type: "file",
+          mediaType: "image/png",
+          data: "data:image/png;base64,aaa",
+        },
+      ],
+    });
+  });
+
+  it("leaves an empty thread unchanged", () => {
+    expect(messagesWithComposerModeReminder([], "plan")).toEqual([]);
   });
 });

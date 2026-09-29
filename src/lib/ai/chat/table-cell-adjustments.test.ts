@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
+  tableEditLandedSummary,
   tableEditProposalMessage,
   tableEditProposalMeta,
 } from "@/lib/ai/chat/table-cell-adjustments";
@@ -189,5 +190,55 @@ describe("tableCellAdjustments", () => {
     expect(message).toContain("dropped from the card: URS-6, URS-12");
     expect(message).toContain("Do not list droppedRowKeys as updated");
     expect(message).toContain("Wrap-up may name only proposedRowKeys");
+  });
+
+  it("replaces wrap-up reasoning when the card dropped requested rows", () => {
+    const meta = tableEditProposalMeta(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+          { row: 1, col: 5, rowKey: "URS-1", insertText: "Complies" },
+          { row: 63, col: 4, rowKey: "URS-63", insertText: "8.8 – Agitator" },
+        ],
+      },
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+        ],
+      }
+    );
+    const summary = tableEditLandedSummary(
+      "Add one-line test explanation to all remaining Reference – Section and Remarks cells in Table 5.",
+      meta
+    );
+    expect(summary).toContain("Landed 1 cell(s) on URS-1 only");
+    expect(summary).toContain("Dropped from the card: URS-63");
+    expect(summary).not.toContain("Add one-line test explanation");
+  });
+
+  it("keeps the model reasoning when every requested row landed", () => {
+    const meta = tableEditProposalMeta(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+        ],
+      },
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+        ],
+      }
+    );
+    expect(tableEditLandedSummary("Elaborate URS-1 Section.", meta)).toBe(
+      "Elaborate URS-1 Section."
+    );
   });
 });
