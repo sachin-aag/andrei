@@ -1186,6 +1186,9 @@ const RTM_SECTION_JUNK_RES: readonly RegExp[] = [
   /\b\d{1,2}([-/.])\d{1,2}\1(?:\d{4}|\d{2})\b/,
   // A lone trailing letter is a cut-off word unless it is a unit (8000 L).
   /(?:^|[^\d\s])\s[A-Za-z]$/,
+  // PQ purpose / scope sentences are not a test audit line.
+  /\bensures that\b/i,
+  /\bperformance qualification\s*\(\s*pq\s*\)\s*ensures/i,
 ];
 
 /** One plain line about the test performed, or "" when it is page furniture. */
@@ -1456,7 +1459,17 @@ function requestedSectionKeepable(
     requestedNum !== liveNum &&
     !liveNum.split(/\s*[\/&]\s*/).includes(requestedNum)
   ) {
-    return false;
+    const samePageNeighbour = quotes.some(
+      (quote) =>
+        headingNumberOnPage(quote, liveNum) &&
+        headingNumberOnPage(quote, requestedNum)
+    );
+    const liveChapter = liveNum.split(".")[0] ?? "";
+    const requestedChapter = requestedNum.split(".")[0] ?? "";
+    if (samePageNeighbour) return false;
+    // Filled IQ 13.6 vs neighbour 13.7.5 on a later page is not a family
+    // correction. PQ 8.2.3 → IQ 13.8.5.1 is.
+    if (liveChapter === requestedChapter) return false;
   }
   if (
     requestedNum &&
@@ -1499,7 +1512,7 @@ function formatKeptRequestedSection(
 ): string {
   const liveNum = rtmCellSectionNumber(live, family);
   const requestedNum = rtmCellSectionNumber(requested, family);
-  const number = liveNum || requestedNum;
+  const number = requestedNum || liveNum;
   const desc = rtmCellDescription(requested);
   if (number && desc) return `${number} – ${desc}`;
   if (number) return number;
@@ -1545,6 +1558,32 @@ function resolveRtmSectionInsert(input: {
 
   const liveNum = rtmCellSectionNumber(input.live, input.pick.family);
   if (!liveNum || /[\/&]/.test(liveNum)) return requestedText;
+  const liveOnPickPages = input.quotes.some((quote) =>
+    headingNumberOnPage(quote, liveNum)
+  );
+  if (!liveOnPickPages) {
+    const requestedNum = rtmCellSectionNumber(
+      input.requested,
+      input.pick.family
+    );
+    const requestedOnPickPages =
+      Boolean(requestedNum) &&
+      input.quotes.some((quote) => headingNumberOnPage(quote, requestedNum));
+    const liveChapter = liveNum.split(".")[0] ?? "";
+    const requestedChapter =
+      (requestedNum ||
+        rtmCellSectionNumber(
+          input.pick.sectionHeading ?? "",
+          input.pick.family
+        ) ||
+        ""
+      ).split(".")[0] ?? "";
+    // PQ 8.2.3 is not an IQ heading. Keep IQ 13.6 vs neighbour 13.7.5.
+    if (requestedOnPickPages && liveChapter !== requestedChapter) {
+      return requestedText || rtmSectionCellText("", input.pick);
+    }
+    return input.live.trim();
+  }
 
   const liveHeading = headingFromQuotes(
     input.quotes,
@@ -1772,6 +1811,75 @@ function liveReferenceFloor(
   return { stageFamily, sectionText };
 }
 
+function requestedStageFamily(
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): RtmStageFamily | null {
+  const insert =
+    siblings.find((sib) => sib.col === cols.stage)?.insertText ?? "";
+  const family = stageFamilyFromCell(insert);
+  return isRtmStageFamily(family) ? family : null;
+}
+
+function requestedSectionNumber(
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): string | undefined {
+  const insert =
+    siblings.find((sib) => sib.col === cols.section)?.insertText ?? "";
+  return rtmCellSectionNumber(insert) || undefined;
+}
+
+/**
+ * edit_cells only: honor a grounded IQ (or OQ/DQ) Stage / Section the
+ * model already named. insert_rows still walks PQ first.
+ */
+function familyHonorableOnFloor(
+  family: RtmStageFamily,
+  floor: { stageFamily: RtmStageFamily | null; sectionText: string }
+): boolean {
+  if (family !== "dq") return true;
+  return !pickWouldReplaceFilledReference(
+    {
+      family: "dq",
+      stageLabel: "DQ",
+      filename: "",
+      pageNumber: 0,
+      sectionHeading: floor.sectionText ? "Section 99" : null,
+      remarks: "",
+    },
+    floor
+  );
+}
+
+function preferredFamilyFromRequest(
+  ledger: CitationPageLedger,
+  key: string,
+  context: string,
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): RtmStageFamily | undefined {
+  const floor = liveReferenceFloor(siblings, cols);
+  const requestedStage = requestedStageFamily(siblings, cols);
+  if (
+    requestedStage &&
+    familyHonorableOnFloor(requestedStage, floor) &&
+    matchingProtocolPages(ledger, key, requestedStage, context).length > 0
+  ) {
+    return requestedStage;
+  }
+  const requestedNum = requestedSectionNumber(siblings, cols);
+  if (!requestedNum) return undefined;
+  for (const family of QSR_STAGE_RANK) {
+    if (!familyHonorableOnFloor(family, floor)) continue;
+    const pages = matchingProtocolPages(ledger, key, family, context);
+    if (pages.some((page) => headingNumberOnPage(page.quote, requestedNum))) {
+      return family;
+    }
+  }
+  return undefined;
+}
+
 function pickWouldReplaceFilledReference(
   pick: RtmReferencePick,
   floor: { stageFamily: RtmStageFamily | null; sectionText: string }
@@ -1795,13 +1903,48 @@ function pickWouldReplaceFilledReference(
 function stickyRtmPick(
   pick: RtmReferencePick | null,
   siblings: readonly TableCellEdit[],
-  cols: { stage: number; section: number; remarks: number }
+  cols: { stage: number; section: number; remarks: number },
+  honorFamily?: RtmStageFamily | null
 ): RtmReferencePick | null {
   if (!pick) return null;
+  // Honor an explicit IQ/OQ/PQ correction (PQ → IQ on Table 8). Never honor
+  // a DQ URS-ID hit over a filled IQ Section (13.6 vs 12.3).
+  if (honorFamily && pick.family === honorFamily && pick.family !== "dq") {
+    return pick;
+  }
   if (pickWouldReplaceFilledReference(pick, liveReferenceFloor(siblings, cols))) {
     return null;
   }
   return pick;
+}
+
+function pickRtmReferenceForEdits(
+  ledger: CitationPageLedger,
+  key: string,
+  context: string,
+  siblings: readonly TableCellEdit[],
+  cols: { stage: number; section: number; remarks: number }
+): { raw: RtmReferencePick | null; pick: RtmReferencePick | null } {
+  const floor = liveReferenceFloor(siblings, cols);
+  const preferredFamily = preferredFamilyFromRequest(
+    ledger,
+    key,
+    context,
+    siblings,
+    cols
+  );
+  const preferredSection =
+    requestedSectionNumber(siblings, cols) ||
+    rtmCellSectionNumber(floor.sectionText) ||
+    undefined;
+  const raw = pickRtmReference(
+    ledger,
+    key,
+    context,
+    preferredSection,
+    preferredFamily
+  );
+  return { raw, pick: stickyRtmPick(raw, siblings, cols, preferredFamily) };
 }
 
 function headingNumberOnPage(quote: string, number: string): boolean {
@@ -1902,13 +2045,22 @@ export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
   context: string,
-  preferredSectionNumber?: string
+  preferredSectionNumber?: string,
+  preferredFamily?: RtmStageFamily
 ): RtmReferencePick | null {
   const preferred =
     preferredSectionNumber?.trim() ||
     rtmCellSectionNumber(firstSectionNumberLine(context)) ||
     undefined;
-  for (const family of QSR_STAGE_RANK) {
+  const families: readonly RtmStageFamily[] =
+    preferredFamily &&
+    matchingProtocolPages(ledger, key, preferredFamily, context).length > 0
+      ? [
+          preferredFamily,
+          ...QSR_STAGE_RANK.filter((family) => family !== preferredFamily),
+        ]
+      : QSR_STAGE_RANK;
+  for (const family of families) {
     const pages = matchingProtocolPages(ledger, key, family, context);
     if (pages.length === 0) continue;
     const passPage =
@@ -2025,19 +2177,13 @@ function rankEditCells(
       : key;
     if (!rowKey) return [cell];
     const floor = liveReferenceFloor(siblings, cols);
-    const preferredSection =
-      rtmCellSectionNumber(floor.sectionText) ||
-      rtmCellSectionNumber(
-        siblings.find((sib) => sib.col === cols.section)?.insertText ?? ""
-      ) ||
-      undefined;
-    const rawPick = pickRtmReference(
+    const { raw: rawPick, pick } = pickRtmReferenceForEdits(
       ledger,
       rowKey,
       context,
-      preferredSection
+      siblings,
+      cols
     );
-    const pick = stickyRtmPick(rawPick, siblings, cols);
     if (!pick) {
       // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
       if (rawPick) return [];
@@ -2096,14 +2242,10 @@ function rankEditCells(
     if (!touchesRef) continue;
     const context = editCellsSiblingContext(siblings, key);
     const floor = liveReferenceFloor(siblings, cols);
-    const preferredSection =
-      rtmCellSectionNumber(floor.sectionText) ||
-      rtmCellSectionNumber(
-        siblings.find((sib) => sib.col === cols.section)?.insertText ?? ""
-      ) ||
-      undefined;
-    const pick = stickyRtmPick(
-      pickRtmReference(ledger, key, context, preferredSection),
+    const { pick } = pickRtmReferenceForEdits(
+      ledger,
+      key,
+      context,
       siblings,
       cols
     );

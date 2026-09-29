@@ -2797,6 +2797,228 @@ describe("groundTableOperation optional RTM columns", () => {
     ).not.toMatch(/8\.2\.4/);
   });
 
+  it("lands both IQ Stage and Section on Table 8 when chat corrects a filled PQ row", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 48,
+        attachmentId: "iq",
+        quote:
+          "URS-46 13.8.5.1 Safety Valve PSV-13001 Pressure safety relief valve installation and calibration check Result: Verified",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 20,
+        attachmentId: "pq",
+        quote:
+          "8.2.3 Pressure safety relief valve installation and set pressure verification. Result: Verified",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-46",
+        "URS-46\nPressure Safety\nPressure relief valve",
+        "13.8.5.1"
+      )?.stageLabel
+    ).toBe("PQ");
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-46",
+        "URS-46\nPressure Safety\nPressure relief valve",
+        "13.8.5.1",
+        "iq"
+      )
+    ).toMatchObject({
+      stageLabel: "IQ",
+      pageNumber: 48,
+      sectionHeading: expect.stringContaining("13.8.5.1"),
+    });
+
+    const fieldDoc = rtmProcessDoc([
+      [
+        "URS-46",
+        "Pressure Safety",
+        "Pressure relief valve to be installed on the vessel.",
+        "PQ [Performance Qualification.PDF, p. 20]",
+        "8.2.3 – Heating trial at 8000 L working volume",
+        "Complies",
+      ],
+    ]);
+    const requestedSection =
+      "13.8.5.1 – Pressure safety relief valve (PSV-13001) installation and calibration check";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-46",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 48]",
+            rowContext: "URS-46\nPressure Safety\nPressure relief valve",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-46",
+            expectedText: "",
+            insertText: requestedSection,
+            rowContext: "URS-46\nPressure Safety\nPressure relief valve",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_safety" },
+      clearOptionalOnBlock: true,
+      fieldDoc,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const stage = cells.find((cell) => cell.col === 3)?.insertText ?? "";
+    const section = cells.find((cell) => cell.col === 4)?.insertText ?? "";
+    expect(stage).toMatch(/^IQ\b/);
+    expect(stage).toContain("Installation Qualification.PDF");
+    expect(stage).not.toMatch(/\bPQ\b/);
+    expect(section).toContain("13.8.5.1");
+    expect(section).not.toMatch(/^8\.2\.3/);
+    expect(section).toBe(requestedSection);
+  });
+
+  it("replaces a live PQ purpose paragraph with the requested IQ insulation line", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 21,
+        attachmentId: "iq",
+        quote:
+          "URS-45 13.3.5.1 Shell and Jacket Technical Specifications Physical verification of thermal insulation and SS cladding Result: Verified",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 8,
+        attachmentId: "pq",
+        quote:
+          "8.2.1 The Performance Qualification (PQ) ensures that critical unit operations heating reflux cooling and chilling consistently perform as intended. Hot surfaces insulated. Result: Verified",
+      },
+    ]);
+    const fieldDoc = rtmProcessDoc([
+      [
+        "URS-45",
+        "Thermal Safety",
+        "Hot surfaces shall be insulated and clad to prevent burns.",
+        "PQ [Performance Qualification.PDF, p. 8]",
+        "8.2.1 – The Performance Qualification (PQ) ensures that critical unit operations-heating, reflux, cooling, and chilling consistently perform as intended",
+        "Complies",
+      ],
+    ]);
+    const requestedSection =
+      "13.3.5.1 – Physical verification of thermal insulation and SS cladding";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-45",
+            expectedText: "",
+            insertText: "IQ [Installation Qualification.PDF, p. 21]",
+            rowContext: "URS-45\nThermal Safety\nHot surfaces insulated",
+          },
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-45",
+            expectedText: "",
+            insertText: requestedSection,
+            rowContext: "URS-45\nThermal Safety\nHot surfaces insulated",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_safety" },
+      clearOptionalOnBlock: true,
+      fieldDoc,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 3)?.insertText).toMatch(/^IQ\b/);
+    expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
+      requestedSection
+    );
+    expect(cells.find((cell) => cell.col === 4)?.insertText).not.toMatch(
+      /ensures that/i
+    );
+  });
+
+  it("adds IQ Stage when chat only named the IQ Section number on a filled PQ row", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 49,
+        attachmentId: "iq",
+        quote:
+          "URS-49 13.8.5.4 Rupture Disk RD-13001 installation and burst pressure verification Result: Verified",
+      },
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 21,
+        attachmentId: "pq",
+        quote:
+          "11.1 Rupture disc installation and burst pressure verification. Result: Verified",
+      },
+    ]);
+    const fieldDoc = rtmProcessDoc([
+      [
+        "URS-49",
+        "Overpressure Safety",
+        "Rupture disc to be provided for pressure spike protection.",
+        "PQ [Performance Qualification.PDF, p. 21]",
+        "11.1 – Rupture disc installation and burst pressure verification",
+        "Complies",
+      ],
+    ]);
+    const requestedSection =
+      "13.8.5.4 – Rupture disc (RD-13001) installation and burst pressure verification";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS-49",
+            expectedText: "",
+            insertText: requestedSection,
+            rowContext: "URS-49\nOverpressure Safety\nRupture disc",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_safety" },
+      clearOptionalOnBlock: true,
+      fieldDoc,
+    });
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.find((cell) => cell.col === 3)?.insertText).toMatch(/^IQ\b/);
+    expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
+      requestedSection
+    );
+  });
+
   it("elaborates a filled 8.2.3 with a procedure line when the section has no heading title", () => {
     const pqPage =
       "8.2 Test Procedure 8.2.1 verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 rpm checked at 50 ± 10. Result: Complies. 8.2.3 fill the reactor to 8000 L working volume and heat. Reactor Capacity. Result: Complies. 8.2.4 operational verification of agitator at varying RPM. Result: Complies";

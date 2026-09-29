@@ -211,7 +211,9 @@ one audit line from that protocol section (`8.2.3` → `8.2.3 – Heating Trial`
 or `8.2.3 – Fill the reactor to 8000 L`; a heading title is not required),
 not replaced with a neighbour heading. A grounded Section line from
 chat (`8.2.3 – Heating trial at 8000 L working volume`) stays on the
-card — do not swap it for a different pick heading. Empty Reference – Section cells on
+card — do not swap it for a different pick heading. An explicit IQ Stage
+plus IQ Section (13.8.5.1 PSV, 13.8.5.4 rupture disc) overwrites live PQ
+as a pair — do not leave PQ or drop both cells. Empty Reference – Section cells on
 other live URS rows still get that audit line from retrieved protocol pages
 even when the card only named two rows. Wrap-up quotes `adjustedCells.saved`
 Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`
