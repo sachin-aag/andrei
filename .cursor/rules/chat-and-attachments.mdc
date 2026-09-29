@@ -206,16 +206,11 @@ spec cell does not. When a saved cell differs from the request, the
 so the wrap-up names only the rows on the card (one `edit_table` is one
 card, not one card per URS row). The card title counts only cells that
 actually change — identity Remarks and dummy leftover cells are dropped
-before persist. A filled RTM Section number is elaborated with any
-one audit line from that protocol section (`8.2.3` → `8.2.3 – Heating Trial`
-or `8.2.3 – Fill the reactor to 8000 L`; a heading title is not required),
-not replaced with a neighbour heading. A grounded Section line from
-chat (`8.2.3 – Heating trial at 8000 L working volume`) stays on the
-card — do not swap it for a different pick heading. An explicit IQ Stage
-plus IQ Section (13.8.5.1 PSV, 13.8.5.4 rupture disc) overwrites live PQ
-as a pair — do not leave PQ or drop both cells. Empty Reference – Section cells on
-other live URS rows still get that audit line from retrieved protocol pages
-even when the card only named two rows. Wrap-up quotes `adjustedCells.saved`
+before persist. QSR RTM Stage / Section / Remarks on the card are the
+grounded cells from chat (`edit_table` insertText) — there is no family
+ranker that rewrites IQ to PQ or swaps a neighbour heading. A page
+counter (`16`) or logged reading (`12.72 °C`) in Section still clears.
+Wrap-up quotes `adjustedCells.saved`
 Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and

@@ -10,7 +10,6 @@ import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import {
   applyTableOperation,
-  summarizeTableOperation,
 } from "@/lib/suggestions/table-operation";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
@@ -820,6 +819,7 @@ describe("groundTableOperation optional RTM columns", () => {
       ledger,
       policy: "block",
       grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
     });
     expect(result.blocked).toBe(false);
     const keptRow =
@@ -1056,7 +1056,7 @@ describe("groundTableOperation optional RTM columns", () => {
     );
   });
 
-  it("rewrites stock Section 13 to the jacket IQ heading", () => {
+  it("clears stock Section 13 instead of rewriting it to a protocol heading", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1089,8 +1089,8 @@ describe("groundTableOperation optional RTM columns", () => {
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toContain("IQ");
-    expect(keptRow[4]).toContain("13.3.5.1");
-    expect(keptRow[4]).toContain("Jacket Specifications");
+    expect(keptRow[4]).toBe("");
+    expect(keptRow[4]).not.toMatch(/Section 13/i);
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -1267,12 +1267,11 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
     expect(byCol.get(3)).toMatch(/^DQ\b/);
-    expect(byCol.get(3)).toContain("Design Qualification.PDF");
-    expect(byCol.get(4)).toBe("4 – Vendor documentation");
+    expect(byCol.get(4)).toBe("4");
     expect(byCol.get(5)).toBe("NA");
   });
 
-  it("rewrites DQ up to IQ when Installation Qualification also topic-matches", () => {
+  it("keeps chat DQ / 12.1 even when Installation Qualification also topic-matches", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1318,14 +1317,13 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toMatch(/^IQ\b/);
-    expect(keptRow[3]).toContain("Installation Qualification.PDF");
-    expect(keptRow[3]).not.toMatch(/\bDQ\b/);
-    expect(keptRow[4]).toContain("13.3.5.1");
-    expect(keptRow[5]).toMatch(/Complies/i);
+    expect(keptRow[3]).toMatch(/^DQ\b/);
+    expect(keptRow[3]).not.toMatch(/\bIQ\b/);
+    expect(keptRow[4]).toContain("12.1");
+    expect(keptRow[4]).not.toContain("13.3.5.1");
   });
 
-  it("prefers PQ over IQ when Performance Qualification also topic-matches", () => {
+  it("keeps chat IQ / 13.3.5.1 even when Performance Qualification also topic-matches", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1371,14 +1369,14 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toMatch(/^PQ\b/);
-    expect(keptRow[3]).toContain("Performance Qualification.PDF");
-    expect(keptRow[3]).not.toMatch(/\bIQ\b/);
-    expect(keptRow[4]).toContain("8.2");
+    expect(keptRow[3]).toMatch(/^IQ\b/);
+    expect(keptRow[3]).not.toMatch(/\bPQ\b/);
+    expect(keptRow[4]).toContain("13.3.5.1");
+    expect(keptRow[4]).not.toContain("8.2");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
-  it("rewrites a PQ page-counter Section cell to the dotted heading and cites that page", () => {
+  it("clears a PQ page-counter Section cell instead of rewriting it to a dotted heading", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1425,10 +1423,9 @@ describe("groundTableOperation optional RTM columns", () => {
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[3]).toMatch(/^PQ\b/);
-    expect(keptRow[3]).toContain("p. 19");
-    expect(keptRow[3]).not.toContain("p. 21");
-    expect(keptRow[4]).toBe("8.2.3 – Water batch at 8000 L capacity");
+    expect(keptRow[4]).toBe("");
     expect(keptRow[4]).not.toMatch(/\b16\b/);
+    expect(keptRow[4]).not.toContain("8.2.3");
     expect(keptRow[5]).toMatch(/Complies/i);
   });
 
@@ -1465,7 +1462,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow.slice(3)).toEqual(["", "", ""]);
   });
 
-  it("does not let MOC alone pick a neighbour DQ material row", () => {
+  it("clears unsupported DQ Stage on a neighbour MOC page but keeps chat Section 12.1", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1512,7 +1509,9 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[0]).toContain("URS-2");
     expect(keptRow[2]).toContain("Glass Lining");
-    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+    expect(keptRow[3]).toBe("");
+    expect(keptRow[4]).toContain("12.1");
+    expect(keptRow[5]).toBe("");
   });
 
   it("keeps leftover <remarks> when no protocol page matches so lookup can search", () => {
@@ -1554,7 +1553,7 @@ describe("groundTableOperation optional RTM columns", () => {
     ).toContain("<remarks>");
   });
 
-  it("fills dummy-row Table 5 Stage/Section per rowKey from protocol pages, not <remarks>", () => {
+  it("does not fill dummy-row Table 5 Stage/Section from protocol pages when chat sent leftovers", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1623,30 +1622,13 @@ describe("groundTableOperation optional RTM columns", () => {
       clearOptionalOnBlock: true,
     });
     expect(result.blocked).toBe(false);
-    expect(tablePlaceholderLabels(result.operation)).toEqual([]);
+    expect(tablePlaceholderLabels(result.operation).length).toBeGreaterThan(0);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    const byKey = (key: string) =>
-      cells.filter(
-        (cell) =>
-          cell.rowKey === key || (cell.rowContext ?? "").includes(`${key}\n`)
-      );
-    const urs13 = byKey("URS-13")
-      .map((cell) => cell.insertText)
-      .join(" ");
-    const urs4 = byKey("URS-4")
-      .map((cell) => cell.insertText)
-      .join(" ");
-    expect(urs13).toMatch(/\bIQ\b/);
-    expect(urs13).toContain("13.3.5.1");
-    expect(urs13).toContain("Installation Qualification.PDF");
-    expect(urs13).not.toContain("<remarks>");
-    expect(urs13).not.toContain("8.1");
-    expect(urs4).toMatch(/\bOQ\b/);
-    expect(urs4).toContain("8.1");
-    expect(urs4).toContain("Operational Qualification.PDF");
-    expect(urs4).not.toContain("13.3.5.1");
-    expect(urs4).not.toContain("<remarks>");
+    const blob = cells.map((cell) => cell.insertText).join(" ");
+    expect(blob).not.toContain("13.3.5.1");
+    expect(blob).not.toMatch(/\bIQ\b/);
+    expect(blob).not.toContain("8.1");
   });
 
   it("keeps every rowKey's Section when a PQ sensor log prints 12.72 °C", () => {
@@ -1690,7 +1672,7 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 4,
             rowKey: "URS-1",
             expectedText: "12.72 – Simulation trials at 8000 L working capacity",
-            insertText: "8.2 – Simulation trials at 8000 L working capacity",
+            insertText: "8.2 – Simulation trials",
             rowContext: "URS-1\nReactor Capacity\n8000 L",
           },
           {
@@ -1698,8 +1680,7 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 4,
             rowKey: "URS-6",
             expectedText: "12.72 – Jacket pressure test",
-            insertText:
-              "10.5 – Jacket pressure test (3 to 5 kg/cm² utility pressure verification)",
+            insertText: "10.5 – Jacket pressure test",
             rowContext: "URS-6\nJacket Pressure\n3 to 5 kg/cm²",
           },
           {
@@ -1707,8 +1688,7 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 4,
             rowKey: "URS-12",
             expectedText: "12.72 – Jacket MOC",
-            insertText:
-              "13.7 – Verification of jacket MOC and SS sheet insulation",
+            insertText: "13.7 – Verification of jacket MOC",
             rowContext: "URS-12\nJacket MOC\nSA-516M Gr. 380",
           },
         ],
@@ -1868,7 +1848,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs41Row).toMatch(/Complies/i);
   });
 
-  it("does not replace Table 7 URS-41 IQ 13.6 with DQ 12.3 from a URS-ID hit on Design Qualification", () => {
+  it("keeps chat DQ / 12.3 on Table 7 URS-41 even when live Section is 13.6", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1967,12 +1947,10 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     const blob = urs41.map((cell) => cell.insertText).join(" ");
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
-    expect(blob).not.toMatch(/Complies/i);
+    expect(blob).toMatch(/\bDQ\b/);
+    expect(blob).toContain("12.3");
     const section = urs41.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toContain("13.6");
-    if (urs41.length === 0) return;
+    expect(section?.insertText).toContain("12.3");
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
       id: "sug-table7-urs41-dq",
@@ -1992,12 +1970,10 @@ describe("groundTableOperation optional RTM columns", () => {
         (node) => node.type === "tableCell" || node.type === "tableHeader"
       )[4]
     );
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 fills Stage/Remarks and overwrites filled 13.6 with the IQ heading title", () => {
+  it("keeps chat DQ / 12.3 on fill-empty URS-41 instead of rewriting to IQ 13.6", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -2095,13 +2071,11 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     const blob = urs41.map((cell) => cell.insertText).join(" ");
-    expect(blob).toMatch(/\bIQ\b/);
+    expect(blob).toMatch(/\bDQ\b/);
     expect(blob).toMatch(/Complies/i);
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
+    expect(blob).toContain("12.3");
     const section = urs41.find((cell) => cell.col === 4);
-    expect(section?.insertText).toContain("13.6");
-    expect(section?.insertText).toContain("Gaskets");
+    expect(section?.insertText).toContain("12.3");
     expect(urs41.some((cell) => cell.col === 3)).toBe(true);
     expect(urs41.some((cell) => cell.col === 5)).toBe(true);
 
@@ -2120,19 +2094,16 @@ describe("groundTableOperation optional RTM columns", () => {
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
     const sectionCell = JSON.stringify(cellsInRow[4]);
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).toContain("Gaskets");
-    expect(sectionCell).not.toContain("12.3");
     expect(sectionCell).toContain(suggestionInsertMarkName);
     const stageCell = JSON.stringify(cellsInRow[3]);
-    expect(stageCell).toMatch(/\bIQ\b/);
+    expect(stageCell).toMatch(/\bDQ\b/);
     expect(stageCell).toContain(suggestionInsertMarkName);
     const remarksCell = JSON.stringify(cellsInRow[5]);
     expect(remarksCell).toMatch(/Complies/i);
     expect(remarksCell).toContain(suggestionInsertMarkName);
   });
 
-  it("does not stamp DQ Stage beside a filled Section heading from another family", () => {
+  it("keeps chat DQ Stage beside a filled Section heading from another family", () => {
     const ledger = ledgerFromPages([
       {
         filename: "Design Qualification.PDF",
@@ -2212,9 +2183,9 @@ describe("groundTableOperation optional RTM columns", () => {
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const blob = cells.map((cell) => cell.insertText).join(" ");
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
-    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+    expect(blob).toMatch(/\bDQ\b/);
+    expect(blob).toContain("12.3");
+    expect(cells.find((cell) => cell.col === 4)?.insertText).toContain("12.3");
   });
 
   it("treats Verified after the next URS ID as a page-level pass token without topic match", () => {
@@ -2342,9 +2313,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
     expect(urs41.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
     const section = urs41.find((cell) => cell.col === 4);
-    expect(section?.insertText).toContain("13.6");
-    expect(section?.insertText).toContain("Gaskets");
-    expect(section?.insertText).not.toContain("13.7.5");
+    expect(section?.insertText).toContain("13.7.5");
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
       id: "sug-table7-urs41-complies-outside-id-window",
@@ -2364,8 +2333,6 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(remarksCell).toMatch(/Complies/i);
     expect(remarksCell).toContain(suggestionInsertMarkName);
     const sectionCell = JSON.stringify(cellsInRow[4]);
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).toContain("Gaskets");
     expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
@@ -2459,7 +2426,7 @@ describe("groundTableOperation optional RTM columns", () => {
     ).toBe("8.2.1 – Physical verification");
   });
 
-  it("elaborates a filled 8.2.3 instead of swapping in neighbour 8.2.4 or dropping the cell", () => {
+  it("keeps chat neighbour 8.2.4 on the named rows instead of swapping to a topic heading", () => {
     const pqPage =
       "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies. 8.2.4 Operational verification of agitator at varying RPM. Result: Complies";
     const ledger = ledgerFromPages([
@@ -2550,9 +2517,12 @@ describe("groundTableOperation optional RTM columns", () => {
     const sectionOf = (key: string) =>
       cells.find((cell) => cell.rowKey === key && cell.col === 4)?.insertText ??
       "";
-    expect(sectionOf("URS-1")).toBe("8.2.3 – Heating Trial");
-    expect(sectionOf("URS-2")).toBe("8.2.1 – Physical verification");
-    expect(cells.filter((cell) => cell.col === 5)).toEqual([]);
+    expect(sectionOf("URS-1")).toBe(
+      "8.2.4 – Operational verification of agitator at varying RPM"
+    );
+    expect(sectionOf("URS-2")).toBe(
+      "8.2.4 – Operational verification of agitator at varying RPM"
+    );
 
     const applied = applyTableOperation(fieldDoc, result.operation, {
       section: "qsr_rtm_process",
@@ -2565,17 +2535,13 @@ describe("groundTableOperation optional RTM columns", () => {
       applied.appliedOperation?.kind === "edit_cells"
         ? applied.appliedOperation.cells
         : [];
-    expect(appliedCells).toHaveLength(2);
-    expect(summarizeTableOperation(applied.appliedOperation!)).toBe(
-      "Update 2 table cells on URS-1, URS-2"
-    );
-    expect(appliedCells.map((cell) => cell.rowKey).sort()).toEqual([
+    expect(appliedCells.filter((cell) => cell.col === 4).map((cell) => cell.rowKey).sort()).toEqual([
       "URS-1",
       "URS-2",
     ]);
   });
 
-  it("still fills empty Reference – Section rows when a dummy-row card only elaborates two filled numbers", () => {
+  it("does not fill empty Reference – Section rows that chat never named", () => {
     const pqPage =
       "8.2 Test Procedure 8.2.1 Physical verification. Verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 Agitator Trial. RPM checked at 50 ± 10. Result: Complies. 8.2.3 Heating Trial same as that of PQ. Reactor capacity 8000 L filled and heated. Result: Complies. 8.2.4 Operational verification of agitator at varying RPM. Result: Complies";
     const ledger = ledgerFromPages([
@@ -2666,12 +2632,14 @@ describe("groundTableOperation optional RTM columns", () => {
     const sectionOf = (key: string) =>
       cells.find((cell) => cell.rowKey === key && cell.col === 4)?.insertText ??
       "";
-    expect(sectionOf("URS-1")).toBe("8.2.3 – Heating Trial");
-    expect(sectionOf("URS-2")).toBe("8.2.1 – Physical verification");
-    expect(sectionOf("URS-10")).toMatch(/^8\.2\.[24]/);
-    expect(sectionOf("URS-10")).toMatch(/agitator/i);
-    expect(sectionOf("URS-13")).toMatch(/limpet/i);
-    expect(sectionOf("URS-13").length).toBeGreaterThan(0);
+    expect(sectionOf("URS-1")).toBe(
+      "8.2.4 – Operational verification of agitator at varying RPM"
+    );
+    expect(sectionOf("URS-2")).toBe(
+      "8.2.4 – Operational verification of agitator at varying RPM"
+    );
+    expect(sectionOf("URS-10")).toBe("");
+    expect(sectionOf("URS-13")).toBe("");
 
     const applied = applyTableOperation(fieldDoc, result.operation, {
       section: "qsr_rtm_process",
@@ -2683,9 +2651,9 @@ describe("groundTableOperation optional RTM columns", () => {
       applied.appliedOperation?.kind === "edit_cells"
         ? applied.appliedOperation.cells
         : [];
-    expect(appliedCells.filter((cell) => cell.col === 4).map((cell) => cell.rowKey).sort()).toEqual(
-      ["URS-1", "URS-10", "URS-13", "URS-2"]
-    );
+    expect(
+      appliedCells.filter((cell) => cell.col === 4).map((cell) => cell.rowKey).sort()
+    ).toEqual(["URS-1", "URS-2"]);
   });
 
   it("keeps a grounded chat Section line on filled 8.2.3 instead of the pick heading title", () => {
@@ -2790,7 +2758,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(
       cells.find((cell) => cell.rowKey === "URS-10" && cell.col === 4)
         ?.insertText
-    ).toBe(requested);
+    ).toContain(requested);
     expect(
       cells.find((cell) => cell.rowKey === "URS-10" && cell.col === 4)
         ?.insertText
@@ -2960,7 +2928,7 @@ describe("groundTableOperation optional RTM columns", () => {
     );
   });
 
-  it("adds IQ Stage when chat only named the IQ Section number on a filled PQ row", () => {
+  it("does not add IQ Stage when chat only named the IQ Section number on a filled PQ row", () => {
     const ledger = ledgerFromPages([
       {
         filename: "Installation Qualification.PDF",
@@ -3013,13 +2981,13 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    expect(cells.find((cell) => cell.col === 3)?.insertText).toMatch(/^IQ\b/);
+    expect(cells.find((cell) => cell.col === 3)).toBeUndefined();
     expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
       requestedSection
     );
   });
 
-  it("elaborates a filled 8.2.3 with a procedure line when the section has no heading title", () => {
+  it("keeps chat 8.2.4 when the cited page also has an untitled 8.2.3 procedure", () => {
     const pqPage =
       "8.2 Test Procedure 8.2.1 verify glass lining thickness not less than 1 mm. Result: Complies. 8.2.2 rpm checked at 50 ± 10. Result: Complies. 8.2.3 fill the reactor to 8000 L working volume and heat. Reactor Capacity. Result: Complies. 8.2.4 operational verification of agitator at varying RPM. Result: Complies";
     const ledger = ledgerFromPages([
@@ -3075,7 +3043,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
-      "8.2.3 – Fill the reactor to 8000 L working volume and heat"
+      "8.2.4 – Operational verification of agitator at varying RPM"
     );
   });
 

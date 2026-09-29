@@ -66,7 +66,7 @@ function rowGridAdjustments(
 
 /**
  * Cells whose saved text differs from what the model asked for (grounding
- * cleared unsupported Remarks, ranked Stage up to PQ, dropped a leftover
+ * cleared unsupported Remarks, dropped a leftover
  * placeholder). The tool result lists them so the wrap-up reports what
  * landed instead of echoing the request.
  */

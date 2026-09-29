@@ -1102,7 +1102,7 @@ describe("QSR RTM section 5 draft replay", () => {
     });
   });
 
-  it("rewrites a DQ Stage up to IQ when both protocol bodies topic-match", async () => {
+  it("keeps chat DQ / 12.1 even when both protocol bodies topic-match", async () => {
     mockSection("qsr_rtm_process");
     listReadyDocumentsForReportMock.mockResolvedValue([
       ursDoc(),
@@ -1147,10 +1147,10 @@ describe("QSR RTM section 5 draft replay", () => {
     const op = proposedTableOp(inserted);
     expect(op.kind).toBe("insert_rows");
     const rows = op.kind === "insert_rows" ? op.rows : [];
-    expect(rows[0]?.[3]).toMatch(/^IQ\b/);
-    expect(rows[0]?.[3] ?? "").not.toMatch(/\bDQ\b/);
-    expect(rows[0]?.[4]).toContain("13.3.5.1");
-    expect(rows[0]?.[5] ?? "").toMatch(/Complies/i);
+    expect(rows[0]?.[3]).toMatch(/^DQ\b/);
+    expect(rows[0]?.[3] ?? "").not.toMatch(/\bIQ\b/);
+    expect(rows[0]?.[4]).toContain("12.1");
+    expect(rows[0]?.[4] ?? "").not.toContain("13.3.5.1");
   });
 
   it("does not fill URS-1 Stage from an IQ running header", async () => {
@@ -1539,7 +1539,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
-  it("fills dummy-row Table 5 placeholders from IQ / OQ after those pages are read", async () => {
+  it("does not fill dummy-row Table 5 placeholders from IQ / OQ after those pages are read", async () => {
     mockSection("qsr_rtm_process", { table: rtmTableDoc(TABLE5_URS_ROWS) });
     listReadyDocumentsForReportMock.mockResolvedValue([
       ursDoc(),
@@ -1571,38 +1571,11 @@ describe("QSR RTM section 5 draft replay", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(result).toMatchObject({ status: "proposed" });
-    const comment = inserted.find((row) => {
-      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
-      return parsed.tableOperation != null;
-    });
-    expect(comment).toBeTruthy();
-    const payload = parseAiFixCommentContent(String(comment!.content));
-    const op = payload.tableOperation!;
-    expect(op.kind).toBe("edit_cells");
-    const cells = op.kind === "edit_cells" ? op.cells : [];
-    const byKey = (key: string) =>
-      cells
-        .filter(
-          (cell) =>
-            cell.rowKey === key || (cell.rowContext ?? "").includes(`${key}\n`)
-        )
-        .map((cell) => cell.insertText)
-        .join(" ");
-    const urs13 = byKey("URS-13");
-    const urs4 = byKey("URS-4");
-    expect(urs13).toMatch(/\bIQ\b/);
-    expect(urs13).toContain("13.3.5.1");
-    expect(urs13).toMatch(/\[\d+\]/);
-    expect(urs13).not.toContain("<remarks>");
-    expect(urs13).not.toContain("8.1");
-    expect(urs4).toMatch(/\bOQ\b/);
-    expect(urs4).toContain("8.1");
-    expect(urs4).toMatch(/\[\d+\]/);
-    expect(urs4).not.toContain("<remarks>");
-    const parked = payload.second?.insertText ?? "";
-    expect(parked).toContain(IQ_FILENAME);
-    expect(parked).toContain(OQ_FILENAME);
+    expect(result).not.toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    const blob = JSON.stringify(result);
+    expect(blob).not.toMatch(/\bIQ\b/);
+    expect(blob).not.toContain("13.3.5.1");
   });
 
   it("does not persist leftover Table 5 <remarks> on a same-turn retry without protocol pages", async () => {
@@ -1744,7 +1717,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(urs41Row).toMatch(/Complies/i);
   });
 
-  it("does not replace Table 7 URS-41 Section 13.6 with DQ 12.3", async () => {
+  it("keeps chat DQ / 12.3 on Table 7 URS-41 instead of rewriting to live 13.6", async () => {
     const table7Rows = [
       ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
       ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
@@ -1811,11 +1784,11 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(op.kind).toBe("edit_cells");
     const cells = op.kind === "edit_cells" ? op.cells : [];
     const blob = cells.map((cell) => cell.insertText).join(" ");
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
+    expect(blob).toMatch(/\bDQ\b/);
+    expect(blob).toContain("12.3");
     const section = cells.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toContain("13.6");
-    if (cells.length === 0) return;
+    expect(section?.insertText).toContain("12.3");
+    expect(section?.insertText ?? "").not.toContain("13.6");
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-dq",
       authorId: "ai",
@@ -1823,10 +1796,8 @@ describe("QSR RTM section 5 draft replay", () => {
       createdAt: "2026-09-27T00:00:00.000Z",
       kind: "fix",
     });
-    if (!preview.ok) {
-      expect(preview.status).toBe("already_present");
-      return;
-    }
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
     const table = (preview.doc.content ?? []).find((node) => node.type === "table");
     const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
     const sectionCell = JSON.stringify(
@@ -1834,12 +1805,10 @@ describe("QSR RTM section 5 draft replay", () => {
         (node) => node.type === "tableCell" || node.type === "tableHeader"
       )[4]
     );
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 paints IQ / Complies and overwrites filled 13.6 with the IQ heading title", async () => {
+  it("keeps chat DQ / 12.3 / Complies on fill-empty URS-41 instead of rewriting to IQ 13.6", async () => {
     const table7Rows = [
       ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
       ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
@@ -1904,13 +1873,13 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(op.kind).toBe("edit_cells");
     const cells = op.kind === "edit_cells" ? op.cells : [];
     const blob = cells.map((cell) => cell.insertText).join(" ");
-    expect(blob).toMatch(/\bIQ\b/);
+    expect(blob).toMatch(/\bDQ\b/);
     expect(blob).toMatch(/Complies/i);
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
+    expect(blob).not.toMatch(/\bIQ\b/);
+    expect(blob).toContain("12.3");
     const section = cells.find((cell) => cell.col === 4);
-    expect(section?.insertText).toContain("13.6");
-    expect(section?.insertText).toContain("Gaskets");
+    expect(section?.insertText).toContain("12.3");
+    expect(section?.insertText ?? "").not.toContain("13.6");
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-fill-empty",
       authorId: "ai",
@@ -1926,11 +1895,8 @@ describe("QSR RTM section 5 draft replay", () => {
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
     const sectionCell = JSON.stringify(cellsInRow[4]);
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).toContain("Gaskets");
-    expect(sectionCell).not.toContain("12.3");
     expect(sectionCell).toContain(suggestionInsertMarkName);
-    expect(JSON.stringify(cellsInRow[3])).toMatch(/\bIQ\b/);
+    expect(JSON.stringify(cellsInRow[3])).toMatch(/\bDQ\b/);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
   });
 
@@ -2009,8 +1975,7 @@ describe("QSR RTM section 5 draft replay", () => {
     const cellsInRow = (rows[2]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    expect(JSON.stringify(cellsInRow[4])).toContain("13.6");
-    expect(JSON.stringify(cellsInRow[4])).not.toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[4])).toContain(suggestionInsertMarkName);
     expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
     expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
   });

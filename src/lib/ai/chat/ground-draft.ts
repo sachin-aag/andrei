@@ -55,7 +55,6 @@ import {
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
   qsrTableColumnLabel,
-  rankRtmReferenceOperation,
   rowKeyFromContext,
   editCellsGroupKey,
   syntheticUnsupportedFact,
@@ -670,14 +669,9 @@ export function groundTableOperation(input: {
   unsupported: HardFact[];
   blocked: boolean;
 } {
-  const cited = rankRtmReferenceOperation(
-    rewriteTableOperationCitations(
-      attachLiveTableRowContext(input.operation, input.fieldDoc),
-      input.ledger
-    ),
-    input.ledger,
-    input.grounding?.section,
-    input.fieldDoc
+  const cited = rewriteTableOperationCitations(
+    attachLiveTableRowContext(input.operation, input.fieldDoc),
+    input.ledger
   );
   const failClosed = isClearOnlyOptionalRtmEdit(
     cited,

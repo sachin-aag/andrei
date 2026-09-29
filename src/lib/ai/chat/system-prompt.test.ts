@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v166-qsr-explicit-iq-stage");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v167-qsr-no-rtm-ranker");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -29,13 +29,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("stock Complies / bare Section 13");
     expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
     expect(prompt).toContain(
-      "empty Reference – Section cells on other URS rows"
-    );
-    expect(prompt).toContain(
-      "keep the grounded Section insertText you already wrote"
-    );
-    expect(prompt).toContain(
-      "write both Stage and Section as that IQ pair"
+      "the card copies the grounded Stage / Section / Remarks insertText you already wrote"
     );
     expect(prompt).toContain("13.8.5.1 PSV");
     expect(prompt).toContain("not a different test heading than the card");
@@ -66,7 +60,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("8.2.3 may become 8.2.3 – Heating Trial");
     expect(prompt).toContain("8.2.3 – Fill the reactor to 8000 L");
     expect(prompt).toContain("a title next to the number is not required");
-    expect(prompt).toContain("do not replace 8.2.3 with a neighbour 8.2.4");
+    expect(prompt).toContain(
+      "do not rewrite a named cell to a different protocol family or neighbour heading"
+    );
     expect(prompt).toContain("counts only cells that actually change");
     expect(prompt).toContain(
       "one requirement ID is not one grep when filling RTM Stage"
