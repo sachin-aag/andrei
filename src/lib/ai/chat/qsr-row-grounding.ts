@@ -993,7 +993,7 @@ export function shouldKeepRtmProtocolSearchOpen(
 
 export function stageFamilyFromCell(
   text: string | null | undefined
-): QualDocFamily | null {
+): RtmStageFamily | null {
   const trimmed = text?.replace(/\[[^\]]*\]/g, "").trim().toUpperCase() ?? "";
   switch (trimmed) {
     case "DQ":
