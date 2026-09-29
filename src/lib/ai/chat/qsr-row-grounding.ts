@@ -1371,7 +1371,7 @@ const NEXT_SECTION_HEADING_RE =
  * Do not take a neighbour test. The audit line is any one line from
  * that block — heading title if present, else a procedure/observation.
  */
-function headingBlockForNumber(
+function headingBlockBody(
   stripped: string,
   number: string
 ): string | null {
@@ -1385,7 +1385,15 @@ function headingBlockForNumber(
   if (!match) return null;
   const rest = (match[2] ?? "").trim();
   const next = rest.search(NEXT_SECTION_HEADING_RE);
-  const block = next === -1 ? rest : rest.slice(0, next);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+function headingBlockForNumber(
+  stripped: string,
+  number: string
+): string | null {
+  const block = headingBlockBody(stripped, number);
+  if (block == null) return null;
   return formatRtmSectionHeading(number, block);
 }
 
@@ -1418,13 +1426,94 @@ function protocolPageQuotes(
   });
 }
 
+function quoteHasAuditNeedle(quote: string, needle: string): boolean {
+  const n = needle.replace(/\s+/g, " ").trim().toLowerCase();
+  if (n.length < 8) return false;
+  const hay = quote.replace(/\s+/g, " ").toLowerCase();
+  if (hay.includes(n)) return true;
+  const prefix = n.split(/\s+/).slice(0, 6).join(" ");
+  return prefix.length >= 8 && hay.includes(prefix);
+}
+
+/**
+ * The model's Section insert (chat wrap-up) when it is already a grounded
+ * audit line for this row. Do not mix in the ranker's neighbour heading.
+ */
+function requestedSectionKeepable(
+  requested: string,
+  live: string,
+  quotes: readonly string[],
+  family: RtmStageFamily | null,
+  context: string
+): boolean {
+  const only = rtmSectionCellText(requested, null);
+  if (!only) return false;
+  const requestedNum = rtmCellSectionNumber(only, family);
+  const liveNum = rtmCellSectionNumber(live, family);
+  if (
+    liveNum &&
+    requestedNum &&
+    requestedNum !== liveNum &&
+    !liveNum.split(/\s*[\/&]\s*/).includes(requestedNum)
+  ) {
+    return false;
+  }
+  if (
+    requestedNum &&
+    !quotes.some((quote) => headingNumberOnPage(quote, requestedNum))
+  ) {
+    return false;
+  }
+  const bodies: string[] = [];
+  for (const quote of quotes) {
+    const stripped = protocolBodyQuote(quote);
+    if (!stripped) continue;
+    if (requestedNum) {
+      if (!headingNumberOnPage(quote, requestedNum)) continue;
+      const block = headingBlockBody(stripped, requestedNum);
+      bodies.push(block?.trim() ? block : stripped);
+    } else {
+      bodies.push(stripped);
+    }
+  }
+  const topicOk = bodies.some(
+    (body) => protocolTopicBody(body, context) != null
+  );
+  if (!topicOk) return false;
+  const desc = rtmCellDescription(only);
+  if (!requestedNum && desc.length < 8) return false;
+  if (
+    desc.length >= 8 &&
+    !requestedNum &&
+    !bodies.some((body) => quoteHasAuditNeedle(body, desc))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function formatKeptRequestedSection(
+  requested: string,
+  live: string,
+  family: RtmStageFamily | null
+): string {
+  const liveNum = rtmCellSectionNumber(live, family);
+  const requestedNum = rtmCellSectionNumber(requested, family);
+  const number = liveNum || requestedNum;
+  const desc = rtmCellDescription(requested);
+  if (number && desc) return `${number} – ${desc}`;
+  if (number) return number;
+  return desc;
+}
+
 /**
  * Filled `8.2.3` → `8.2.3 – Heating Trial` or `8.2.3 – Fill the reactor
  * to 8000 L` (any one audit line from that section on the cited page).
- * A title next to the number is not required. Do not swap to a neighbour
- * `8.2.4` on the same PQ page, and do not drop the cell. A page counter
- * (`14`) or a truncated number that is not a heading (`2.4`) may still
- * become the cited heading.
+ * Prefer the model's grounded insert (what chat described) over a different
+ * pick heading. A title next to the number is not required. Do not swap to
+ * a neighbour `8.2.4` on the same PQ page, and do not drop the cell. A page
+ * counter (`14`) or a truncated number that is not a heading (`2.4`) may
+ * still become the cited heading.
  */
 function resolveRtmSectionInsert(input: {
   requested: string;
@@ -1432,7 +1521,25 @@ function resolveRtmSectionInsert(input: {
   pick: RtmReferencePick;
   rankingUp: boolean;
   quotes: readonly string[];
+  context?: string;
 }): string {
+  const context = input.context ?? "";
+  if (
+    requestedSectionKeepable(
+      input.requested,
+      input.live,
+      input.quotes,
+      input.pick.family,
+      context
+    )
+  ) {
+    return formatKeptRequestedSection(
+      input.requested,
+      input.live,
+      input.pick.family
+    );
+  }
+
   const requestedText = rtmSectionCellText(input.requested, input.pick);
   if (input.rankingUp) return requestedText;
 
@@ -1848,7 +1955,9 @@ function rowTouchesReference(
 function applyPickToRow(
   row: readonly string[],
   cols: { stage: number; section: number; remarks: number },
-  pick: RtmReferencePick | null
+  pick: RtmReferencePick | null,
+  quotes: readonly string[] = [],
+  context = ""
 ): string[] {
   if (!rowTouchesReference(row, cols)) return [...row];
   const next = [...row];
@@ -1877,7 +1986,8 @@ function applyPickToRow(
       floor.stageFamily &&
         stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
     ),
-    quotes: [],
+    quotes,
+    context,
   });
   next[cols.remarks] = pick.remarks;
   return next;
@@ -1955,6 +2065,7 @@ function rankEditCells(
         pick,
         rankingUp,
         quotes,
+        context,
       });
       if (!text.trim() && optionalRefExpectedFilled(cell)) {
         // Drop a logged reading / page counter the engineer already accepted
@@ -2028,11 +2139,13 @@ function rankEditCells(
     add(
       cols.section,
       resolveRtmSectionInsert({
-        requested: "",
+        requested:
+          siblings.find((sib) => sib.col === cols.section)?.insertText ?? "",
         live: floor.sectionText,
         pick,
         rankingUp,
         quotes: protocolPageQuotes(ledger, pick.family),
+        context,
       })
     );
     add(cols.remarks, pick.remarks);
@@ -2074,6 +2187,7 @@ function rankEditCells(
         pick,
         rankingUp: false,
         quotes: protocolPageQuotes(ledger, pick.family),
+        context,
       });
       if (!text.trim() || text.trim() === liveSection) continue;
       present.add(`${key}:${cols.section}`);
@@ -2110,15 +2224,18 @@ export function rankRtmReferenceOperation(
           const context = row.join("\n");
           const key = rowKeyFromContext(context);
           if (!key) return row;
+          const pick = pickRtmReference(
+            ledger,
+            key,
+            context,
+            rtmCellSectionNumber(row[cols.section] ?? "") || undefined
+          );
           return applyPickToRow(
             row,
             cols,
-            pickRtmReference(
-              ledger,
-              key,
-              context,
-              rtmCellSectionNumber(row[cols.section] ?? "") || undefined
-            )
+            pick,
+            pick ? protocolPageQuotes(ledger, pick.family) : [],
+            context
           );
         }),
       };
@@ -2129,15 +2246,18 @@ export function rankRtmReferenceOperation(
           const context = [...operation.headers, ...row].join("\n");
           const key = rowKeyFromContext(context);
           if (!key) return row;
+          const pick = pickRtmReference(
+            ledger,
+            key,
+            context,
+            rtmCellSectionNumber(row[cols.section] ?? "") || undefined
+          );
           return applyPickToRow(
             row,
             cols,
-            pickRtmReference(
-              ledger,
-              key,
-              context,
-              rtmCellSectionNumber(row[cols.section] ?? "") || undefined
-            )
+            pick,
+            pick ? protocolPageQuotes(ledger, pick.family) : [],
+            context
           );
         }),
       };
