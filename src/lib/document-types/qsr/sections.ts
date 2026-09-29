@@ -379,7 +379,93 @@ function operatingRangeDoc(): JSONContent {
 function cellPlain(node: JSONContent | undefined): string {
   if (!node) return "";
   if (typeof node.text === "string") return node.text;
+  if (node.type === "hardBreak") return " ";
   return (node.content ?? []).map((child) => cellPlain(child)).join("");
+}
+
+/** Dash / break / case-insensitive header identity for coerce. */
+function headerKey(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function headerRowMatches(
+  labels: readonly string[],
+  expected: readonly string[]
+): boolean {
+  if (labels.length !== expected.length) return false;
+  return labels.every((label, index) => headerKey(label) === headerKey(expected[index]!));
+}
+
+function findFirstTable(node: JSONContent | undefined): JSONContent | undefined {
+  if (!node) return undefined;
+  if (node.type === "table") return node;
+  for (const child of node.content ?? []) {
+    const found = findFirstTable(child);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function replaceTable(
+  node: JSONContent,
+  from: JSONContent,
+  to: JSONContent
+): JSONContent {
+  if (node === from) return to;
+  if (!node.content) return node;
+  let changed = false;
+  const content = node.content.map((child) => {
+    const next = replaceTable(child, from, to);
+    if (next !== child) changed = true;
+    return next;
+  });
+  return changed ? { ...node, content } : node;
+}
+
+function isFamilyColumnHeader(header: string): boolean {
+  return (QSR_RTM_FAMILY_HEADERS as readonly string[]).some(
+    (family) => headerKey(family) === headerKey(header)
+  );
+}
+
+function legacyRtmHeadersFromLabels(
+  labels: readonly string[]
+): typeof QSR_RTM_LEGACY_HEADERS | typeof QSR_CONTROL_LEGACY_HEADERS | null {
+  if (
+    headerRowMatches(labels, QSR_RTM_HEADERS) ||
+    headerRowMatches(labels, QSR_CONTROL_HEADERS)
+  ) {
+    return null;
+  }
+  if (headerRowMatches(labels, QSR_RTM_LEGACY_HEADERS)) {
+    return QSR_RTM_LEGACY_HEADERS;
+  }
+  if (headerRowMatches(labels, QSR_CONTROL_LEGACY_HEADERS)) {
+    return QSR_CONTROL_LEGACY_HEADERS;
+  }
+  const keys = labels.map(headerKey);
+  if (
+    keys.some(
+      (key) =>
+        key === "referencedq" ||
+        key === "referenceiq" ||
+        key === "referenceoq" ||
+        key === "referencepq"
+    )
+  ) {
+    return null;
+  }
+  const hasStage = keys.some(
+    (key) => key.includes("qualificationstage") || key === "stage"
+  );
+  const hasSection = keys.some(
+    (key) => key === "section" || key === "referencesection"
+  );
+  if (!hasStage || !hasSection) return null;
+  if (keys.some((key) => key.includes("typeofcontrol"))) {
+    return QSR_CONTROL_LEGACY_HEADERS;
+  }
+  return QSR_RTM_LEGACY_HEADERS;
 }
 
 /**
@@ -521,9 +607,7 @@ function remapLegacyRtmRow(
   return {
     ...row,
     content: toHeaders.map((header) => {
-      if (header.startsWith("Reference – ") && header !== "Reference – Qualification Stage") {
-        return emptyBodyCell();
-      }
+      if (isFamilyColumnHeader(header)) return emptyBodyCell();
       return byHeader.get(header) ?? emptyBodyCell();
     }),
   };
@@ -538,16 +622,12 @@ export function ensureRtmFamilyColumns(
   doc: JSONContent,
   headers: readonly string[]
 ): JSONContent {
-  const table = doc.content?.find((node) => node.type === "table");
-  const rows = table?.content ?? [];
+  const table = findFirstTable(doc);
+  if (!table) return doc;
+  const rows = table.content ?? [];
   const labels = headerLabels(rows[0]);
-  if (labels.join("\0") === headers.join("\0")) return doc;
-  const legacy =
-    labels.join("\0") === QSR_RTM_LEGACY_HEADERS.join("\0")
-      ? QSR_RTM_LEGACY_HEADERS
-      : labels.join("\0") === QSR_CONTROL_LEGACY_HEADERS.join("\0")
-        ? QSR_CONTROL_LEGACY_HEADERS
-        : null;
+  if (headerRowMatches(labels, headers)) return doc;
+  const legacy = legacyRtmHeadersFromLabels(labels);
   if (!legacy) return doc;
   const nextRows = rows.map((row, index) => {
     if (index === 0) {
@@ -559,10 +639,7 @@ export function ensureRtmFamilyColumns(
     return remapLegacyRtmRow(row, legacy, headers);
   });
   const nextTable = { ...table, content: nextRows };
-  return {
-    ...doc,
-    content: (doc.content ?? []).map((node) => (node === table ? nextTable : node)),
-  };
+  return replaceTable(doc, table, nextTable);
 }
 
 /**

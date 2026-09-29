@@ -194,6 +194,65 @@ describe("ensureRtmFamilyColumns", () => {
     expect(ensureRtmFamilyColumns(current, QSR_RTM_HEADERS)).toBe(current);
   });
 
+  it("remaps ASCII-hyphen and hardBreak Stage / Section headers", () => {
+    const older: JSONContent = {
+      type: "doc",
+      content: [
+        { type: "paragraph" },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                "URS ID",
+                "Parameters",
+                "User requirements",
+                "Reference - Qualification Stage",
+                "Reference - Section",
+                "Remarks",
+              ].map((header, index) => ({
+                type: "tableHeader",
+                content: [
+                  {
+                    type: "paragraph",
+                    content:
+                      index === 3
+                        ? [
+                            { type: "text", text: "Reference -" },
+                            { type: "hardBreak" },
+                            { type: "text", text: "Qualification Stage" },
+                          ]
+                        : [{ type: "text", text: header }],
+                  },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["URS-1", "Capacity", "8000 L", "IQ", "13.3", "Complies"].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    };
+    expect(rowTexts(ensureRtmFamilyColumns(older, QSR_RTM_HEADERS))).toEqual([
+      [...QSR_RTM_HEADERS],
+      ["URS-1", "Capacity", "8000 L", "", "", "", "", "Complies"],
+    ]);
+  });
+
+  it("seeds a new process table with DQ / IQ / OQ / PQ, not Stage / Section", () => {
+    const seeded = emptyQsrContent("qsr_rtm_process") as { table: JSONContent };
+    expect(rowTexts(seeded.table)[0]).toEqual([...QSR_RTM_HEADERS]);
+    expect(rowTexts(seeded.table)[0].join(" ")).not.toMatch(/Qualification Stage/);
+  });
+
   it("coerces a stored legacy table when the report is merged", () => {
     const merged = qualificationSummaryReportDefinition.mergeSection(
       "qsr_rtm_process",

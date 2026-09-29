@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, type ComponentType } from "react";
+import { useEffect, useMemo, type ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { useGenericReportSection } from "@/providers/report-provider";
+import {
+  useGenericReportSection,
+  useReportData,
+} from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import {
   EMPTY_QSR_CONTENT,
@@ -20,6 +23,7 @@ import {
 } from "@/lib/document-types/qsr/sections";
 
 function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
+  const { readOnly } = useReportData();
   const { update } = useGenericReportSection<QsrSectionContent>(section);
   const { status, lastSavedAt, value, flushSave } =
     useGenericSectionSave(section);
@@ -36,6 +40,14 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
     }
     return doc;
   }, [section, doc]);
+
+  useEffect(() => {
+    if (readOnly || !doc || !shown || shown === doc) return;
+    if (!(isQsrTableSectionKey(section) && section.startsWith("qsr_rtm_"))) {
+      return;
+    }
+    update(() => ({ [field]: shown }) as QsrSectionContent);
+  }, [doc, field, readOnly, section, shown, update]);
 
   return (
     <SectionShell
