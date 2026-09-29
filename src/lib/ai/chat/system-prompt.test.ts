@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v164-qsr-empty-section-audit");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v165-qsr-keep-requested-section");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -31,6 +31,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "empty Reference – Section cells on other URS rows"
     );
+    expect(prompt).toContain(
+      "keep the grounded Section insertText you already wrote"
+    );
+    expect(prompt).toContain("not a different test heading than the card");
     expect(prompt).toContain("Never copy the page number (Page 21 of 51)");
     expect(prompt).toContain("never the printed page counter");
     expect(prompt).toContain("12.72 °C");
