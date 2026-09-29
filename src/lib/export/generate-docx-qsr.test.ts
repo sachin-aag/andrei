@@ -170,10 +170,10 @@ describe("qualification summary report DOCX export", () => {
 
     expect(body).not.toContain("Site Acceptance Test Checklist");
     expect(rowContaining(document, "ANY SPECIFIC REQUIREMENTS")).toContain(
-      '<w:gridSpan w:val="6"/>'
+      '<w:gridSpan w:val="8"/>'
     );
     expect(rowContaining(document, "OTHER AUXILIARY REQUIREMENT")).toContain(
-      '<w:gridSpan w:val="6"/>'
+      '<w:gridSpan w:val="8"/>'
     );
     expect(document).not.toContain("PRIMARY CONDENSER");
     expect(document).not.toContain("MOTOR & GEARBOX");
@@ -274,10 +274,9 @@ describe("qualification summary report DOCX export", () => {
         qsr_rtm_process: { table: seeded },
       })
     );
-    const banner = (document.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? []).find(
-      (r) => visibleText(r) === "ANY SPECIFIC REQUIREMENTS"
+    expect(rowContaining(document, "ANY SPECIFIC REQUIREMENTS")).toContain(
+      '<w:gridSpan w:val="8"/>'
     );
-    expect(banner).toContain('<w:gridSpan w:val="6"/>');
   });
 
   it("spans Details across a blank Range cell on the operating range table", async () => {
@@ -317,7 +316,7 @@ describe("qualification summary report DOCX export", () => {
           },
         },
         qsr_rtm_process: {
-          table: tableDoc(QSR_RTM_HEADERS, [["URS-1", "Capacity", "3.0 KL", "IQ", "8.1", "Complies"]]),
+          table: tableDoc(QSR_RTM_HEADERS, [["URS-1", "Capacity", "3.0 KL", "", "8.1", "", "", "Complies"]]),
         },
       })
     );
@@ -325,7 +324,7 @@ describe("qualification summary report DOCX export", () => {
       (p) => visibleText(p) === "IQ completed"
     );
     expect(listParagraph).toContain("<w:numPr>");
-    expect(visibleText(rowContaining(document, "URS-1"))).toBe("URS-1Capacity3.0 KLIQ8.1Complies");
+    expect(visibleText(rowContaining(document, "URS-1"))).toBe("URS-1Capacity3.0 KL8.1Complies");
   });
 
   it("shows the operating range table as the form, without a Range header", () => {

@@ -11,6 +11,7 @@ import {
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
+  QSR_RTM_FAMILY_HEADERS,
   QSR_TABLE_HEADERS,
 } from "@/lib/document-types/qsr/sections";
 import {
@@ -121,9 +122,9 @@ export const QSR_IDENTITY_TABLE_SECTIONS = [
 export type QsrRtmSection = (typeof QSR_RTM_SECTIONS)[number];
 export type QualDocFamily = "urs" | "dq" | "iq" | "oq" | "pq" | "ds";
 
-/** Highest remaining-column Stage first. Single cell — not a compound list. */
-export const QSR_STAGE_RANK = ["pq", "oq", "iq", "dq"] as const;
-export type RtmStageFamily = (typeof QSR_STAGE_RANK)[number];
+/** Editor and search order. Each family column fills only from that family's PDF. */
+export const QSR_RTM_FAMILY_ORDER = ["dq", "iq", "oq", "pq"] as const;
+export type RtmStageFamily = (typeof QSR_RTM_FAMILY_ORDER)[number];
 
 const STAGE_LABEL: Record<RtmStageFamily, "PQ" | "OQ" | "IQ" | "DQ"> = {
   pq: "PQ",
@@ -177,7 +178,7 @@ export function isQsrRtmSection(
   );
 }
 
-/** Stage / Section / Remarks may empty instead of failing the URS copy. */
+/** Family columns (DQ / IQ / OQ / PQ) and Remarks may empty or NA instead of failing the URS copy. */
 export function isQsrRtmOptionalReferenceColumn(
   section: string | null | undefined,
   col: number
@@ -185,31 +186,66 @@ export function isQsrRtmOptionalReferenceColumn(
   if (!isQsrRtmSection(section)) return false;
   const header = QSR_TABLE_HEADERS[section][col];
   if (!header) return false;
-  const name = header.toLowerCase();
-  return (
-    name.includes("qualification stage") ||
-    (name.includes("reference") && name.includes("section")) ||
-    name === "remarks"
-  );
+  if (header === "Remarks") return true;
+  return (QSR_RTM_FAMILY_HEADERS as readonly string[]).includes(header);
+}
+
+export function rtmFamilyFromColumnHeader(
+  header: string | null | undefined
+): RtmStageFamily | null {
+  if (!header) return null;
+  const match = /^reference\s+[–-]\s+(dq|iq|oq|pq)$/i.exec(header.trim());
+  return (match?.[1]?.toLowerCase() as RtmStageFamily | undefined) ?? null;
+}
+
+export function rtmFamilyAtColumn(
+  section: string | null | undefined,
+  col: number
+): RtmStageFamily | null {
+  if (!isQsrRtmSection(section)) return null;
+  return rtmFamilyFromColumnHeader(QSR_TABLE_HEADERS[section][col]);
 }
 
 export function rtmReferenceColumnIndexes(
   section: string | null | undefined
-): { stage: number; section: number; remarks: number } | null {
+): {
+  dq: number;
+  iq: number;
+  oq: number;
+  pq: number;
+  remarks: number;
+} | null {
   if (!isQsrRtmSection(section)) return null;
   const headers = QSR_TABLE_HEADERS[section];
-  let stage = -1;
-  let sectionCol = -1;
+  const families: Partial<Record<RtmStageFamily, number>> = {};
   let remarks = -1;
   for (let i = 0; i < headers.length; i++) {
-    const name = headers[i]!.toLowerCase();
-    if (name.includes("qualification stage")) stage = i;
-    else if (name.includes("reference") && name.includes("section")) {
-      sectionCol = i;
-    } else if (name === "remarks") remarks = i;
+    const family = rtmFamilyFromColumnHeader(headers[i]);
+    if (family) families[family] = i;
+    else if (headers[i] === "Remarks") remarks = i;
   }
-  if (stage < 0 || sectionCol < 0 || remarks < 0) return null;
-  return { stage, section: sectionCol, remarks };
+  if (
+    families.dq == null ||
+    families.iq == null ||
+    families.oq == null ||
+    families.pq == null ||
+    remarks < 0
+  ) {
+    return null;
+  }
+  return {
+    dq: families.dq,
+    iq: families.iq,
+    oq: families.oq,
+    pq: families.pq,
+    remarks,
+  };
+}
+
+const RTM_NOT_FOUND_RE = /^(?:n\/?a|n\.a\.|not\s+applicable)$/i;
+
+export function isRtmNotFoundMarker(text: string | null | undefined): boolean {
+  return RTM_NOT_FOUND_RE.test(text?.replace(/\[[^\]]*\]/g, "").trim() ?? "");
 }
 
 export function isQsrIdentityTableSection(
@@ -254,23 +290,6 @@ export function editCellsGroupKey(cell: TableCellEdit): string {
         .join("\n")
     ) ?? `__row:${cell.row}`
   );
-}
-
-function editCellsSiblingContext(
-  siblings: readonly TableCellEdit[],
-  key: string
-): string {
-  return [
-    key.startsWith("__row:") ? "" : key,
-    ...siblings.flatMap((sib) => [
-      sib.rowKey,
-      sib.insertText,
-      sib.expectedText,
-      sib.rowContext,
-    ]),
-  ]
-    .filter((part): part is string => Boolean(part?.trim()))
-    .join("\n");
 }
 
 function mergeRowContextLines(
@@ -354,10 +373,9 @@ export function attachLiveTableRowContext(
           next = { ...next, rowContext: merged };
         }
       }
-      // Dummy-row fills omit expectedText. Stamp the live cell so the
-      // ranker can elaborate 8.2.3 with one audit line from that section
-      // and identity-drop Remarks that are already Complies, without
-      // treating an empty insert as an explicit clear.
+      // Dummy-row fills omit expectedText. Stamp the live cell so identity
+      // Remarks that are already Complies drop, without treating an empty
+      // insert as an explicit clear.
       if (
         liveText &&
         cell.insertText.trim() &&
@@ -1006,9 +1024,9 @@ const RTM_PROTOCOL_QUERY_RE: Record<RtmStageFamily, RegExp> = {
 };
 
 /**
- * Identifier-only greps often land on a DQ page that prints the URS ID, or
- * on IQ before PQ / OQ have been searched. Keep search open while a higher
- * protocol family than the best hit has not been queried.
+ * Identifier-only greps often land on a DQ page that prints the URS ID.
+ * Keep search open until every protocol family (DQ, IQ, OQ, PQ) has been
+ * queried — any order. The four family columns each need their own document.
  */
 export function shouldKeepRtmProtocolSearchOpen(
   queries: readonly string[],
@@ -1019,28 +1037,18 @@ export function shouldKeepRtmProtocolSearchOpen(
     .filter(
       (family): family is RtmStageFamily =>
         family != null &&
-        (QSR_STAGE_RANK as readonly string[]).includes(family)
+        (QSR_RTM_FAMILY_ORDER as readonly string[]).includes(family)
     );
   if (hitFamilies.length === 0) return false;
-  const bestHitRank = Math.min(
-    ...hitFamilies.map((family) => QSR_STAGE_RANK.indexOf(family))
-  );
-  if (bestHitRank <= 0) return false;
   const joined = queries.join("\n");
-  return QSR_STAGE_RANK.some(
-    (family, index) =>
-      index < bestHitRank && !RTM_PROTOCOL_QUERY_RE[family].test(joined)
+  return QSR_RTM_FAMILY_ORDER.some(
+    (family) => !RTM_PROTOCOL_QUERY_RE[family].test(joined)
   );
-}
-
-function optionalRefExpectedFilled(cell: TableCellEdit): boolean {
-  const live = (cell.expectedText ?? "").trim();
-  return live.length > 0 && !isQsrRtmPlaceholderText(live);
 }
 
 export function stageFamilyFromCell(
   text: string | null | undefined
-): QualDocFamily | null {
+): RtmStageFamily | null {
   const trimmed = text?.replace(/\[[^\]]*\]/g, "").trim().toUpperCase() ?? "";
   switch (trimmed) {
     case "DQ":
@@ -1172,7 +1180,7 @@ function cleanAuditLine(raw: string): string {
 }
 
 /**
- * Reviewer line for Reference – Section. A heading title is fine
+ * Reviewer line for a family column. A heading title is fine
  * (`Heating Trial`); so is a procedure or observation from that same
  * block (`Fill the reactor to 8000 L`). Result-only leftovers
  * (`Result: Complies`) are not.
@@ -1210,6 +1218,9 @@ const RTM_SECTION_JUNK_RES: readonly RegExp[] = [
   /\b\d{1,2}([-/.])\d{1,2}\1(?:\d{4}|\d{2})\b/,
   // A lone trailing letter is a cut-off word unless it is a unit (8000 L).
   /(?:^|[^\d\s])\s[A-Za-z]$/,
+  // PQ purpose / scope sentences are not a test audit line.
+  /\bensures that\b/i,
+  /\bperformance qualification\s*\(\s*pq\s*\)\s*ensures/i,
 ];
 
 /** One plain line about the test performed, or "" when it is page furniture. */
@@ -1438,179 +1449,8 @@ function headingFromQuotes(
   return null;
 }
 
-function protocolPageQuotes(
-  ledger: CitationPageLedger,
-  family?: RtmStageFamily | null
-): string[] {
-  return ledger.recordedPages().flatMap((page) => {
-    const found = documentFamilyFromFilename(page.filename);
-    if (!found || found === "urs" || found === "ds") return [];
-    if (family && found !== family) return [];
-    return [page.quote];
-  });
-}
-
-function quoteHasAuditNeedle(quote: string, needle: string): boolean {
-  const n = needle.replace(/\s+/g, " ").trim().toLowerCase();
-  if (n.length < 8) return false;
-  const hay = quote.replace(/\s+/g, " ").toLowerCase();
-  if (hay.includes(n)) return true;
-  const prefix = n.split(/\s+/).slice(0, 6).join(" ");
-  return prefix.length >= 8 && hay.includes(prefix);
-}
-
 /**
- * The model's Section insert (chat wrap-up) when it is already a grounded
- * audit line for this row. Do not mix in the ranker's neighbour heading.
- */
-function requestedSectionKeepable(
-  requested: string,
-  live: string,
-  quotes: readonly string[],
-  family: RtmStageFamily | null,
-  context: string
-): boolean {
-  const only = rtmSectionCellText(requested, null);
-  if (!only) return false;
-  const requestedNum = rtmCellSectionNumber(only, family);
-  const liveNum = rtmCellSectionNumber(live, family);
-  if (
-    liveNum &&
-    requestedNum &&
-    requestedNum !== liveNum &&
-    !liveNum.split(/\s*[\/&]\s*/).includes(requestedNum)
-  ) {
-    return false;
-  }
-  if (
-    requestedNum &&
-    !quotes.some((quote) => headingNumberOnPage(quote, requestedNum))
-  ) {
-    return false;
-  }
-  const bodies: string[] = [];
-  for (const quote of quotes) {
-    const stripped = protocolBodyQuote(quote);
-    if (!stripped) continue;
-    if (requestedNum) {
-      if (!headingNumberOnPage(quote, requestedNum)) continue;
-      const block = headingBlockBody(stripped, requestedNum);
-      bodies.push(block?.trim() ? block : stripped);
-    } else {
-      bodies.push(stripped);
-    }
-  }
-  const topicOk = bodies.some(
-    (body) => protocolTopicBody(body, context) != null
-  );
-  if (!topicOk) return false;
-  const desc = rtmCellDescription(only);
-  if (!requestedNum && desc.length < 8) return false;
-  if (
-    desc.length >= 8 &&
-    !requestedNum &&
-    !bodies.some((body) => quoteHasAuditNeedle(body, desc))
-  ) {
-    return false;
-  }
-  return true;
-}
-
-function formatKeptRequestedSection(
-  requested: string,
-  live: string,
-  family: RtmStageFamily | null
-): string {
-  const liveNum = rtmCellSectionNumber(live, family);
-  const requestedNum = rtmCellSectionNumber(requested, family);
-  const number = liveNum || requestedNum;
-  const desc = rtmCellDescription(requested);
-  if (number && desc) return `${number} – ${desc}`;
-  if (number) return number;
-  return desc;
-}
-
-/**
- * Filled `8.2.3` → `8.2.3 – Heating Trial` or `8.2.3 – Fill the reactor
- * to 8000 L` (any one audit line from that section on the cited page).
- * Prefer the model's grounded insert (what chat described) over a different
- * pick heading. A title next to the number is not required. Do not swap to
- * a neighbour `8.2.4` on the same PQ page, and do not drop the cell. A page
- * counter (`14`) or a truncated number that is not a heading (`2.4`) may
- * still become the cited heading.
- */
-function resolveRtmSectionInsert(input: {
-  requested: string;
-  live: string;
-  pick: RtmReferencePick;
-  rankingUp: boolean;
-  quotes: readonly string[];
-  context?: string;
-}): string {
-  const context = input.context ?? "";
-  if (
-    requestedSectionKeepable(
-      input.requested,
-      input.live,
-      input.quotes,
-      input.pick.family,
-      context
-    )
-  ) {
-    return formatKeptRequestedSection(
-      input.requested,
-      input.live,
-      input.pick.family
-    );
-  }
-
-  const requestedText = rtmSectionCellText(input.requested, input.pick);
-  if (input.rankingUp) return requestedText;
-
-  const liveNum = rtmCellSectionNumber(input.live, input.pick.family);
-  if (!liveNum || /[\/&]/.test(liveNum)) return requestedText;
-
-  const liveHeading = headingFromQuotes(
-    input.quotes,
-    liveNum,
-    input.pick.family
-  );
-  if (liveHeading) {
-    const requestedNum = rtmCellSectionNumber(
-      input.requested,
-      input.pick.family
-    );
-    const requestedDesc = rtmCellDescription(input.requested);
-    const headingDesc = rtmCellDescription(liveHeading);
-    const description =
-      requestedDesc && (!requestedNum || requestedNum === liveNum)
-        ? requestedDesc
-        : headingDesc;
-    return formatRtmSectionHeading(liveNum, description);
-  }
-
-  // Live is a real dotted number that is not a heading on the cited pages
-  // (`13.6` vs neighbour `13.7.5`). Keep it. Page counters (`14`) and
-  // thermal-log `12.72` never reach here — they are not usable numbers.
-  return input.live.trim();
-}
-
-function rtmCellDescription(text: string): string {
-  const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
-  const rest = trimmed
-    .replace(/^section\s+\d+(?:\.\d+)*\.?/i, "")
-    .replace(
-      new RegExp(`^${RTM_DOTTED_SECTION_HEAD_RE.source}\\.?`),
-      ""
-    )
-    // Model prefix from Page N of M: `16 – Water batch`, `14. Thermal trial`.
-    .replace(/^\d{1,3}(?!\.\d)\s*(?:of\s+\d+\s*)?[–—:.-]+\s*/, "")
-    .replace(/^\d{1,3}(?!\.\d)\s+of\s+\d+\s*/, "");
-  return cleanRtmSectionDescription(rest);
-}
-
-/**
- * Reference – Section is `{protocol section number} – {one line about the
+ * A family column is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
  * one; the model's one-line description is kept when it is clean, else any
  * audit line from that section (heading title, procedure, or observation).
@@ -1642,6 +1482,20 @@ export function rtmSectionCellText(
     return description;
   }
   return "";
+}
+
+function rtmCellDescription(text: string): string {
+  const trimmed = text.replace(/\[[^\]]*\]/g, "").trim();
+  const rest = trimmed
+    .replace(/^section\s+\d+(?:\.\d+)*\.?/i, "")
+    .replace(
+      new RegExp(`^${RTM_DOTTED_SECTION_HEAD_RE.source}\\.?`),
+      ""
+    )
+    // Model prefix from Page N of M: `16 – Water batch`, `14. Thermal trial`.
+    .replace(/^\d{1,3}(?!\.\d)\s*(?:of\s+\d+\s*)?[–—:.-]+\s*/, "")
+    .replace(/^\d{1,3}(?!\.\d)\s+of\s+\d+\s*/, "");
+  return cleanRtmSectionDescription(rest);
 }
 
 function rtmSectionNumberParts(text: string): string[] {
@@ -1746,88 +1600,6 @@ function matchingProtocolPages(
   });
 }
 
-function formatRtmStageCell(pick: RtmReferencePick): string {
-  return `${pick.stageLabel} [${pick.filename}, p. ${pick.pageNumber}]`;
-}
-
-function isRtmStageFamily(family: QualDocFamily | null): family is RtmStageFamily {
-  return (
-    family != null &&
-    (QSR_STAGE_RANK as readonly string[]).includes(family)
-  );
-}
-
-function stageRankIndex(family: RtmStageFamily): number {
-  return QSR_STAGE_RANK.indexOf(family);
-}
-
-function firstSectionNumberLine(text: string): string {
-  for (const line of text.split("\n")) {
-    const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
-    if (isRtmSectionCellText(trimmed)) {
-      return trimmed.replace(/^section\s+/i, "");
-    }
-  }
-  return "";
-}
-
-function liveReferenceFloor(
-  siblings: readonly TableCellEdit[],
-  cols: { stage: number; section: number; remarks: number }
-): { stageFamily: RtmStageFamily | null; sectionText: string } {
-  let stageFamily: RtmStageFamily | null = null;
-  let sectionText = "";
-  for (const sib of siblings) {
-    const live = (sib.expectedText ?? "").trim();
-    if (!live) continue;
-    if (sib.col === cols.stage) {
-      const family = stageFamilyFromCell(live);
-      if (isRtmStageFamily(family)) stageFamily = family;
-    }
-    if (sib.col === cols.section) sectionText = live;
-  }
-  if (!sectionText) {
-    for (const sib of siblings) {
-      if (!sib.rowContext) continue;
-      sectionText = firstSectionNumberLine(sib.rowContext);
-      if (sectionText) break;
-    }
-  }
-  return { stageFamily, sectionText };
-}
-
-function pickWouldReplaceFilledReference(
-  pick: RtmReferencePick,
-  floor: { stageFamily: RtmStageFamily | null; sectionText: string }
-): boolean {
-  if (floor.stageFamily) {
-    return stageRankIndex(pick.family) > stageRankIndex(floor.stageFamily);
-  }
-  if (
-    floor.sectionText &&
-    pick.sectionHeading &&
-    !sameRtmSectionCell(floor.sectionText, pick.sectionHeading)
-  ) {
-    // DQ pages print every URS ID. A heading clash with a filled Section
-    // means this pick must not stamp empty Stage / Remarks beside it.
-    // IQ / OQ / PQ protocol-body hits may still fill those empty cells.
-    return pick.family === "dq";
-  }
-  return false;
-}
-
-function stickyRtmPick(
-  pick: RtmReferencePick | null,
-  siblings: readonly TableCellEdit[],
-  cols: { stage: number; section: number; remarks: number }
-): RtmReferencePick | null {
-  if (!pick) return null;
-  if (pickWouldReplaceFilledReference(pick, liveReferenceFloor(siblings, cols))) {
-    return null;
-  }
-  return pick;
-}
-
 function headingNumberOnPage(quote: string, number: string): boolean {
   if (!number) return false;
   const body = ` ${protocolBodyQuote(quote)} `;
@@ -1922,17 +1694,31 @@ function citePageForSectionHeading(
   return { page: passPage, heading: passHeading };
 }
 
+function firstSectionNumberLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
+    if (isRtmSectionCellText(trimmed)) {
+      return trimmed.replace(/^section\s+/i, "");
+    }
+  }
+  return "";
+}
+
 export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
   context: string,
-  preferredSectionNumber?: string
+  preferredSectionNumber?: string,
+  preferredFamily?: RtmStageFamily
 ): RtmReferencePick | null {
   const preferred =
     preferredSectionNumber?.trim() ||
     rtmCellSectionNumber(firstSectionNumberLine(context)) ||
     undefined;
-  for (const family of QSR_STAGE_RANK) {
+  const families: readonly RtmStageFamily[] = preferredFamily
+    ? [preferredFamily]
+    : QSR_RTM_FAMILY_ORDER;
+  for (const family of families) {
     const pages = matchingProtocolPages(ledger, key, family, context);
     if (pages.length === 0) continue;
     const passPage =
@@ -1967,338 +1753,6 @@ export function pickRtmReference(
   return null;
 }
 
-function rowTouchesReference(
-  row: readonly string[],
-  cols: { stage: number; section: number; remarks: number }
-): boolean {
-  return [cols.stage, cols.section, cols.remarks].some(
-    (col) => (row[col] ?? "").trim().length > 0
-  );
-}
-
-function applyPickToRow(
-  row: readonly string[],
-  cols: { stage: number; section: number; remarks: number },
-  pick: RtmReferencePick | null,
-  quotes: readonly string[] = [],
-  context = ""
-): string[] {
-  if (!rowTouchesReference(row, cols)) return [...row];
-  const next = [...row];
-  const last = Math.max(cols.stage, cols.section, cols.remarks);
-  while (next.length <= last) next.push("");
-  const liveStage = stageFamilyFromCell(next[cols.stage]);
-  const floor = {
-    stageFamily: isRtmStageFamily(liveStage) ? liveStage : null,
-    sectionText: (next[cols.section] ?? "").trim(),
-  };
-  if (pick && pickWouldReplaceFilledReference(pick, floor)) {
-    return next;
-  }
-  if (!pick) {
-    next[cols.stage] = "";
-    next[cols.section] = "";
-    next[cols.remarks] = "";
-    return next;
-  }
-  next[cols.stage] = formatRtmStageCell(pick);
-  next[cols.section] = resolveRtmSectionInsert({
-    requested: next[cols.section] ?? "",
-    live: floor.sectionText,
-    pick,
-    rankingUp: Boolean(
-      floor.stageFamily &&
-        stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
-    ),
-    quotes,
-    context,
-  });
-  next[cols.remarks] = pick.remarks;
-  return next;
-}
-
-function rankEditCells(
-  operation: Extract<TableOperation, { kind: "edit_cells" }>,
-  ledger: CitationPageLedger,
-  section: string | undefined,
-  cols: { stage: number; section: number; remarks: number },
-  fieldDoc?: JSONContent | null
-): TableOperation {
-  const byKey = new Map<string, TableCellEdit[]>();
-  for (const cell of operation.cells) {
-    const key = editCellsGroupKey(cell);
-    const list = byKey.get(key) ?? [];
-    list.push(cell);
-    byKey.set(key, list);
-  }
-  const rewritten = operation.cells.flatMap((cell) => {
-    const key = editCellsGroupKey(cell);
-    const siblings = byKey.get(key) ?? [];
-    const touchesRef = siblings.some((sib) =>
-      isQsrRtmOptionalReferenceColumn(section, sib.col)
-    );
-    if (!touchesRef) return [cell];
-    if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
-    if (optionalRefExpectedFilled(cell) && !cell.insertText.trim()) {
-      // Explicit clear of a live Stage / Section / Remarks cell.
-      return [cell];
-    }
-    const context = editCellsSiblingContext(siblings, key);
-    const rowKey = key.startsWith("__row:")
-      ? rowKeyFromContext(context)
-      : key;
-    if (!rowKey) return [cell];
-    const floor = liveReferenceFloor(siblings, cols);
-    const preferredSection =
-      rtmCellSectionNumber(floor.sectionText) ||
-      rtmCellSectionNumber(
-        siblings.find((sib) => sib.col === cols.section)?.insertText ?? ""
-      ) ||
-      undefined;
-    const rawPick = pickRtmReference(
-      ledger,
-      rowKey,
-      context,
-      preferredSection
-    );
-    const pick = stickyRtmPick(rawPick, siblings, cols);
-    if (!pick) {
-      // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
-      if (rawPick) return [];
-      if (cell.col !== cols.section) return [cell];
-      const text = rtmSectionCellText(cell.insertText, null);
-      if (!text && optionalRefExpectedFilled(cell)) return [];
-      if (text.trim() === (cell.expectedText ?? "").trim()) return [];
-      return [{ ...cell, insertText: text }];
-    }
-    const live = (cell.expectedText ?? "").trim();
-    if (cell.col === cols.stage) {
-      const text = formatRtmStageCell(pick);
-      if (text.trim() === live) return [];
-      return [{ ...cell, insertText: text }];
-    }
-    if (cell.col === cols.section) {
-      const rankingUp = Boolean(
-        floor.stageFamily &&
-          stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
-      );
-      const quotes = protocolPageQuotes(ledger, pick.family);
-      const text = resolveRtmSectionInsert({
-        requested: cell.insertText,
-        live,
-        pick,
-        rankingUp,
-        quotes,
-        context,
-      });
-      if (!text.trim() && optionalRefExpectedFilled(cell)) {
-        // Drop a logged reading / page counter the engineer already accepted
-        // so the next card can replace it; do not keep `12.72` as Section.
-        if (!rtmCellSectionNumber(live, pick.family)) {
-          return [{ ...cell, insertText: "" }];
-        }
-        return [];
-      }
-      if (text.trim() === live) return [];
-      return [{ ...cell, insertText: text }];
-    }
-    if (cell.col === cols.remarks) {
-      if (pick.remarks.trim() === live) return [];
-      return [{ ...cell, insertText: pick.remarks }];
-    }
-    return [cell];
-  });
-  const present = new Set(
-    rewritten.map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
-  );
-  const extra: TableCellEdit[] = [];
-  for (const [key, siblings] of byKey) {
-    if (key.startsWith("__row:")) continue;
-    const touchesRef = siblings.some((sib) =>
-      isQsrRtmOptionalReferenceColumn(section, sib.col)
-    );
-    if (!touchesRef) continue;
-    const context = editCellsSiblingContext(siblings, key);
-    const floor = liveReferenceFloor(siblings, cols);
-    const preferredSection =
-      rtmCellSectionNumber(floor.sectionText) ||
-      rtmCellSectionNumber(
-        siblings.find((sib) => sib.col === cols.section)?.insertText ?? ""
-      ) ||
-      undefined;
-    const pick = stickyRtmPick(
-      pickRtmReference(ledger, key, context, preferredSection),
-      siblings,
-      cols
-    );
-    if (!pick) continue;
-    const template = siblings[0]!;
-    const liveText = (col: number): string => {
-      if (col === cols.section && floor.sectionText) return floor.sectionText;
-      const sib = siblings.find((cell) => cell.col === col);
-      return (sib?.expectedText ?? "").trim();
-    };
-    const add = (col: number, insertText: string) => {
-      if (!insertText.trim()) return;
-      const live = liveText(col);
-      if (live === insertText.trim()) return;
-      if (present.has(`${key}:${col}`)) return;
-      present.add(`${key}:${col}`);
-      extra.push({
-        row: template.row,
-        col,
-        rowKey: template.rowKey ?? key,
-        expectedText: live,
-        insertText,
-        ...(template.rowContext ? { rowContext: template.rowContext } : {}),
-      });
-    };
-    if (!floor.stageFamily || floor.stageFamily !== pick.family) {
-      add(cols.stage, formatRtmStageCell(pick));
-    }
-    const rankingUp = Boolean(
-      floor.stageFamily &&
-        stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
-    );
-    add(
-      cols.section,
-      resolveRtmSectionInsert({
-        requested:
-          siblings.find((sib) => sib.col === cols.section)?.insertText ?? "",
-        live: floor.sectionText,
-        pick,
-        rankingUp,
-        quotes: protocolPageQuotes(ledger, pick.family),
-        context,
-      })
-    );
-    add(cols.remarks, pick.remarks);
-  }
-  const operationTouchesRef = operation.cells.some((cell) =>
-    isQsrRtmOptionalReferenceColumn(section, cell.col)
-  );
-  if (operationTouchesRef) {
-    for (const [key, liveCells] of liveTableRowsByKey(fieldDoc)) {
-      if (present.has(`${key}:${cols.section}`)) continue;
-      const liveSection = (liveCells[cols.section] ?? "").trim();
-      if (liveSection && !isQsrRtmPlaceholderText(liveSection)) continue;
-      const context = liveCells
-        .filter((part) => Boolean(part?.trim()))
-        .join("\n");
-      const pick = stickyRtmPick(
-        pickRtmReference(
-          ledger,
-          key,
-          context,
-          rtmCellSectionNumber(liveSection) || undefined
-        ),
-        [
-          {
-            row: 1,
-            col: cols.section,
-            rowKey: key,
-            expectedText: liveSection,
-            insertText: "",
-            rowContext: context,
-          },
-        ],
-        cols
-      );
-      if (!pick) continue;
-      const text = resolveRtmSectionInsert({
-        requested: "",
-        live: liveSection,
-        pick,
-        rankingUp: false,
-        quotes: protocolPageQuotes(ledger, pick.family),
-        context,
-      });
-      if (!text.trim() || text.trim() === liveSection) continue;
-      present.add(`${key}:${cols.section}`);
-      extra.push({
-        row: 1,
-        col: cols.section,
-        rowKey: key,
-        expectedText: liveSection,
-        insertText: text,
-        rowContext: context,
-      });
-    }
-  }
-  return {
-    ...operation,
-    cells: extra.length > 0 ? [...rewritten, ...extra] : rewritten,
-  };
-}
-
-/** Rewrite Stage / Section / Remarks to the highest matching family. */
-export function rankRtmReferenceOperation(
-  operation: TableOperation,
-  ledger: CitationPageLedger,
-  section?: string,
-  fieldDoc?: JSONContent | null
-): TableOperation {
-  const cols = rtmReferenceColumnIndexes(section);
-  if (!cols) return operation;
-  switch (operation.kind) {
-    case "insert_rows":
-      return {
-        ...operation,
-        rows: operation.rows.map((row) => {
-          const context = row.join("\n");
-          const key = rowKeyFromContext(context);
-          if (!key) return row;
-          const pick = pickRtmReference(
-            ledger,
-            key,
-            context,
-            rtmCellSectionNumber(row[cols.section] ?? "") || undefined
-          );
-          return applyPickToRow(
-            row,
-            cols,
-            pick,
-            pick ? protocolPageQuotes(ledger, pick.family) : [],
-            context
-          );
-        }),
-      };
-    case "create_table":
-      return {
-        ...operation,
-        rows: operation.rows?.map((row) => {
-          const context = [...operation.headers, ...row].join("\n");
-          const key = rowKeyFromContext(context);
-          if (!key) return row;
-          const pick = pickRtmReference(
-            ledger,
-            key,
-            context,
-            rtmCellSectionNumber(row[cols.section] ?? "") || undefined
-          );
-          return applyPickToRow(
-            row,
-            cols,
-            pick,
-            pick ? protocolPageQuotes(ledger, pick.family) : [],
-            context
-          );
-        }),
-      };
-    case "edit_cells":
-      return rankEditCells(operation, ledger, section, cols, fieldDoc);
-    case "insert_column":
-    case "delete_rows":
-    case "delete_column":
-    case "delete_table":
-      return operation;
-    default: {
-      const exhaustive: never = operation;
-      return exhaustive;
-    }
-  }
-}
-
 export function syntheticUnsupportedFact(text: string): HardFact {
   return {
     text,
@@ -2310,23 +1764,47 @@ export function syntheticUnsupportedFact(text: string): HardFact {
   };
 }
 
-/** Remarks / stage cells that must not persist stock language. */
+/**
+ * Families that may justify Remarks Complies. A family column only
+ * accepts a pass from that column's protocol. Remarks used to require
+ * an `IQ` / `DQ` label in the row (the old Stage cell). Family columns
+ * no longer write that label, so Remarks checks every protocol that
+ * actually passed this URS ID.
+ */
+function compliesFamiliesToCheck(options?: {
+  section?: string;
+  tableCol?: number;
+}): readonly RtmStageFamily[] {
+  const fromCol =
+    options?.tableCol != null
+      ? rtmFamilyAtColumn(options.section, options.tableCol)
+      : null;
+  return fromCol ? [fromCol] : QSR_RTM_FAMILY_ORDER;
+}
+
+/** Remarks / family cells that must not persist stock language. */
 export function qsrRtmCellUnsupported(
   cell: string,
   context: string,
-  ledger: CitationPageLedger
+  ledger: CitationPageLedger,
+  options?: { section?: string; tableCol?: number }
 ): HardFact | null {
   const key = rowKeyFromContext(context);
   const trimmed = cell.trim();
   if (!key || !trimmed) return null;
+  if (isRtmNotFoundMarker(trimmed)) return null;
 
   if (STOCK_BARE_SECTION_13_RE.test(trimmed)) {
     return syntheticUnsupportedFact(trimmed);
   }
 
   if (STOCK_COMPLIES_RE.test(trimmed)) {
-    const stage = stageFamilyFromCell(rowStageFromContext(context));
-    if (!stage || !protocolPassWindow(ledger, key, stage, context)) {
+    const families = compliesFamiliesToCheck(options);
+    if (
+      !families.some((family) =>
+        protocolPassWindow(ledger, key, family, context)
+      )
+    ) {
       return syntheticUnsupportedFact(trimmed);
     }
     return null;
@@ -2337,15 +1815,6 @@ export function qsrRtmCellUnsupported(
     return syntheticUnsupportedFact(trimmed);
   }
   return null;
-}
-
-function rowStageFromContext(context: string): string {
-  for (const family of QSR_STAGE_RANK) {
-    if (new RegExp(`\\b${STAGE_LABEL[family]}\\b`).test(context)) {
-      return STAGE_LABEL[family];
-    }
-  }
-  return "";
 }
 
 export function qsrOperatingRangeUnsupported(
@@ -2516,7 +1985,25 @@ export function extraQsrUnsupported(input: {
     seen.add(fact.normalized);
     out.push(fact);
   };
-  add(qsrRtmCellUnsupported(input.cell, input.context, input.ledger));
+  add(
+    qsrRtmCellUnsupported(input.cell, input.context, input.ledger, {
+      section: input.section,
+      tableCol: input.tableCol,
+    })
+  );
+  const family =
+    input.tableCol != null
+      ? rtmFamilyAtColumn(input.section, input.tableCol)
+      : null;
+  if (family && input.cell.trim() && !isRtmNotFoundMarker(input.cell)) {
+    const trimmed = input.cell.trim();
+    if (
+      stageFamilyFromCell(trimmed) ||
+      !rtmSectionCellText(trimmed, { family })
+    ) {
+      add(syntheticUnsupportedFact(trimmed));
+    }
+  }
   if (input.section === "qsr_operating_range") {
     add(qsrOperatingRangeUnsupported(input.cell, input.context, input.ledger));
   }
@@ -2549,7 +2036,7 @@ export function extraQsrUnsupported(input: {
   return out;
 }
 
-/** Empty Stage / Section / Remarks `edit_cells` — a clear, not a URS copy. */
+/** Empty family / Remarks `edit_cells` — a clear, not a URS copy. */
 export function isClearOnlyOptionalRtmEdit(
   operation: TableOperation,
   section?: string | null

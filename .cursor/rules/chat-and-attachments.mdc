@@ -84,9 +84,8 @@ After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
 with Analytics). An identifier-only grep that hits a protocol family
-keeps search open until every higher family (PQ, then OQ, then IQ, then
-DQ) has been queried (`shouldKeepRtmProtocolSearchOpen`) — an IQ hit is
-not enough while PQ or OQ are still unsearched. Document-chat attachment cover sheets (ATTACHMENT NO. /
+keeps search open until every attached protocol family (DQ, IQ, OQ, PQ) has been queried (any order) (`shouldKeepRtmProtocolSearchOpen`) — a hit on one family is
+not enough while DQ / IQ / OQ / PQ are still unsearched. Document-chat attachment cover sheets (ATTACHMENT NO. /
 certificate-of locators, `divider=true`), split tables (`continues=true`,
 Page N of M with N < M), and title lists without identifier values
 (`identityIncomplete=true` — SOP Name / Document Name without a document
@@ -191,13 +190,13 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
   verification record (Actual observation / Verified By columns plus a
   signature date that is not the Effective Date / Issued On header date)
   is a pass with no pass word; an unexecuted template (no signature date)
-  is not, and a fail / does-not-meet statement vetoes every pass. Unsupported Stage /
-  Section / Remarks cells clear
-instead of blocking the URS copy. PQ/OQ/IQ Reference – Section numbers are
+  is not, and a fail / does-not-meet statement vetoes every pass. Unsupported family-column /
+  Remarks cells clear
+instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
-`Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and Stage `[file, p. N]` cites the page that
+`Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
 prints that heading. An explicit empty `edit_cells` of filled
-Stage / Section / Remarks stays a clear (suggestion card), including when
+DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
 only at row level (labeled Result / Remarks N/A, `not applicable for this
 …`, or a bare N/A inside that URS-N window) — a stray `Model Number NA`
@@ -207,14 +206,14 @@ spec cell does not. When a saved cell differs from the request, the
 so the wrap-up names only the rows on the card (one `edit_table` is one
 card, not one card per URS row). The card title counts only cells that
 actually change — identity Remarks and dummy leftover cells are dropped
-before persist. A filled RTM Section number is elaborated with any
-one audit line from that protocol section (`8.2.3` → `8.2.3 – Heating Trial`
-or `8.2.3 – Fill the reactor to 8000 L`; a heading title is not required),
-not replaced with a neighbour heading. A grounded Section line from
-chat (`8.2.3 – Heating trial at 8000 L working volume`) stays on the
-card — do not swap it for a different pick heading. Empty Reference – Section cells on
-other live URS rows still get that audit line from retrieved protocol pages
-even when the card only named two rows. Wrap-up quotes `adjustedCells.saved`
+before persist. QSR RTM family columns / Remarks on the card are the
+grounded cells from chat (`edit_table` insertText) — there is no family
+ranker that rewrites IQ to PQ or swaps a neighbour heading. Existing
+Table 5–10 rows stored Stage + Section: open / export / chat merge keeps
+URS identity and Remarks, drops Stage / Section, and leaves DQ/IQ/OQ/PQ
+blank so the assistant can refill (no SQL). A page
+counter (`16`) or logged reading (`12.72 °C`) in Section still clears.
+Wrap-up quotes `adjustedCells.saved`
 Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
 one closed-set repair search (C1 retriever), seed new quotes, and

@@ -6,6 +6,7 @@ import {
   ELR_TABLE_CAPTION_TITLES,
   elrTableHeadersForSection,
 } from "@/lib/document-types/elr/sections";
+import { QSR_RTM_FAMILY_HEADERS } from "@/lib/document-types/qsr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -849,22 +850,22 @@ function agreedSiblingRowKey(
   return [...keys][0] ?? "";
 }
 
-/** Stage / Section / Remarks indexes on a QSR RTM header row. */
+/** Family / Remarks indexes on a QSR RTM header row (legacy Stage/Section too). */
 function qsrRtmReferenceColumns(
   headers: readonly string[]
 ): ReadonlySet<number> | null {
-  let stage = -1;
-  let section = -1;
-  let remarks = -1;
+  const cols = new Set<number>();
+  const families = new Set<string>(QSR_RTM_FAMILY_HEADERS);
   for (let i = 0; i < headers.length; i++) {
-    const name = headers[i]!.toLowerCase();
-    if (name.includes("qualification stage")) stage = i;
+    const header = headers[i]!;
+    const name = header.toLowerCase();
+    if (name === "remarks" || families.has(header)) cols.add(i);
+    else if (name.includes("qualification stage")) cols.add(i);
     else if (name.includes("reference") && name.includes("section")) {
-      section = i;
-    } else if (name === "remarks") remarks = i;
+      cols.add(i);
+    }
   }
-  if (stage < 0 || section < 0 || remarks < 0) return null;
-  return new Set([stage, section, remarks]);
+  return cols.size > 0 ? cols : null;
 }
 
 /**
@@ -882,7 +883,7 @@ function qsrRtmReferenceColumns(
  * the suggestion stale and skip inline preview for the empty remainder.
  * A mixed fill-empty batch also skips rewriting filled cells so the empty
  * remainder still lands; a batch that only rewrites filled cells still applies.
- * QSR RTM Stage / Section / Remarks are the exception: a follow-up may
+ * QSR RTM family columns and Remarks are the exception: a follow-up may
  * overwrite a filled number with the cited heading (13.6 → 13.6 – Gasket material verified as PTFE).
  */
 export function resolveEditCells(

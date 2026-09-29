@@ -140,7 +140,7 @@ function bannerRow(text: string, colspan: number): JSONContent {
 }
 
 function rtmRow(id: string, requirement = `${id} text`): string[] {
-  return [id, "Parameter", requirement, "", "", ""];
+  return [id, "Parameter", requirement, "", "", "", "", ""];
 }
 
 function rtmDoc(ids: string[], bannersAt?: Record<number, string>): JSONContent {
@@ -533,7 +533,7 @@ describe("applyTableOperation", () => {
     const table = doc.content![0]!;
     table.content = [
       ...(table.content ?? []),
-      bannerRow("ANY SPECIFIC REQUIREMENTS", 6),
+      bannerRow("ANY SPECIFIC REQUIREMENTS", QSR_RTM_HEADERS.length),
     ];
     const result = applyTableOperation(doc, {
       kind: "insert_rows",
@@ -545,7 +545,7 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(cellText(result.doc, 3, 0)).toBe("URS-58");
     expect(cellColspan(result.doc, 3, 0)).toBe(1);
-    expect(tableRowAt(result.doc, 3).content).toHaveLength(6);
+    expect(tableRowAt(result.doc, 3).content).toHaveLength(QSR_RTM_HEADERS.length);
   });
 
   it("does not insert a merged banner row from { banner }", () => {
@@ -955,19 +955,12 @@ describe("applyTableOperation", () => {
   it("overwrites a filled QSR RTM Section cell in a mixed fill-empty batch", () => {
     const doc = tableDoc(
       [...QSR_RTM_HEADERS],
-      [["URS-41", "Gaskets", "PTFE or Equivalent", "", "13.6", ""]]
+      [["URS-41", "Gaskets", "PTFE or Equivalent", "", "13.6", "", "", ""]]
     );
     const result = applyTableOperation(doc, {
       kind: "edit_cells",
       tableIndex: 0,
       cells: [
-        {
-          row: 1,
-          col: 3,
-          rowKey: "URS-41",
-          expectedText: "",
-          insertText: "IQ",
-        },
         {
           row: 1,
           col: 4,
@@ -977,7 +970,7 @@ describe("applyTableOperation", () => {
         },
         {
           row: 1,
-          col: 5,
+          col: 7,
           rowKey: "URS-41",
           expectedText: "",
           insertText: "Complies",
@@ -986,9 +979,9 @@ describe("applyTableOperation", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(cellText(result.doc, 1, 3)).toBe("IQ");
+    expect(cellText(result.doc, 1, 3)).toBe("");
     expect(cellText(result.doc, 1, 4)).toBe("13.6; Gaskets PTFE or equivalent");
-    expect(cellText(result.doc, 1, 5)).toBe("Complies");
+    expect(cellText(result.doc, 1, 7)).toBe("Complies");
   });
 
   it("still rewrites a filled cell when the batch has no empty fills", () => {

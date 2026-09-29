@@ -86,9 +86,35 @@ export const QSR_SECTION_LABELS: Record<QsrSectionKey, string> = {
   qsr_conclusion: "7 Conclusion",
 };
 
-// Two-row Word headers (Reference → Qualification Stage / Section) are
-// flattened to one editor row; the template keeps the original two rows.
+/** Display order under Reference — one editor column per protocol family. */
+export const QSR_RTM_FAMILY_HEADERS = [
+  "Reference – DQ",
+  "Reference – IQ",
+  "Reference – OQ",
+  "Reference – PQ",
+] as const;
+
+// Two-row Word headers (Reference → DQ / IQ / OQ / PQ) are flattened to
+// one editor row; the template keeps the original two rows.
 export const QSR_RTM_HEADERS = [
+  "URS ID",
+  "Parameters",
+  "User requirements",
+  ...QSR_RTM_FAMILY_HEADERS,
+  "Remarks",
+] as const;
+
+export const QSR_CONTROL_HEADERS = [
+  "URS ID",
+  "Type of control",
+  "Purpose",
+  "Operation range",
+  ...QSR_RTM_FAMILY_HEADERS,
+  "Remarks",
+] as const;
+
+/** Pre-family-column editor headers. Stage / Section are dropped on coerce. */
+export const QSR_RTM_LEGACY_HEADERS = [
   "URS ID",
   "Parameters",
   "User requirements",
@@ -97,7 +123,7 @@ export const QSR_RTM_HEADERS = [
   "Remarks",
 ] as const;
 
-export const QSR_CONTROL_HEADERS = [
+export const QSR_CONTROL_LEGACY_HEADERS = [
   "URS ID",
   "Type of control",
   "Purpose",
@@ -353,7 +379,93 @@ function operatingRangeDoc(): JSONContent {
 function cellPlain(node: JSONContent | undefined): string {
   if (!node) return "";
   if (typeof node.text === "string") return node.text;
+  if (node.type === "hardBreak") return " ";
   return (node.content ?? []).map((child) => cellPlain(child)).join("");
+}
+
+/** Dash / break / case-insensitive header identity for coerce. */
+function headerKey(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function headerRowMatches(
+  labels: readonly string[],
+  expected: readonly string[]
+): boolean {
+  if (labels.length !== expected.length) return false;
+  return labels.every((label, index) => headerKey(label) === headerKey(expected[index]!));
+}
+
+function findFirstTable(node: JSONContent | undefined): JSONContent | undefined {
+  if (!node) return undefined;
+  if (node.type === "table") return node;
+  for (const child of node.content ?? []) {
+    const found = findFirstTable(child);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function replaceTable(
+  node: JSONContent,
+  from: JSONContent,
+  to: JSONContent
+): JSONContent {
+  if (node === from) return to;
+  if (!node.content) return node;
+  let changed = false;
+  const content = node.content.map((child) => {
+    const next = replaceTable(child, from, to);
+    if (next !== child) changed = true;
+    return next;
+  });
+  return changed ? { ...node, content } : node;
+}
+
+function isFamilyColumnHeader(header: string): boolean {
+  return (QSR_RTM_FAMILY_HEADERS as readonly string[]).some(
+    (family) => headerKey(family) === headerKey(header)
+  );
+}
+
+function legacyRtmHeadersFromLabels(
+  labels: readonly string[]
+): typeof QSR_RTM_LEGACY_HEADERS | typeof QSR_CONTROL_LEGACY_HEADERS | null {
+  if (
+    headerRowMatches(labels, QSR_RTM_HEADERS) ||
+    headerRowMatches(labels, QSR_CONTROL_HEADERS)
+  ) {
+    return null;
+  }
+  if (headerRowMatches(labels, QSR_RTM_LEGACY_HEADERS)) {
+    return QSR_RTM_LEGACY_HEADERS;
+  }
+  if (headerRowMatches(labels, QSR_CONTROL_LEGACY_HEADERS)) {
+    return QSR_CONTROL_LEGACY_HEADERS;
+  }
+  const keys = labels.map(headerKey);
+  if (
+    keys.some(
+      (key) =>
+        key === "referencedq" ||
+        key === "referenceiq" ||
+        key === "referenceoq" ||
+        key === "referencepq"
+    )
+  ) {
+    return null;
+  }
+  const hasStage = keys.some(
+    (key) => key.includes("qualificationstage") || key === "stage"
+  );
+  const hasSection = keys.some(
+    (key) => key === "section" || key === "referencesection"
+  );
+  if (!hasStage || !hasSection) return null;
+  if (keys.some((key) => key.includes("typeofcontrol"))) {
+    return QSR_CONTROL_LEGACY_HEADERS;
+  }
+  return QSR_RTM_LEGACY_HEADERS;
 }
 
 /**
@@ -458,6 +570,76 @@ function appendMissingExtraRows(table: JSONContent): JSONContent {
   });
   if (extraRows.length === 0) return table;
   return { ...table, content: [...(table.content ?? []), ...extraRows] };
+}
+
+function headerLabels(row: JSONContent | undefined): string[] {
+  return (row?.content ?? []).map((node) => cellPlain(node).trim());
+}
+
+function emptyBodyCell(): JSONContent {
+  return cell("tableCell", "");
+}
+
+function remapLegacyRtmRow(
+  row: JSONContent,
+  fromHeaders: readonly string[],
+  toHeaders: readonly string[]
+): JSONContent {
+  const cells = row.content ?? [];
+  const first = cells[0];
+  const span = Number(first?.attrs?.colspan ?? 1);
+  if (cells.length === 1 && span >= fromHeaders.length) {
+    return {
+      ...row,
+      content: [
+        {
+          ...first,
+          attrs: { ...first?.attrs, colspan: toHeaders.length },
+        },
+      ],
+    };
+  }
+  const byHeader = new Map<string, JSONContent>();
+  fromHeaders.forEach((header, index) => {
+    const source = cells[index];
+    if (source) byHeader.set(header, source);
+  });
+  return {
+    ...row,
+    content: toHeaders.map((header) => {
+      if (isFamilyColumnHeader(header)) return emptyBodyCell();
+      return byHeader.get(header) ?? emptyBodyCell();
+    }),
+  };
+}
+
+/**
+ * Existing Tables 5–10 stored Stage + Section. Opening or exporting them
+ * keeps URS identity and Remarks, drops Stage / Section, and leaves the
+ * four family columns blank so the assistant can refill from each protocol.
+ */
+export function ensureRtmFamilyColumns(
+  doc: JSONContent,
+  headers: readonly string[]
+): JSONContent {
+  const table = findFirstTable(doc);
+  if (!table) return doc;
+  const rows = table.content ?? [];
+  const labels = headerLabels(rows[0]);
+  if (headerRowMatches(labels, headers)) return doc;
+  const legacy = legacyRtmHeadersFromLabels(labels);
+  if (!legacy) return doc;
+  const nextRows = rows.map((row, index) => {
+    if (index === 0) {
+      return {
+        ...row,
+        content: headers.map((header) => cell("tableHeader", header)),
+      };
+    }
+    return remapLegacyRtmRow(row, legacy, headers);
+  });
+  const nextTable = { ...table, content: nextRows };
+  return replaceTable(doc, table, nextTable);
 }
 
 /**
