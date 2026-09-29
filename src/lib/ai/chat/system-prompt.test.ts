@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v165-qsr-keep-requested-section");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v166-qsr-rtm-land");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -46,6 +46,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Installation Qualification");
     expect(prompt).toContain("8.2.4 / 8.8");
     expect(prompt).toContain("Never paste a markdown table of RTM rows in chat");
+    expect(prompt).toContain("If edit_table returns review_incomplete");
     expect(prompt).toContain("Do not list URS-N rows as updated");
     expect(prompt).toContain("proposedRowKeys");
     expect(prompt).toContain("droppedRowKeys");
@@ -75,7 +76,7 @@ describe("buildChatSystemPrompt", () => {
       "Do not tell them to accept a card and type 3.5"
     );
     expect(prompt).toContain("−15 °C is not 15 °C");
-    expect(prompt).toContain("−50 ± 10 RPM");
+    expect(prompt).toContain("~50 ± 10 RPM");
     expect(prompt).toContain(
       "When filling a named column, copy the value printed next to that same label"
     );

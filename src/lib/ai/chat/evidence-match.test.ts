@@ -146,6 +146,17 @@ describe("evidenceContainsFact", () => {
     ).toBe(true);
   });
 
+  it("treats a leading tilde as approximate, not a minus", () => {
+    const unsigned = fact("50 ± 10 RPM", "number");
+    expect(
+      evidenceContainsFact("URS-10 RPM requirement ~50±10 RPM", unsigned)
+    ).toBe(true);
+    const signed = fact("–50 ± 10 RPM", "number");
+    expect(
+      evidenceContainsFact("URS-10 RPM requirement ~50±10 RPM", signed)
+    ).toBe(false);
+  });
+
   it("matches OCR-split 3.5 Kg/cm² from the URS pressure row", () => {
     const pressure = fact("Full Vacuum to 3.5 Kg/cm²", "number");
     expect(pressure.text).toContain("3.5");

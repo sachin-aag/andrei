@@ -49,7 +49,10 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "Do not write VFD compatible in place of an RPM number"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "Keep a leading minus on a negative temperature or RPM"
+      "Keep a leading minus on a negative temperature"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "A leading tilde is approximate, not a minus"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
       "do not copy the DQ date or revision onto the URS row"

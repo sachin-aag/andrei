@@ -798,9 +798,9 @@ describe("QSR lifecycle cover review", () => {
     expect(selected.some((page) => page.attachmentId === "oq")).toBe(true);
   });
 
-  it("still cover-walks a Table 3-only objective and URS-walks RTM family copy", () => {
+  it("still cover-walks a qualification-documents objective and URS-walks RTM family copy", () => {
     expect(
-      qsrReviewPagePlan("QSR Table 3 qualification document numbers")
+      qsrReviewPagePlan("QSR qualification document numbers")
     ).toBe("cover");
     expect(
       qsrReviewPagePlan(
@@ -812,5 +812,6 @@ describe("QSR lifecycle cover review", () => {
     ).toBe("scored");
     expect(qsrReviewPagePlan("Draft section 2,3,4")).toBe("mixed");
     expect(qsrReviewPagePlan("populate tables 3 and 4")).toBe("mixed");
+    expect(qsrReviewPagePlan("draft table 4")).toBe("urs");
   });
 });

@@ -278,6 +278,28 @@ export function countFilledTablesInDocument(
 }
 
 /**
+ * Section that owns printed Table N among filled grids. Empty unused shells
+ * do not consume N — same ordinal as the context-map caption.
+ */
+export function sectionForPrintedTableNumber(
+  contents: readonly DocumentTableContent[],
+  printed: number
+): string | undefined {
+  if (!Number.isInteger(printed) || printed < 1) return undefined;
+  let ordinal = 0;
+  let found: string | undefined;
+  walkFilledTablesInDocument(contents, ({ section, table }) => {
+    if (!tableHasData(table)) return;
+    ordinal += 1;
+    if (ordinal === printed) {
+      found = section;
+      return false;
+    }
+  });
+  return found;
+}
+
+/**
  * 1-based ordinal of the target table among filled grids in document order.
  * The target counts even if it is still an empty shell. Missing target → undefined.
  */

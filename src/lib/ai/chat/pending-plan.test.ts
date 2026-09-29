@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
-import { emptyQsrContent } from "@/lib/document-types/qsr/sections";
+import {
+  emptyQsrContent,
+  QSR_RTM_HEADERS,
+} from "@/lib/document-types/qsr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
@@ -1253,6 +1256,38 @@ describe("plan prompt and metadata", () => {
           "uspiy53ymhnfd9rktwo3u4g7:12:h0xk4yu7sl9rrds22xhvk43f|obj:extract all requirements for control philosophy (5.2), gmp requirements (5.3), a",
       })
     ).toBe(false);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_rtm_process",
+        content: emptyQsrContent("qsr_rtm_process"),
+        finishedCoverageKey: null,
+      })
+    ).toBe(true);
+    const extraUrsIds = structuredClone(
+      emptyQsrContent("qsr_rtm_process")
+    ) as { table: { content?: Array<{ content?: unknown[] }> } };
+    const table = extraUrsIds.table.content?.[0] as { content: unknown[] };
+    table.content.push({
+      type: "tableRow",
+      content: QSR_RTM_HEADERS.map((_, index) => ({
+        type: "tableCell",
+        content: [
+          {
+            type: "paragraph",
+            content: index === 0 ? [{ type: "text", text: "URS-2" }] : [],
+          },
+        ],
+      })),
+    });
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_rtm_process",
+        content: extraUrsIds,
+        finishedCoverageKey: null,
+      })
+    ).toBe(true);
   });
 
   it("does not treat a floor-8 skipped finish as matching coverage", () => {

@@ -106,6 +106,8 @@ flowchart TD
   C --> F["Parser supplies transcript"]
   F --> G["Vertex insight pass<br/>visuals, pageContext, summary"]
   G -->|insight fails| H["Keep transcript<br/>recovery: text-layer-only"]
+  G --> G2["PNG overlay on unsigned °C ranges<br/>copy minus onto parser text"]
+  H --> G2
 
   D --> OCR{"Document AI processor configured?"}
   OCR -->|yes| I["Enterprise OCR"]
@@ -119,7 +121,9 @@ flowchart TD
   E --> D
 ```
 
-Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v5`.
+Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v13`.
+
+Born-digital pages keep the parser transcript. When a page still has an unsigned Celsius range (`15 °C to 130 °C`), ingest rasters that page to PNG (Node canvas, cap 5 pages) and copies a leading minus onto matching °C quantities only if the look reports a signed temperature. A tilde (`~50+/-10 RPM`) is approximate, not a minus. Raster failures leave the transcript unsigned (`overlayErrors`) instead of inventing a sign. Gemini must not be sent the PDF itself for that look — it would reread the unsigned text layer.
 
 ## DOCX path
 

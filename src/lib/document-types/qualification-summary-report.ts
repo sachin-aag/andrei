@@ -193,11 +193,11 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["qsr_background", [/\bbackground\b/i, /\b2\.2\b/]],
       [
         "qsr_qualification_documents",
-        [/\bqualification documents?\b/i, /\blifecycle\b/i, /\btable\s*3\b/i],
+        [/\bqualification documents?\b/i, /\blifecycle\b/i],
       ],
       [
         "qsr_sops",
-        [/\bsops?\b/i, /\bstandard operati\w* procedures?\b/i, /\btable\s*4\b/i],
+        [/\bsops?\b/i, /\bstandard operati\w* procedures?\b/i],
       ],
       ["qsr_rtm_process", [/\bprocess requirements?\b/i, /\btraceability\b/i, /\brtm\b/i, /\b5\.1\b/]],
       ["qsr_rtm_control", [/\bcontrol philosophy\b/i, /\b5\.2\b/]],
