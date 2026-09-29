@@ -3,12 +3,17 @@ import type { JSONContent } from "@tiptap/core";
 import { qualificationSummaryReportDefinition } from "@/lib/document-types/qualification-summary-report";
 import {
   QSR_AUXILIARY_VOLUMETRIC_ROWS,
+  QSR_CONTROL_HEADERS,
+  QSR_CONTROL_LEGACY_HEADERS,
   QSR_MAIN_VOLUMETRIC_EXTRA_ROWS,
   QSR_MAIN_VOLUMETRIC_ROWS,
   QSR_OTHER_DETAILS_HEADERS,
   QSR_OTHER_DETAILS_ROWS,
+  QSR_RTM_HEADERS,
+  QSR_RTM_LEGACY_HEADERS,
   QSR_VOLUMETRIC_HEADERS,
   emptyQsrContent,
+  ensureRtmFamilyColumns,
   ensureVolumetricFormRows,
 } from "./sections";
 
@@ -79,6 +84,137 @@ function auxiliaryTable(): JSONContent {
     ],
   };
 }
+
+function tableDoc(headers: readonly string[], rows: string[][]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: headers.map((header) => ({
+              type: "tableHeader",
+              content: [{ type: "paragraph", content: [{ type: "text", text: header }] }],
+            })),
+          },
+          ...rows.map((row) => ({
+            type: "tableRow" as const,
+            content: headers.map((_, i) => ({
+              type: "tableCell" as const,
+              content: row[i]
+                ? [{ type: "paragraph", content: [{ type: "text", text: row[i] }] }]
+                : [{ type: "paragraph" }],
+            })),
+          })),
+        ],
+      },
+    ],
+  };
+}
+
+function rowTexts(doc: JSONContent): string[][] {
+  const table = doc.content?.find((node) => node.type === "table");
+  return (table?.content ?? []).map((row) =>
+    (row.content ?? []).map((cell) => cellText(cell).trim())
+  );
+}
+
+describe("ensureRtmFamilyColumns", () => {
+  it("drops Stage / Section on a legacy process table and keeps URS identity plus Remarks", () => {
+    const older = tableDoc([...QSR_RTM_LEGACY_HEADERS], [
+      ["URS-1", "Capacity", "8000 L", "IQ", "13.3.5.4", "Complies"],
+      ["URS-5", "Jacket temperature", "20-25 °C", "", "", ""],
+    ]);
+    const ensured = ensureRtmFamilyColumns(older, QSR_RTM_HEADERS);
+    expect(rowTexts(ensured)).toEqual([
+      [...QSR_RTM_HEADERS],
+      ["URS-1", "Capacity", "8000 L", "", "", "", "", "Complies"],
+      ["URS-5", "Jacket temperature", "20-25 °C", "", "", "", "", ""],
+    ]);
+    expect(ensureRtmFamilyColumns(ensured, QSR_RTM_HEADERS)).toBe(ensured);
+  });
+
+  it("widens a legacy banner to the new column count", () => {
+    const older: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: QSR_RTM_LEGACY_HEADERS.map((header) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text: header }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { colspan: QSR_RTM_LEGACY_HEADERS.length },
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "ANY SPECIFIC REQUIREMENTS" }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const ensured = ensureRtmFamilyColumns(older, QSR_RTM_HEADERS);
+    const banner = ensured.content?.[0]?.content?.[1]?.content?.[0];
+    expect(cellText(banner).trim()).toBe("ANY SPECIFIC REQUIREMENTS");
+    expect(banner?.attrs?.colspan).toBe(QSR_RTM_HEADERS.length);
+  });
+
+  it("drops Stage / Section on a legacy control table", () => {
+    const older = tableDoc([...QSR_CONTROL_LEGACY_HEADERS], [
+      ["URS-20", "Temperature", "Control jacket", "20-25 °C", "OQ", "8.4", "Complies"],
+    ]);
+    expect(rowTexts(ensureRtmFamilyColumns(older, QSR_CONTROL_HEADERS))[1]).toEqual([
+      "URS-20",
+      "Temperature",
+      "Control jacket",
+      "20-25 °C",
+      "",
+      "",
+      "",
+      "",
+      "Complies",
+    ]);
+  });
+
+  it("leaves an already-new family-column table unchanged", () => {
+    const current = tableDoc([...QSR_RTM_HEADERS], [
+      ["URS-1", "Capacity", "8000 L", "", "13.3.5.4", "", "", "Complies"],
+    ]);
+    expect(ensureRtmFamilyColumns(current, QSR_RTM_HEADERS)).toBe(current);
+  });
+
+  it("coerces a stored legacy table when the report is merged", () => {
+    const merged = qualificationSummaryReportDefinition.mergeSection(
+      "qsr_rtm_process",
+      {
+        table: tableDoc([...QSR_RTM_LEGACY_HEADERS], [
+          ["URS-1", "Capacity", "8000 L", "PQ", "8.2.3", "Complies"],
+        ]),
+      }
+    ) as { table: JSONContent };
+    expect(rowTexts(merged.table)[1]).toEqual([
+      "URS-1",
+      "Capacity",
+      "8000 L",
+      "",
+      "",
+      "",
+      "",
+      "Complies",
+    ]);
+  });
+});
 
 describe("QSR Other Details template", () => {
   it("seeds Table 11 Parameter / Details rows including Type of Agitator and Type of Mechanical Seal", () => {

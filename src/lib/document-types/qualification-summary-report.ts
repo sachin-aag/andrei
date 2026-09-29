@@ -10,11 +10,14 @@ import {
   QSR_DEFAULT_METADATA,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  ensureRtmFamilyColumns,
   ensureVolumetricFormRows,
   isQsrSectionKey,
   isQsrTableSectionKey,
   qsrMetadataFrom,
+  QSR_TABLE_HEADERS,
   type QsrSectionKey,
+  type QsrTableSectionKey,
 } from "./qsr/sections";
 
 function llm(key: string, label: string, description: string): CriterionDefinition {
@@ -53,8 +56,8 @@ function rtmCriteria(prefix: string, label: string): CriterionDefinition[] {
     tableFilled(prefix, label, 5),
     llm(
       `${prefix}.traceable`,
-      `${label} are traced to a qualification stage`,
-      "Does every URS row name the qualification stage (DQ/IQ/OQ/PQ) and protocol section that verified it?"
+      `${label} are traced to DQ / IQ / OQ / PQ`,
+      "Does every URS row fill Reference – DQ / IQ / OQ / PQ (section line or NA) and Remarks from the cited protocols?"
     ),
   ];
 }
@@ -120,6 +123,11 @@ function mergeQsrSection(key: string, raw: unknown): unknown {
   const doc = normalizeRichField(value ?? base);
   if (key === "qsr_volumetric_details") {
     return { [field]: ensureVolumetricFormRows(doc) };
+  }
+  if (isQsrTableSectionKey(key) && key.startsWith("qsr_rtm_")) {
+    return {
+      [field]: ensureRtmFamilyColumns(doc, QSR_TABLE_HEADERS[key as QsrTableSectionKey]),
+    };
   }
   return { [field]: doc };
 }

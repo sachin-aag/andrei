@@ -654,7 +654,7 @@ export function groundTableOperation(input: {
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
   /**
-   * After repair, empty unsupported RTM Stage / Section / Remarks
+   * After repair, empty unsupported RTM family / Remarks cells
    * instead of blocking the URS copy.
    */
   clearOptionalOnBlock?: boolean;

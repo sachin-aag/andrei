@@ -73,12 +73,15 @@ function rtmProcessDoc(rows: string[][]): JSONContent {
           },
           ...rows.map((row) => ({
             type: "tableRow" as const,
-            content: row.map((text) => ({
-              type: "tableCell" as const,
-              content: text
-                ? [{ type: "paragraph", content: [{ type: "text", text }] }]
-                : [{ type: "paragraph" }],
-            })),
+            content: [...QSR_RTM_HEADERS].map((_, col) => {
+              const text = row[col] ?? "";
+              return {
+                type: "tableCell" as const,
+                content: text
+                  ? [{ type: "paragraph", content: [{ type: "text", text }] }]
+                  : [{ type: "paragraph" }],
+              };
+            }),
           })),
         ],
       },
@@ -255,31 +258,10 @@ describe("column-major descriptions across pages", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-2",
-            "MOC",
-            "High-quality Glass Lining and thickness should not be less than 1 mm [User Requirement Specification.PDF, p. 6]",
-            "",
-            "",
-            "",
-          ],
-          ["URS-13", "Jacket Type", "Limpet/Plain [User Requirement Specification.PDF, p. 7]", "", "", ""],
-          [
-            "URS-59",
-            "Light Glass",
-            "Required [User Requirement Specification.PDF, p. 11]",
-            "",
-            "",
-            "",
-          ],
-          [
-            "URS-60",
-            "Nozzle",
-            "Minimum 6 process/service nozzles required [User Requirement Specification.PDF, p. 11]",
-            "",
-            "",
-            "",
-          ],
+          ["URS-2", "MOC", "High-quality Glass Lining and thickness should not be less than 1 mm [User Requirement Specification.PDF, p. 6]", "", "", "", "", ""],
+          ["URS-13", "Jacket Type", "Limpet/Plain [User Requirement Specification.PDF, p. 7]", "", "", "", "", ""],
+          ["URS-59", "Light Glass", "Required [User Requirement Specification.PDF, p. 11]", "", "", "", "", ""],
+          ["URS-60", "Nozzle", "Minimum 6 process/service nozzles required [User Requirement Specification.PDF, p. 11]", "", "", "", "", ""],
         ],
       },
       ledger,
@@ -306,14 +288,7 @@ describe("column-major descriptions across pages", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-33",
-            "Stage and location",
-            "Equipment intended for intermediate stage manufacturing operations. [User Requirement Specification.PDF, p. 8]",
-            "",
-            "",
-            "",
-          ],
+          ["URS-33", "Stage and location", "Equipment intended for intermediate stage manufacturing operations. [User Requirement Specification.PDF, p. 8]", "", "", "", "", ""],
         ],
       },
       ledger,
@@ -773,6 +748,42 @@ describe("qsrRtmCellUnsupported / extraQsrUnsupported", () => {
     ).toContain("IQ");
   });
 
+  it("rejects a bare family label in a family column and keeps section text", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220",
+      },
+    ]);
+    expect(
+      extraQsrUnsupported({
+        cell: "IQ",
+        context: "URS-5\nJacket temperature\n20-25 °C\nIQ\n13.3.5.1",
+        section: "qsr_rtm_process",
+        tableCol: 4,
+        ledger,
+      }).map((fact) => fact.text)
+    ).toContain("IQ");
+    expect(
+      extraQsrUnsupported({
+        cell: "13.3.5.1",
+        context: "URS-5\nJacket temperature\n20-25 °C",
+        section: "qsr_rtm_process",
+        tableCol: 4,
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
   it("keeps Complies when IQ Verified sits outside the URS-ID window and rowContext still names DQ", () => {
     const ledger = ledgerFromPages([
       {
@@ -888,10 +899,12 @@ describe("row helpers", () => {
     ).toBe("urs");
   });
 
-  it("treats RTM Stage / Section / Remarks as optional reference columns", () => {
+  it("treats RTM family columns and Remarks as optional reference columns", () => {
     expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 3)).toBe(true);
     expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 4)).toBe(true);
     expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 5)).toBe(true);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 6)).toBe(true);
+    expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 7)).toBe(true);
     expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_process", 2)).toBe(false);
     expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_control", 4)).toBe(true);
     expect(isQsrRtmOptionalReferenceColumn("qsr_rtm_control", 3)).toBe(false);
@@ -899,14 +912,18 @@ describe("row helpers", () => {
       false
     );
     expect(rtmReferenceColumnIndexes("qsr_rtm_process")).toEqual({
-      stage: 3,
-      section: 4,
-      remarks: 5,
+      dq: 3,
+      iq: 4,
+      oq: 5,
+      pq: 6,
+      remarks: 7,
     });
     expect(rtmReferenceColumnIndexes("qsr_rtm_control")).toEqual({
-      stage: 4,
-      section: 5,
-      remarks: 6,
+      dq: 4,
+      iq: 5,
+      oq: 6,
+      pq: 7,
+      remarks: 8,
     });
   });
 
@@ -939,7 +956,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
+          ["URS-5", "Jacket temperature", "20-25 °C", "", "Section 13", "", "", "Complies"],
         ],
       },
       ledger,
@@ -953,7 +970,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[0]).toContain("URS-5");
     expect(keptRow[1]).toBe("Jacket temperature");
     expect(keptRow[2]).toContain("20-25 °C");
-    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+    expect(keptRow.slice(3)).toEqual(["", "", "", "", ""]);
   });
 
   it("keeps IQ / Complies when Installation Qualification names that URS ID", () => {
@@ -977,7 +994,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "8.1", "Complies"],
+          ["URS-5", "Jacket temperature", "20-25 °C", "", "8.1", "", "", "Complies"],
         ],
       },
       ledger,
@@ -991,10 +1008,10 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[0]).toContain("URS-5");
     expect(keptRow[1]).toBe("Jacket temperature");
     expect(keptRow[2]).toContain("20-25 °C");
-    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[3]).toBe("");
     expect(keptRow[4]).toContain("8.1");
     expect(keptRow[4]).not.toMatch(/Section 13/i);
-    expect(keptRow[5]).toMatch(/Complies/i);
+    expect(keptRow[7]).toMatch(/Complies/i);
   });
 
   it("keeps IQ / 13.3.5.1 when Installation Qualification describes the jacket without a URS ID", () => {
@@ -1018,14 +1035,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-5",
-            "Jacket temperature",
-            "20-25 °C",
-            "IQ",
-            "13.3.5.1",
-            "Complies",
-          ],
+          ["URS-5", "Jacket temperature", "20-25 °C", "", "13.3.5.1", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1037,9 +1047,9 @@ describe("groundTableOperation optional RTM columns", () => {
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[0]).toContain("URS-5");
-    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[3]).toBe("");
     expect(keptRow[4]).toContain("13.3.5.1");
-    expect(keptRow[5]).toBe("");
+    expect(keptRow[7]).toBe("");
   });
 
   it("keeps Complies when the jacket IQ page records Verified as the result", () => {
@@ -1063,14 +1073,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-5",
-            "Jacket temperature",
-            "20-25 °C",
-            "IQ",
-            "13.3.5.1",
-            "Complies",
-          ],
+          ["URS-5", "Jacket temperature", "20-25 °C", "", "13.3.5.1", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1081,9 +1084,9 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[3]).toBe("");
     expect(keptRow[4]).toContain("13.3.5.1");
-    expect(keptRow[5]).toMatch(/Complies/i);
+    expect(keptRow[7]).toMatch(/Complies/i);
   });
 
   it("clears Stage / Complies when the IQ page is only the running header", () => {
@@ -1108,7 +1111,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          ["URS-1", "Reactor Capacity", "8000 L", "IQ", "Section 13", "Complies"],
+          ["URS-1", "Reactor Capacity", "8000 L", "", "Section 13", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1122,7 +1125,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[0]).toContain("URS-1");
     expect(keptRow[1]).toBe("Reactor Capacity");
     expect(keptRow[2]).toContain("8000 L");
-    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+    expect(keptRow.slice(3)).toEqual(["", "", "", "", ""]);
   });
 
   it("clears Stage on edit_cells when IQ is only the running header", () => {
@@ -1203,7 +1206,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          ["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"],
+          ["URS-5", "Jacket temperature", "20-25 °C", "", "Section 13", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1214,10 +1217,10 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toContain("IQ");
+    expect(keptRow[3]).toBe("");
     expect(keptRow[4]).toBe("");
     expect(keptRow[4]).not.toMatch(/Section 13/i);
-    expect(keptRow[5]).toMatch(/Complies/i);
+    expect(keptRow[7]).toMatch(/Complies/i);
   });
 
   it("keeps Full Vacuum to 3.5 Kg/cm² when OCR split the decimal", () => {
@@ -1235,8 +1238,8 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          ["URS-4", "Shell Operating pressure", "Full Vacuum to 3.5 Kg/cm²", "", "", ""],
-          ["URS-6", "Jacket Operating Pressure", "3 to 5 Kg/cm²", "", "", ""],
+          ["URS-4", "Shell Operating pressure", "Full Vacuum to 3.5 Kg/cm²", "", "", "", "", ""],
+          ["URS-6", "Jacket Operating Pressure", "3 to 5 Kg/cm²", "", "", "", "", ""],
         ],
       },
       ledger,
@@ -1265,7 +1268,7 @@ describe("groundTableOperation optional RTM columns", () => {
       operation: {
         kind: "edit_cells",
         tableIndex: 0,
-        cells: [{ row: 2, col: 5, insertText: "Complies", rowContext: "URS-5" }],
+        cells: [{ row: 2, col: 7, insertText: "Complies", rowContext: "URS-5" }],
       },
       ledger,
       policy: "block",
@@ -1276,7 +1279,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.operation).toMatchObject({ kind: "edit_cells", cells: [] });
   });
 
-  it("keeps an explicit clear of filled Stage / Section / Remarks as a card", () => {
+  it("keeps an explicit clear of filled family / Remarks cells as a card", () => {
     const ledger = new CitationPageLedger();
     const result = groundTableOperation({
       operation: {
@@ -1285,23 +1288,15 @@ describe("groundTableOperation optional RTM columns", () => {
         cells: [
           {
             row: 2,
-            col: 3,
+            col: 6,
             rowKey: "URS-9",
-            expectedText: "PQ [Performance Qualification.PDF, p. 8]",
+            expectedText: "8.1 [Performance Qualification.PDF, p. 8]",
             insertText: "",
             rowContext: "URS-9\nPQ\n8.1\nComplies",
           },
           {
             row: 2,
-            col: 4,
-            rowKey: "URS-9",
-            expectedText: "8.1",
-            insertText: "",
-            rowContext: "URS-9\nPQ\n8.1\nComplies",
-          },
-          {
-            row: 2,
-            col: 5,
+            col: 7,
             rowKey: "URS-9",
             expectedText: "Complies",
             insertText: "",
@@ -1320,9 +1315,9 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    expect(cells).toHaveLength(3);
+    expect(cells).toHaveLength(2);
     expect(cells.every((cell) => cell.insertText === "")).toBe(true);
-    expect(cells.map((cell) => cell.col).toSorted()).toEqual([3, 4, 5]);
+    expect(cells.map((cell) => cell.col).toSorted()).toEqual([6, 7]);
   });
 
   it("sets DQ / Section 4 / NA from a Design Qualification N/A page", () => {
@@ -1362,25 +1357,17 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 3,
             rowKey: "URS-51",
             expectedText: "",
-            insertText: "DQ",
-            rowContext: "URS-51\nSpare parts list",
-          },
-          {
-            row: 6,
-            col: 4,
-            rowKey: "URS-51",
-            expectedText: "",
             insertText: "4",
             rowContext: "URS-51\nSpare parts list",
           },
           {
             row: 6,
-            col: 5,
+            col: 7,
             rowKey: "URS-51",
             expectedText: "",
             insertText: "NA",
             rowContext: "URS-51\nSpare parts list",
-          },
+          }
         ],
       },
       ledger,
@@ -1392,9 +1379,8 @@ describe("groundTableOperation optional RTM columns", () => {
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const byCol = new Map(cells.map((cell) => [cell.col, cell.insertText]));
-    expect(byCol.get(3)).toMatch(/^DQ\b/);
-    expect(byCol.get(4)).toBe("4");
-    expect(byCol.get(5)).toBe("NA");
+    expect(byCol.get(3)).toMatch(/^4\b/);
+    expect(byCol.get(7)).toBe("NA");
   });
 
   it("keeps chat DQ / 12.1 even when Installation Qualification also topic-matches", () => {
@@ -1425,14 +1411,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-5",
-            "Jacket temperature",
-            "20-25 °C",
-            "DQ",
-            "12.1",
-            "Complies",
-          ],
+          ["URS-5", "Jacket temperature", "20-25 °C", "12.1", "", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1443,9 +1422,9 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toMatch(/^DQ\b/);
+    expect(keptRow[3]).toContain("12.1");
     expect(keptRow[3]).not.toMatch(/\bIQ\b/);
-    expect(keptRow[4]).toContain("12.1");
+    expect(keptRow[4]).toBe("");
     expect(keptRow[4]).not.toContain("13.3.5.1");
   });
 
@@ -1477,14 +1456,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-5",
-            "Jacket temperature",
-            "20-25 °C",
-            "IQ",
-            "13.3.5.1",
-            "Complies",
-          ],
+          ["URS-5", "Jacket temperature", "20-25 °C", "", "13.3.5.1", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1495,11 +1467,11 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toMatch(/^IQ\b/);
+    expect(keptRow[3]).toBe("");
     expect(keptRow[3]).not.toMatch(/\bPQ\b/);
     expect(keptRow[4]).toContain("13.3.5.1");
     expect(keptRow[4]).not.toContain("8.2");
-    expect(keptRow[5]).toMatch(/Complies/i);
+    expect(keptRow[7]).toMatch(/Complies/i);
   });
 
   it("clears a PQ page-counter Section cell instead of rewriting it to a dotted heading", () => {
@@ -1530,14 +1502,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-1",
-            "Reactor Capacity",
-            "8000 L",
-            "PQ",
-            "16 – Water batch at 8000 L capacity",
-            "Complies",
-          ],
+          ["URS-1", "Reactor Capacity", "8000 L", "", "", "", "16 – Water batch at 8000 L capacity", "Complies"],
         ],
       },
       ledger,
@@ -1548,11 +1513,10 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow[3]).toMatch(/^PQ\b/);
-    expect(keptRow[4]).toBe("");
-    expect(keptRow[4]).not.toMatch(/\b16\b/);
-    expect(keptRow[4]).not.toContain("8.2.3");
-    expect(keptRow[5]).toMatch(/Complies/i);
+    expect(keptRow[6]).toBe("");
+    expect(keptRow[6]).not.toMatch(/\b16\b/);
+    expect(keptRow[6]).not.toContain("8.2.3");
+    expect(keptRow[7]).toMatch(/Complies/i);
   });
 
   it("does not invent Stage when the URS copy left the three cells empty", () => {
@@ -1575,7 +1539,7 @@ describe("groundTableOperation optional RTM columns", () => {
       operation: {
         kind: "insert_rows",
         tableIndex: 0,
-        rows: [["URS-5", "Jacket temperature", "20-25 °C", "", "", ""]],
+        rows: [["URS-5", "Jacket temperature", "20-25 °C", "", "", "", "", ""]],
       },
       ledger,
       policy: "block",
@@ -1585,7 +1549,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const keptRow =
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
-    expect(keptRow.slice(3)).toEqual(["", "", ""]);
+    expect(keptRow.slice(3)).toEqual(["", "", "", "", ""]);
   });
 
   it("clears unsupported DQ Stage on a neighbour MOC page but keeps chat Section 12.1", () => {
@@ -1616,14 +1580,7 @@ describe("groundTableOperation optional RTM columns", () => {
         kind: "insert_rows",
         tableIndex: 0,
         rows: [
-          [
-            "URS-2",
-            "MOC",
-            "High-quality Glass Lining and thickness should not be less than 1 mm",
-            "DQ",
-            "12.1",
-            "Complies",
-          ],
+          ["URS-2", "MOC", "High-quality Glass Lining and thickness should not be less than 1 mm", "12.1", "", "", "", "Complies"],
         ],
       },
       ledger,
@@ -1635,9 +1592,9 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
     expect(keptRow[0]).toContain("URS-2");
     expect(keptRow[2]).toContain("Glass Lining");
-    expect(keptRow[3]).toBe("");
-    expect(keptRow[4]).toContain("12.1");
-    expect(keptRow[5]).toBe("");
+    expect(keptRow[3]).toContain("12.1");
+    expect(keptRow[4]).toBe("");
+    expect(keptRow[7]).toBe("");
   });
 
   it("keeps leftover <remarks> when no protocol page matches so lookup can search", () => {
@@ -1657,12 +1614,12 @@ describe("groundTableOperation optional RTM columns", () => {
         cells: [
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-4",
             expectedText: "",
             insertText: "<remarks>",
             rowContext: "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
-          },
+          }
         ],
       },
       ledger,
@@ -1725,7 +1682,7 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-13",
             expectedText: "",
             insertText: "<remarks>",
@@ -1733,13 +1690,13 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-4",
             expectedText: "",
             insertText: "<remarks>",
             rowContext:
               "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
-          },
+          }
         ],
       },
       ledger,
@@ -1872,8 +1829,8 @@ describe("groundTableOperation optional RTM columns", () => {
               })),
             },
             ...[
-              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", "", "", ""],
             ].map((row) => ({
               type: "tableRow" as const,
               content: row.map((text) => ({
@@ -1890,23 +1847,15 @@ describe("groundTableOperation optional RTM columns", () => {
     const cellsWithMetaRowContext = [
       {
         row: 1,
-        col: 3,
-        rowKey: "URS-41",
-        expectedText: "",
-        insertText: "IQ [Installation Qualification.PDF, p. 42]",
-        rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
-      },
-      {
-        row: 1,
         col: 4,
         rowKey: "URS-41",
         expectedText: "",
-        insertText: "13.6",
+        insertText: "13.6 [Installation Qualification.PDF, p. 42]",
         rowContext: "URS-41\nIQ [Installation Qualification.PDF, p. 42]\n13.6\nComplies",
       },
       {
         row: 1,
-        col: 5,
+        col: 7,
         rowKey: "URS-41",
         expectedText: "",
         insertText: "Complies",
@@ -1929,7 +1878,7 @@ describe("groundTableOperation optional RTM columns", () => {
         ? droppedWithoutLiveRow.operation.cells.map((cell) => cell.insertText)
         : [];
     expect(droppedTexts.join(" ")).toContain("13.6");
-    expect(droppedTexts.join(" ")).not.toMatch(/\bIQ\b/);
+    expect(droppedTexts.join(" ")).toContain("Installation Qualification.PDF");
     expect(droppedTexts.join(" ")).not.toMatch(/Complies/i);
 
     const result = groundTableOperation({
@@ -1951,7 +1900,6 @@ describe("groundTableOperation optional RTM columns", () => {
       .filter((cell) => cell.rowKey === "URS-41")
       .map((cell) => cell.insertText)
       .join(" ");
-    expect(urs41).toMatch(/\bIQ\b/);
     expect(urs41).toContain("13.6");
     expect(urs41).toContain("Installation Qualification.PDF");
     expect(urs41).toMatch(/Complies/i);
@@ -2006,8 +1954,8 @@ describe("groundTableOperation optional RTM columns", () => {
               })),
             },
             ...[
-              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""],
             ].map((row) => ({
               type: "tableRow" as const,
               content: row.map((text) => ({
@@ -2038,28 +1986,19 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 3,
             rowKey: "URS-41",
             expectedText: "",
-            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            insertText: "12.3 [Design Qualification.PDF, p. 13]",
             rowContext:
               "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
           },
           {
             row: 1,
-            col: 4,
-            rowKey: "URS-41",
-            expectedText: "13.6",
-            insertText: "12.3",
-            rowContext:
-              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
-          },
-          {
-            row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-41",
             expectedText: "",
             insertText: "Complies",
             rowContext:
               "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
-          },
+          }
         ],
       },
       ledger,
@@ -2137,8 +2076,8 @@ describe("groundTableOperation optional RTM columns", () => {
               })),
             },
             ...[
-              ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+              ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+              ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""],
             ].map((row) => ({
               type: "tableRow" as const,
               content: row.map((text) => ({
@@ -2162,28 +2101,19 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 3,
             rowKey: "URS-41",
             expectedText: "",
-            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            insertText: "12.3 [Design Qualification.PDF, p. 13]",
             rowContext:
               "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
           },
           {
             row: 1,
-            col: 4,
-            rowKey: "URS-41",
-            expectedText: "13.6",
-            insertText: "12.3",
-            rowContext:
-              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
-          },
-          {
-            row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-41",
             expectedText: "",
             insertText: "Complies",
             rowContext:
               "URS-41\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies",
-          },
+          }
         ],
       },
       ledger,
@@ -2197,13 +2127,13 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     const blob = urs41.map((cell) => cell.insertText).join(" ");
-    expect(blob).toMatch(/\bDQ\b/);
+    expect(blob).toContain("Design Qualification.PDF");
     expect(blob).toMatch(/Complies/i);
     expect(blob).toContain("12.3");
-    const section = urs41.find((cell) => cell.col === 4);
+    const section = urs41.find((cell) => cell.col === 3);
     expect(section?.insertText).toContain("12.3");
     expect(urs41.some((cell) => cell.col === 3)).toBe(true);
-    expect(urs41.some((cell) => cell.col === 5)).toBe(true);
+    expect(urs41.some((cell) => cell.col === 7)).toBe(true);
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
       id: "sug-table7-urs41-fill-empty",
@@ -2219,12 +2149,10 @@ describe("groundTableOperation optional RTM columns", () => {
     const cellsInRow = (rows[2]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    const sectionCell = JSON.stringify(cellsInRow[4]);
+    const sectionCell = JSON.stringify(cellsInRow[3]);
     expect(sectionCell).toContain(suggestionInsertMarkName);
-    const stageCell = JSON.stringify(cellsInRow[3]);
-    expect(stageCell).toMatch(/\bDQ\b/);
-    expect(stageCell).toContain(suggestionInsertMarkName);
-    const remarksCell = JSON.stringify(cellsInRow[5]);
+    expect(sectionCell).toContain("12.3");
+    const remarksCell = JSON.stringify(cellsInRow[7]);
     expect(remarksCell).toMatch(/Complies/i);
     expect(remarksCell).toContain(suggestionInsertMarkName);
   });
@@ -2249,17 +2177,9 @@ describe("groundTableOperation optional RTM columns", () => {
             col: 3,
             rowKey: "URS-41",
             expectedText: "",
-            insertText: "DQ [Design Qualification.PDF, p. 13]",
+            insertText: "12.3 [Design Qualification.PDF, p. 13]",
             rowContext: "URS-41\nGaskets\n13.6",
-          },
-          {
-            row: 1,
-            col: 4,
-            rowKey: "URS-41",
-            expectedText: "13.6",
-            insertText: "12.3",
-            rowContext: "URS-41\nGaskets\n13.6",
-          },
+          }
         ],
       },
       ledger,
@@ -2286,14 +2206,7 @@ describe("groundTableOperation optional RTM columns", () => {
               },
               {
                 type: "tableRow",
-                content: [
-                  "URS-41",
-                  "Gaskets",
-                  "PTFE or Equivalent [1]",
-                  "",
-                  "13.6",
-                  "",
-                ].map((text) => ({
+                content: ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""].map((text) => ({
                   type: "tableCell" as const,
                   content: text
                     ? [{ type: "paragraph", content: [{ type: "text", text }] }]
@@ -2309,9 +2222,9 @@ describe("groundTableOperation optional RTM columns", () => {
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const blob = cells.map((cell) => cell.insertText).join(" ");
-    expect(blob).toMatch(/\bDQ\b/);
     expect(blob).toContain("12.3");
-    expect(cells.find((cell) => cell.col === 4)?.insertText).toContain("12.3");
+    expect(cells.find((cell) => cell.col === 3)?.insertText).toContain("12.3");
+    expect(cells.find((cell) => cell.col === 4)?.insertText ?? "").not.toContain("12.3");
   });
 
   it("treats Verified after the next URS ID as a page-level pass token without topic match", () => {
@@ -2374,14 +2287,7 @@ describe("groundTableOperation optional RTM columns", () => {
             },
             {
               type: "tableRow",
-              content: [
-                "URS-41",
-                "Gaskets",
-                "PTFE or Equivalent [1]",
-                "",
-                "13.6",
-                "",
-              ].map((text) => ({
+              content: ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""].map((text) => ({
                 type: "tableCell" as const,
                 content: text
                   ? [{ type: "paragraph", content: [{ type: "text", text }] }]
@@ -2399,31 +2305,22 @@ describe("groundTableOperation optional RTM columns", () => {
         cells: [
           {
             row: 1,
-            col: 3,
-            rowKey: "URS-41",
-            expectedText: "",
-            insertText: "IQ [Installation Qualification.PDF, p. 42]",
-            rowContext:
-              "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
-          },
-          {
-            row: 1,
             col: 4,
             rowKey: "URS-41",
             expectedText: "13.6",
-            insertText: "13.7.5",
+            insertText: "13.7.5 [Installation Qualification.PDF, p. 42]",
             rowContext:
               "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-41",
             expectedText: "",
             insertText: "Complies",
             rowContext:
               "URS-41\nDQ [Design Qualification.PDF, p. 13]\n13.7.5\nComplies",
-          },
+          }
         ],
       },
       ledger,
@@ -2437,7 +2334,7 @@ describe("groundTableOperation optional RTM columns", () => {
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     const urs41 = cells.filter((cell) => cell.rowKey === "URS-41");
     expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
-    expect(urs41.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+    expect(urs41.find((cell) => cell.col === 7)?.insertText).toMatch(/Complies/i);
     const section = urs41.find((cell) => cell.col === 4);
     expect(section?.insertText).toContain("13.7.5");
 
@@ -2455,7 +2352,7 @@ describe("groundTableOperation optional RTM columns", () => {
     const cellsInRow = (rows[1]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    const remarksCell = JSON.stringify(cellsInRow[5]);
+    const remarksCell = JSON.stringify(cellsInRow[7]);
     expect(remarksCell).toMatch(/Complies/i);
     expect(remarksCell).toContain(suggestionInsertMarkName);
     const sectionCell = JSON.stringify(cellsInRow[4]);
@@ -2573,22 +2470,8 @@ describe("groundTableOperation optional RTM columns", () => {
     ).toBe("8.2.3 – Heating Trial");
 
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-1",
-        "Reactor Capacity",
-        "8000 L",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.3",
-        "Complies",
-      ],
-      [
-        "URS-2",
-        "MOC",
-        "High-quality Glass Lining and thickness should not be less than 1 mm",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.1",
-        "Complies",
-      ],
+      ["URS-1", "Reactor Capacity", "8000 L", "", "", "", "8.2.3", "Complies"],
+      ["URS-2", "MOC", "High-quality Glass Lining and thickness should not be less than 1 mm", "", "", "", "8.2.1", "Complies"],
     ]);
     const result = groundTableOperation({
       operation: {
@@ -2605,7 +2488,7 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-1",
             expectedText: "",
             insertText: "Complies",
@@ -2622,13 +2505,13 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-2",
             expectedText: "",
             insertText: "Complies",
             rowContext:
               "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm",
-          },
+          }
         ],
       },
       ledger,
@@ -2685,24 +2568,10 @@ describe("groundTableOperation optional RTM columns", () => {
       },
     ]);
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-1",
-        "Reactor Capacity",
-        "8000 L",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.3",
-        "Complies",
-      ],
-      [
-        "URS-2",
-        "MOC",
-        "High-quality Glass Lining and thickness should not be less than 1 mm",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.1",
-        "Complies",
-      ],
-      ["URS-10", "Agitator RPM", "50 ± 10 RPM", "", "", ""],
-      ["URS-13", "Jacket Type", "Limpet/Plain", "", "", ""],
+      ["URS-1", "Reactor Capacity", "8000 L", "", "", "", "8.2.3", "Complies"],
+      ["URS-2", "MOC", "High-quality Glass Lining and thickness should not be less than 1 mm", "", "", "", "8.2.1", "Complies"],
+      ["URS-10", "Agitator RPM", "50 ± 10 RPM", "", "", "", "", ""],
+      ["URS-13", "Jacket Type", "Limpet/Plain", "", "", "", "", ""],
     ]);
     const neighbour = "8.2.4 – Operational verification of agitator at varying RPM";
     const result = groundTableOperation({
@@ -2720,7 +2589,7 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-1",
             expectedText: "",
             insertText: "Complies",
@@ -2737,13 +2606,13 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-2",
             expectedText: "",
             insertText: "Complies",
             rowContext:
               "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm",
-          },
+          }
         ],
       },
       ledger,
@@ -2794,14 +2663,7 @@ describe("groundTableOperation optional RTM columns", () => {
       },
     ]);
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-1",
-        "Reactor Capacity",
-        "8000 L",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.3",
-        "Complies",
-      ],
+      ["URS-1", "Reactor Capacity", "8000 L", "", "", "", "8.2.3", "Complies"],
     ]);
     const requested = "8.2.3 – Heating trial at 8000 L working volume";
     const result = groundTableOperation({
@@ -2846,15 +2708,8 @@ describe("groundTableOperation optional RTM columns", () => {
       },
     ]);
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-1",
-        "Reactor Capacity",
-        "8000 L",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.3",
-        "Complies",
-      ],
-      ["URS-10", "Agitator RPM", "50 ± 10 RPM", "", "", ""],
+      ["URS-1", "Reactor Capacity", "8000 L", "", "", "", "8.2.3", "Complies"],
+      ["URS-10", "Agitator RPM", "50 ± 10 RPM", "", "", "", "", ""],
     ]);
     const requested = "8.2.2 – Agitator Trial at 50 ± 10 RPM";
     const result = groundTableOperation({
@@ -2931,14 +2786,7 @@ describe("groundTableOperation optional RTM columns", () => {
     });
 
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-46",
-        "Pressure Safety",
-        "Pressure relief valve to be installed on the vessel.",
-        "PQ [Performance Qualification.PDF, p. 20]",
-        "8.2.3 – Heating trial at 8000 L working volume",
-        "Complies",
-      ],
+      ["URS-46", "Pressure Safety", "Pressure relief valve to be installed on the vessel.", "", "", "", "8.2.3 – Heating trial at 8000 L working volume", "Complies"],
     ]);
     const requestedSection =
       "13.8.5.1 – Pressure safety relief valve (PSV-13001) installation and calibration check";
@@ -2949,20 +2797,12 @@ describe("groundTableOperation optional RTM columns", () => {
         cells: [
           {
             row: 1,
-            col: 3,
-            rowKey: "URS-46",
-            expectedText: "",
-            insertText: "IQ [Installation Qualification.PDF, p. 48]",
-            rowContext: "URS-46\nPressure Safety\nPressure relief valve",
-          },
-          {
-            row: 1,
             col: 4,
             rowKey: "URS-46",
             expectedText: "",
             insertText: requestedSection,
             rowContext: "URS-46\nPressure Safety\nPressure relief valve",
-          },
+          }
         ],
       },
       ledger,
@@ -2974,12 +2814,9 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    const stage = cells.find((cell) => cell.col === 3)?.insertText ?? "";
     const section = cells.find((cell) => cell.col === 4)?.insertText ?? "";
-    expect(stage).toMatch(/^IQ\b/);
-    expect(stage).toContain("Installation Qualification.PDF");
-    expect(stage).not.toMatch(/\bPQ\b/);
     expect(section).toContain("13.8.5.1");
+    expect(section).not.toMatch(/\bPQ\b/);
     expect(section).not.toMatch(/^8\.2\.3/);
     expect(section).toBe(requestedSection);
   });
@@ -3002,14 +2839,7 @@ describe("groundTableOperation optional RTM columns", () => {
       },
     ]);
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-45",
-        "Thermal Safety",
-        "Hot surfaces shall be insulated and clad to prevent burns.",
-        "PQ [Performance Qualification.PDF, p. 8]",
-        "8.2.1 – The Performance Qualification (PQ) ensures that critical unit operations-heating, reflux, cooling, and chilling consistently perform as intended",
-        "Complies",
-      ],
+      ["URS-45", "Thermal Safety", "Hot surfaces shall be insulated and clad to prevent burns.", "", "", "", "8.2.1 – The Performance Qualification (PQ) ensures that critical unit operations-heating, reflux, cooling, and chilling consistently perform as intended", "Complies"],
     ]);
     const requestedSection =
       "13.3.5.1 – Physical verification of thermal insulation and SS cladding";
@@ -3020,20 +2850,12 @@ describe("groundTableOperation optional RTM columns", () => {
         cells: [
           {
             row: 1,
-            col: 3,
-            rowKey: "URS-45",
-            expectedText: "",
-            insertText: "IQ [Installation Qualification.PDF, p. 21]",
-            rowContext: "URS-45\nThermal Safety\nHot surfaces insulated",
-          },
-          {
-            row: 1,
             col: 4,
             rowKey: "URS-45",
             expectedText: "",
             insertText: requestedSection,
             rowContext: "URS-45\nThermal Safety\nHot surfaces insulated",
-          },
+          }
         ],
       },
       ledger,
@@ -3045,7 +2867,6 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    expect(cells.find((cell) => cell.col === 3)?.insertText).toMatch(/^IQ\b/);
     expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
       requestedSection
     );
@@ -3072,14 +2893,7 @@ describe("groundTableOperation optional RTM columns", () => {
       },
     ]);
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-49",
-        "Overpressure Safety",
-        "Rupture disc to be provided for pressure spike protection.",
-        "PQ [Performance Qualification.PDF, p. 21]",
-        "11.1 – Rupture disc installation and burst pressure verification",
-        "Complies",
-      ],
+      ["URS-49", "Overpressure Safety", "Rupture disc to be provided for pressure spike protection.", "", "", "", "11.1 – Rupture disc installation and burst pressure verification", "Complies"],
     ]);
     const requestedSection =
       "13.8.5.4 – Rupture disc (RD-13001) installation and burst pressure verification";
@@ -3134,14 +2948,7 @@ describe("groundTableOperation optional RTM columns", () => {
     ).toBe("8.2.3 – Fill the reactor to 8000 L working volume and heat");
 
     const fieldDoc = rtmProcessDoc([
-      [
-        "URS-1",
-        "Reactor Capacity",
-        "8000 L",
-        "PQ [Performance Qualification.PDF, p. 19]",
-        "8.2.3",
-        "Complies",
-      ],
+      ["URS-1", "Reactor Capacity", "8000 L", "", "", "", "8.2.3", "Complies"],
     ]);
     const result = groundTableOperation({
       operation: {
@@ -3491,10 +3298,10 @@ describe("groundTableOperation optional RTM columns", () => {
           },
           {
             row: 1,
-            col: 5,
+            col: 7,
             rowKey: "URS-4",
             insertText: "<remarks>",
-          },
+          }
         ],
       }
     );
@@ -3606,7 +3413,7 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
     ).toBe(true);
   });
 
-  it("keeps search open after an IQ hit until PQ and OQ are queried", () => {
+  it("keeps search open after an IQ hit until every family is queried", () => {
     expect(
       shouldKeepRtmProtocolSearchOpen(
         ["URS-41", "installation qualification gaskets"],
@@ -3615,11 +3422,11 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
     ).toBe(true);
   });
 
-  it("closes once every higher protocol family than the best hit was queried", () => {
+  it("closes once every protocol family has been queried", () => {
     expect(
       shouldKeepRtmProtocolSearchOpen(
         [
-          "URS-41",
+          "design qualification gaskets",
           "installation qualification gaskets",
           "operational qualification gaskets",
           "performance qualification gaskets",
@@ -3629,13 +3436,13 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
     ).toBe(false);
   });
 
-  it("closes when PQ is already the best hit", () => {
+  it("keeps search open when PQ is the only family queried", () => {
     expect(
       shouldKeepRtmProtocolSearchOpen(
         ["performance qualification gaskets"],
         ["Performance Qualification.PDF"]
       )
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not keep search open for a non-protocol identifier hit", () => {

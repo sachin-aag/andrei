@@ -11,6 +11,7 @@ import {
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
+  QSR_RTM_FAMILY_HEADERS,
   QSR_TABLE_HEADERS,
 } from "@/lib/document-types/qsr/sections";
 import {
@@ -121,8 +122,9 @@ export const QSR_IDENTITY_TABLE_SECTIONS = [
 export type QsrRtmSection = (typeof QSR_RTM_SECTIONS)[number];
 export type QualDocFamily = "urs" | "dq" | "iq" | "oq" | "pq" | "ds";
 
-/** Highest remaining-column Stage first. Single cell — not a compound list. */
+/** Display order in the editor (DQ → PQ). Not a fill-priority walk. */
 export const QSR_STAGE_RANK = ["pq", "oq", "iq", "dq"] as const;
+export const QSR_RTM_FAMILY_ORDER = ["dq", "iq", "oq", "pq"] as const;
 export type RtmStageFamily = (typeof QSR_STAGE_RANK)[number];
 
 const STAGE_LABEL: Record<RtmStageFamily, "PQ" | "OQ" | "IQ" | "DQ"> = {
@@ -177,7 +179,7 @@ export function isQsrRtmSection(
   );
 }
 
-/** Stage / Section / Remarks may empty instead of failing the URS copy. */
+/** Family columns (DQ / IQ / OQ / PQ) and Remarks may empty or NA instead of failing the URS copy. */
 export function isQsrRtmOptionalReferenceColumn(
   section: string | null | undefined,
   col: number
@@ -185,31 +187,66 @@ export function isQsrRtmOptionalReferenceColumn(
   if (!isQsrRtmSection(section)) return false;
   const header = QSR_TABLE_HEADERS[section][col];
   if (!header) return false;
-  const name = header.toLowerCase();
-  return (
-    name.includes("qualification stage") ||
-    (name.includes("reference") && name.includes("section")) ||
-    name === "remarks"
-  );
+  if (header === "Remarks") return true;
+  return (QSR_RTM_FAMILY_HEADERS as readonly string[]).includes(header);
+}
+
+export function rtmFamilyFromColumnHeader(
+  header: string | null | undefined
+): RtmStageFamily | null {
+  if (!header) return null;
+  const match = /^reference\s+[–-]\s+(dq|iq|oq|pq)$/i.exec(header.trim());
+  return (match?.[1]?.toLowerCase() as RtmStageFamily | undefined) ?? null;
+}
+
+export function rtmFamilyAtColumn(
+  section: string | null | undefined,
+  col: number
+): RtmStageFamily | null {
+  if (!isQsrRtmSection(section)) return null;
+  return rtmFamilyFromColumnHeader(QSR_TABLE_HEADERS[section][col]);
 }
 
 export function rtmReferenceColumnIndexes(
   section: string | null | undefined
-): { stage: number; section: number; remarks: number } | null {
+): {
+  dq: number;
+  iq: number;
+  oq: number;
+  pq: number;
+  remarks: number;
+} | null {
   if (!isQsrRtmSection(section)) return null;
   const headers = QSR_TABLE_HEADERS[section];
-  let stage = -1;
-  let sectionCol = -1;
+  const families: Partial<Record<RtmStageFamily, number>> = {};
   let remarks = -1;
   for (let i = 0; i < headers.length; i++) {
-    const name = headers[i]!.toLowerCase();
-    if (name.includes("qualification stage")) stage = i;
-    else if (name.includes("reference") && name.includes("section")) {
-      sectionCol = i;
-    } else if (name === "remarks") remarks = i;
+    const family = rtmFamilyFromColumnHeader(headers[i]);
+    if (family) families[family] = i;
+    else if (headers[i] === "Remarks") remarks = i;
   }
-  if (stage < 0 || sectionCol < 0 || remarks < 0) return null;
-  return { stage, section: sectionCol, remarks };
+  if (
+    families.dq == null ||
+    families.iq == null ||
+    families.oq == null ||
+    families.pq == null ||
+    remarks < 0
+  ) {
+    return null;
+  }
+  return {
+    dq: families.dq,
+    iq: families.iq,
+    oq: families.oq,
+    pq: families.pq,
+    remarks,
+  };
+}
+
+const RTM_NOT_FOUND_RE = /^(?:n\/?a|n\.a\.|not\s+applicable)$/i;
+
+export function isRtmNotFoundMarker(text: string | null | undefined): boolean {
+  return RTM_NOT_FOUND_RE.test(text?.replace(/\[[^\]]*\]/g, "").trim() ?? "");
 }
 
 export function isQsrIdentityTableSection(
@@ -988,9 +1025,9 @@ const RTM_PROTOCOL_QUERY_RE: Record<RtmStageFamily, RegExp> = {
 };
 
 /**
- * Identifier-only greps often land on a DQ page that prints the URS ID, or
- * on IQ before PQ / OQ have been searched. Keep search open while a higher
- * protocol family than the best hit has not been queried.
+ * Identifier-only greps often land on a DQ page that prints the URS ID.
+ * Keep search open until every protocol family (DQ, IQ, OQ, PQ) has been
+ * queried — any order. The four family columns each need their own document.
  */
 export function shouldKeepRtmProtocolSearchOpen(
   queries: readonly string[],
@@ -1004,14 +1041,9 @@ export function shouldKeepRtmProtocolSearchOpen(
         (QSR_STAGE_RANK as readonly string[]).includes(family)
     );
   if (hitFamilies.length === 0) return false;
-  const bestHitRank = Math.min(
-    ...hitFamilies.map((family) => QSR_STAGE_RANK.indexOf(family))
-  );
-  if (bestHitRank <= 0) return false;
   const joined = queries.join("\n");
-  return QSR_STAGE_RANK.some(
-    (family, index) =>
-      index < bestHitRank && !RTM_PROTOCOL_QUERY_RE[family].test(joined)
+  return QSR_RTM_FAMILY_ORDER.some(
+    (family) => !RTM_PROTOCOL_QUERY_RE[family].test(joined)
   );
 }
 
@@ -1149,7 +1181,7 @@ function cleanAuditLine(raw: string): string {
 }
 
 /**
- * Reviewer line for Reference – Section. A heading title is fine
+ * Reviewer line for a family column. A heading title is fine
  * (`Heating Trial`); so is a procedure or observation from that same
  * block (`Fill the reactor to 8000 L`). Result-only leftovers
  * (`Result: Complies`) are not.
@@ -1419,7 +1451,7 @@ function headingFromQuotes(
 }
 
 /**
- * Reference – Section is `{protocol section number} – {one line about the
+ * A family column is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
  * one; the model's one-line description is kept when it is clean, else any
  * audit line from that section (heading title, procedure, or observation).
@@ -1738,7 +1770,7 @@ export function syntheticUnsupportedFact(text: string): HardFact {
   };
 }
 
-/** Remarks / stage cells that must not persist stock language. */
+/** Remarks / family cells that must not persist stock language. */
 export function qsrRtmCellUnsupported(
   cell: string,
   context: string,
@@ -1747,6 +1779,7 @@ export function qsrRtmCellUnsupported(
   const key = rowKeyFromContext(context);
   const trimmed = cell.trim();
   if (!key || !trimmed) return null;
+  if (isRtmNotFoundMarker(trimmed)) return null;
 
   if (STOCK_BARE_SECTION_13_RE.test(trimmed)) {
     return syntheticUnsupportedFact(trimmed);
@@ -1945,13 +1978,15 @@ export function extraQsrUnsupported(input: {
     out.push(fact);
   };
   add(qsrRtmCellUnsupported(input.cell, input.context, input.ledger));
-  const cols = rtmReferenceColumnIndexes(input.section);
-  if (cols && input.tableCol === cols.section) {
+  const family =
+    input.tableCol != null
+      ? rtmFamilyAtColumn(input.section, input.tableCol)
+      : null;
+  if (family && input.cell.trim() && !isRtmNotFoundMarker(input.cell)) {
     const trimmed = input.cell.trim();
-    const family = stageFamilyFromCell(rowStageFromContext(input.context));
     if (
-      trimmed &&
-      !rtmSectionCellText(trimmed, family ? { family } : null)
+      stageFamilyFromCell(trimmed) ||
+      !rtmSectionCellText(trimmed, { family })
     ) {
       add(syntheticUnsupportedFact(trimmed));
     }
@@ -1988,7 +2023,7 @@ export function extraQsrUnsupported(input: {
   return out;
 }
 
-/** Empty Stage / Section / Remarks `edit_cells` — a clear, not a URS copy. */
+/** Empty family / Remarks `edit_cells` — a clear, not a URS copy. */
 export function isClearOnlyOptionalRtmEdit(
   operation: TableOperation,
   section?: string | null

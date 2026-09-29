@@ -140,7 +140,7 @@ function bannerRow(text: string, colspan: number): JSONContent {
 }
 
 function rtmRow(id: string, requirement = `${id} text`): string[] {
-  return [id, "Parameter", requirement, "", "", ""];
+  return [id, "Parameter", requirement, "", "", "", "", ""];
 }
 
 function rtmDoc(ids: string[], bannersAt?: Record<number, string>): JSONContent {

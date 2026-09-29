@@ -30,12 +30,13 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "do not paste a protocol-to-URS mapping in chat"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
-      "leave those three cells empty for that row"
+      "write NA in that family cell"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain(
       "Search the attached Design / Installation / Operational / Performance Qualification PDFs for each URS row"
     );
-    expect(QSR_DRAFTING_GUIDANCE).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("four family columns");
+    expect(QSR_DRAFTING_GUIDANCE).not.toContain("PQ, then OQ, then IQ, then DQ");
     expect(QSR_DRAFTING_GUIDANCE).toContain("running header");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Verified By signature block");
     expect(QSR_DRAFTING_GUIDANCE).toContain("do not add new group rows");

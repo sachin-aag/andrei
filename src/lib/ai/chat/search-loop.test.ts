@@ -76,7 +76,7 @@ describe("searchLoopDirective", () => {
     ).toBe("continue");
   });
 
-  it("keeps search open after reading that DQ page until higher protocol families are queried", () => {
+  it("keeps search open after reading that DQ page until every protocol family is queried", () => {
     expect(
       searchLoopDirective([
         {
@@ -149,6 +149,8 @@ describe("searchLoopDirective", () => {
               toolName: "search_documents",
               input: {
                 queries: [
+                  "design qualification gaskets",
+                  "installation qualification gaskets",
                   "operational qualification gaskets",
                   "performance qualification gaskets",
                 ],

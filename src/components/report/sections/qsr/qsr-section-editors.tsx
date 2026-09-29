@@ -10,6 +10,8 @@ import {
   EMPTY_QSR_CONTENT,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  QSR_TABLE_HEADERS,
+  ensureRtmFamilyColumns,
   ensureVolumetricFormRows,
   isQsrTableSectionKey,
   shapeOperatingRangeTable,
@@ -29,6 +31,9 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
     if (!doc) return doc;
     if (section === "qsr_operating_range") return shapeOperatingRangeTable(doc);
     if (section === "qsr_volumetric_details") return ensureVolumetricFormRows(doc);
+    if (isQsrTableSectionKey(section) && section.startsWith("qsr_rtm_")) {
+      return ensureRtmFamilyColumns(doc, QSR_TABLE_HEADERS[section]);
+    }
     return doc;
   }, [section, doc]);
 

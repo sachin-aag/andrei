@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v168-qsr-no-rtm-ranker");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v169-qsr-rtm-family-columns");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -29,7 +29,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("stock Complies / bare Section 13");
     expect(prompt).toContain("8.2.3 – Heating trial at 8000 L working volume");
     expect(prompt).toContain(
-      "the card copies the grounded Stage / Section / Remarks insertText you already wrote"
+      "the card copies the grounded family-column / Remarks insertText you already wrote"
     );
     expect(prompt).toContain("13.8.5.1 PSV");
     expect(prompt).toContain("not a different test heading than the card");
@@ -49,13 +49,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("proposedRowKeys");
     expect(prompt).toContain("droppedRowKeys");
     expect(prompt).toContain("not one card per URS row");
-    expect(prompt).toContain("Do not write Stage as PQ/OQ or PQ/IQ");
+    expect(prompt).toContain("Do not combine families in one cell");
     expect(prompt).toContain(
-      "leave those three cells empty for that row"
+      "write NA in that family cell"
     );
     expect(prompt).toContain("Never write `<remarks>`");
-    expect(prompt).toContain("<qualification stage>");
-    expect(prompt).toContain("PQ, then OQ, then IQ, then DQ");
+    expect(prompt).toContain("Fill every matching family column");
+    expect(prompt).not.toContain("PQ, then OQ, then IQ, then DQ");
     expect(prompt).toContain("fill or update RTM Reference cells");
     expect(prompt).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");
     expect(prompt).toContain("8.2.3 may become 8.2.3 – Heating Trial");
@@ -66,10 +66,10 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("counts only cells that actually change");
     expect(prompt).toContain(
-      "one requirement ID is not one grep when filling RTM Stage"
+      "one requirement ID is not one grep when filling RTM Reference – DQ / IQ / OQ / PQ"
     );
     expect(prompt).toContain(
-      "An IQ protocol hit is not enough while PQ or OQ have not been queried"
+      "A hit on one family is not enough"
     );
     expect(prompt).toContain("do not rewrite a filled cell in the same batch");
     expect(prompt).toContain(
