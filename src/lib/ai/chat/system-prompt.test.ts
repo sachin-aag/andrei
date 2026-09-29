@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v169-qsr-rtm-family-columns");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v170-qsr-rtm-family-columns");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -55,6 +55,7 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain("Never write `<remarks>`");
     expect(prompt).toContain("Fill every matching family column");
+    expect(prompt).toContain("only the source PDF changes");
     expect(prompt).not.toContain("PQ, then OQ, then IQ, then DQ");
     expect(prompt).toContain("fill or update RTM Reference cells");
     expect(prompt).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");

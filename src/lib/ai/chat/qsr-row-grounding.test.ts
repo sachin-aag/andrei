@@ -2379,7 +2379,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
-  it("still prefers IQ 13.6 over DQ 12.3 when both protocol pages are cited", () => {
+  it("fills each family from its own protocol when both DQ and IQ pages are cited", () => {
     const ledger = ledgerFromPages([
       {
         filename: "Installation Qualification.PDF",
@@ -2395,15 +2395,24 @@ describe("groundTableOperation optional RTM columns", () => {
           "URS-41 12.3 MOC Details Nozzles & Manhole Gasket: PTFE enveloped asbestos-free inserts & SS corrugated ring Result: Verified",
       },
     ]);
-    const pick = pickRtmReference(
-      ledger,
-      "URS-41",
-      "URS-41\nGaskets\nPTFE or Equivalent [1]\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies"
-    );
-    expect(pick?.stageLabel).toBe("IQ");
-    expect(pick?.sectionHeading).toContain("13.6");
-    expect(pick?.sectionHeading).toContain("Gaskets");
-    expect(pick?.filename).toContain("Installation Qualification");
+    const context =
+      "URS-41\nGaskets\nPTFE or Equivalent [1]\nDQ [Design Qualification.PDF, p. 13]\n12.3\nComplies";
+    expect(
+      pickRtmReference(ledger, "URS-41", context, undefined, "iq")
+    ).toMatchObject({
+      stageLabel: "IQ",
+      pageNumber: 42,
+      sectionHeading: expect.stringContaining("13.6"),
+      filename: expect.stringContaining("Installation Qualification"),
+    });
+    expect(
+      pickRtmReference(ledger, "URS-41", context, undefined, "dq")
+    ).toMatchObject({
+      stageLabel: "DQ",
+      pageNumber: 13,
+      sectionHeading: expect.stringContaining("12.3"),
+      filename: expect.stringContaining("Design Qualification"),
+    });
   });
 
   it("puts protocol section number and activity title in Reference – Section", () => {
@@ -2789,7 +2798,25 @@ describe("groundTableOperation optional RTM columns", () => {
         "URS-46\nPressure Safety\nPressure relief valve",
         "13.8.5.1"
       )?.stageLabel
+    ).toBe("IQ");
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-46",
+        "URS-46\nPressure Safety\nPressure relief valve",
+        "13.8.5.1",
+        "pq"
+      )?.stageLabel
     ).toBe("PQ");
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-46",
+        "URS-46\nPressure Safety\nPressure relief valve",
+        undefined,
+        "dq"
+      )
+    ).toBeNull();
     expect(
       pickRtmReference(
         ledger,

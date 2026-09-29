@@ -122,10 +122,9 @@ export const QSR_IDENTITY_TABLE_SECTIONS = [
 export type QsrRtmSection = (typeof QSR_RTM_SECTIONS)[number];
 export type QualDocFamily = "urs" | "dq" | "iq" | "oq" | "pq" | "ds";
 
-/** Display order in the editor (DQ → PQ). Not a fill-priority walk. */
-export const QSR_STAGE_RANK = ["pq", "oq", "iq", "dq"] as const;
+/** Editor and search order. Each family column fills only from that family's PDF. */
 export const QSR_RTM_FAMILY_ORDER = ["dq", "iq", "oq", "pq"] as const;
-export type RtmStageFamily = (typeof QSR_STAGE_RANK)[number];
+export type RtmStageFamily = (typeof QSR_RTM_FAMILY_ORDER)[number];
 
 const STAGE_LABEL: Record<RtmStageFamily, "PQ" | "OQ" | "IQ" | "DQ"> = {
   pq: "PQ",
@@ -1038,7 +1037,7 @@ export function shouldKeepRtmProtocolSearchOpen(
     .filter(
       (family): family is RtmStageFamily =>
         family != null &&
-        (QSR_STAGE_RANK as readonly string[]).includes(family)
+        (QSR_RTM_FAMILY_ORDER as readonly string[]).includes(family)
     );
   if (hitFamilies.length === 0) return false;
   const joined = queries.join("\n");
@@ -1716,14 +1715,9 @@ export function pickRtmReference(
     preferredSectionNumber?.trim() ||
     rtmCellSectionNumber(firstSectionNumberLine(context)) ||
     undefined;
-  const families: readonly RtmStageFamily[] =
-    preferredFamily &&
-    matchingProtocolPages(ledger, key, preferredFamily, context).length > 0
-      ? [
-          preferredFamily,
-          ...QSR_STAGE_RANK.filter((family) => family !== preferredFamily),
-        ]
-      : QSR_STAGE_RANK;
+  const families: readonly RtmStageFamily[] = preferredFamily
+    ? [preferredFamily]
+    : QSR_RTM_FAMILY_ORDER;
   for (const family of families) {
     const pages = matchingProtocolPages(ledger, key, family, context);
     if (pages.length === 0) continue;
@@ -1785,7 +1779,7 @@ function compliesFamiliesToCheck(options?: {
     options?.tableCol != null
       ? rtmFamilyAtColumn(options.section, options.tableCol)
       : null;
-  return fromCol ? [fromCol] : QSR_STAGE_RANK;
+  return fromCol ? [fromCol] : QSR_RTM_FAMILY_ORDER;
 }
 
 /** Remarks / family cells that must not persist stock language. */

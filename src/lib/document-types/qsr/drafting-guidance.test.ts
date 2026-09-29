@@ -36,6 +36,7 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
       "Search the attached Design / Installation / Operational / Performance Qualification PDFs for each URS row"
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain("four family columns");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("only the source PDF changes");
     expect(QSR_DRAFTING_GUIDANCE).not.toContain("PQ, then OQ, then IQ, then DQ");
     expect(QSR_DRAFTING_GUIDANCE).toContain("running header");
     expect(QSR_DRAFTING_GUIDANCE).toContain("Verified By signature block");
