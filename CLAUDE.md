@@ -6,43 +6,23 @@ with this file, trust `AGENTS.md` / the rules / the code — then fix this file.
 
 ## Project
 
-Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification, a conclusion section, and a demo-only free-form Document (`generic_document`: one TipTap body, no criteria). MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, hides conclusion plus design verification, and adds Quality Risk Assessment (`quality_risk_assessment`, SOP/DP/QA/010) plus the Equipment Lifecycle Report (`equipment_lifecycle_report`). Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
+Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification, a conclusion section, and a demo-only free-form Document (`generic_document`: one TipTap body, no criteria). MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, hides conclusion plus design verification, and adds Quality Risk Assessment (`quality_risk_assessment`, SOP/DP/QA/010) plus the Equipment Lifecycle Report (`equipment_lifecycle_report`) and Investigation Report DS (`failure_investigation_report`, SOP/QA/017-F01 R01). MJ is the only pack running two investigation forms, so it labels them by unit: **Investigation Report DP** (`investigation_report`, SOP/DP/QA/008, Drug Product) and **Investigation Report DS** (SOP/QA/017, Drug Substance). Demo and Convergent keep the plain `Investigation Report` label. Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). 3xper (`ANDREI_CUSTOMER=3xper`) is 3xper Innoventure branding with vendor qualification (`vendor_qualification`, QAD-SOP-MS-001-F04) and the Qualification Summary Report (`qualification_summary_report`, QAD/016/F06-00). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
 
 ## Commands
 
 ```bash
-pnpm install              # install dependencies
-pnpm dev                  # dev server at http://localhost:3000
-pnpm build                # production build (pnpm vercel:build for Vercel CI)
-pnpm lint                 # ESLint
-pnpm typecheck            # tsc --noEmit (strict mode)
-pnpm test                 # Vitest (all unit tests, no watch)
-pnpm test:watch           # Vitest watch mode
-pnpm test:coverage        # Vitest with v8 coverage
 pnpm test -- src/lib/ai/evaluate.test.ts  # run a single test file
-pnpm test:e2e             # Playwright E2E (chromium, hits 127.0.0.1:3000)
 pnpm exec playwright test e2e/auth.spec.ts --project=chromium  # single E2E spec
 pnpm precommit            # lint + typecheck + test (husky hook)
-pnpm db:push              # apply Drizzle schema directly to DB (interactive — prompts in TTY)
-pnpm db:local:push        # non-interactive schema push (use in scripts/CI, not pnpm db:push)
-pnpm db:generate          # generate Drizzle migrations
-pnpm db:migrate           # run Drizzle migrations
-pnpm db:studio            # Drizzle Studio GUI
-pnpm db:local:up          # start local Docker Postgres
-pnpm db:local:down        # stop local Docker Postgres
-pnpm db:local:setup       # up + push schema to local DB
-pnpm db:local:reset       # reset local DB (destructive)
-pnpm db:ensure            # ensure required DB tables/enums exist
-pnpm set-workspace-password  # set a workspace user's password (CLI prompt)
-pnpm db:ensure-workspace-users  # upsert the mock workspace users into the DB
 pnpm seed-demo-reports    # seed demo reports for the demo engineer (loads .env + .env.local)
 pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (needs gateway key)
-pnpm model-sweep          # run the AI eval across multiple models (scripts/eval/)
-pnpm compare-evals        # diff two eval runs (scripts/eval/)
-pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; --from-gcs CI download+ingest+judge; --live local PDFs; --report-id skip ingest)
+pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; --from-gcs CI download+ingest+judge, generate if GCS stale; --live local PDFs; --report-id skip ingest)
 pnpm retrieval-eval:upload # laptop ADC only: write synthetic eval PDFs to RETRIEVAL_EVAL_GCS_BUCKET (CI never uploads)
+pnpm chat-eval            # chat quality floor (default --dry-run; --replay no LLM; --sync / --experiment push to Langfuse when keys exist)
 pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
 ```
+
+Every script lives in `package.json`; only the non-obvious invocations are listed here.
 
 `pnpm db:ensure-workspace-users` uses the Neon HTTP driver — skip it against
 local Docker. Create users with `pnpm set-workspace-password` instead.
@@ -54,44 +34,11 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ## Architecture
 
-**Tech stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript strict, Tailwind CSS v4, Drizzle ORM + Postgres (Neon or local Docker; **always** the `pg` driver), AI SDK v6 with Gemini (Gateway and/or Vertex), TipTap v3, `docx` for DOCX generation. pgvector for attachment chunks.
+### Non-obvious structure
 
-**Path alias:** `@/*` maps to `src/*`.
-
-### Key directories
-
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
-- `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
-- `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings, Limits). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `ai-budget`, `attachment-page-budget`, `attachment-storage-budget`, `voice-budget`, `reports/[reportId]/{purge,source-docx}`.
-- `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Demo pack only (`insightsEnabled`); MJ and Convergent redirect `/insights` home. Currently backed by `src/lib/insights/mock-data.ts`.
-- `src/app/vault/` — Workspace document vault (PDF/Word explorer, upload, folders). Primary nav item under Reports. `/library` redirects here.
-- `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
-- `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
-- `src/components/report/` — Editor UI: `report-workspace.tsx` (header Document | Agent chrome + work-product Report | Analytics pane + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `documents/documents-panel.tsx` (Attachments | Contents left rail on every pack), `review-rail/` (manager comment margin UI), History compare (`document-revision-history.tsx` / `document-revision-diff.tsx` / `analytics-revision-diff.tsx`).
-- `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack/scatter SVG, capability and plot-measurements dialogs, stats chat panel.
-- `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, `documentRevisions`/`documentRevisionSections` (document History — not the audit chain), `analyticsRevisions` (Analytics History), plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
-- `src/lib/document-revisions/` — Document product History snapshots (`snapshot.ts`) and inline compare (`inline-diff.ts`). One row per Agent-chrome report turn, or one coalesced row per human editing burst (30s idle). Compare diffs prose, every table by index, and added/removed figures. Worksheet writes are `analyticsRevisions`, not document versions.
-- `src/lib/analytics-revisions/` — Analytics product History (worksheet + plots snapshot, idle-coalesced). Compare is a cell/plot list, not TipTap.
-- `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
-- `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, `quality_risk_assessment`, and `generic_document` (sections, criteria, prompts, chat persona, empty-state chips, merge).
-- `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
-- `src/lib/storage/` — Attachment blob storage (GCS vs local).
-- `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
-- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding, `statisticalAnalysisEnabled`, `insightsEnabled`.
-- `src/lib/statistical-analysis/` — Report-scoped worksheet ops, I-MR Normal Capability Sixpack, analytics store and stats-only chat tools.
-- `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
-- `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
-- `src/lib/analytics/` — PostHog client event capture (`events.ts` enumerates the event names).
-- `src/lib/eval/` — Offline eval harness helpers (model sweep, run comparison).
-- `src/lib/export/` — DOCX generation (see subsystem below).
-- `src/lib/import/` — DOCX parsing (see subsystem below).
-- `src/lib/tiptap/` — TipTap editor extensions and utilities: rich text helpers, placeholder highlights, suggestion injection, redraft preview.
-- `src/lib/placeholders/` — Placeholder detection, fill, scan, and evaluation policy.
-- `src/lib/suggestions/` — Suggestion validation, plain-text edit location, comment persistence, whole-field redraft apply (`apply-redraft.ts`).
-- `src/lib/site-access-token.ts` / `site-access-cookie.ts` — HMAC-signed site-gate token + cookie helpers.
-- `src/providers/report-provider.tsx` — Centralized client-side state via React Context.
-- `src/hooks/` — Auto-save hooks (see subsystem below).
+Layout is `ls src/`; stack is `package.json`; `@/*` → `src/*` is `tsconfig.json`. Only the two
+facts the tree cannot show are kept here:
+- **New document types must be registered in `src/lib/ai/suggest-target-fields.ts`** (both `SUGGEST_TARGET_FIELD_PATTERNS` and `RICH_FIELD_PATHS`). A type whose sections are absent from those maps ships silently broken: `pickPatterns` substitutes `[]`, chat `propose_edit` has no valid target, placeholder scanning finds nothing, and Table N cross-refs stop resolving. `suggest-target-fields.test.ts` asserts coverage for every registered type — a key declared `[]` is a deliberate "no editable text fields" (DV `cover_page`), absent is a bug.
 - `src/proxy.ts` — Next.js 16 request interception (auth redirects, `mustChangePassword`/`passwordExpired`). There is **no** `middleware.ts`. Does **not** enforce the site-access gate (`/unlock`).
 
 ### Data flow
@@ -111,11 +58,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The shared `sectionTypeEnum` includes both families.
 
-- **Investigation:** DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus `conclusion`, plus non-editable `documents_reviewed`, `attachments`, `signature_approvals`. Content types in `src/types/sections.ts`.
-- **Design verification:** demo/MJ shape is `purpose_scope`, `references`, `traceability`, `test_methods`, `test_results`, `deviations`, `conclusion`, `approval_signoff`, `appendices`, plus virtual `cover_page` (lives in `reports.metadata`, not `report_sections`). Convergent pack (`buildDesignVerificationDefinition`) is a 9-section Solea DV (`purpose` … `conclusion`, no cover page). Content types in `src/lib/document-types/design-verification/sections.ts` and `src/lib/document-types/convergent/sections.ts`.
-- **Quality risk assessment (MJ only):** SOP/DP/QA/010 F02 + F04. Keys are prefixed `qra_` (`qra_approach` … `qra_revision_history`). Identity lives in `reports.metadata`. RPN/RPR are computed in `src/lib/document-types/qra/scoring.ts`, not by the LLM.
-- **Equipment lifecycle report (MJ only):** the *periodic* consolidated review of one piece of equipment since its last Periodic Re-Qualification (PRQ) — not an initial qualification protocol (MJ issues URS/FAT/SAT/IQ/OQ/PQ/RTM/VSR/PRQ separately). 20 sections prefixed `elr_` (`elr_objective` … `elr_revision_history`), content types in `src/lib/document-types/elr/sections.ts`. The export template mirrors MJ's own report form F10: `1.0 Purpose`, `2.0 Scope`, `3.0 Observations and Results` (3.1–3.14 carry responsibility, abbreviations and every evidence section), `4.0 Discrepancy / Deviations`, `5.0 Summary and Conclusion`, `6.0 Recommendation`, `7.0 Attachments`, `8.0 Revision History`, `9.0 Approval Page` — workspace labels stay unnumbered. Governed by **SOP/DP/QA/014 Validation/Qualification Procedure R04** (Annex 15 / WHO TRS 1019 / ISPE Vol. 5). Note that SOP has **no ELR format** — F09/F10 are the PRQ protocol/report and the ELR is a new Andrei-proposed deliverable, so it needs its own format number under change control before MJ can issue it. Identity (equipment ID, container format, period, cycle, last/next PRQ, SLIA impact class, review frequency) lives in `reports.metadata`; PRQ frequency comes from the VMP (§7.17.2) and only Direct Impact systems carry periodic requalification (§7.1.5). Periodic Re-Qualification (PRQP/PRQR, §7.17) and Performance Re-Qualification (RQP/RQR, §7.18, event-triggered) are different documents — do not conflate them. One ELR **per container format** — `elr_qualification` and `elr_qms` rows carry Format Applicability (Vial / Cartridge / Line-common) and deterministic checks reject a row scoped to the counterpart format. Cross-reference completeness (excursion→deviation, OOT→CAPA, delayed PM→justification, repeat breakdown→CAPA, DI alarm→action, audit anomaly→deviation, change-since-PRQ→change control, qualification-impacting QMS record→qualification history) lives in `criteriaBySection` as deterministic checks on the owning section — there is deliberately **no** in-document reconciliation/gap-summary table duplicating them, and no workspace-facing section numbers. Table column schemas in `elr/matrix-columns.ts` must stay identical to the headers in `templates/mj-equipment-lifecycle-report-template.docx` — a colocated test asserts placeholder/template-data parity in both directions.
-- **Generic document (demo pack only):** one continuous `body` section (`{ narrative }`). The editor is a US Letter page canvas (visual page separators overlay the same TipTap field — not extra JSON nodes). No criteria, no Criteria tab / Run AI Check. Headings (H1–H3) are enabled for this type only. Word upload is type-owned (`wordImport.kind === "generic_body"`) and does **not** use pack `wordImportEnabled`. Accepting AI suggestions persists TipTap revision marks and exports them as Word tracked changes. Content types in `src/lib/document-types/generic/sections.ts`.
+Per-type section keys, identity fields, table-column schemas, and the MJ/3xper form lineage (ELR, Investigation Report DS, QRA, vendor qualification, generic document, design verification) live in `src/lib/document-types/CLAUDE.md`, which loads when you work under that directory.
 
 ### Auth
 
@@ -125,40 +68,15 @@ Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordEx
 
 ### Customer packs
 
-`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ and Convergent), export template, hidden sections, enabled document types, Word import, branding, and `insightsEnabled` (demo-only Insights nav). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md`.
+`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ, Convergent, and 3xper), export template, hidden sections, enabled document types, Word import, branding, `insightsEnabled` (demo-only Insights nav), and `documentTemplatesEnabled` (demo-only Templates gallery). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md` (Add a customer for a new pack). 3xper product notes: `docs/3xper-deployment.md`.
 
 ## Environment variables
 
-Required in `.env.local` (see `.env.example` for all options):
+`.env.example` documents every variable and its purpose, including the `ALLOW_TEST_*` flags
+and what each one stubs. Local config goes in `.env.local`.
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | Postgres connection string. Local Docker: `postgresql://andrei:andrei@localhost:5432/andrei_dev`. Runtime always uses the `pg` driver (`src/db/connection.ts`), including Neon TCP. |
-| `AUTH_SECRET` | NextAuth secret — generate with `openssl rand -base64 32` |
-| `AUTH_RESEND_KEY` | Resend API key for magic-link, password-reset, expert-review, and external-login-alert emails |
-| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key. AI Check / suggestions / chat can use this **or** `GOOGLE_GENERATIVE_AI_API_KEY`. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway for eval/suggest/chat) |
-| `GOOGLE_VERTEX_PROJECT` | **Required for PDF/DOCX ingest + embeddings**. Pair with WIF (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) on Vercel. Composer voice dictation uses the same Gemini resolver as chat (Vertex when this is set). |
-| `GCS_BUCKET` | Production attachment bytes. Local: `ATTACHMENT_STORAGE_BACKEND=local` **and** `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`. |
-| `SITE_ACCESS_PASSWORD` | Optional. When set, enables the site-wide password gate at `/unlock`. Unset = gate disabled. |
-| `ANDREI_CUSTOMER` | Customer pack: `demo` (default), `mj`, or `convergent`. Must agree with `NEXT_PUBLIC_ANDREI_CUSTOMER` and `ANDREI_VERCEL_DEPLOY_SCOPE`. |
-| `NEXT_PUBLIC_ANDREI_CUSTOMER` | Same value as `ANDREI_CUSTOMER` (client branding / create-dialog). Unset → demo. |
-| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` on `andrei-v2`, `demo` on `andrei-demo`, `convergent` on `andrei-convergent`. Must agree with the pack. |
-
-**Test-only variables** (never set on Vercel production or preview):
-
-| Variable | Effect |
-|----------|--------|
-| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` / seed-auth. Also requires `TEST_AUTH_EMAIL`. |
-| `TEST_AUTH_EMAIL` | Email used by the test-login bypass (Playwright defaults `test.engineer@mjbiopharm.com`) |
-| `ALLOW_TEST_SKIP_EVALUATION=true` | Stubs all `evaluateSection()` calls |
-| `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stubs AI suggestions |
-| `ALLOW_TEST_STUB_MATH_EXTRACTION=true` | Stubs WMF/EMF vision LLM calls |
-| `ALLOW_TEST_STUB_DOCUMENT_INGEST=true` | Stubs Vertex extract/embed; fixture must still insert pages + chunks |
-| `ALLOW_TEST_STUB_CHAT=true` | Deterministic `buildStubChatModel` (cannot assert tool selection) |
-| `ALLOW_TEST_STUB_SPEECH=true` | Returns a canned composer dictation phrase instead of Cloud Speech-to-Text |
-
-Playwright sets these automatically in `webServer.env` — do not add them to production Vercel env.
+**The `ALLOW_TEST_*` flags are test-only.** Playwright sets them automatically in
+`webServer.env` — never add them to Vercel production or preview env.
 
 ## Local development gotchas
 
@@ -178,22 +96,19 @@ MJ convention is `@mjbiopharm.com`; the script does not enforce the domain. The 
 
 **Playwright port 3000:** Local config sets `reuseExistingServer`. Whatever already owns 3000 is reused **without** Playwright’s stub env. Stop it, or set `PLAYWRIGHT_BASE_URL` to a server that already has the flags and matching `AUTH_URL`.
 
-## Subsystem: DOCX Import
+## Subsystem references
 
-Investigation-report import. **Entry point:** `docxBufferToImportedReportContent()` in `src/lib/import/docx-to-sections.ts`. Design-verification import/export uses the type’s `templatePath` / merge helpers in `src/lib/document-types/`.
+These four are large enough that they load on demand instead of every session. Invoke the
+skill before working in the matching code:
 
-**Pipeline stages:**
-1. Mammoth converts DOCX → markdown (preserves list numbering) and → HTML (preserves table structure)
-2. Markdown split by section heading regex into Define/Measure/Analyze/Improve/Control
-3. `buildSectionsFromRaw()` converts raw text → TipTap JSONContent per section. Analyze gets special handling for 6M fields, 5-Why, root cause levels, impact assessment.
-4. Table injection: HTML tables matched to flat paragraphs by cell-text sequence, replaced with TipTap table nodes. Merged cells expanded (value repeated in every covered row/column).
-5. `enrichNarrativesFromDocxBuffer()` in `docx-rich-content.ts` bypasses mammoth to extract direct OOXML formatting: bold, italic, underline, colors, subscript, superscript, OMML equations (→ MathML), images. Matches OOXML paragraphs to mammoth output by plain-text similarity with media placeholder normalization (`[image:...]` and `[equation]` → `[media]`).
-6. Legacy WMF/EMF equation previews sent to vision LLM for math extraction (falls back to `[formula]` placeholder).
-7. `extractWordCommentsFromDocxBuffer()` extracts comments from comments.xml, maps to sections by anchor text. Duplicate anchors in same section grouped into threads.
+- `chat-subsystem` — AI chat: tools (`draft_identity` for citation-free cover/header scalars as one suggestion card), prompt versions, user intent, citation grounding, overclaim
+  gate, pending-plan queue, document review, mentions, voice dictation.
+- `analytics-subsystem` — Report Analytics worksheet, sixpack / ANOVA / boxplot / histogram /
+  scatter, analytics chat tools.
+- `attachments-retrieval` — PDF/DOCX ingest, chunk/embed, hybrid retrieval, the document vault.
+- `docx-pipeline` — DOCX import and DOCX export pipelines.
 
-**Returns:** `{ sections, toolsUsed, header (date/deviation#), comments }`
-
-**Key invariant:** Anchor text matching uses substring inclusion only when both sides are ≥12 chars, preventing stray short strings from overwriting paragraphs.
+The subsystems below are small enough to stay resident.
 
 ## Subsystem: AI Evaluation
 
@@ -228,28 +143,9 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. When the comment stores `suggestionBase` + `suggestionIntent`, apply is a three-way merge (`mergeField`) against live field content — coverage classifies edit vs rewrite; conflicts apply compatible operations and leave a remainder. Zero-ops dismiss with `resolutionReason: "already_present"` (not `resolved`). Legacy rows without a record still locate the frozen span. Never resolve a suggestion without a successful apply (or an explicit noop dismiss). Investigation/DV finalize marks (`acceptSuggestionMarksById`). Generic documents use `suggestionApplyMode: "tracked_change"`: merge then persist accepted insert/delete marks for Word `w:ins`/`w:del`. Per-operation audit is `suggestion_operation_applied` with `{ commentId, opIndex, coverage, classification }`. Mark `id` stays the comment id (`data-eval-id`); `opIndex` is a separate attr.
 
-**Bulk apply/dismiss:** `Apply all N` / `Dismiss all` in the report workspace header (`report-bulk-suggestion-actions.tsx`) are **document-wide**, not section-scoped — shown in Document and Agent chrome whenever at least one suggestion is open. `acceptAllSuggestionsInReport` / `dismissAllSuggestionsInReport` in `src/lib/suggestions/bulk-suggestions.ts` walk every section in `suggestionCardSectionKeys` order. Each open suggestion is re-merged against the in-memory document in queue order. Each section PATCHes once, then comment statuses flip in parallel. A stale suggestion is skipped; a save failure aborts that section only and later sections still run. No confirm dialog — the toast reports applied/skipped counts. The gutter card keeps only its single Apply/Dismiss. The single-card Apply/Dismiss still uses the cinematic settle delays. Bulk apply uses hold mode `bulk` (keep insert text, hide deletes instantly — do not opacity-0 both runs) and pushes applied content into the editor *before* the section PATCH so the wording does not vanish during save. The hold stays until comments are updated, so TipTap cannot re-inject an already-applied preview.
+**Bulk apply/dismiss:** `Apply all N` / `Dismiss all` in the report workspace header (`report-bulk-suggestion-actions.tsx`) are **document-wide**, not section-scoped — shown in Document and Agent chrome whenever at least one suggestion is open, including leftovers on sections with no criteria (QSR acronyms / other details, ELR attachments). Apply all's N is locatable suggestions only; Dismiss all still covers stale leftovers. `acceptAllSuggestionsInReport` / `dismissAllSuggestionsInReport` in `src/lib/suggestions/bulk-suggestions.ts` walk `suggestionCardSectionKeys` plus any other section that still has an open AI comment (`sectionOrderWithOpenSuggestions`). Each open suggestion is re-merged against the in-memory document in queue order. Each section PATCHes once, then comment statuses flip in parallel. A stale suggestion is skipped; a same-table leftover invalidated by an earlier apply in the batch is dismissed as `superseded_by:<id>`. A save failure aborts that section only and later sections still run. No confirm dialog — the toast reports applied/skipped/dismissed counts. The gutter card keeps only its single Apply/Dismiss. The single-card Apply/Dismiss still uses the cinematic settle delays. Bulk apply uses hold mode `bulk` (keep insert text, hide deletes instantly — do not opacity-0 both runs) and pushes applied content into the editor *before* the section PATCH so the wording does not vanish during save. The hold stays until comments are updated, so TipTap cannot re-inject an already-applied preview.
 
 **Key invariant:** Anchor must be unique in the canonical field text. Whitespace is normalized for matching (multiple spaces/newlines → single space). Cross-paragraph deletes are allowed; cross-cell deletes are dropped. Chat `propose_edit` serializes same-turn calls and folds a later span into the existing card when the locatable ranges sit within `COALESCING_GAP` (20) characters on canonical field text — one frozen hunk including the bridge, no card-count budget. Lead-ins, tables, figures, citation `second`s, and table-cell scopes do not fold. Document and Agent chrome both propose (red/green review); they do not commit inline.
-
-## Subsystem: DOCX Export
-
-**Entry point:** `generateReportDocx()` in `src/lib/export/generate-docx.ts`. Investigation, design-verification, and generic-document are separate branches (IR template vs `templates/design-verification-report-template.docx` vs `templates/generic-document-template.docx`). The numbered pipeline below is the investigation-report path. Registry `export.templatePath` exists but generate-docx still hardcodes those paths. Generic export maps Heading1–3 (when `useHeadingStyles`), skips investigation checkboxes/signature blocks, and sets `w:trackRevisions` so pending insert/delete marks survive as Word tracked changes.
-
-**Pipeline:**
-1. Load template DOCX (`templates/investigation-report-template.docx`) via PizZip + Docxtemplater
-2. Per-section generators convert TipTap JSONContent → Word XML (`<w:p>`, `<w:r>`, `<w:rPr>`) via `narrativeToDocxXmlWithContext()`. Handles bold, italic, underline, colors, subscript, superscript, images, OMML equations.
-3. Analyze section formats 6M fields, 5-Why pairs, investigation outcome, root cause, impact assessment
-4. Improve/Control split into narrative + CA-N/PA-N register tables (`improve-control-checkpoints-docx.ts`)
-5. Post-processing passes:
-   - `applyInvestigationToolCheckboxes()` — toggles SDT checkboxes for 6M/5-Why/Brainstorming
-   - `applyInlineMediaToDocxZip()` — embeds images as base64
-   - `applyNumberingToDocxZip()` — preserves list formatting
-   - `applyWordCommentsToDocxZip()` — injects comments into comments.xml with thread parent/child linking
-   - `applySignatureBlockToDocxZip()` — approval table
-   - `applyGoogleDocsImageCompat()` — image compatibility
-
-**Output:** Binary buffer matching `reference-template.docx` layout (header with logo, DMAIC sections, CAPA registers, signature table, footer with page numbers).
 
 ## Subsystem: Auto-Save
 
@@ -266,31 +162,6 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - Suggestion is in-flight or being applied (prevents race conditions)
 - Previous save failed (blocks until report reloaded)
 
-## Subsystem: Statistical Analysis
-
-**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, worksheet XY scatter, Tukey boxplot, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Document chat can copy a saved Analytics plot into a narrative with `insert_image` (`source=analytics`) and can still propose attachment `plot_measurements` figures on every pack.
-
-**Entry points:**
-- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). New reports default to Agent; reopening a report restores that user's last chrome. Composer Report | Analytics is independent of the focused pane in both chromes (`data-testid="chat-work-product-target"`). Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
-- `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
-- `POST .../analytics/analyses` creates a sixpack (default), `kind: "measurement_scatter"`, `kind: "xy_scatter"`, `kind: "boxplot"`, `kind: "histogram"`, or `kind: "one_way_anova"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
-- `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
-
-**Data flow:**
-1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique). The workbook has one or more data sheets. Specs (LSL/USL/target) are edited from a column-header context menu (also insert left/right, delete, clear data, and Analyze data).
-2. Enter, paste, or ask the assistant to extract values from attachments (`extract_sheet` once per destination sheet in parallel, or `extract_numeric_series` / scan / page reads then one `write_column` per sheet). Pull every page of that table first — an incomplete dump is not saved. Separate extracts for separate sheets are correct; always pass `sheetId`. Workers create or reuse a same-named tab and do not steal the grid's focused tab. Follow-up add/remove rows on a filled sheet use `extract_sheet` `mode edit` (`write_column` `mode append`, or `delete_row` with optional `rowEnd`). New series fill the leftmost empty C1–C8 columns (add_column without `at` does the same — it does not append on the right while those placeholders are empty). Extraction also fills column specs when pages name limits.
-3. `Analyze {column}`, column-header **Analyze data…**, or `Plot → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Analyze data and `Plot` both list `WORKSHEET_PLOT_CATALOG` (`src/lib/statistical-analysis/plot-catalog.ts`) — add a worksheet plot there (and on `AnalysisKind`) so the two menus cannot drift. Attachment `plot_measurements` stays chat-only. Histogram / boxplot / Plot measurements hand off from Analyze to their dedicated dialogs. First/last row default to the first and last filled cells of the data column (not the grid selection). Column specs (right-click header) prefill the form; if those are empty, min/max (and midpoint target) of the selected range are used. Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
-4. `Plot → Histogram…` (or analytics `plot_histogram`) draws the same frequency histogram as the sixpack (bars plus overall/within normal curves and LSL/USL lines). LSL/USL are optional. Dialog checkboxes `showDistributionLines`, `showLsl`, and `showUsl` default on; a spec line draws only when the value is set and the checkbox is on. Overlay flags are display-only (`sourceHash` is column + row selection, same as sixpack). Agent Analytics chat can create a histogram or edit an existing one (`plot_histogram` with `analysisId`). Ask mode cannot.
-5. Analytics chat `plot_measurements` extracts cited numeric measurements from attachments and saves a scatter (`measurement_scatter`) on Results. There is no Plot-from-attachments menu — ask the assistant. Optional LSL/USL in tool args override extracted acceptance limits; omit them to keep the cited limits. Edit of an existing attachment scatter still opens `PlotMeasurementsDialog`. Do not reuse Document-chat `executePlotMeasurements` here (that path writes section suggestions).
-6. `Plot → Plot measurements…` (or analytics `plot_xy_scatter`) plots a worksheet chart (`xy_scatter`). Y is required and must be numeric. X is optional: omit it for Y vs observation index (1, 2, 3…); pass a numeric X for Y vs X. Optional legend column color-codes series (`layout.seriesBy: "unit"`); labels/lots/serials are valid legend values but cannot be X. Chart type (`layout.mark`: scatter, line, line + markers, area, column) is the visual mark — legend + scatter is colored dots, legend + line is colored lines, legend + column is stacked columns. Collapsed **Advanced** on the dialog sets visible min/max X and Y (blank = auto) and optional axis titles (`layout.xRange` / `layout.yRange`; not in `sourceHash`). Agent Analytics chat can create a worksheet plot or update an existing one (`plot_xy_scatter` with `analysisId`: new Y/X, `mark`, `showSpecLimits`, `showMeanLine`, axis window). New plots default to scatter with spec lines off. Pair rows where the required axes parse as numbers; Pearson r is overall (null if n<2 or zero variance). Y-column LSL/USL draw as horizontal dashed lines only when **Show LSL, USL values** is checked (default off). **Show mean line** is off by default (not in `sourceHash`) and connects mean Y at each X (gray individuals when there is no legend; one line per legend series). Columns written from an attachment (`write_column` after extract/scan/read) copy those page citations onto the spec for CSV download; plot figures do not show `p. N`. Typed or edited cells drop the citation. Analytics chat `plot_measurements` remains attachment series vs observation index (one series, one color).
-7. `Stat → One-Way ANOVA…` (or analytics `run_one_way_anova`) compares a numeric response by a factor column on the same sheet. Pairwise tests are Bonferroni t-tests using the ANOVA MSE (not Tukey). Each run **inserts** a new Results row.
-8. `Plot → Boxplot…` (or analytics `plot_boxplot`) draws a Tukey box-and-whisker of numeric Y. Optional category columns (innermost first, closest to the boxes; last is the outermost nested axis label) group **observed combinations only** (not a full factorial). Zero categories is one box of all Y. Empty category cells are labeled `(blank)`. At most 4 category columns and 80 groups. Agent Analytics chat can create a boxplot or edit an existing one (`plot_boxplot` with `analysisId`, including `showMeanLine`). Ask mode cannot. Whiskers are last observations inside Q1−1.5 IQR / Q3+1.5 IQR; outliers are asterisks. Optional **Show mean line** (default off, not in `sourceHash`) connects each box’s mean; the median line inside the box stays. Time series is not supported.
-9. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack, ANOVA, XY scatter, boxplot, or histogram **stale** (`sourceHash`); attachment measurement scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV. Analytics **Export XLSX** is worksheet + analysis tabs; **Export with Excel charts** adds native OOXML charts bound to numeric source tables so engineers can keep editing in Excel (not PNG snapshots). Histogram bars are one Excel column per bin; overall/within curves and LSL/USL are an XY overlay on a numeric X axis (smooth bell, vertical spec lines).
-
-**Chat:** Same shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep) in both chromes. `@` tags sheets, plots, and files; `worksheet-sheet-options.ts` only lists data sheets for those chips — there is no sheet-scope dropdown. Tools are list_attachments/search/outline/scan/page/extract/worksheet (`read_worksheet`, `write_column`, `manage_worksheet` for sheets/columns/rows)/sixpack/ANOVA/XY scatter/boxplot/histogram/attachment scatter. Analytics `search_documents` is keyword-first and must not reuse Document-chat grep-loop copy (`truncated` is not a reason to search again). TOC / running-header ID lists are demoted (`requirementIndex`) and a TOC-only grep retries excluding those pages. After a cited page, a page read/scan/extract, or two empty greps, search is hidden for the rest of the turn. Report and Analytics `stopWhen` is Cancel or the wall-clock deadline — there is no tool-step cap. Abnormal turns abort at `CHAT_SERVER_ABORT_MS` (270s from request start). Do not persist a continue/re-prompt notice. Loop guards live in `prepareStep` (table-edit, document-review phase, already-drafted read, live table-schema read on write turns, Analytics search hide, Analytics `write_column` hide after a cited-page grep until a page is read / while any file still has extract `morePages` or scan `truncated` / after two consecutive empty dumps — not after a dump with blank cells, Analytics `ask_user` hide on lookups / Skip / after any grep until a page is read — never ask which page; TOC-only greps do not close search, Analytics `manage_worksheet` hide after the first structure call this turn). Analytics hides `write_column` while gathering on both the orchestrator and sheet workers; forced tool choice (`toolChoice: required`) is sheet workers only — the orchestrator must always be able to end a turn with text. A forced tool call must be one-shot or phase-advancing. An incomplete `write_column` does not persist — pull every page of that table first, then one write per destination sheet. Separate extracts per sheet are correct. Multi-table dumps: `extract_sheet` once per sheet (parallel workers create the tab and write). Add or remove rows on a filled sheet: `extract_sheet` `mode edit`. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `manage_worksheet`, `write_column` (pass `sheetId` when the destination is not the active tab), run a sixpack, run one-way ANOVA, plot a worksheet chart (`plot_xy_scatter`: Y required on create, X optional, optional legend; pass `analysisId` to edit Y/X, legend, chart type, Show LSL/USL, Show mean line, or axis window on that Results row), plot a Tukey boxplot (`plot_boxplot`: Y required, optional nested `categoryColumnIds` innermost-first, optional Show mean line; pass `analysisId` to edit), plot a histogram (`plot_histogram`: column required, optional LSL/USL and overlay checkboxes; pass `analysisId` to edit), and plot measurements from attachments in chat (`plot_measurements`) when the report is writable. Worksheet scatter may color-code by `legendColumnId` (labels OK); a label/serial column cannot be X. `plot_measurements` is chat-only (one attachment series vs observation index, one color) — there is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA for a scatter, boxplot, or histogram. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`). Bump `ANALYTICS_CHAT_PROMPT_VERSION` when analytics prompt copy changes.
-
-**Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave). Worksheet PATCH is version-guarded (`statistical_workspaces.version`); a 409 returns the current analytics so the grid can reload instead of last-write-wins. Chat `write_column` / `manage_worksheet` serialize per report and re-apply their edits onto the latest worksheet on conflict (they must not persist a stale snapshot). The Analytics grid ignores older versions and debounces mid-turn reloads while the assistant is busy. `write_column` reports `nonNumericCells` instead of implying a full numeric fill. `write_column` and `add_column` (without `at`) claim empty C# placeholders from the left instead of appending while C1–C8 are unused. Product History for Analytics is `analyticsRevisions` (idle-coalesced worksheet bursts; each plot create/recompute/delete is its own version). Audit events `worksheet_updated` / `analysis_*` use entity `analytics`. Do not fold worksheet JSON into `documentRevisions`.
-
 ## Subsystem: Audit Trail & E-Signatures
 
 **Purpose:** 21 CFR Part 11-style tamper-evident audit trail, section version history, and electronic signatures on workflow transitions.
@@ -304,51 +175,6 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - Export/review: `export.ts` + `audit-csv.ts` (CSV export), viewed in `src/app/admin/audit/`.
 
 **Key invariant:** The audit chain is append-only; content edits go through `hashSectionContent()` and version snapshots, never in-place rewrites of `sectionContentVersions`. Do not use that table as the product History UI — it records every PATCH including human autosave. Document History is `documentRevisions`. Analytics History is `analyticsRevisions`; worksheet/plot mutations also append `worksheet_updated` / `analysis_*` audit events (entity `analytics`). An open `manual` document History row may be updated in place during a typing burst; Agent rows and idle-closed manual rows are never rewritten.
-
-## Subsystem: AI Chat
-
-**Purpose:** Per-report conversational assistant that can read report context, search attachments, and propose edits.
-
-**Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`. Body includes `workspaceChrome`; the server derives `editPolicy` (`propose` in Document and Agent chrome). Do not trust a client `editPolicy`.
-
-**Failure telemetry:** Every assistant failure is captured to PostHog as the `ai_chat_failed` event plus an exception, keyed by workspace user id. Server sites (`stream_start`, `stream_error`, `consume_timeout`, `deadline_abort`, `empty_turn` in both the report and analytics routes) go through `captureChatAssistantFailure` (`src/lib/ai/chat/chat-failure-telemetry.ts`) on the shared `posthog-node` client (`src/lib/analytics/posthog-server.ts`). `deadline_abort` is the 270s wall-clock stop (`CHAT_SERVER_ABORT_MS`) — not Cancel, and not a tool-call cap. Client sites (`client_error`, `empty_turn` in `chat-session-host.tsx`) use `posthog-js`. Tag `surface` from the turn's `chatTarget` (Report vs Analytics share one `/chat` host — do not infer from the API path). Tag `site` for the lifecycle step. Await capture (or Next `after()`) so the isolate cannot freeze first. Never let capture throw — it must not mask the original failure.
-
-**Voice dictation:** Mic to the right of the image-attach icon (`ChatVoiceButton` in shared `ChatPanel`). Click to start, click to stop (no VAD). While recording, the control is a larger level wave, the note “Transcript appears when you stop”, a language chevron (MJ: English / हिन्दी / मराठी), and a white `size-7` stop square — not a brand-filled mic. The composer does **not** fill live. It buffers worklet PCM and, after stop, `POST`s windows to `/api/reports/[id]/chat/transcribe` (`application/octet-stream` + `x-voice-languages`); each request wraps LINEAR16 as WAV and runs one Vertex **Gemini** Flash-Lite transcribe (`resolveGoogleLanguageModel`, same WIF as chat) and returns `{ text }`. Longer recordings are sequential 30s chunks, then the joined transcript is applied once. Do **not** call Cloud Speech-to-Text / Chirp — the runtime SA 403s `PERMISSION_DENIED` without `roles/speech.client`. Do not keep an in-memory stream across POSTs. `GET` is auth warmup (204) and also checks the monthly voice-minute cap. A failure toasts once and stops the mic (do not flush again). Monthly transcribed audio is capped on Admin → Limits (`voice-budget`, default 100,000 minutes) and counted as `voice_transcribe` in the AI feature table. MJ languages: `en-IN`, `hi-IN`, `mr-IN` in native script (Devanagari is preferred; romanization is fine). Demo/Convergent: `en-US`. Do **not** translate STT to English. The assistant still replies in English (`LANGUAGE_RULES` in `CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`). Composer typing is locked only while recording. Stub: `ALLOW_TEST_STUB_SPEECH`. Voice toasts never dump gRPC internals.
-
-**Logic in `src/lib/ai/chat/`:**
-- `user-intent.ts` — latest-turn classifier (`social` / `read` / `write`). Greetings strip tools; empty sections are not a draft request. Same classifier on Analytics chat. A leading affirmation is stripped and the remainder classified, so "yes put it in the data worksheet" is a write (and is a write outright when the prior assistant turn offered to write). Analytics also treats a worksheet/sheet/column destination as a write. `intentToolAvailabilityRule` puts the stripped tool names in the prompt so a read turn cannot call a tool that is not loaded. `resolve-user-intent.ts` runs Flash-Lite for `ambiguous_agent_mode` (plan/outline vs write) and for Document-chat worksheet-dump phrasing; high-confidence `preferredSurface=analytics` shows a Switch to Analytics button that resends the original request on Analytics. A yes / go for it after that copy is a write. Stub/timeout falls back to rules. Do not fold retrieval policy into that call.
-- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; propose-and-review copy for live report chat (`editPolicy` is `propose`); user-intent rules above the drafting guidance. Agent wrap-up and "Changes this turn" stay in document language (no targetField keys, never call it a recipe).
-- `edit-policy.ts` / `commit-edit.ts` — live report chat always proposes (`ai_fix` comments + red/green marks). `commit-edit.ts` remains for the unused `commit` tool path.
-- `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
-- `context-map.ts` — serializes report state + ready docs (sanitized `summary=`) + insertable Analytics plots
-- `tools.ts` — `read_section`, `list_attachments`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, `insert_image` (`chat` / `section` / `analytics`), `plot_measurements` (on for every pack; omit only when embedding Document tools in Analytics chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
-- `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope. Do not keep investigation-only constants like `CHAT_EDITABLE_SECTIONS`.
-- `mentions.ts` — `@` documents/sections/plots. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`. Bare `@` is a hierarchy (Attachments, then Document sections or Data sheets); `mention-menu.ts` builds the folder tree. Typing filters every leaf — do not recap the list at 8.
-- `propose-edit.ts`, `session-title.ts`, `access.ts`
-- `repair-tool-call.ts` / `clamp-tool-input.ts` — last-resort tool-call repair. A punctuated name is remapped onto a loaded tool; a name that is not loaded this turn (`edit_table` on a read/review step) remaps onto internal `unsupported_tool` so `AI_NoSuchToolError` cannot end the turn. An `InvalidToolInputError` is clamped to the tool's own JSON Schema (maxItems / maxLength / min / max / enum) and retried once. Malformed JSON is not rewritten.
-- `message-target.ts` — per-turn Report | Analytics tags on mixed threads (`chat_messages.metadata.chatTarget`, stamped by the route). Legacy rows use `promptVersion` / exclusive tools. Fully unknown history stays untagged.
-
-**Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `list_attachments`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
-
-**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Voice dictation is that same shared composer control. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI. Empty-state Document chips are `chat.examplePrompts` on the document type (Purpose & Scope on DV, Define on investigation); Analytics chips stay in `ANALYTICS_EXAMPLE_PROMPTS`. Report and Analytics `stopWhen` is Cancel or the wall-clock deadline — no tool-step cap; abnormal turns abort at `CHAT_SERVER_ABORT_MS` (from request start). Do not persist a continue/re-prompt notice. Loop guards live in `prepareStep`.
-
-**Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Comprehensive page review is for inventories / open-set drafts, not sentence rewrites; `finish_document_review` caps findings and follow-up turns keep a slim `citationDigest` (`compactChatToolHistoryForModel`). Finished coverage is rehydrated when the attachment coverage key is unchanged so a zero delta does not force another walk, except explicit pushback (`isRetrievalPushback`) which skips rehydrate. Search hits include a ready `[filename, p. N]` (or `[filename]` when the page is missing); the saved field converts those to numbered `[n]` markers plus a trailing Citations: list on every pack. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
-
-**Citation links:** Clicking `[filename, p. N]` (or numbered `[n]` that maps to a parked source) in the document, chat, or suggestion Sources opens or reuses that attachment's canvas tab and scrolls the PDF to the cited page (`openDocument(id, page)` via `openCitedDocumentOrToast`). Combined `[file A, p. N, file B, p. M]` splits into one link per file (`splitSourceCitationParts` / `sourceCitationLinkSpans`); extra pages of the same file stay one link. Word preview cannot jump to a page. Missing or ambiguous filenames toast instead of opening. Decorations stay out of saved TipTap JSON. Open attachment canvases stay mounted (`AttachmentCanvasStack`, hidden/inert like Analytics) so switching to Report does not re-parse the PDF; `rememberDocumentPage` records the last visible page without changing the jump `page` prop. Closing the tab (header Close or the tab X) unmounts the preview and restores the last canvas tab you had open; the next open restores that last page. `openDocument(id)` without a page does not reset to page 1.
-
-## Subsystem: Attachments (ingest + evidence)
-
-**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body. Canonical bytes live in `attachment_assets` (Document vault at `/vault` + report links). Uploads are capped by a workspace-wide stored-bytes budget (default 100 GiB) on Admin → Limits; linking an existing vault file into a report does not count twice. The vault page can upload files or folders (`POST /api/attachment-vault/upload-url` → finalize). Upload folder in Chromium uses `showDirectoryPicker` so Chrome does not show its bulk “Upload N files to this site?” prompt; `webkitdirectory` is only the Safari/Firefox fallback. While a scan or upload is in flight, the vault explorer toolbar and the browser tab (title + favicon) show a spinner so progress stays visible after switching tabs. The vault list is a Finder-style Name / Date / Size / Kind table; the file pane starts wide and a drag handle shrinks it to grow the document viewer. Check files or folders and Share to grant other workspace users access. Recipients see those files on the vault **Shared with me** tab (folder path preserved) and can add them to reports; only the owner can move, archive, or change sharing. A folder is scanned first: nested PDF/DOCX paths create vault folders (max depth 8); unsupported user files are listed in a confirm dialog (skip them or cancel) before bytes are sent (Finder/Explorer junk like `.DS_Store` is ignored). Vault-only files are marked `ready` for preview; ingest starts on vault finalize via a hidden per-user holder report. Add from vault copies a completed ingest as-is; old or unprocessed vault files start that holder ingest after the link response (do not await GCS HEAD / start on the Add from vault request). Leftover uploading/processing/queued links start again when the documents panel polls. Reclaim of stale ingest uses open ingest-run time only (including holder runs on the shared asset) — never the report row’s uploadedAt. A false stale-cancel is retried on that poll; ordinary failed ingest is not. Archive hides a file or folder (and nested contents) from the live vault list; restore from Archive at the bottom of `/vault`. Report links stay. Archived files still count toward the stored-bytes budget.
-
-**Entry point:** `runDocumentIngest()` in `src/lib/attachments/run-document-ingest.ts`. Extract + embed is **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). Stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
-
-**Pipeline:**
-1. Upload stored via `src/lib/storage/` (GCS production; local only with `ATTACHMENT_STORAGE_BACKEND=local` + `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`)
-2. Vertex extract (`extract-batch.ts`, `DOCUMENT_EXTRACT_PROMPT_VERSION`) → `document_pages` (`pageContext` + transcript + `identifiers` / `outlineTitle` / nullable `hasTable`/`hasFigure`)
-3. Outline spans persisted on the ingest run, then chunk (`chunk-pages.ts`) + embed (`embed-chunks.ts`, 768-d) → `document_chunks`
-4. `documentSummary` written on the ingest run; listed by `listReadyDocumentsForReport`
-
-**Chat retrieval:** `searchReportDocuments`, `readDocumentPage`, `readDocumentOutline` in `src/lib/attachments/retrieval.ts`. Identifier queries (`requirementIds()`) hit `document_pages.identifiers` first and skip the query embedding when those hits fill `limit`. Results collapse to one chunk per page. FTS: `to_tsvector('english', contextual_text)` + `document_chunks_contextual_text_fts_en_idx`. Outline reads prefer stored `document_outline_spans`. Plan: `docs/retrieval.md`. Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 ## Subsystem: Redrafts
 
@@ -381,4 +207,4 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
   Style new UI from the tokens, never a hardcoded brand hex.
 - Tailwind CSS v4 configured in `src/app/globals.css`.
 - Toast notifications via `sonner`.
-- Observability: Langfuse JS/TS SDK v5 (`@langfuse/otel` + `@langfuse/tracing`) with v4 observations-first ingestion (`x-langfuse-ingestion-version: 4` in `src/instrumentation.ts`). Reads go through Observations API v2 (`src/lib/observability/langfuse-observations.ts`), not the deprecated traces list/get endpoints.
+- Observability: Langfuse JS/TS SDK v5 (`@langfuse/otel` + `@langfuse/tracing`) with v4 observations-first ingestion (`x-langfuse-ingestion-version: 4` in `src/instrumentation.ts`). Environment is `VERCEL_ENV` (`production` / `preview` / `development`); release is the git SHA. Observation metadata also carries `tracingEnvironment`, `gitBranch`, `vercelEnv`, and `customer`. Reads go through Observations API v2 (`src/lib/observability/langfuse-observations.ts`), not the deprecated traces list/get endpoints.

@@ -10,6 +10,7 @@ import {
   FileText,
   Folder,
   Gauge,
+  LayoutGrid,
   ScrollText,
   Users,
   PanelLeftClose,
@@ -32,6 +33,8 @@ function navWalkthroughTarget(href: string): string | undefined {
       return "nav-reports";
     case "/vault":
       return "nav-vault";
+    case "/templates":
+      return "nav-templates";
     case "/insights":
       return "nav-insights";
     case "/admin/users":
@@ -60,11 +63,16 @@ export function AppShell({
     !!passwordStatus?.warning
   );
   const mainId = useId();
-  const { branding, insightsEnabled } = getCustomerPack();
+  const { branding, insightsEnabled, documentTemplatesEnabled } = getCustomerPack();
   const documentVaultItem = {
     href: "/vault",
     label: "Document vault",
     icon: Folder,
+  };
+  const templatesItem = {
+    href: "/templates",
+    label: "Templates",
+    icon: LayoutGrid,
   };
 
   const navItems =
@@ -78,6 +86,9 @@ export function AppShell({
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },
+          ...(documentTemplatesEnabled && user.role === "engineer"
+            ? [templatesItem]
+            : []),
           documentVaultItem,
           ...(insightsEnabled
             ? [{ href: "/insights", label: "Insights", icon: BarChart3 }]

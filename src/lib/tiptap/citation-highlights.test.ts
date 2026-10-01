@@ -170,6 +170,24 @@ describe("citation highlight decorations", () => {
     ).toBe(cite);
   });
 
+  it("keeps a compact and-cite as one span until both files are known", () => {
+    const schema = schemaWithTable();
+    const cite = "[E-PR-068 and E-PR-071.pdf, p. 1]";
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text(`See ${cite}.`)]),
+    ]);
+    expect(
+      findCitationHighlightsInPmDoc(doc).filter((h) => h.kind === "source")
+    ).toHaveLength(1);
+    const highlights = findCitationHighlightsInPmDoc(doc, [
+      "E-PR-068.pdf",
+      "E-PR-071.pdf",
+    ]).filter((h) => h.kind === "source");
+    expect(highlights).toHaveLength(2);
+    expect(highlights[0]?.openRaw).toBe("[E-PR-068]");
+    expect(highlights[1]?.openRaw).toBe("[E-PR-071.pdf, p. 1]");
+  });
+
   it("splits two files in one bracket into two clickable spans", () => {
     const schema = schemaWithTable();
     const cite =
@@ -191,6 +209,29 @@ describe("citation highlight decorations", () => {
     expect(
       doc.textBetween(highlights[1]!.fromPos, highlights[1]!.toPos)
     ).toBe("CSV-RTM-PR-053.pdf, p. 5");
+  });
+
+  it("decorates each number inside a combined [1,2] marker", () => {
+    const schema = schemaWithTable();
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("Met spec [1,2]."),
+      ]),
+      schema.node("paragraph", null, [schema.text("Citations:")]),
+      schema.node("paragraph", null, [schema.text("1. [protocol.pdf, p. 2]")]),
+      schema.node("paragraph", null, [schema.text("2. [datasheet.pdf, p. 4]")]),
+    ]);
+    const numeric = findNumericCitationMarkersInPmDoc(doc);
+    expect(numeric.map((h) => h.number)).toEqual([1, 2]);
+    expect(numeric.every((h) => h.part === true)).toBe(true);
+    expect(numeric[0]?.openRaw).toBe("[protocol.pdf, p. 2]");
+    expect(numeric[1]?.openRaw).toBe("[datasheet.pdf, p. 4]");
+
+    const bubble = findCitationHighlightsInPmDoc(doc).find(
+      (h) => h.kind === "numeric" && h.number == null
+    );
+    expect(bubble).toBeDefined();
+    expect(doc.textBetween(bubble!.fromPos, bubble!.toPos)).toBe("[1,2]");
   });
 
   it("remaps decorations across a mapping-only transaction", () => {

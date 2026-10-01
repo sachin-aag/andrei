@@ -8,10 +8,25 @@ import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
   captureTableOperationSnapshots,
+  existingTableCountFromContents,
+  filledTableNumberInDocument,
+  isBannerTableRow,
   parseTableOperation,
+  prefixTableCaptionMarkdown,
+  renumberFilledTableCaptions,
+  dropLeftoverPlaceholderCells,
+  resolveEditCells,
   summarizeTableOperation,
+  tableOperationInvalidHint,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
+import {
+  ELR_MEDIA_FILL_HEADERS,
+  ELR_MONITORING_HEADERS,
+  ELR_RESPONSIBILITIES_HEADERS,
+  EMPTY_ELR_CONTENT,
+} from "@/lib/document-types/elr/sections";
 
 function textCell(
   type: "tableHeader" | "tableCell",
@@ -93,6 +108,54 @@ function rowCount(doc: JSONContent, tableIndex = 0): number {
   return (tables[tableIndex]!.content ?? []).filter((n) => n.type === "tableRow").length;
 }
 
+function tableRowAt(doc: JSONContent, row: number, tableIndex = 0): JSONContent {
+  const tables = (doc.content ?? []).filter((n) => n.type === "table");
+  return (tables[tableIndex]!.content ?? []).filter((n) => n.type === "tableRow")[row]!;
+}
+
+function cellColspan(doc: JSONContent, row: number, col: number): number {
+  const cells = (tableRowAt(doc, row).content ?? []).filter(
+    (n) => n.type === "tableCell" || n.type === "tableHeader"
+  );
+  const raw = cells[col]?.attrs?.colspan;
+  return typeof raw === "number" ? raw : 1;
+}
+
+function bannerRow(text: string, colspan: number): JSONContent {
+  return {
+    type: "tableRow",
+    content: [
+      {
+        type: "tableCell",
+        attrs: { colspan, rowspan: 1, colwidth: null },
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text, marks: [{ type: "bold" }] }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function rtmRow(id: string, requirement = `${id} text`): string[] {
+  return [id, "Parameter", requirement, "", "", "", "", ""];
+}
+
+function rtmDoc(ids: string[], bannersAt?: Record<number, string>): JSONContent {
+  const doc = tableDoc([...QSR_RTM_HEADERS], ids.map((id) => rtmRow(id)));
+  const table = doc.content![0]!;
+  if (bannersAt) {
+    const rows = [...(table.content ?? [])];
+    for (const [index, label] of Object.entries(bannersAt)) {
+      rows.splice(Number(index), 0, bannerRow(label, QSR_RTM_HEADERS.length));
+    }
+    table.content = rows;
+  }
+  return doc;
+}
+
 function manufacturerFilledDoc(): JSONContent {
   const doc = tableDoc(
     ["Equipment", "Manufacturer", "Software"],
@@ -132,7 +195,7 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 0, 3)).toBe("Description");
     expect(cellText(result.doc, 1, 3)).toBe("Dental laser");
     const manufacturerCell = (
-      result.doc.content![0]!.content![1] as JSONContent
+      result.doc.content!.find((n) => n.type === "table")!.content![1] as JSONContent
     ).content![1] as JSONContent;
     const textNode = manufacturerCell.content![0]!.content![0]!;
     expect(textNode.marks).toEqual([{ type: "bold" }]);
@@ -398,6 +461,756 @@ describe("applyTableOperation", () => {
     expect(applyTableOperation(doc, captured).ok).toBe(true);
   });
 
+  it("still inserts after a sibling fill of a previously empty anchor row", () => {
+    const empty = tableDoc(
+      [...ELR_RESPONSIBILITIES_HEADERS],
+      [["", "", ""]]
+    );
+    const filled = applyTableOperation(empty, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "QA" },
+        { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+      ],
+    });
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const inserted = applyTableOperation(filled.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      rows: [
+        ["2", "Engineering", "Maintain the line"],
+        ["3", "Production", "Operate the filling line"],
+      ],
+      expectedRowAtAfter: ["", "", ""],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(rowCount(inserted.doc)).toBe(4);
+    expect(cellText(inserted.doc, 1, 1)).toBe("QA");
+    expect(cellText(inserted.doc, 2, 1)).toBe("Engineering");
+    expect(cellText(inserted.doc, 3, 1)).toBe("Production");
+  });
+
+  it("still inserts when previously empty snapshot cells were filled", () => {
+    const result = applyTableOperation(
+      tableDoc(["H1", "H2"], [["QA", "Approves"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["2", "Engineering"]],
+        expectedRowAtAfter: ["QA", ""],
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 2, 1)).toBe("Engineering");
+  });
+
+  it("still rejects insert_rows when a filled snapshot cell changed", () => {
+    const result = applyTableOperation(
+      tableDoc(["H1", "H2"], [["changed", "row"]]),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [["x", "y"]],
+        expectedRowAtAfter: ["first", "row"],
+      }
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("stale");
+  });
+
+  it("does not copy a banner colspan onto inserted data rows", () => {
+    const doc = rtmDoc(["URS-1"]);
+    const table = doc.content![0]!;
+    table.content = [
+      ...(table.content ?? []),
+      bannerRow("ANY SPECIFIC REQUIREMENTS", QSR_RTM_HEADERS.length),
+    ];
+    const result = applyTableOperation(doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "ANY SPECIFIC REQUIREMENTS",
+      rows: [rtmRow("URS-58")],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 3, 0)).toBe("URS-58");
+    expect(cellColspan(result.doc, 3, 0)).toBe(1);
+    expect(tableRowAt(result.doc, 3).content).toHaveLength(QSR_RTM_HEADERS.length);
+  });
+
+  it("does not insert a merged banner row from { banner }", () => {
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        afterRowKey: "URS-1",
+        rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      })
+    ).toBeUndefined();
+  });
+
+  it("resolves afterRowKey even when afterRow is stale", () => {
+    const first = applyTableOperation(rtmDoc(["URS-1", "URS-2", "URS-3"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [rtmRow("URS-1a")],
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const second = applyTableOperation(first.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "URS-3",
+      rows: [rtmRow("URS-4")],
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(cellText(second.doc, 1, 0)).toBe("URS-1");
+    expect(cellText(second.doc, 2, 0)).toBe("URS-1a");
+    expect(cellText(second.doc, 3, 0)).toBe("URS-2");
+    expect(cellText(second.doc, 4, 0)).toBe("URS-3");
+    expect(cellText(second.doc, 5, 0)).toBe("URS-4");
+  });
+
+  it("rejects a missing or ambiguous afterRowKey", () => {
+    const missing = applyTableOperation(rtmDoc(["URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-99",
+      rows: [rtmRow("URS-2")],
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.status).toBe("bad_scope");
+
+    const dup = applyTableOperation(rtmDoc(["URS-1", "URS-1"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-1",
+      rows: [rtmRow("URS-2")],
+    });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.status).toBe("bad_scope");
+  });
+
+  it("replays keyed inserts around 5.1 banners in URS order", () => {
+    const start = applyTableOperation(
+      rtmDoc(
+        [
+          "URS-1",
+          "URS-8",
+          "URS-9",
+          "URS-10",
+          "URS-11",
+          "URS-12",
+          "URS-16",
+          "URS-29",
+        ],
+        { 9: "ANY SPECIFIC REQUIREMENTS", 10: "OTHER AUXILIARY REQUIREMENT" }
+      ),
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 17,
+        afterRowKey: "URS-16",
+        rows: [rtmRow("URS-17"), rtmRow("URS-18")],
+      }
+    );
+    expect(start.ok).toBe(true);
+    if (!start.ok) return;
+    const withSpecific = applyTableOperation(start.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 14,
+      afterRowKey: "ANY SPECIFIC REQUIREMENTS",
+      rows: [rtmRow("URS-58")],
+    });
+    expect(withSpecific.ok).toBe(true);
+    if (!withSpecific.ok) return;
+    const withAux = applyTableOperation(withSpecific.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 36,
+      afterRowKey: "OTHER AUXILIARY REQUIREMENT",
+      rows: [rtmRow("URS-67"), rtmRow("URS-68")],
+    });
+    expect(withAux.ok).toBe(true);
+    if (!withAux.ok) return;
+    const ids: string[] = [];
+    for (let r = 1; r < rowCount(withAux.doc); r += 1) {
+      ids.push(cellText(withAux.doc, r, 0));
+    }
+    expect(ids).toEqual([
+      "URS-1",
+      "URS-8",
+      "URS-9",
+      "URS-10",
+      "URS-11",
+      "URS-12",
+      "URS-16",
+      "URS-17",
+      "URS-18",
+      "URS-29",
+      "ANY SPECIFIC REQUIREMENTS",
+      "URS-58",
+      "OTHER AUXILIARY REQUIREMENT",
+      "URS-67",
+      "URS-68",
+    ]);
+    expect(isBannerTableRow(tableRowAt(withAux.doc, 11))).toBe(true);
+    expect(isBannerTableRow(tableRowAt(withAux.doc, 13))).toBe(true);
+  });
+
+  it("captures afterRow from afterRowKey before persisting", () => {
+    const captured = captureTableOperationSnapshots(rtmDoc(["URS-1", "URS-2"]), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRowKey: "URS-2",
+      rows: [rtmRow("URS-3")],
+    });
+    expect(captured).toMatchObject({
+      kind: "insert_rows",
+      afterRow: 2,
+      afterRowKey: "URS-2",
+      expectedRowAtAfter: rtmRow("URS-2"),
+    });
+  });
+
+  it("rematches edit_cells onto URS-13 when the numeric row is stale after banners", () => {
+    const doc = rtmDoc(["URS-1", "URS-8", "URS-9", "URS-13"], {
+      2: "ANY SPECIFIC REQUIREMENTS",
+    });
+    expect(cellText(doc, 1, 0)).toBe("URS-1");
+    expect(cellText(doc, 5, 0)).toBe("URS-13");
+
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 5, 3)).toBe("PQ");
+  });
+
+  it("rematches edit_cells from a URS-N in rowContext when rowKey is omitted", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"], { 2: "ANY SPECIFIC REQUIREMENTS" });
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowContext: "URS-13\nParameter\nURS-13 text",
+          expectedText: "stale URS-1 cell",
+          insertText: "OQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 3, 3)).toBe("OQ");
+  });
+
+  it("refuses identity edit_cells as already_present", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 2,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "",
+        },
+      ],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      status: "already_present",
+    });
+  });
+
+  it("drops identity cells and keeps a real change on the rematched row", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const resolved = resolveEditCells(
+      (doc.content![0]!.content ?? []).filter((n) => n.type === "tableRow"),
+      [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "",
+        },
+        {
+          row: 1,
+          col: 1,
+          rowKey: "URS-13",
+          expectedText: "Parameter",
+          insertText: "Jacket temperature",
+        },
+      ]
+    );
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.cells).toEqual([
+      {
+        row: 2,
+        col: 1,
+        rowKey: "URS-13",
+        expectedText: "Parameter",
+        insertText: "Jacket temperature",
+      },
+    ]);
+  });
+
+  it("rematches each cell by its own rowKey when the dummy numeric row is reused", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "13.3.5.1",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "13.2",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 1, 5)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+    expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
+    expect(cellText(result.doc, 2, 5)).toBe("");
+    expect(cellText(result.doc, 3, 3)).toBe("IQ");
+    expect(cellText(result.doc, 3, 4)).toBe("13.2");
+    expect(cellText(result.doc, 3, 5)).toBe("Complies");
+  });
+
+  it("drops already-filled dummy-row cells and still edits the empty remainder", () => {
+    const seeded = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const filled = applyTableOperation(seeded, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "PQ [28]",
+        },
+      ],
+    });
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const result = applyTableOperation(filled.doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          expectedText: "",
+          insertText: "2.4",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "13.3.5.1",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "IQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("PQ [28]");
+    expect(cellText(result.doc, 1, 4)).toBe("2.4");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+    expect(cellText(result.doc, 2, 4)).toBe("13.3.5.1");
+    expect(cellText(result.doc, 3, 3)).toBe("IQ");
+  });
+
+  it("skips rewriting a filled cell in a mixed fill-empty batch on any table", () => {
+    const doc = tableDoc(
+      [...ELR_MONITORING_HEADERS],
+      [
+        [
+          "1",
+          "Non-viable particles",
+          "1 Apr 2025 – 31 Mar 2026",
+          "PRQR-25-001",
+          "",
+          "",
+          "",
+        ],
+      ]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 2,
+          rowKey: "1",
+          expectedText: "1 Apr 2025 – 31 Mar 2026",
+          insertText: "Q2 only",
+        },
+        {
+          row: 1,
+          col: 4,
+          rowKey: "1",
+          expectedText: "",
+          insertText: "Within limits [PRQR-25-001, p. 4]",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 2)).toBe("1 Apr 2025 – 31 Mar 2026");
+    expect(cellText(result.doc, 1, 4)).toContain("Within limits");
+  });
+
+  it("overwrites a filled QSR RTM Section cell in a mixed fill-empty batch", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [["URS-41", "Gaskets", "PTFE or Equivalent", "", "13.6", "", "", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-41",
+          expectedText: "13.6",
+          insertText: "13.6; Gaskets PTFE or equivalent",
+        },
+        {
+          row: 1,
+          col: 7,
+          rowKey: "URS-41",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 1, 4)).toBe("13.6; Gaskets PTFE or equivalent");
+    expect(cellText(result.doc, 1, 7)).toBe("Complies");
+  });
+
+  it("still rewrites a filled cell when the batch has no empty fills", () => {
+    const doc = tableDoc(
+      [...DV_TRACEABILITY_HEADERS],
+      [["DI-1", "Input A", "TM-1", "Pass", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "DI-1",
+          expectedText: "Pass",
+          insertText: "Fail",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("Fail");
+  });
+
+  it("drops leftover angle-bracket cells on any table kind", () => {
+    const dropped = dropLeftoverPlaceholderCells({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 1, rowKey: "DI-1", insertText: "Pass" },
+        { row: 1, col: 3, rowKey: "DI-1", insertText: "<result>" },
+      ],
+    });
+    expect(dropped).toMatchObject({
+      kind: "edit_cells",
+      cells: [{ col: 1, insertText: "Pass" }],
+    });
+  });
+
+  it("keeps gated leftover date tokens after a lookup bounce", () => {
+    const kept = dropLeftoverPlaceholderCells({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, insertText: "MF-24-PR-001" },
+        { row: 1, col: 1, insertText: "<date>" },
+      ],
+    });
+    expect(kept).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        { col: 0, insertText: "MF-24-PR-001" },
+        { col: 1, insertText: "<date>" },
+      ],
+    });
+  });
+
+  it("keeps a valid rowKey when a sibling rowKey is missing", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-99",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("IQ");
+  });
+
+  it("still refuses a batch when every rowKey is missing", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    expect(
+      applyTableOperation(doc, {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            rowKey: "URS-99",
+            expectedText: "",
+            insertText: "IQ",
+          },
+        ],
+      }).status
+    ).toBe("bad_scope");
+  });
+
+  it("inherits a rowKey onto unkeyed siblings only when every keyed sibling agrees", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const rows = (doc.content![0]!.content ?? []).filter(
+      (n) => n.type === "tableRow"
+    );
+    const agreed = resolveEditCells(rows, [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-13",
+        insertText: "IQ",
+      },
+      {
+        row: 1,
+        col: 4,
+        insertText: "13.3.5.1",
+      },
+    ]);
+    expect(agreed.ok).toBe(true);
+    if (!agreed.ok) return;
+    expect(agreed.cells).toEqual([
+      { row: 2, col: 3, rowKey: "URS-13", insertText: "IQ" },
+      { row: 2, col: 4, rowKey: "URS-13", insertText: "13.3.5.1" },
+    ]);
+
+    const disagreed = resolveEditCells(rows, [
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-13",
+        insertText: "IQ",
+      },
+      {
+        row: 1,
+        col: 3,
+        rowKey: "URS-64",
+        insertText: "PQ",
+      },
+      {
+        row: 1,
+        col: 4,
+        insertText: "13.2",
+      },
+    ]);
+    expect(disagreed.ok).toBe(true);
+    if (!disagreed.ok) return;
+    expect(disagreed.cells).toEqual([
+      { row: 2, col: 3, rowKey: "URS-13", insertText: "IQ" },
+      { row: 3, col: 3, rowKey: "URS-64", insertText: "PQ" },
+      { row: 1, col: 4, insertText: "13.2" },
+    ]);
+  });
+
+  it("captures rematched row and rowKey before persisting edit_cells", () => {
+    const doc = rtmDoc(["URS-1", "URS-8", "URS-13"], {
+      2: "ANY SPECIFIC REQUIREMENTS",
+    });
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(captured).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 4,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
+  it("captures each dummy-row cell onto its own rowKey", () => {
+    const doc = rtmDoc(["URS-1", "URS-13", "URS-64"]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "IQ",
+        },
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-64",
+          insertText: "PQ",
+        },
+      ],
+    });
+    expect(captured).toMatchObject({
+      kind: "edit_cells",
+      cells: [
+        {
+          row: 2,
+          col: 3,
+          rowKey: "URS-13",
+          expectedText: "",
+          insertText: "IQ",
+        },
+        {
+          row: 3,
+          col: 3,
+          rowKey: "URS-64",
+          expectedText: "",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
   it("captures omitted expectedText and appends a column when afterCol is omitted", () => {
     const doc = tableDoc(
       ["Component", "Description"],
@@ -623,6 +1436,480 @@ describe("applyTableOperation", () => {
     expect(rowCount(result.doc)).toBe(3);
   });
 
+  it("inserts a Table N. caption when create_table has a title", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Intro." }],
+        },
+      ],
+    };
+    const result = applyTableOperation(
+      before,
+      {
+        kind: "create_table",
+        title: "Calibration certificates this period",
+        headers: ["Instrument", "Result"],
+        rows: [["TI-12", "Pass"]],
+      },
+      { section: "define", targetField: "narrative", existingTableCount: 3 }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(4);
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "paragraph",
+      "paragraph",
+      "table",
+    ]);
+    expect(flattenForAnchor(result.doc.content![1]!).text).toBe(
+      "Table 4. Calibration certificates this period"
+    );
+  });
+
+  it("does not count uncaptioned table shells toward N", () => {
+    expect(
+      existingTableCountFromContents([
+        {
+          table: {
+            type: "doc",
+            content: [{ type: "table", content: [] }],
+          },
+        },
+        {
+          type: "doc",
+          content: [{ type: "table", content: [] }],
+        },
+      ])
+    ).toBe(0);
+  });
+
+  it("counts Table N. captions across section maps, not uncaptioned shells", () => {
+    expect(
+      existingTableCountFromContents([
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Table 7. Spare parts" }],
+              },
+              { type: "table", content: [] },
+            ],
+          },
+        },
+        {
+          type: "doc",
+          content: [{ type: "table", content: [] }],
+        },
+      ])
+    ).toBe(7);
+  });
+
+  it("inserts a Table N. caption when a seeded table is first filled", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Production" },
+          { row: 1, col: 2, insertText: "Operate the filling line" },
+        ],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 0,
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(1);
+    expect(result.doc.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+    expect(flattenForAnchor(result.doc.content![0]!).text).toBe(
+      "Table 1. Departments and responsibilities"
+    );
+  });
+
+  it("does not caption a still-empty seeded table", () => {
+    const doc = seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]);
+    const result = applyTableOperation(
+      doc,
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, insertText: "" }],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 0,
+      }
+    );
+    expect(result.status).toBe("already_present");
+    expect(doc.content?.map((n) => n.type)).toEqual(["table"]);
+  });
+
+  it("reuses an existing caption instead of inserting a second one", () => {
+    const filled = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Production" },
+          { row: 1, col: 2, insertText: "Operate the filling line" },
+        ],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 0,
+      }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    const again = applyTableOperation(
+      filled.doc,
+      {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [["2", "QA", "Approve the report"]],
+      },
+      {
+        section: "elr_responsibilities",
+        targetField: "table",
+        existingTableCount: 1,
+      }
+    );
+    expect(again.status).toBe("ok");
+    if (!again.ok) return;
+    expect(again.tableNumber).toBe(1);
+    expect(
+      again.doc.content?.filter((n) => n.type === "paragraph")
+    ).toHaveLength(1);
+  });
+
+  it("numbers Monitoring as Table 2 when Abbreviations already has data", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Viable air" },
+        ],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+          {
+            section: "elr_monitoring",
+            content: EMPTY_ELR_CONTENT.elr_monitoring,
+          },
+        ],
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(2);
+    expect(flattenForAnchor(result.doc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
+  });
+
+  it("rewrites a stale Table 1 caption when a preceding table is filled", () => {
+    const monitoring: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Monitoring records" }],
+        },
+        seededTableDoc([...ELR_MONITORING_HEADERS]).content![0]!,
+      ],
+    };
+    const filled = applyTableOperation(
+      monitoring,
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "1" },
+          { row: 1, col: 1, insertText: "Viable air" },
+        ],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+          { section: "elr_monitoring", content: { table: monitoring } },
+        ],
+      }
+    );
+    expect(filled.status).toBe("ok");
+    if (!filled.ok) return;
+    expect(filled.tableNumber).toBe(2);
+    expect(flattenForAnchor(filled.doc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
+  });
+
+  it("numbers Monitoring as Table 3 when Abbreviations and Media Fill are filled", () => {
+    const mediaFill = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_media_fill", targetField: "table", existingTableCount: 0 }
+    );
+    expect(mediaFill.ok).toBe(true);
+    if (!mediaFill.ok) return;
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+          { section: "elr_media_fill", content: { table: mediaFill.doc } },
+          {
+            section: "elr_monitoring",
+            content: EMPTY_ELR_CONTENT.elr_monitoring,
+          },
+        ],
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(3);
+    expect(
+      filledTableNumberInDocument({
+        contents: [
+          {
+            section: "elr_abbreviations",
+            content: EMPTY_ELR_CONTENT.elr_abbreviations,
+          },
+        ],
+        target: {
+          section: "elr_abbreviations",
+          targetField: "table",
+          tableIndex: 0,
+        },
+      })
+    ).toBe(1);
+  });
+
+  it("numbers a lone filled table as Table 1", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      {
+        section: "elr_monitoring",
+        targetField: "table",
+        documentContents: [
+          {
+            section: "elr_monitoring",
+            content: EMPTY_ELR_CONTENT.elr_monitoring,
+          },
+        ],
+      }
+    );
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.tableNumber).toBe(1);
+  });
+
+  it("bumps later captions when a table is filled mid-document", () => {
+    const monitoringFilled = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoringFilled.ok).toBe(true);
+    if (!monitoringFilled.ok) return;
+    const mediaFillFilled = applyTableOperation(
+      seededTableDoc([...ELR_MEDIA_FILL_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "APS-1" }],
+      },
+      { section: "elr_media_fill", targetField: "table", existingTableCount: 0 }
+    );
+    expect(mediaFillFilled.ok).toBe(true);
+    if (!mediaFillFilled.ok) return;
+
+    const { contents, changedSections } = renumberFilledTableCaptions([
+      {
+        section: "elr_abbreviations",
+        content: EMPTY_ELR_CONTENT.elr_abbreviations,
+      },
+      { section: "elr_media_fill", content: { table: mediaFillFilled.doc } },
+      { section: "elr_monitoring", content: { table: monitoringFilled.doc } },
+    ]);
+    expect(changedSections).toContain("elr_media_fill");
+    expect(changedSections).toContain("elr_monitoring");
+    const mediaDoc = (contents[1]?.content as { table: JSONContent }).table;
+    const monitoringDoc = (contents[2]?.content as { table: JSONContent }).table;
+    expect(flattenForAnchor(mediaDoc.content![0]!).text).toBe(
+      "Table 2. Media fill / aseptic process simulation"
+    );
+    expect(flattenForAnchor(monitoringDoc.content![0]!).text).toBe(
+      "Table 3. Monitoring records"
+    );
+  });
+
+  it("strips a leftover caption on an emptied grid and decrements later tables", () => {
+    const monitoringFilled = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoringFilled.ok).toBe(true);
+    if (!monitoringFilled.ok) return;
+    const emptyMedia: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 2. Media fill / APS" }],
+        },
+        seededTableDoc([...ELR_MEDIA_FILL_HEADERS]).content![0]!,
+      ],
+    };
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "elr_abbreviations",
+        content: EMPTY_ELR_CONTENT.elr_abbreviations,
+      },
+      { section: "elr_media_fill", content: { table: emptyMedia } },
+      { section: "elr_monitoring", content: { table: monitoringFilled.doc } },
+    ]);
+    const mediaDoc = (contents[1]?.content as { table: JSONContent }).table;
+    const monitoringDoc = (contents[2]?.content as { table: JSONContent }).table;
+    expect(flattenForAnchor(mediaDoc).text).not.toMatch(/Table\s+2\./i);
+    expect(flattenForAnchor(monitoringDoc.content![0]!).text).toBe(
+      "Table 2. Monitoring records"
+    );
+  });
+
+  it("refuses create_table on a seeded ELR matrix field", () => {
+    const result = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      { kind: "create_table", headers: ["A", "B"], title: "Extra" },
+      { section: "elr_responsibilities", targetField: "table" }
+    );
+    expect(result.status).toBe("fixed_schema");
+  });
+
+  it("removes the caption with delete_table", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Spare parts" }],
+        },
+        tableDoc(["Part", "Qty"], [["A", "2"]]).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "delete_table",
+      tableIndex: 0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.content?.some((n) => n.type === "table")).toBe(false);
+    expect(flattenForAnchor(result.doc).text).not.toMatch(/Table 1/);
+  });
+
+  it("prefixes GFM table markdown with Table N. when rewriting a filled table", () => {
+    const prefixed = prefixTableCaptionMarkdown(
+      "| Department | Responsibilities |\n| --- | --- |\n| Production | Operate the line |\n",
+      2,
+      "Departments and responsibilities"
+    );
+    expect(prefixed.tableNumber).toBe(3);
+    expect(prefixed.markdown).toMatch(
+      /^Table 3\. Departments and responsibilities\n\n\| Department/
+    );
+  });
+
+  it("does not prefix GFM that already has a Table N. caption or has no data rows", () => {
+    expect(
+      prefixTableCaptionMarkdown(
+        "Table 4. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+        0,
+        "Monitoring records"
+      )
+    ).toEqual({
+      markdown:
+        "Table 4. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+      tableNumber: 4,
+    });
+    expect(
+      prefixTableCaptionMarkdown(
+        "Table 1. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+        0,
+        "Monitoring records",
+        2
+      )
+    ).toEqual({
+      markdown:
+        "Table 2. Monitoring records\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+      tableNumber: 2,
+    });
+    expect(
+      prefixTableCaptionMarkdown(
+        "| A | B |\n| --- | --- |\n",
+        0,
+        "Monitoring records"
+      )
+    ).toEqual({
+      markdown: "| A | B |\n| --- | --- |\n",
+      tableNumber: undefined,
+    });
+  });
+
   it("inserts a new table before trailing Citations", () => {
     const before: JSONContent = {
       type: "doc",
@@ -839,7 +2126,123 @@ describe("parseTableOperation", () => {
       })
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        afterRowKey: "URS-16",
+        rows: [{ banner: "ANY SPECIFIC REQUIREMENTS" }],
+      })
+    ).toBeUndefined();
     expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("coerces Langfuse insert_rows aliases (nested array, isBanner/cells, cells matrix)", () => {
+    expect(
+      parseTableOperation({
+        insert_rows: [
+          { isBanner: true, cells: ["PROTOCOL DOCUMENTS"] },
+          {
+            cells: [
+              "URS-GLR-1301",
+              "User Requirement Specification",
+              "01",
+              "Draft",
+              "—",
+              "—",
+            ],
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "URS-GLR-1301",
+          "User Requirement Specification",
+          "01",
+          "Draft",
+          "—",
+          "—",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        rows: [
+          { banner: "GROUP A" },
+          [
+            "URS-GLR-1301",
+            "User Requirement Specification",
+            "01",
+            "Draft",
+            "—",
+            "—",
+          ],
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "URS-GLR-1301",
+          "User Requirement Specification",
+          "01",
+          "Draft",
+          "—",
+          "—",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+    expect(
+      parseTableOperation({
+        kind: "insert_rows",
+        tableIndex: 0,
+        cells: [
+          [
+            "DQ-GLR-1301",
+            "Design Qualification",
+            "01",
+            "Approved",
+            "01-04-2025",
+            "Complies",
+          ],
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "DQ-GLR-1301",
+          "Design Qualification",
+          "01",
+          "Approved",
+          "01-04-2025",
+          "Complies",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
+    });
+  });
+
+  it("hints insert_rows to pass rows, not cells or a nested insert_rows array", () => {
+    expect(
+      tableOperationInvalidHint({
+        kind: "insert_rows",
+        cells: [{ row: 1, col: 0, insertText: "x" }],
+      })
+    ).toMatch(/rows: \[\["col1","col2"\]/);
+    expect(tableOperationInvalidHint({ kind: "insert_rows" })).toMatch(
+      /not pass cells, \{ banner \}, or nest insert_rows/
+    );
   });
 
   it("coerces nested edit_cells with extra reasoning and omitted expectedText", () => {
@@ -951,6 +2354,33 @@ describe("parseTableOperation", () => {
     });
   });
 
+  it("round-trips edit_cells rowKey and afterRowKey alias", () => {
+    expect(
+      parseTableOperation({
+        kind: "edit_cells",
+        cells: [
+          {
+            row: 1,
+            col: 3,
+            afterRowKey: "URS-13",
+            insertText: "PQ",
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          rowKey: "URS-13",
+          insertText: "PQ",
+        },
+      ],
+    });
+  });
+
   it("coerces near-miss delete_table / delete_rows shapes", () => {
     expect(
       parseTableOperation({
@@ -1033,6 +2463,22 @@ describe("parseTableOperation", () => {
     };
     expect(parseTableOperation(raw)).toEqual(raw);
   });
+
+  it("preserves create_table title", () => {
+    expect(
+      parseTableOperation({
+        kind: "create_table",
+        title: "Calibration certificates this period",
+        headers: ["Instrument", "Result"],
+        rows: [["TI-12", "Pass"]],
+      })
+    ).toEqual({
+      kind: "create_table",
+      title: "Calibration certificates this period",
+      headers: ["Instrument", "Result"],
+      rows: [["TI-12", "Pass"]],
+    });
+  });
 });
 
 describe("summarizeTableOperation", () => {
@@ -1062,5 +2508,82 @@ describe("summarizeTableOperation", () => {
     expect(
       summarizeTableOperation({ kind: "delete_table", tableIndex: 0 })
     ).toBe("Delete table");
+  });
+
+  it("names the URS rows on an edit_cells card", () => {
+    expect(
+      summarizeTableOperation({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2 – Simulation" },
+          { row: 1, col: 5, rowKey: "URS-1", insertText: "Complies" },
+          { row: 6, col: 4, rowKey: "URS-6", insertText: "10.5 – Jacket" },
+        ],
+      })
+    ).toBe("Update 3 table cells on URS-1, URS-6");
+  });
+});
+
+describe("applyEditCells appliedOperation", () => {
+  it("omits identity Remarks so the card title matches the previewed cells", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [
+        ["URS-1", "Reactor Capacity", "8000 L", "PQ", "8.2.3", "Complies"],
+        ["URS-63", "Agitator", "50 RPM", "PQ", "8.2.4", "Complies"],
+      ]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          expectedText: "8.2.3",
+          insertText: "8.2.3 – Heating Trial",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-1",
+          expectedText: "Complies",
+          insertText: "Complies",
+        },
+        {
+          row: 2,
+          col: 4,
+          rowKey: "URS-63",
+          expectedText: "8.2.4",
+          insertText: "8.2.4 – Operational verification of agitator",
+        },
+        {
+          row: 2,
+          col: 5,
+          rowKey: "URS-63",
+          expectedText: "Complies",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.appliedOperation?.kind).toBe("edit_cells");
+    const cells =
+      result.appliedOperation?.kind === "edit_cells"
+        ? result.appliedOperation.cells
+        : [];
+    expect(cells).toHaveLength(2);
+    expect(cells.every((cell) => cell.col === 4)).toBe(true);
+    expect(summarizeTableOperation(result.appliedOperation!)).toBe(
+      "Update 2 table cells on URS-1, URS-63"
+    );
+    expect(cellText(result.doc, 1, 4)).toBe("8.2.3 – Heating Trial");
+    expect(cellText(result.doc, 1, 5)).toBe("Complies");
+    expect(cellText(result.doc, 2, 4)).toBe(
+      "8.2.4 – Operational verification of agitator"
+    );
   });
 });

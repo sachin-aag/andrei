@@ -89,6 +89,7 @@ export async function reserveAttachmentUpload(
       permanentObjectKey: permanentKey,
       processingStatus: "uploading",
       processingProgress: 0,
+      listedInLibrary: false,
     });
 
     await tx.insert(reportAttachments).values({

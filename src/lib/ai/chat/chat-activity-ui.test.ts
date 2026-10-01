@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChatActivityBlocks,
+  documentReviewActivityNode,
   readChatToolPart,
 } from "@/lib/ai/chat/chat-activity-ui";
 
@@ -44,14 +45,13 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("documents");
-    expect(blocks[0].node.label).toBe("Read Protocol.pdf");
+    expect(blocks[0].node.label).toBe("Read Protocol.pdf · pages 3–4");
     expect(blocks[0].node.expandable).toBe(true);
-    expect(blocks[0].node.children).toHaveLength(3);
+    expect(blocks[0].node.children).toHaveLength(2);
     expect(blocks[0].node.children).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Searched Protocol.pdf" }),
-        expect.objectContaining({ label: "Read Protocol.pdf · page 3" }),
-        expect.objectContaining({ label: "Read Protocol.pdf · page 4" }),
+        expect.objectContaining({ label: "Read Protocol.pdf · pages 3–4" }),
       ])
     );
   });
@@ -88,7 +88,8 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks).toHaveLength(1);
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.pending).toBe(true);
-    expect(blocks[0].node.label).toBe("Reading Protocol.pdf…");
+    expect(blocks[0].node.label).toBe("Reading Protocol.pdf · page 2…");
+    expect(blocks[0].node.expandable).toBe(false);
     expect(blocks[0].node.children[0]).toEqual(
       expect.objectContaining({
         label: "Reading Protocol.pdf · page 2…",
@@ -126,6 +127,113 @@ describe("buildChatActivityBlocks", () => {
     );
   });
 
+  it("does not keep a nested document thought pending after the turn is idle", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        toolPart("search_documents", "output-available"),
+        {
+          type: "reasoning",
+          text: "Checking the protocol appendix.",
+          state: "streaming",
+        },
+      ] as never,
+      undefined,
+      { streaming: false }
+    );
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.pending).toBe(false);
+    expect(blocks[0].node.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "thought",
+          text: "Checking the protocol appendix.",
+          pending: false,
+        }),
+      ])
+    );
+  });
+
+  it("updates one Read chip as more pages of the same PDF stream in", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        toolPart(
+          "read_document_page",
+          "output-available",
+          { pageNumber: 33, attachmentId: "att_prqr" },
+          { page: { filename: "PRQR-25-PR-005 Report.pdf", pageNumber: 33 } }
+        ),
+        { type: "step-start" },
+        { type: "text", text: "   " },
+        { type: "reasoning", text: "", state: "done" },
+        {
+          type: "reasoning",
+          text: "Reviewing calibration records on the next page.",
+          state: "done",
+        },
+        toolPart(
+          "read_document_page",
+          "output-available",
+          { pageNumber: 34, attachmentId: "att_prqr" },
+          { page: { filename: "PRQR-25-PR-005 Report.pdf", pageNumber: 34 } }
+        ),
+        { type: "step-start" },
+        toolPart(
+          "read_document_page",
+          "input-available",
+          { pageNumber: 35, attachmentId: "att_prqr" }
+        ),
+      ] as never,
+      new Map([["att_prqr", "PRQR-25-PR-005 Report.pdf"]])
+    );
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("documents");
+    expect(blocks[0].node.pending).toBe(true);
+    expect(blocks[0].node.label).toBe(
+      "Reading PRQR-25-PR-005 Report.pdf · pages 33–35…"
+    );
+    expect(blocks[0].node.expandable).toBe(true);
+    const pageReads = blocks[0].node.children.filter(
+      (child) => child.kind === "detail"
+    );
+    expect(pageReads).toHaveLength(1);
+    expect(pageReads[0]).toEqual(
+      expect.objectContaining({
+        label: "Reading PRQR-25-PR-005 Report.pdf · pages 33–35…",
+      })
+    );
+  });
+
+  it("keeps a separate Read chip when a later page is a different PDF", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "read_document_page",
+        "output-available",
+        { pageNumber: 1, attachmentId: "att_a" },
+        { page: { filename: "Protocol.pdf", pageNumber: 1 } }
+      ),
+      toolPart(
+        "read_document_page",
+        "output-available",
+        { pageNumber: 2, attachmentId: "att_b" },
+        { page: { filename: "COA.pdf", pageNumber: 2 } }
+      ),
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.label).toBe("Read Protocol.pdf and COA.pdf");
+    expect(
+      blocks[0].node.children.filter((child) => child.kind === "detail")
+    ).toEqual([
+      expect.objectContaining({ label: "Read Protocol.pdf · page 1" }),
+      expect.objectContaining({ label: "Read COA.pdf · page 2" }),
+    ]);
+  });
+
   it("shows a standalone thought line outside document groups", () => {
     const blocks = buildChatActivityBlocks([
       { type: "reasoning", text: "Planning the next edit.", state: "done" },
@@ -136,7 +244,66 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
     expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thought");
     expect(blocks[0].node.thoughtText).toBe("Planning the next edit.");
+    expect(blocks[0].node.children).toEqual([]);
+  });
+
+  it("labels a streaming thought as Thinking even before any text arrives", () => {
+    const blocks = buildChatActivityBlocks([
+      { type: "reasoning", text: "", state: "streaming" },
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thinking…");
+    expect(blocks[0].node.pending).toBe(true);
+    expect(blocks[0].node.thoughtText).toBe("");
+  });
+
+  it("stops a leftover streaming thought when the turn is idle", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        {
+          type: "reasoning",
+          text: "Clarifying URS-65 from the specification.",
+          state: "streaming",
+        },
+      ] as never,
+      undefined,
+      { streaming: false }
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thought");
+    expect(blocks[0].node.pending).toBe(false);
+  });
+
+  it("settles a streaming thought once later output has arrived", () => {
+    const blocks = buildChatActivityBlocks([
+      {
+        type: "reasoning",
+        text: "Clarifying URS-65.",
+        state: "streaming",
+      },
+      toolPart(
+        "edit_table",
+        "output-available",
+        { section: "qsr_rtm" },
+        { status: "proposed", section: "qsr_rtm", targetField: "rtmTable" }
+      ),
+    ] as never);
+
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.pending).toBe(false);
+    expect(blocks[0].node.label).toBe("Thought");
   });
 
   it("collapses edit failures to Edit attempted with hidden detail", () => {
@@ -179,6 +346,28 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0].node.children).toHaveLength(2);
   });
 
+  it("names a proposed cover-identity write from the output label", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart(
+        "draft_identity",
+        "output-available",
+        { fields: [{ key: "equipmentName", value: "Glass Lined Reactor" }] },
+        {
+          status: "proposed",
+          section: "identity",
+          label: "Cover identity",
+          complete: false,
+        }
+      ),
+    ] as never);
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.label).toBe(
+      "Proposed edit to Cover identity — review it in the document"
+    );
+  });
+
   it("names drafted sections without targetField keys", () => {
     const blocks = buildChatActivityBlocks([
       toolPart(
@@ -213,6 +402,115 @@ describe("buildChatActivityBlocks", () => {
     ] as never);
 
     expect(blocks[0]?.kind).toBe("document-review");
+  });
+
+  it("keeps start and continue as one review chip across thinking pauses", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart("start_document_review", "output-available", undefined, {
+        status: "started",
+        totalPages: 12,
+      }),
+      { type: "reasoning", text: "Walking remaining pages.", state: "done" },
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "in_progress",
+        totalPages: 12,
+        reviewedPages: 8,
+      }),
+      { type: "reasoning", text: "Still extracting.", state: "done" },
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "ready_to_finish",
+        totalPages: 12,
+        reviewedPages: 12,
+      }),
+    ] as never);
+
+    const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
+    expect(reviewBlocks).toHaveLength(1);
+    expect(blocks.some((block) => block.kind === "activity")).toBe(false);
+  });
+
+  it("expands a complete review to the full filename and page count", () => {
+    const node = documentReviewActivityNode([
+      {
+        toolName: "start_document_review",
+        state: "output-available",
+        output: {
+          status: "started",
+          totalPages: 12,
+          documents: [
+            {
+              attachmentId: "urs",
+              filename: "User Requirement Specification.PDF",
+              pageCount: 12,
+            },
+          ],
+        },
+      },
+      {
+        toolName: "finish_document_review",
+        state: "output-available",
+        output: {
+          status: "complete",
+          totalPages: 12,
+          reviewedPages: 12,
+          findingCount: 4,
+        },
+      },
+    ]);
+    expect(node?.label).toBe(
+      "Complete: reviewed 12/12 pages in User Requirement Specification.PDF"
+    );
+    expect(node?.expandable).toBe(true);
+    expect(node?.wrapLabel).toBe(true);
+    expect(node?.children).toEqual([
+      expect.objectContaining({
+        kind: "detail",
+        label: "User Requirement Specification.PDF · 12 pages",
+      }),
+      expect.objectContaining({
+        kind: "detail",
+        label: "4 relevant findings",
+      }),
+    ]);
+  });
+
+  it("does not split a review chip when list_attachments runs mid-walk", () => {
+    const blocks = buildChatActivityBlocks([
+      toolPart("start_document_review", "output-available", undefined, {
+        status: "started",
+        totalPages: 12,
+        documents: [
+          {
+            filename: "User Requirement Specification.pdf",
+            attachmentId: "urs",
+          },
+        ],
+      }),
+      toolPart("list_attachments", "output-available", undefined, {
+        count: 5,
+      }),
+      toolPart("continue_document_review", "output-available", undefined, {
+        status: "ready_to_finish",
+        totalPages: 12,
+        reviewedPages: 12,
+      }),
+      toolPart("finish_document_review", "output-available", undefined, {
+        status: "complete",
+        totalPages: 12,
+        reviewedPages: 12,
+        documents: [
+          {
+            filename: "User Requirement Specification.pdf",
+            attachmentId: "urs",
+          },
+        ],
+      }),
+    ] as never);
+
+    const reviewBlocks = blocks.filter((block) => block.kind === "document-review");
+    expect(reviewBlocks).toHaveLength(1);
+    const listed = blocks.filter((block) => block.kind === "activity");
+    expect(listed.length).toBeGreaterThanOrEqual(1);
   });
 
   it("does not show a fatal error chip for a remapped unavailable tool", () => {
@@ -286,5 +584,24 @@ describe("readChatToolPart", () => {
     expect(done[0].node.children[0]).toEqual(
       expect.objectContaining({ label: "Listed attachments" })
     );
+  });
+
+  it("names list_suggestions while pending and after counts land", () => {
+    const pending = buildChatActivityBlocks([
+      toolPart("list_suggestions", "input-available", { status: "all" }),
+    ] as never);
+    expect(pending).toHaveLength(1);
+    if (pending[0]?.kind !== "activity") return;
+    expect(pending[0].node.label).toBe("Checking suggestions…");
+
+    const done = buildChatActivityBlocks([
+      toolPart("list_suggestions", "output-available", { status: "all" }, {
+        counts: { open: 2, resolved: 1, dismissed: 0 },
+        suggestions: [],
+      }),
+    ] as never);
+    expect(done).toHaveLength(1);
+    if (done[0]?.kind !== "activity") return;
+    expect(done[0].node.label).toBe("Checked suggestions (2 open)");
   });
 });

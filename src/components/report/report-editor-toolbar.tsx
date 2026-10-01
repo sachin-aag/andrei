@@ -11,6 +11,7 @@ import {
   HeadingToolbar,
   InsertImageButton,
   InsertTableButton,
+  InsertTableRefButton,
   ListEditToolbar,
   TextFormatToolbar,
   useEditorToolbarState,
@@ -108,6 +109,7 @@ export function ReportEditorToolbar() {
           <InsertImageButton editor={editor} />
           <Separator orientation="vertical" className="h-5" />
           <InsertTableButton editor={editor} />
+          <InsertTableRefButton editor={editor} />
           {editor.isActive("table") ? (
             <span className="text-[10px] text-[var(--muted-foreground)]">
               Table tools float above the cell

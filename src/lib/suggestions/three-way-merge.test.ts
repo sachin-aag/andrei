@@ -208,3 +208,38 @@ describe("mergeField", () => {
     );
   });
 });
+
+describe("tableRef vs typed Table N", () => {
+  it("is a noop when live REFs already display the typed Table N labels", () => {
+    const live = doc(
+      para("as ", [
+        {
+          type: "tableRef",
+          attrs: {
+            section: "elr_monitoring",
+            targetField: "table",
+            tableIndex: 0,
+            n: 8,
+          },
+        },
+        { type: "text", text: " detailed in " },
+        {
+          type: "tableRef",
+          attrs: {
+            section: "elr_monitoring",
+            targetField: "table",
+            tableIndex: 0,
+            n: 8,
+          },
+        },
+        { type: "text", text: "." },
+      ])
+    );
+    const typed = doc(para("as Table 8 detailed in Table 8."));
+    const result = mergeField(live, live, typed);
+    expect(result.status).toBe("noop");
+    expect(result.operations).toEqual([]);
+    expect(JSON.stringify(result.merged)).toContain("tableRef");
+    expect(JSON.stringify(result.merged)).not.toMatch(/"text":"Table 8"/);
+  });
+});

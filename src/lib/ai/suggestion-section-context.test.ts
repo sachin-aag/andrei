@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { contextForPrompt } from "@/lib/ai/section-context";
-import { contextForSuggestionPrompt } from "@/lib/ai/suggestion-section-context";
+import {
+  contextForSuggestionPrompt,
+  renderStructuredFieldView,
+} from "@/lib/ai/suggestion-section-context";
 
 describe("suggestion vs eval section context isolation", () => {
   const tableDoc: JSONContent = {
@@ -147,6 +150,63 @@ describe("suggestion vs eval section context isolation", () => {
     expect(suggestPrompt).not.toContain('"type": "table"');
   });
 
+  it("labels merged banner rows in the coordinate grid", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "URS ID" }] },
+                  ],
+                },
+                {
+                  type: "tableHeader",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Requirement" }],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { colspan: 2, rowspan: 1 },
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "ANY SPECIFIC REQUIREMENTS" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const grid = renderStructuredFieldView(doc);
+    expect(grid).toContain("row 1 = banner (spans 2 cols)");
+    expect(grid).toContain(
+      "[1,0] (banner, spans 2 cols) ANY SPECIFIC REQUIREMENTS"
+    );
+    expect(grid).toContain(
+      "Prefer edit_cells rowKey and insert_rows afterRowKey"
+    );
+    expect(grid).toContain("Each edit_cells cell needs its own rowKey");
+  });
+
   it("tagged cell coordinates resolve to the same cell the locator scopes", async () => {
     const { flattenForAnchor, resolveScopeWindow } = await import(
       "@/lib/suggestions/locator"
@@ -275,5 +335,42 @@ describe("suggestion vs eval section context isolation", () => {
     expect(suggestPrompt).toContain("Alex Rivera");
     expect(suggestPrompt).not.toMatch(/^Start date:/m);
     expect(suggestPrompt).not.toMatch(/^End date:/m);
+  });
+
+  it("eval contextForPrompt includes ELR trend, grade, and recommendation", () => {
+    const para = (text: string): JSONContent => ({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text }],
+        },
+      ],
+    });
+    const alarms = contextForPrompt("elr_alarms", {
+      narrative: para("3 Direct Impact alarms this period."),
+      table: para(""),
+      trend: para("Nuisance door-open alarms dominate the set."),
+    });
+    expect(alarms).toContain("Narrative: 3 Direct Impact alarms this period.");
+    expect(alarms).toContain("Trend: Nuisance door-open alarms dominate the set.");
+
+    const risk = contextForPrompt("elr_risk_actions", {
+      narrative: para("Highest priority is downtime."),
+      overallGrade: "medium",
+    });
+    expect(risk).toContain("Overall grade: medium");
+
+    const conclusion = contextForPrompt("elr_conclusion", {
+      narrative: para("The equipment remains in its qualified state."),
+      recommendation: "continue",
+      recommendationNarrative: para(
+        "Continue routine use; next PRQ stays on the VMP date."
+      ),
+    });
+    expect(conclusion).toContain("Recommendation: continue");
+    expect(conclusion).toContain(
+      "Recommendation narrative: Continue routine use; next PRQ stays on the VMP date."
+    );
   });
 });

@@ -98,6 +98,12 @@ export type ChartLayout = {
    */
   mark?: ChartMark;
   /**
+   * How to label X ticks. "time" reads `x` as epoch milliseconds and prints a
+   * clock/date instead of a nine-digit number; the geometry is unchanged, so
+   * this is presentation only. Omitted → "number".
+   */
+  xTickFormat?: "number" | "time";
+  /**
    * Draw Y-column LSL/USL as dashed lines and include them in the y-range.
    * Worksheet plots set this explicitly (default off). Omitted (attachment
    * charts, older specs) still shows limits when they exist.

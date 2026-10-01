@@ -5,6 +5,8 @@ import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { listAttachmentFolders } from "@/lib/attachments/folders";
+import { listActiveAttachments } from "@/lib/attachments/list-active";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
@@ -57,6 +59,10 @@ export async function GET(
   const omitCitations =
     requestedOmitCitations(req) &&
     citationsAtEndOfSectionFor(report.documentType);
+  const [attachments, attachmentFolders] = await Promise.all([
+    listActiveAttachments(reportId),
+    listAttachmentFolders(reportId),
+  ]);
 
   const buffer = await generateReportDocx({
     report: reportWithManagers,
@@ -75,6 +81,8 @@ export async function GET(
       contentHash: s.contentHash,
     })),
     omitCitations,
+    attachments,
+    attachmentFolders,
   });
 
   const filename = reportExportDocxFileName(

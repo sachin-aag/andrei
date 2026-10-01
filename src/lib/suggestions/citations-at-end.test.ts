@@ -18,6 +18,9 @@ import {
   stripTrailingCitationBlockFromDoc,
   stripTrailingCitationBlockFromText,
   stripTrailingCitationsFromContent,
+  applyGlobalCitationNumbersToContent,
+  citationNumbersFromDoc,
+  orderedCitationSourcesFromContent,
 } from "./citations-at-end";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 
@@ -118,6 +121,43 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
+  it("moves a citation out of bold markdown to the end of the word", () => {
+    const markdown =
+      "Total product scrap or batch loss across all trended themes was **0 [scrap-log.pdf, p. 6]** units. All 4 technical themes remain open.";
+    const parked = moveCitationsToEndOfText(markdown);
+    expect(parked).toContain("was **0** [1] units.");
+    expect(parked).not.toMatch(/\*\*0\s*\[\d+\]/);
+    expect(parked).toContain("1. [scrap-log.pdf, p. 6]");
+  });
+
+  it("keeps a word-end citation instead of pulling it to the period", () => {
+    expect(
+      moveCitationsToEndOfText(
+        "Total product scrap was **0** [scrap-log.pdf, p. 6] units."
+      )
+    ).toBe(
+      [
+        "Total product scrap was **0** [1] units.",
+        "",
+        "Citations:",
+        "1. [scrap-log.pdf, p. 6]",
+      ].join("\n")
+    );
+  });
+
+  it("moves a citation out of the middle of a word", () => {
+    expect(
+      moveCitationsToEndOfText("zero uni[scrap-log.pdf, p. 6]ts remained.")
+    ).toBe(
+      [
+        "zero units [1] remained.",
+        "",
+        "Citations:",
+        "1. [scrap-log.pdf, p. 6]",
+      ].join("\n")
+    );
+  });
+
   it("moves inline citations after the prose and any table, leaving numbered markers", () => {
     const markdown = [
       "Power output met the acceptance limit [protocol.pdf, p. 2].",
@@ -137,6 +177,21 @@ describe("moveCitationsToEndOfText", () => {
         "Citations:",
         "1. [protocol.pdf, p. 2]",
         "2. [datasheet.pdf, p. 4]",
+      ].join("\n")
+    );
+  });
+
+  it("parks a QMS download-stamped filename as the document number", () => {
+    expect(
+      moveCitationsToEndOfText(
+        "Media fill MF-24-001 was executed [PQR-24-PR-102_20250320092518.pdf, p. 1]."
+      )
+    ).toBe(
+      [
+        "Media fill MF-24-001 was executed [1].",
+        "",
+        "Citations:",
+        "1. [PQR-24-PR-102.pdf, p. 1]",
       ].join("\n")
     );
   });
@@ -197,14 +252,14 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
-  it("emits adjacent markers for multiple sources on one claim", () => {
+  it("emits a combined marker for multiple sources on one claim", () => {
     expect(
       moveCitationsToEndOfText(
         "Met spec [protocol.pdf, p. 2] [datasheet.pdf, p. 4]."
       )
     ).toBe(
       [
-        "Met spec [1][2].",
+        "Met spec [1,2].",
         "",
         "Citations:",
         "1. [protocol.pdf, p. 2]",
@@ -398,7 +453,8 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(false)).not.toContain("end of the section");
     expect(documentCitationRule(true)).toContain("end of the section field");
     expect(documentCitationRule(true)).toContain("Citations:");
-    expect(documentCitationRule(true)).toContain("split edit");
+    expect(documentCitationRule(true)).toContain("supported word or claim");
+    expect(documentCitationRule(true)).toContain("[1,2]");
     expect(documentCitationRule(false)).toContain("missing or ambiguous");
     expect(documentCitationRule(true)).toContain("missing or ambiguous");
     expect(documentCitationRule(false)).toMatch(/absolute PDF page/i);
@@ -423,6 +479,12 @@ describe("sourceCitationBracket", () => {
     expect(sourceCitationBracket("Mechanical Test Report.pdf", 0)).toBe(
       "[Mechanical Test Report.pdf]"
     );
+  });
+
+  it("strips a QMS download stamp from the filename", () => {
+    expect(
+      sourceCitationBracket("PQR-24-PR-102_20250320092518.pdf", 1)
+    ).toBe("[PQR-24-PR-102.pdf, p. 1]");
   });
 });
 
@@ -527,6 +589,16 @@ describe("normalizeTrailingCitationBlockInText", () => {
         "Verify REQ-101.\n\nCitations:\n[protocol.pdf, p. 3]"
       )
     ).toBe("Verify REQ-101.\n\nCitations:\n1. [protocol.pdf, p. 3]");
+  });
+
+  it("strips a download stamp from an already parked source", () => {
+    expect(
+      normalizeTrailingCitationBlockInText(
+        "Media fill executed [1].\n\nCitations:\n1. [PQR-24-PR-102_20250320092518.pdf, p. 1]"
+      )
+    ).toBe(
+      "Media fill executed [1].\n\nCitations:\n1. [PQR-24-PR-102.pdf, p. 1]"
+    );
   });
 });
 
@@ -699,6 +771,73 @@ describe("stripTrailingCitationsFromContent", () => {
       type: "doc",
       content: [{ type: "paragraph" }],
     });
+  });
+});
+
+describe("applyGlobalCitationNumbersToContent", () => {
+  it("drops the list and rewrites local markers using the global map", () => {
+    const next = applyGlobalCitationNumbersToContent(
+      {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "IQ completed [1]." }],
+            },
+            { type: "paragraph" },
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "Citations:" }],
+            },
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "1. [iq.pdf, p. 4]" }],
+            },
+          ],
+        },
+      },
+      new Map([["[iq.pdf, p. 4]", 7]])
+    ) as { narrative: JSONContent };
+
+    expect(
+      next.narrative.content
+        ?.map((node) =>
+          (node.content ?? [])
+            .map((child) => (child as { text?: string }).text ?? "")
+            .join("")
+        )
+        .join("\n")
+    ).toBe("IQ completed [7].");
+  });
+});
+
+describe("citationNumbersFromDoc", () => {
+  it("falls back to body markers when the trailing list was already dropped", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "The URS was approved [1] and [2]." }],
+        },
+      ],
+    };
+    expect([...citationNumbersFromDoc(doc)].toSorted((a, b) => a - b)).toEqual([
+      1, 2,
+    ]);
+  });
+});
+
+describe("orderedCitationSourcesFromContent", () => {
+  it("walks nested fields in first-appearance order", () => {
+    expect(
+      orderedCitationSourcesFromContent({
+        narrative:
+          "Approved [1].\n\nCitations:\n1. [urs.pdf, p. 2]",
+        table: "IQ [1]\n\nCitations:\n1. [iq.pdf, p. 4]",
+      })
+    ).toEqual(["[urs.pdf, p. 2]", "[iq.pdf, p. 4]"]);
   });
 });
 

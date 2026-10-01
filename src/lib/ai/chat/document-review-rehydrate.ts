@@ -6,6 +6,7 @@ import {
   type DocumentReviewCoverageKey,
   type DocumentReviewCoverageSource,
 } from "@/lib/ai/chat/document-review";
+import { coverageKeySatisfiesObjective } from "@/lib/ai/chat/review-page-plan";
 import type { RecommendedResultsInventory } from "@/lib/ai/chat/results-inventory";
 
 type ToolPartRecord = {
@@ -136,14 +137,8 @@ export function findPriorFinishedDocumentReview(
 
       if (name !== "finish_document_review") continue;
       const status = output.status;
-      const coverageComplete = output.coverageComplete;
-      const finished =
-        status === "complete" ||
-        coverageComplete === true ||
-        (typeof output.reviewedPages === "number" &&
-          typeof output.totalPages === "number" &&
-          output.reviewedPages === output.totalPages);
-      if (!finished) continue;
+      const truncated = output.truncated;
+      if (status !== "complete" || truncated === true) continue;
 
       const coverageKey =
         (typeof output.coverageKey === "string" && output.coverageKey) ||
@@ -163,9 +158,42 @@ export function findPriorFinishedDocumentReview(
 }
 
 export function coverageKeyFromReadyDocuments(
-  documents: readonly DocumentReviewCoverageSource[]
+  documents: readonly DocumentReviewCoverageSource[],
+  coverageObjective?: string
 ): DocumentReviewCoverageKey {
-  return documentReviewCoverageKey(documents);
+  return documentReviewCoverageKey(documents, coverageObjective);
+}
+
+/**
+ * Attachment page identity plus skip suffix, ignoring `|obj:` so a verbose
+ * Table 3 walk can match a later `qsr_qualification_documents` key.
+ */
+export function coverageKeyWithoutObjective(
+  key: DocumentReviewCoverageKey | null | undefined
+): string | null {
+  if (!key) return null;
+  const objIdx = key.indexOf("|obj:");
+  if (objIdx === -1) return key;
+  const after = key.slice(objIdx + "|obj:".length);
+  const skipIdx = after.indexOf("|skip:");
+  if (skipIdx === -1) return key.slice(0, objIdx);
+  return `${key.slice(0, objIdx)}${after.slice(skipIdx)}`;
+}
+
+function coverageKeyFitsCurrentObjective(input: {
+  priorKey: DocumentReviewCoverageKey;
+  currentKey: DocumentReviewCoverageKey;
+  coverageObjective?: string;
+}): boolean {
+  if (coverageKeysMatch(input.priorKey, input.currentKey)) return true;
+  if (!input.coverageObjective) return false;
+  if (
+    coverageKeyWithoutObjective(input.priorKey) !==
+    coverageKeyWithoutObjective(input.currentKey)
+  ) {
+    return false;
+  }
+  return coverageKeySatisfiesObjective(input.priorKey, input.coverageObjective);
 }
 
 /**
@@ -181,19 +209,26 @@ export function rehydrateDocumentReviewIfCoverageUnchanged(input: {
    * walk. Restoring `complete` hides `start_document_review`.
    */
   skipRestore?: boolean;
+  /** Current section/objective so a finished walk of another section is not reused. */
+  coverageObjective?: string;
 }): {
   restored: boolean;
   prior: PriorFinishedDocumentReview | null;
   currentCoverageKey: DocumentReviewCoverageKey;
 } {
   const currentCoverageKey = coverageKeyFromReadyDocuments(
-    input.readyDocuments
+    input.readyDocuments,
+    input.coverageObjective
   );
   const prior = findPriorFinishedDocumentReview(input.messages);
   if (
     input.skipRestore ||
     !prior ||
-    !coverageKeysMatch(prior.coverageKey, currentCoverageKey)
+    !coverageKeyFitsCurrentObjective({
+      priorKey: prior.coverageKey,
+      currentKey: currentCoverageKey,
+      coverageObjective: input.coverageObjective,
+    })
   ) {
     return { restored: false, prior, currentCoverageKey };
   }

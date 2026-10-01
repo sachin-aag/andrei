@@ -85,7 +85,7 @@ export function MathNodeView({ node, selected, updateAttributes, editor, getPos 
             isBlock ? "block w-full" : "inline-block"
           )}
         />
-        {!mathml ? (
+        {!mathml && !latex ? (
           <span className="text-xs text-[var(--muted-foreground)] italic">
             Empty equation — click to edit
           </span>

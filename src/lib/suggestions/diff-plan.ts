@@ -15,6 +15,11 @@ import {
   stripTrailingCitationBlockFromText,
 } from "@/lib/suggestions/citations-at-end";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
+import {
+  isTableRefNode,
+  tableRefAttrsFromNode,
+  tableRefDisplayText,
+} from "@/lib/tiptap/table-ref-markdown";
 
 export const INLINE_ATOM_WEIGHT = 20;
 export const COALESCING_GAP = 20;
@@ -123,6 +128,10 @@ function textOf(node: JSONContent): string {
     }
     if (n.type === "hardBreak") {
       parts.push("\n");
+      return;
+    }
+    if (isTableRefNode(n)) {
+      parts.push(tableRefDisplayText(tableRefAttrsFromNode(n)));
       return;
     }
     if (INLINE_ATOM_TYPES.has(n.type ?? "")) {
@@ -453,11 +462,14 @@ export function planFieldDiff(
         break;
       case "replace": {
         const wordHunks = coalesceWordDiff(hunk.left.text, hunk.right.text);
-        if (
-          wordHunks.length === 0 &&
-          JSON.stringify(hunk.left.node) === JSON.stringify(hunk.right.node)
-        ) {
-          break;
+        if (wordHunks.length === 0) {
+          const sameNode =
+            JSON.stringify(hunk.left.node) === JSON.stringify(hunk.right.node);
+          const sameDisplay =
+            collapseWhitespace(hunk.left.text) ===
+              collapseWhitespace(hunk.right.text) &&
+            hunk.left.atomKey === hunk.right.atomKey;
+          if (sameNode || sameDisplay) break;
         }
         const deleteText =
           wordHunks.length > 0

@@ -1,5 +1,22 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  collapseRedundantTableLabels,
+  parseTableRefSpec,
+  stripRedundantTableLabelBeforeRef,
+  TABLE_REF_TOKEN_RE,
+  tableRefNode,
+} from "@/lib/tiptap/table-ref-markdown";
+import {
+  quantityLatexToPlainText,
+  quantityLatexToTextNodes,
+  shouldFlattenDollarLatex,
+} from "@/lib/math/quantity-math";
+import {
+  looksLikeTexFormula,
+  simpleLatexToPlainText,
+  simpleLatexToTextNodes,
+} from "@/lib/math/simple-latex";
+import {
   isCitationListHeading,
   isEmptyParagraphBlock,
 } from "@/lib/suggestions/citations-at-end";
@@ -35,11 +52,115 @@ const UNDERSCORE_ITALIC_PART_RE = new RegExp(
 /** GFM table cells and DOCX import use `<br>` when a cell spans multiple lines. */
 const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
 
+/**
+ * Pandoc-style `$...$` (not `$$`). Requires a TeX-like inner span (`N_2`,
+ * `\pm`) so `$100-$200` stays currency.
+ */
+const INLINE_LATEX_DOLLAR_RE =
+  /(?<!\$)\$(?!\$)(?!\s)((?:\\\$|[^$\n])+?)(?<!\s)\$(?!\$)/g;
+
+function textNode(text: string, marks: JSONContent["marks"] | undefined): JSONContent {
+  return marks?.length ? { type: "text", text, marks } : { type: "text", text };
+}
+
+function mathInlineNode(latex: string): JSONContent {
+  return {
+    type: "mathInline",
+    attrs: { mathml: "", latex, omml: null, ommlDirty: true },
+  };
+}
+
+function latexToInlineNodes(
+  latex: string,
+  extraMarks?: JSONContent["marks"]
+): JSONContent[] {
+  const simple = simpleLatexToTextNodes(latex, extraMarks);
+  if (simple) return simple;
+  const quantity = quantityLatexToTextNodes(latex, extraMarks);
+  if (quantity) return quantity;
+  return [mathInlineNode(latex)];
+}
+
+function shouldConvertDollarInner(inner: string): boolean {
+  return looksLikeTexFormula(inner) || shouldFlattenDollarLatex(inner);
+}
+
+function appendLiteralWithMath(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
+  text = stripRedundantTableLabelBeforeRef(text);
+  TABLE_REF_TOKEN_RE.lastIndex = 0;
+  let lastRef = 0;
+  let sawRef = false;
+  for (const match of text.matchAll(TABLE_REF_TOKEN_RE)) {
+    sawRef = true;
+    const start = match.index ?? 0;
+    if (start > lastRef) {
+      appendLiteralWithMathOnly(text.slice(lastRef, start), extraMarks, nodes);
+    }
+    nodes.push(
+      tableRefNode(parseTableRefSpec(match[1]), extraMarks)
+    );
+    lastRef = start + match[0].length;
+  }
+  if (sawRef) {
+    if (lastRef < text.length) {
+      appendLiteralWithMathOnly(text.slice(lastRef), extraMarks, nodes);
+    }
+    return;
+  }
+  appendLiteralWithMathOnly(text, extraMarks, nodes);
+}
+
+function appendLiteralWithMathOnly(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
+  INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
+  let last = 0;
+  for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
+    const inner = match[1]!;
+    if (!shouldConvertDollarInner(inner)) continue;
+    const start = match.index ?? 0;
+    if (start > last) {
+      nodes.push(textNode(text.slice(last, start), extraMarks));
+    }
+    nodes.push(...latexToInlineNodes(inner, extraMarks));
+    last = start + match[0].length;
+  }
+  if (last === 0) {
+    if (text) nodes.push(textNode(text, extraMarks));
+    return;
+  }
+  if (last < text.length) {
+    nodes.push(textNode(text.slice(last), extraMarks));
+  }
+}
+
+export function hasInlineTexDollars(text: string): boolean {
+  INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
+  for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
+    if (shouldConvertDollarInner(match[1]!)) return true;
+  }
+  return false;
+}
+
 export function stripInlineMarkdown(text: string): string {
-  return text
+  return stripRedundantTableLabelBeforeRef(text)
+    .replace(/\[\[table(?::[^\]]+)?\]\]/gi, "the table")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
-    .replace(UNDERSCORE_ITALIC_RE, "$1");
+    .replace(UNDERSCORE_ITALIC_RE, "$1")
+    .replace(INLINE_LATEX_DOLLAR_RE, (_match, inner: string) =>
+      shouldConvertDollarInner(inner)
+        ? (simpleLatexToPlainText(inner) ??
+          quantityLatexToPlainText(inner) ??
+          inner)
+        : _match
+    );
 }
 
 /** ATX `#`–`###` line → heading node or bold paragraph. */
@@ -113,6 +234,7 @@ export function promoteAtxHeadingsInDoc(
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
  * - `**bold**`, `*italic*`, and `_italic_` inline emphasis
+ * - `$N_2$` / `$CO_2$` → text + subscript; other `$...$` TeX → mathInline
  *
  * Anything else is kept as literal text. No HTML, no fuzziness.
  */
@@ -236,10 +358,12 @@ function paragraphHasSuggestionMarks(node: JSONContent): boolean {
   );
 }
 
-/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `). */
+/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `, `$N_2$`). */
 export function looksLikeLiteralMarkdown(text: string): boolean {
   if (ATX_HEADING_RE.test(text.trim())) return true;
   if (/\*\*[^*]+\*\*/.test(text)) return true;
+  if (/\[\[table(?::[^\]]+)?\]\]/i.test(text)) return true;
+  if (hasInlineTexDollars(text)) return true;
   return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
 }
 
@@ -307,9 +431,9 @@ function hydrateNode(
 
 /**
  * Chat / import can persist a whole markdown blob as one (or a few) paragraphs
- * with literal `###`, `**bold**`, and `1. ` markers. Turn those into the same
- * TipTap nodes `markdownToDoc` emits so Improve/Control render instead of
- * showing hashes and asterisks.
+ * with literal `###`, `**bold**`, `1. `, and `$N_2$` markers. Turn those into
+ * the same TipTap nodes `markdownToDoc` emits so Improve/Control render
+ * instead of showing hashes, asterisks, or dollar latex.
  */
 export function hydrateLiteralMarkdownInDoc(
   doc: JSONContent,
@@ -331,9 +455,10 @@ function withExtraMarks(
 }
 
 /**
- * `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else
- * literal. `extraMarks` (e.g. a pending suggestion mark) is applied to every
- * node so a rich insert can be both highlighted and italicized.
+ * `**bold**` / `*italic*` / `_italic_` → marked text nodes; `$N_2$` →
+ * subscript (or mathInline for richer TeX). `extraMarks` (e.g. a pending
+ * suggestion mark) is applied to every text node so a rich insert can be
+ * both highlighted and italicized.
  */
 export function inlineMarkdownToTextNodes(
   text: string,
@@ -345,38 +470,34 @@ export function inlineMarkdownToTextNodes(
     if (!part) continue;
     const bold = /^\*\*([^*]+)\*\*$/.exec(part);
     if (bold) {
-      nodes.push({
-        type: "text",
-        text: bold[1]!,
-        marks: withExtraMarks([{ type: "bold" }], extraMarks),
-      });
+      appendLiteralWithMath(
+        bold[1]!,
+        withExtraMarks([{ type: "bold" }], extraMarks),
+        nodes
+      );
       continue;
     }
     const italicStar = /^\*(?!\s)([^*]+?)(?<!\s)\*$/.exec(part);
     if (italicStar) {
-      nodes.push({
-        type: "text",
-        text: italicStar[1]!,
-        marks: withExtraMarks([{ type: "italic" }], extraMarks),
-      });
+      appendLiteralWithMath(
+        italicStar[1]!,
+        withExtraMarks([{ type: "italic" }], extraMarks),
+        nodes
+      );
       continue;
     }
     const italicUnderscore = UNDERSCORE_ITALIC_PART_RE.exec(part);
     if (italicUnderscore) {
-      nodes.push({
-        type: "text",
-        text: italicUnderscore[1]!,
-        marks: withExtraMarks([{ type: "italic" }], extraMarks),
-      });
+      appendLiteralWithMath(
+        italicUnderscore[1]!,
+        withExtraMarks([{ type: "italic" }], extraMarks),
+        nodes
+      );
       continue;
     }
-    nodes.push({
-      type: "text",
-      text: part,
-      marks: extraMarks?.length ? extraMarks : undefined,
-    });
+    appendLiteralWithMath(part, extraMarks, nodes);
   }
-  return nodes;
+  return collapseRedundantTableLabels(nodes);
 }
 
 /**
@@ -427,7 +548,10 @@ function splitTableRow(trimmed: string): string[] {
     .map((cell) => cell.replace(/\\\|/g, "|").trim());
 }
 
-function tableCellNode(type: "tableHeader" | "tableCell", text: string): JSONContent {
+function tableCellNode(
+  type: "tableHeader" | "tableCell",
+  text: string
+): JSONContent {
   return {
     type,
     attrs: { colspan: 1, rowspan: 1 },

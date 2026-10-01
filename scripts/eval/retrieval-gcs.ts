@@ -1,5 +1,7 @@
 import { Storage } from "@google-cloud/storage";
 import {
+  assertCorpusAnchors,
+  buildRetrievalCorpus,
   CORPUS_FILENAMES,
   RETRIEVAL_EVAL_GCS_PREFIX,
   type CorpusFile,
@@ -84,6 +86,8 @@ async function downloadListedCorpus(
 /**
  * CI path: download the bucket corpus. Never generate or upload.
  * Missing objects fail the job — add them with `pnpm retrieval-eval:upload`.
+ * Stale bytes (gold anchors missing) are handled by
+ * `selectRetrievalEvalCorpus` after download.
  */
 export async function downloadGcsCorpus(
   io: RetrievalCorpusIo
@@ -123,8 +127,34 @@ export async function downloadRetrievalCorpus(): Promise<CorpusFile[]> {
   return listed.files;
 }
 
+export type RetrievalEvalCorpusSource = "gcs" | "generated";
+
+/**
+ * Keep GCS bytes when they still carry gold anchors. If the bucket PDFs
+ * predate a generator change (e.g. D1 slash IDs), generate locally.
+ * Never upload — CI stays objectViewer-only.
+ */
+export async function selectRetrievalEvalCorpus(
+  gcsFiles: readonly CorpusFile[],
+  generate: () => Promise<CorpusFile[]> = buildRetrievalCorpus
+): Promise<{ files: CorpusFile[]; source: RetrievalEvalCorpusSource }> {
+  try {
+    await assertCorpusAnchors(gcsFiles);
+    return { files: [...gcsFiles], source: "gcs" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `retrieval eval GCS corpus is stale (${reason}). Using generated PDFs. Refresh with pnpm retrieval-eval:upload (laptop ADC, not CI).`
+    );
+    return { files: await generate(), source: "generated" };
+  }
+}
+
 export async function loadRetrievalEvalCorpus(): Promise<CorpusFile[]> {
-  const files = await downloadRetrievalCorpus();
-  console.log("retrieval eval corpus source=gcs");
-  return files;
+  const downloaded = await downloadRetrievalCorpus();
+  const selected = await selectRetrievalEvalCorpus(downloaded);
+  const label =
+    selected.source === "gcs" ? "gcs" : "generated (gcs stale)";
+  console.log(`retrieval eval corpus source=${label}`);
+  return selected.files;
 }

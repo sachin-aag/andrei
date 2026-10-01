@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import {
-  citationNumberFromMarker,
+  citationNumbersFromMarker,
   isNumericCitationMarker,
   sourceCitationLinkSpans,
 } from "@/lib/placeholders/citation-bracket";
@@ -32,21 +32,86 @@ function citationButton(
   );
 }
 
-function renderCitationToken(
+function parkedOpenRaw(
+  number: number,
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
+): string | null {
+  const parked = numbered.get(number);
+  if (!parked) return null;
+  const parkedSpans = sourceCitationLinkSpans(
+    parked,
+    knownFilenames,
+    knownAttachmentIds
+  );
+  return parkedSpans[0]?.openRaw ?? parked;
+}
+
+function renderNumericMarker(
   token: string,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): ReactNode {
-  if (isNumericCitationMarker(token)) {
-    const number = citationNumberFromMarker(token);
-    const parked = number != null ? numbered.get(number) : undefined;
-    const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
-    const openRaw = parkedSpans[0]?.openRaw ?? parked ?? null;
+  const numbers = citationNumbersFromMarker(token);
+  if (numbers.length === 0) return token;
+  if (numbers.length === 1) {
+    const openRaw = parkedOpenRaw(
+      numbers[0]!,
+      numbered,
+      knownFilenames,
+      knownAttachmentIds
+    );
     if (!openRaw) return token;
     return citationButton("n", token, openRaw, onOpen);
   }
 
-  const spans = sourceCitationLinkSpans(token);
+  const nodes: ReactNode[] = ["["];
+  numbers.forEach((number, idx) => {
+    if (idx > 0) nodes.push(",");
+    const openRaw = parkedOpenRaw(
+      number,
+      numbered,
+      knownFilenames,
+      knownAttachmentIds
+    );
+    if (!openRaw) {
+      nodes.push(String(number));
+      return;
+    }
+    nodes.push(
+      citationButton(`n-${number}-${idx}`, String(number), openRaw, onOpen)
+    );
+  });
+  nodes.push("]");
+  if (nodes.every((node) => typeof node === "string")) return token;
+  return nodes;
+}
+
+function renderCitationToken(
+  token: string,
+  onOpen: (raw: string) => void,
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
+): ReactNode {
+  if (isNumericCitationMarker(token)) {
+    return renderNumericMarker(
+      token,
+      onOpen,
+      numbered,
+      knownFilenames,
+      knownAttachmentIds
+    );
+  }
+
+  const spans = sourceCitationLinkSpans(
+    token,
+    knownFilenames,
+    knownAttachmentIds
+  );
   if (spans.length === 0) return token;
   if (spans.length === 1 && spans[0]!.from === 0 && spans[0]!.to === token.length) {
     return citationButton("0", token, spans[0]!.openRaw, onOpen);
@@ -79,12 +144,15 @@ function renderCitationToken(
 /**
  * Turns `[filename, p. N]` (and numbered `[n]` when a Citations list
  * maps it) into clickable buttons inside chat markdown. Combined
- * `[A.pdf, p. 1, B.pdf, p. 2]` becomes two links.
+ * `[A.pdf, p. 1, B.pdf, p. 2]` becomes two links. Compact `and` cites
+ * split only when `knownFilenames` includes both files.
  */
 export function linkifyCitationText(
   text: string,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED
+  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): ReactNode {
   if (!text.includes("[")) return text;
   const parts = text.split(CITATION_SPLIT_RE);
@@ -94,7 +162,13 @@ export function linkifyCitationText(
     if (!/^\[[^\]]+\]$/.test(part)) {
       return <Fragment key={i}>{part}</Fragment>;
     }
-    const rendered = renderCitationToken(part, onOpen, numbered);
+    const rendered = renderCitationToken(
+      part,
+      onOpen,
+      numbered,
+      knownFilenames,
+      knownAttachmentIds
+    );
     if (rendered === part) {
       return <Fragment key={i}>{part}</Fragment>;
     }
@@ -105,17 +179,31 @@ export function linkifyCitationText(
 export function linkifyCitationChildren(
   children: ReactNode,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED
+  numbered: ReadonlyMap<number, string> = EMPTY_NUMBERED,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): ReactNode {
   if (typeof children === "string") {
-    return linkifyCitationText(children, onOpen, numbered);
+    return linkifyCitationText(
+      children,
+      onOpen,
+      numbered,
+      knownFilenames,
+      knownAttachmentIds
+    );
   }
   if (Array.isArray(children)) {
     return children.map((child, i) => {
       if (typeof child === "string") {
         return (
           <Fragment key={i}>
-            {linkifyCitationText(child, onOpen, numbered)}
+            {linkifyCitationText(
+              child,
+              onOpen,
+              numbered,
+              knownFilenames,
+              knownAttachmentIds
+            )}
           </Fragment>
         );
       }

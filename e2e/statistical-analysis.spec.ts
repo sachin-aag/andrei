@@ -535,6 +535,25 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
       "Moisture"
     );
+
+    await page.getByTestId("worksheet-sheet-tab-data-1").click({ button: "right" });
+    await expect(page.getByTestId("worksheet-sheet-menu-data-1")).toBeVisible();
+    await expect(page.getByTestId("worksheet-sheet-menu-delete-data-1")).toBeDisabled();
+    await page.getByTestId("worksheet-sheet-menu-rename-data-1").click();
+    await expect(page.getByTestId("worksheet-sheet-rename-data-1")).toBeVisible();
+    await page.getByTestId("worksheet-sheet-rename-data-1").fill("Assay");
+    await page.getByTestId("worksheet-sheet-rename-data-1").press("Enter");
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText("Assay");
+
+    await page.getByTestId("worksheet-data-menu").click();
+    await page.getByTestId("add-data-sheet").click();
+    await expect(page.getByTestId("worksheet-sheet-tab-data-2")).toHaveText("Data 2");
+    await page.getByTestId("worksheet-sheet-tab-data-2").click({ button: "right" });
+    await expect(page.getByTestId("worksheet-sheet-menu-delete-data-2")).toBeEnabled();
+    await page.getByTestId("worksheet-sheet-menu-delete-data-2").click();
+    await expect(page.getByTestId("worksheet-sheet-tab-data-2")).toHaveCount(0);
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText("Assay");
+    await expect(page.getByTestId("delete-data-sheet")).toHaveCount(0);
   });
 
   test("row headers select the whole row and the row menu inserts, clears, and deletes", async ({

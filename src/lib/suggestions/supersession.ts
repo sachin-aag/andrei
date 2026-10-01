@@ -63,6 +63,218 @@ function tableSupersessionKey(comment: CommentRecord): string | null {
   return `${path}::${op.tableIndex}`;
 }
 
+function cellKey(row: number, col: number): string {
+  return `${row},${col}`;
+}
+
+/** Existing rows at `row` shift down when inserting after `afterRow`. Append does not shift. */
+function rowShiftsAfterInsert(afterRow: number | undefined, row: number): boolean {
+  if (afterRow === undefined) return false;
+  return row > afterRow;
+}
+
+function colShiftsAfterInsert(afterCol: number | undefined, col: number): boolean {
+  if (afterCol === undefined) return false;
+  return col > afterCol;
+}
+
+function sameOptionalIndex(a: number | undefined, b: number | undefined): boolean {
+  if (a === undefined && b === undefined) return true;
+  if (a === undefined || b === undefined) return false;
+  return a === b;
+}
+
+function editCellsCoverOlder(
+  newer: Extract<TableOperation, { kind: "edit_cells" }>,
+  older: Extract<TableOperation, { kind: "edit_cells" }>
+): boolean {
+  const keys = new Set(newer.cells.map((cell) => cellKey(cell.row, cell.col)));
+  return older.cells.every((cell) => keys.has(cellKey(cell.row, cell.col)));
+}
+
+function insertRowsInvalidates(
+  newer: Extract<TableOperation, { kind: "insert_rows" }>,
+  older: TableOperation
+): boolean {
+  switch (older.kind) {
+    case "edit_cells":
+      return older.cells.some((cell) =>
+        rowShiftsAfterInsert(newer.afterRow, cell.row)
+      );
+    case "insert_rows":
+      if (sameOptionalIndex(newer.afterRow, older.afterRow)) return true;
+      return (
+        older.afterRow !== undefined &&
+        rowShiftsAfterInsert(newer.afterRow, older.afterRow)
+      );
+    case "delete_rows":
+      return older.rows.some((row) =>
+        rowShiftsAfterInsert(newer.afterRow, row.row)
+      );
+    case "insert_column":
+    case "delete_column":
+    case "delete_table":
+    case "create_table":
+      return false;
+    default: {
+      const _exhaustive: never = older;
+      return _exhaustive;
+    }
+  }
+}
+
+function deleteRowsInvalidates(
+  newer: Extract<TableOperation, { kind: "delete_rows" }>,
+  older: TableOperation
+): boolean {
+  const deleted = new Set(newer.rows.map((row) => row.row));
+  switch (older.kind) {
+    case "edit_cells":
+      return older.cells.some((cell) => deleted.has(cell.row));
+    case "insert_rows":
+      return older.afterRow !== undefined && deleted.has(older.afterRow);
+    case "delete_rows": {
+      const minDeleted = Math.min(...newer.rows.map((row) => row.row));
+      return older.rows.some(
+        (row) => deleted.has(row.row) || row.row > minDeleted
+      );
+    }
+    case "insert_column":
+    case "delete_column":
+    case "delete_table":
+    case "create_table":
+      return false;
+    default: {
+      const _exhaustive: never = older;
+      return _exhaustive;
+    }
+  }
+}
+
+function insertColumnInvalidates(
+  newer: Extract<TableOperation, { kind: "insert_column" }>,
+  older: TableOperation
+): boolean {
+  switch (older.kind) {
+    case "edit_cells":
+      return older.cells.some((cell) =>
+        colShiftsAfterInsert(newer.afterCol, cell.col)
+      );
+    case "insert_column":
+      if (sameOptionalIndex(newer.afterCol, older.afterCol)) return true;
+      return (
+        older.afterCol !== undefined &&
+        colShiftsAfterInsert(newer.afterCol, older.afterCol)
+      );
+    case "delete_column":
+      return colShiftsAfterInsert(newer.afterCol, older.col);
+    case "insert_rows":
+    case "delete_rows":
+    case "delete_table":
+    case "create_table":
+      return false;
+    default: {
+      const _exhaustive: never = older;
+      return _exhaustive;
+    }
+  }
+}
+
+function deleteColumnInvalidates(
+  newer: Extract<TableOperation, { kind: "delete_column" }>,
+  older: TableOperation
+): boolean {
+  switch (older.kind) {
+    case "edit_cells":
+      return older.cells.some((cell) => cell.col >= newer.col);
+    case "insert_column":
+      return older.afterCol !== undefined && older.afterCol >= newer.col;
+    case "delete_column":
+      return older.col >= newer.col;
+    case "insert_rows":
+    case "delete_rows":
+    case "delete_table":
+    case "create_table":
+      return false;
+    default: {
+      const _exhaustive: never = older;
+      return _exhaustive;
+    }
+  }
+}
+
+function editCellsInvalidates(
+  newer: Extract<TableOperation, { kind: "edit_cells" }>,
+  older: TableOperation
+): boolean {
+  switch (older.kind) {
+    case "edit_cells":
+      return editCellsCoverOlder(newer, older);
+    case "delete_rows":
+      return older.rows.some((row) =>
+        newer.cells.some((cell) => cell.row === row.row)
+      );
+    case "insert_rows":
+    case "insert_column":
+    case "delete_column":
+    case "delete_table":
+    case "create_table":
+      return false;
+    default: {
+      const _exhaustive: never = older;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * True when applying `newer` covers or invalidates `older` on the same table.
+ * Complementary ops (fill existing row 1, then append rows) stay both open.
+ * A later delete invalidates an older delete if any of those rows is removed
+ * or would shift up (below the smallest deleted row). A later cell edit
+ * invalidates an older delete of the same row.
+ */
+function tableOpInvalidates(newer: TableOperation, older: TableOperation): boolean {
+  switch (newer.kind) {
+    case "create_table":
+      return older.kind === "create_table";
+    case "delete_table":
+      return true;
+    case "insert_rows":
+      return insertRowsInvalidates(newer, older);
+    case "delete_rows":
+      return deleteRowsInvalidates(newer, older);
+    case "insert_column":
+      return insertColumnInvalidates(newer, older);
+    case "delete_column":
+      return deleteColumnInvalidates(newer, older);
+    case "edit_cells":
+      return editCellsInvalidates(newer, older);
+    default: {
+      const _exhaustive: never = newer;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Same field + tableIndex, and `newer`'s table op covers or invalidates
+ * `older`. Does not require `newer` to have a later createdAt — Apply all
+ * uses this after an earlier-in-batch apply.
+ */
+export function tableOpSupersedes(
+  newer: CommentRecord,
+  older: CommentRecord
+): boolean {
+  const keyNewer = tableSupersessionKey(newer);
+  const keyOlder = tableSupersessionKey(older);
+  if (!keyNewer || keyNewer !== keyOlder) return false;
+  const opNewer = tableOpFromComment(newer);
+  const opOlder = tableOpFromComment(older);
+  if (!opNewer || !opOlder) return false;
+  return tableOpInvalidates(opNewer, opOlder);
+}
+
 function rememberNewest(
   bestBySuperseded: Map<string, string>,
   open: readonly CommentRecord[],
@@ -87,7 +299,8 @@ function rememberNewest(
  * A whole-field intent (draft_field / redraft) supersedes every older open
  * suggestion on that field.
  * Two table ops on the same field and tableIndex: the newer rewrites the
- * older (edit_cells then insert_column on the VCS table is one card, not two).
+ * older only when it covers or invalidates those coordinates (insert after the
+ * header shifts row 1; appending rows does not dismiss a fill of row 1).
  */
 export function findSupersededSuggestions(args: {
   section: SectionType;
@@ -133,6 +346,9 @@ export function findSupersededSuggestions(args: {
       if (!isNewer(b, a)) continue;
       const keyA = tableSupersessionKey(a);
       if (keyA !== keyB) continue;
+      const opA = tableOpFromComment(a);
+      const opB = tableOpFromComment(b);
+      if (!opA || !opB || !tableOpInvalidates(opB, opA)) continue;
       rememberNewest(bestBySuperseded, open, a.id, b);
     }
   }

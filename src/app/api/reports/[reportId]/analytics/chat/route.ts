@@ -16,6 +16,7 @@ import {
   prepareAnalyticsChatStep,
 } from "@/lib/statistical-analysis/search-loop";
 import { getOrCreateReportAnalytics } from "@/lib/statistical-analysis/store";
+import { rowCount } from "@/lib/statistical-analysis/worksheet";
 import { buildStubAnalyticsChatModel } from "@/lib/statistical-analysis/stub-chat-model";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
@@ -29,6 +30,7 @@ import {
   isChatMode,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
+import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-reminder";
 import {
   createChatSession,
   findChatSession,
@@ -72,7 +74,8 @@ import {
 } from "@/lib/statistical-analysis/mentions";
 import { recoverDocumentMentionIds } from "@/lib/ai/chat/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
-import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
+import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
+import { geminiSafeModelMessages } from "@/lib/ai/chat/gemini-messages";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   advertisedChatToolNames,
@@ -226,6 +229,10 @@ async function handleAnalyticsChatPost(
     getOrCreateReportAnalytics(reportId),
   ]);
 
+  // A filled worksheet means a plot request is not premature, whatever this
+  // turn has done so far.
+  const worksheetHasData = rowCount(analytics.worksheet) > 0;
+
   const requestedMentions = parseAnalyticsChatMentions(body.mentions);
   const requestedDocumentIds = new Set(
     requestedMentions
@@ -257,9 +264,7 @@ async function handleAnalyticsChatPost(
     mentionBlock: buildAnalyticsMentionBlock(mentions),
     intent: userIntent.kind,
   });
-  const tools = withUnsupportedChatToolFallback(
-    restrictToolsForIntent(
-      buildAnalyticsChatTools({
+  const builtTools = buildAnalyticsChatTools({
         reportId,
         canEdit: canWrite,
         documentType: report.documentType,
@@ -268,12 +273,17 @@ async function handleAnalyticsChatPost(
         focusedSheetId,
         actor: auditActorFromUser(user),
         turnStartedAtMs,
-      }),
-      userIntent.kind,
-      "analytics"
-    )
+      });
+  const tools = withUnsupportedChatToolFallback(
+    userIntent.kind === "social"
+      ? restrictToolsForIntent(builtTools, "social", "analytics")
+      : canWrite
+        ? builtTools
+        : restrictToolsForIntent(builtTools, userIntent.kind, "analytics")
   );
-  const advertisedTools = advertisedChatToolNames(tools);
+  const advertisedTools = advertisedChatToolNames(
+    restrictToolsForIntent(tools, userIntent.kind, "analytics")
+  );
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
   const model = isTestStubChat()
@@ -297,7 +307,12 @@ async function handleAnalyticsChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = geminiSafeModelMessages(
+      messagesWithComposerModeReminder(
+        await convertToModelMessages(messages),
+        mode
+      )
+    );
     setRouteObservationIO({
       input: {
         reportId,
@@ -327,6 +342,7 @@ async function handleAnalyticsChatPost(
         streamText({
       model,
       system,
+      allowSystemInMessages: false,
       messages: modelMessages,
       tools,
       activeTools: advertisedTools,
@@ -337,18 +353,23 @@ async function handleAnalyticsChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) => {
+      prepareStep: ({ steps, messages }) => {
         const prepared = prepareAnalyticsChatStep({
           steps,
           canEdit: canWrite,
           searchGate,
           intent: userIntent.kind,
           intentReason: userIntent.reason,
+          worksheetHasData,
         });
-        if (!prepared) return undefined;
+        const compacted = geminiSafeModelMessages(
+          compactInTurnModelMessages(messages)
+        );
+        if (!prepared) return { messages: compacted };
         return {
           activeTools: prepared.activeTools,
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+          messages: compacted,
         };
       },
       abortSignal: turnAbort.signal,

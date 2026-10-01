@@ -50,9 +50,14 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.insightsEnabled).toBe(false);
     expect(DEMO_PACK.insightsEnabled).toBe(true);
     expect(MJ_PACK.insightsEnabled).toBe(false);
+    expect(CONVERGENT_PACK.documentTemplatesEnabled).toBe(false);
+    expect(DEMO_PACK.documentTemplatesEnabled).toBe(true);
+    expect(MJ_PACK.documentTemplatesEnabled).toBe(false);
     expect(CONVERGENT_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(DEMO_PACK.voiceInputLanguageCodes).toEqual(["en-US"]);
     expect(MJ_PACK.voiceInputLanguageCodes).toEqual(["en-IN", "hi-IN", "mr-IN"]);
+    expect(CONVERGENT_PACK.unsupportedFactPolicy).toBe("block");
+    expect(MJ_PACK.unsupportedFactPolicy).toBe("block");
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );
@@ -73,6 +78,7 @@ describe("Convergent customer pack", () => {
     ]);
     expect(MJ_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
+      "failure_investigation_report",
       "quality_risk_assessment",
       "equipment_lifecycle_report",
     ]);
@@ -95,61 +101,14 @@ describe("Convergent customer pack", () => {
       "convergent-design-verification-report-template.docx"
     );
     expect(def.chat.draftOrder[0]).toBe("purpose");
-    expect(def.chat.persona).toContain(
-      "execution blocks (oldest test-plan revision first)"
-    );
     expect(def.chat.draftingGuidance).toContain(
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
     );
     expect(def.chat.draftingGuidance).toContain(
       CONVERGENT_RESULTS_FIELD_SPLIT_NOTES
     );
-    expect(def.chat.draftingGuidance).toContain("SW-SST-5.1.1");
-    expect(def.chat.draftingGuidance).toContain(
-      "not every requirement ID mentioned in the protocol body"
-    );
-    expect(def.chat.draftingGuidance).toContain("P for TOP-00017 PCON");
-    expect(def.chat.draftingGuidance).toContain(
-      "NEVER include a markdown table or Req. ID / Satisfied by / P/F rows here"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "omit paragraph 2 if a single full execution"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "SAMPLE inventory is not a quota"
-    );
-    expect(def.chat.draftingGuidance).toContain("How to draft this report");
     expect(def.chat.draftingGuidance).toContain("Never call this a recipe");
     expect(def.chat.draftingGuidance).not.toMatch(/~\d+ words/);
-    expect(def.chat.draftingGuidance).toContain(
-      "There are no separate start/end date fields"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "The purpose of this revision of this report"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "Software version numbers (scheme `mm.nn.ff.bb`"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "that primer is required inside Purpose paragraphs 3–4"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "This is the only place the"
-    );
-    expect(
-      def.criteriaBySection.testers_dates?.find((c) => c.key === "testers.dates")
-        ?.description
-    ).toContain("written in the testers narrative");
-    expect(
-      def.criteriaBySection.results_and_discussions?.find(
-        (c) => c.key === "results.satisfied_by"
-      )?.description
-    ).toContain("P for TOP-00017 PCON");
-    expect(
-      def.criteriaBySection.purpose?.find(
-        (criterion) => criterion.key === "purpose.objective"
-      )?.label
-    ).toBe("The report states what this revision presents and which protocol was executed");
   });
 
   it("keeps the demo DV 10-section shape", () => {

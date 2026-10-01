@@ -11,6 +11,7 @@ import {
   HISTOGRAM,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
+  TIME_SERIES,
   XY_SCATTER,
 } from "./types";
 
@@ -22,6 +23,7 @@ describe("WORKSHEET_PLOT_CATALOG", () => {
       ONE_WAY_ANOVA,
       BOXPLOT,
       XY_SCATTER,
+      TIME_SERIES,
     ]);
     expect(
       WORKSHEET_PLOT_CATALOG.map((item) => item.kind)

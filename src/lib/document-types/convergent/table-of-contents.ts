@@ -3,6 +3,7 @@ import { getCustomerPack } from "@/lib/customers/packs";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
 import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
+import { VQ_SECTION_LABELS } from "@/lib/document-types/vq/sections";
 
 /** One row in the left-rail table of contents (Word-recipe hierarchy). */
 export type TableOfContentsEntry = {
@@ -217,6 +218,34 @@ const QRA_TOC: TableOfContentsEntry[] = [
  * `templates/mj-equipment-lifecycle-report-template.docx` (SOP/DP/QA/014 F10).
  * Approval Page is template-static (no editor section).
  */
+const FIR_TOC: TableOfContentsEntry[] = [
+  { label: "Description of Event", sectionKey: "fir_event_description" },
+  { label: "Standard Procedures", sectionKey: "fir_standard_procedures" },
+  { label: "Immediate Action Taken", sectionKey: "fir_immediate_action" },
+  { label: "Initial Impact Assessment", sectionKey: "fir_initial_impact" },
+  { label: "Investigation Team", sectionKey: "fir_investigation_team" },
+  { label: "Investigation Tools Assigned", sectionKey: "fir_investigation_tools" },
+  { label: "Chronology of the Event", sectionKey: "fir_chronology" },
+  { label: "Investigation Details", sectionKey: "fir_investigation_details" },
+  { label: "Historic Review", sectionKey: "fir_historic_review" },
+  { label: "Root Cause / Probable Cause", sectionKey: "fir_root_cause" },
+  { label: "Human Error Evaluation", sectionKey: "fir_human_error" },
+  { label: "Impact Assessment", sectionKey: "fir_impact_assessment" },
+  { label: "Scope Assessment", sectionKey: "fir_scope_assessment" },
+  { label: "Batch Disposition", sectionKey: "fir_batch_disposition" },
+  {
+    label: "Correction, Corrective and Preventive Action",
+    children: [
+      { label: "Correction Details", sectionKey: "fir_correction" },
+      { label: "Corrective Action", sectionKey: "fir_corrective_action" },
+      { label: "Interim Control", sectionKey: "fir_interim_control" },
+      { label: "Preventive Action", sectionKey: "fir_preventive_action" },
+    ],
+  },
+  { label: "CAPA Effectiveness Check", sectionKey: "fir_capa_effectiveness" },
+  { label: "List of Attachments", sectionKey: "fir_attachments" },
+];
+
 const ELR_TOC: TableOfContentsEntry[] = [
   { label: "1.0 Purpose", sectionKey: "elr_objective" },
   { label: "2.0 Scope", sectionKey: "elr_scope" },
@@ -234,43 +263,55 @@ const ELR_TOC: TableOfContentsEntry[] = [
         sectionKey: "elr_qualification",
       },
       {
-        label: "3.5 Media Fill / Aseptic Process Simulation",
+        label: "3.5 Process Validation Review",
+        sectionKey: "elr_process_validation",
+      },
+      {
+        label: "3.6 Cleaning Validation Review",
+        sectionKey: "elr_cleaning_validation",
+      },
+      {
+        label: "3.7 Quality Risk Assessment Review",
+        sectionKey: "elr_qra_review",
+      },
+      {
+        label: "3.8 Media Fill / Aseptic Process Simulation",
         sectionKey: "elr_media_fill",
       },
-      { label: "3.6 Monitoring", sectionKey: "elr_monitoring" },
       {
-        label: "3.7 Calibration of Associated Instruments",
+        label: "3.9 Alarm Trends",
+        sectionKey: "elr_alarms",
+        children: [
+          { label: "3.9.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
+        ],
+      },
+      { label: "3.10 Monitoring", sectionKey: "elr_monitoring" },
+      {
+        label: "3.11 Calibration of Associated Instruments",
         sectionKey: "elr_calibration",
       },
       {
-        label: "3.8 Preventive Maintenance",
+        label: "3.12 Preventive Maintenance",
         sectionKey: "elr_preventive_maintenance",
       },
       {
-        label: "3.9 Breakdowns and Trends",
+        label: "3.13 Breakdowns and Trends",
         sectionKey: "elr_breakdowns",
         children: [
           {
-            label: "3.9.1 Breakdown Trend Summary",
+            label: "3.13.1 Breakdown Trend Summary",
             sectionKey: "elr_breakdowns",
           },
         ],
       },
       {
-        label: "3.10 QMS Records since Last Periodic Re-Qualification",
+        label: "3.14 QMS Records since Last Periodic Re-Qualification",
         sectionKey: "elr_qms",
       },
+      { label: "3.15 Access Control", sectionKey: "elr_access_control" },
+      { label: "3.16 Audit Trail Review", sectionKey: "elr_audit_trail" },
       {
-        label: "3.11 Alarm Trends",
-        sectionKey: "elr_alarms",
-        children: [
-          { label: "3.11.1 Alarm Trend Summary", sectionKey: "elr_alarms" },
-        ],
-      },
-      { label: "3.12 Access Control", sectionKey: "elr_access_control" },
-      { label: "3.13 Audit Trail Review", sectionKey: "elr_audit_trail" },
-      {
-        label: "3.14 Computerized System Validation Status",
+        label: "3.17 Computerized System Validation Status",
         sectionKey: "elr_csv_status",
       },
     ],
@@ -279,7 +320,20 @@ const ELR_TOC: TableOfContentsEntry[] = [
     label: "4.0 Discrepancy / Deviations",
     sectionKey: "elr_discrepancies",
   },
-  { label: "5.0 Summary and Conclusion", sectionKey: "elr_conclusion" },
+  {
+    label: "5.0 Summary and Conclusion",
+    children: [
+      {
+        label: "5.1 System Trends and Patterns",
+        sectionKey: "elr_system_trends",
+      },
+      {
+        label: "5.2 Risk Assessment and Prioritized Actions",
+        sectionKey: "elr_risk_actions",
+      },
+      { label: "5.3 Conclusion", sectionKey: "elr_conclusion" },
+    ],
+  },
   { label: "6.0 Recommendation", sectionKey: "elr_conclusion" },
   { label: "7.0 Attachments", sectionKey: "elr_attachments" },
   { label: "8.0 Revision History", sectionKey: "elr_revision_history" },
@@ -302,6 +356,75 @@ const DEMO_SOFTWARE_DV_TOC: TableOfContentsEntry[] = [
 
 const GENERIC_DOCUMENT_TOC: TableOfContentsEntry[] = [
   { label: GENERIC_DOCUMENT_SECTION_LABEL, sectionKey: "body" },
+];
+
+const VQ_TOC: TableOfContentsEntry[] = [
+  { label: "Cover", sectionKey: "vq_cover" },
+  { label: VQ_SECTION_LABELS.vq_section_a, sectionKey: "vq_section_a" },
+  { label: VQ_SECTION_LABELS.vq_section_b, sectionKey: "vq_section_b" },
+  { label: VQ_SECTION_LABELS.vq_section_c, sectionKey: "vq_section_c" },
+  { label: VQ_SECTION_LABELS.vq_section_d, sectionKey: "vq_section_d" },
+  { label: VQ_SECTION_LABELS.vq_section_e, sectionKey: "vq_section_e" },
+  { label: VQ_SECTION_LABELS.vq_section_f, sectionKey: "vq_section_f" },
+  { label: VQ_SECTION_LABELS.vq_section_g, sectionKey: "vq_section_g" },
+  { label: VQ_SECTION_LABELS.vq_section_h, sectionKey: "vq_section_h" },
+  { label: VQ_SECTION_LABELS.vq_section_i, sectionKey: "vq_section_i" },
+  { label: VQ_SECTION_LABELS.vq_section_j, sectionKey: "vq_section_j" },
+  { label: VQ_SECTION_LABELS.vq_section_k, sectionKey: "vq_section_k" },
+  { label: VQ_SECTION_LABELS.vq_section_l, sectionKey: "vq_section_l" },
+  { label: VQ_SECTION_LABELS.vq_section_m, sectionKey: "vq_section_m" },
+  { label: VQ_SECTION_LABELS.vq_section_n, sectionKey: "vq_section_n" },
+  { label: VQ_SECTION_LABELS.vq_scoring, sectionKey: "vq_scoring" },
+];
+
+/** The QAD/016/F06-00 Index page. */
+const QSR_TOC: TableOfContentsEntry[] = [
+  {
+    label: "Introduction",
+    children: [
+      { label: "Objective", sectionKey: "qsr_objective" },
+      { label: "Scope", sectionKey: "qsr_scope" },
+      { label: "References", sectionKey: "qsr_references" },
+      { label: "Acronyms and Abbreviations", sectionKey: "qsr_acronyms" },
+    ],
+  },
+  {
+    label: "Overview and Background",
+    children: [
+      { label: "Overview", sectionKey: "qsr_overview" },
+      { label: "Background", sectionKey: "qsr_background" },
+    ],
+  },
+  {
+    label: "Qualification Lifecycle",
+    children: [
+      { label: "Qualification Documents", sectionKey: "qsr_qualification_documents" },
+    ],
+  },
+  { label: "Standard Operation Procedures", sectionKey: "qsr_sops" },
+  {
+    label: "Requirement Traceability Matrix",
+    children: [
+      { label: "Process Requirements", sectionKey: "qsr_rtm_process" },
+      { label: "Control Philosophy", sectionKey: "qsr_rtm_control" },
+      { label: "GMP Requirements", sectionKey: "qsr_rtm_gmp" },
+      { label: "Safety Requirements", sectionKey: "qsr_rtm_safety" },
+      { label: "Computer System Validation Requirements", sectionKey: "qsr_rtm_csv" },
+      {
+        label: "Equipment / System Maintenance and Cleaning Requirements",
+        sectionKey: "qsr_rtm_maintenance",
+      },
+    ],
+  },
+  {
+    label: "Qualified Operating Parameter Details",
+    children: [
+      { label: "Volumetric Details", sectionKey: "qsr_volumetric_details" },
+      { label: "Operating Range", sectionKey: "qsr_operating_range" },
+      { label: "Other Details", sectionKey: "qsr_other_details" },
+    ],
+  },
+  { label: "Conclusion", sectionKey: "qsr_conclusion" },
 ];
 
 export function getConvergentTableOfContents(
@@ -403,8 +526,14 @@ function reportTableOfContentsRecipe(
       return QRA_TOC;
     case "equipment_lifecycle_report":
       return ELR_TOC;
+    case "failure_investigation_report":
+      return FIR_TOC;
     case "generic_document":
       return GENERIC_DOCUMENT_TOC;
+    case "vendor_qualification":
+      return VQ_TOC;
+    case "qualification_summary_report":
+      return QSR_TOC;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;
@@ -425,6 +554,28 @@ export function getReportTableOfContents(
   return numberTableOfContents(
     reportTableOfContentsRecipe(documentType, customerId)
   );
+}
+
+/**
+ * Contents headings that scroll to this section, parent before children.
+ * Equipment Lifecycle Report: 3.10 Monitoring, 3.12 Preventive Maintenance,
+ * 3.15 Access Control. Empty when the section is not in the outline.
+ */
+export function outlineLabelsForSection(
+  documentType: DocumentType,
+  section: SectionType,
+  customerId = resolveCustomerId()
+): string[] {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const entry of flattenTableOfContents(
+    getReportTableOfContents(documentType, customerId)
+  )) {
+    if (entry.sectionKey !== section || seen.has(entry.label)) continue;
+    seen.add(entry.label);
+    labels.push(entry.label);
+  }
+  return labels;
 }
 
 /** Flatten nested TOC entries (parent before children) for tests and scroll targets. */

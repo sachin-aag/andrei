@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AnalysisRowSelection } from "./row-selection";
 import { analysisSourceKey, anovaSourceKey, boxplotSourceKey, xyScatterSourceKey } from "./worksheet";
+import { timeSeriesSourceKey } from "./time-series";
 import type { MeasurementScatterResult, WorksheetColumn } from "./types";
 
 export function hashColumnSource(
@@ -64,5 +65,25 @@ export function hashBoxplotSource(
 ): string {
   return createHash("sha256")
     .update(boxplotSourceKey(yColumn, categoryColumns, selection))
+    .digest("hex");
+}
+
+export function hashTimeSeriesSource(
+  column: WorksheetColumn,
+  timeColumn: WorksheetColumn,
+  clockColumn: WorksheetColumn | null,
+  conditionColumn: WorksheetColumn | null,
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return createHash("sha256")
+    .update(
+      timeSeriesSourceKey(
+        column,
+        timeColumn,
+        clockColumn,
+        conditionColumn,
+        selection
+      )
+    )
     .digest("hex");
 }

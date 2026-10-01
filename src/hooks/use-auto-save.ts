@@ -153,7 +153,14 @@ export function useAutoSave<T>({
       abortRef.current = controller;
       try {
         const confirmed = await onSave(snapshot, { signal: controller.signal });
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          // Only this attempt owns the indicator; a newer flush already
+          // swapped abortRef and must keep Saving….
+          if (abortRef.current === controller) {
+            setStatus((current) => (current === "saving" ? "idle" : current));
+          }
+          return;
+        }
         const persistedSerialized =
           confirmed === undefined
             ? serialized
@@ -163,7 +170,12 @@ export function useAutoSave<T>({
         setStatus("saved");
         setLastSavedAt(new Date());
       } catch (err) {
-        if (isBenignSaveError(err, controller.signal)) return;
+        if (isBenignSaveError(err, controller.signal)) {
+          if (abortRef.current === controller) {
+            setStatus((current) => (current === "saving" ? "idle" : current));
+          }
+          return;
+        }
         console.error("AutoSave error", err);
         setStatus("error");
         throw err;
@@ -207,6 +219,18 @@ export function useAutoSave<T>({
 
   const flush = useCallback(() => flushImpl.current(), []);
 
+  /**
+   * True when a chat/submit flush would do work. Does not re-serialize —
+   * lastSerialized is updated when a debounce is scheduled or a persist lands.
+   */
+  const needsFlush = useCallback(() => {
+    if (!enabled) return false;
+    if (timer.current !== null) return true;
+    if (isSaving.current) return true;
+    if (pending.current) return true;
+    return lastSerialized.current !== lastPersisted.current;
+  }, [enabled]);
+
   const markPersisted = useCallback((next?: T) => {
     const serialized = serializeValueRef.current(
       next === undefined ? latestValue.current : next
@@ -230,14 +254,19 @@ export function useAutoSave<T>({
         clearTimeout(timer.current);
         timer.current = null;
       }
-      if (!isSaving.current) {
-        setStatus((current) => (current === "saving" ? "idle" : current));
-      }
+      setStatus((current) => (current === "saving" ? "idle" : current));
       return;
     }
     const next = serializeValue(value);
     if (next === lastPersisted.current) {
       lastSerialized.current = next;
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      if (!isSaving.current) {
+        setStatus((current) => (current === "saving" ? "idle" : current));
+      }
       return;
     }
     if (next === lastSerialized.current && !justEnabled) return;
@@ -268,5 +297,5 @@ export function useAutoSave<T>({
     };
   }, [beaconUrl, persistOnLeaveEnabled]);
 
-  return { status, lastSavedAt, flush, markPersisted };
+  return { status, lastSavedAt, flush, needsFlush, markPersisted };
 }

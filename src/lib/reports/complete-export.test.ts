@@ -20,6 +20,14 @@ vi.mock("@/lib/export/generate-docx", () => ({
   generateReportDocx: vi.fn(),
 }));
 
+vi.mock("@/lib/attachments/list-active", () => ({
+  listActiveAttachments: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@/lib/attachments/folders", () => ({
+  listAttachmentFolders: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("@/lib/reports/managers", () => ({
   listReportManagerIds: vi.fn(),
   withAssignedManagerIds: vi.fn((report, managerIds: string[]) => ({

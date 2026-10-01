@@ -16,9 +16,11 @@ alwaysApply: false
 
 # Document types
 
-Reports are `investigation_report`, `design_verification`,
-`mechanical_design_verification`, `quality_risk_assessment`, or
-`generic_document` (demo pack only). The registry is
+Reports are `investigation_report`, `failure_investigation_report` (MJ
+Investigation Report DS, `fir_*`), `design_verification`,
+`mechanical_design_verification`, `quality_risk_assessment`,
+`equipment_lifecycle_report`, `generic_document` (demo pack only), or
+`vendor_qualification` / `qualification_summary_report` (3xper pack only). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 
@@ -37,7 +39,32 @@ const sections = getWorkspaceSections(report.documentType);
   (`PROMPT_VERSION` for investigation, `dv-checklist-v1` for demo DV,
   `convergent-dv-v7` for Convergent DV).
 - Chat editable sections: `chatEditableSections(documentType)` in
-  `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
+  `src/lib/ai/chat/fields.ts`. Cover/header identity is synthetic (`identity`)
+  — mentionable, not a TipTap section, filled with `draft_identity` from
+  type-owned `chat.identityFields` (one suggestion card for the whole header;
+  no citations on those cover scalars; duplicate document numbers fail at
+  propose and at Apply; remaining-section treats a complete proposal as done).
+  Identity dates are free-text inputs (not HTML date pickers) so Agent can
+  land `01-Apr-2025` as written; QRA/FIR `storage: "date"` still maps that
+  string onto `reports.date`.   Header identity forms use `useIdentityFormSave`
+  — do not `useEffect`-copy `report.metadata` into inputs (chat `refresh()`
+  GET would wipe a keystroke that has not PATCHed yet). Apply hydrates the
+  saved snapshot even while the identity card pauses autosave; skipping
+  incoming until pause lifts copies a stale GET and the dates vanish with
+  the overlay. Same-clock `setReport` from a backspace is not a persist —
+  only a newer `updatedAt` may `markPersisted`, or deleting a character
+  never PATCHes. History identity snapshots include `documentNo` and
+  `date`, not only `metadata`. QSR Capacity / Size
+  keeps the printed unit. Do not add `identity` to
+  `SUGGEST_TARGET_FIELD_PATTERNS`. Do not reuse investigation field maps on DV.
+  Title-page identity that chat needs (ELR `formatScope`) is
+  `chat.contextIdentity` on the type — do not hardcode metadata keys in
+  `context-map.ts`. MJ ELR remaining-section stays incomplete until the
+  assessment names a count (`elrPlanRequiredFields`); investigation / DV
+  keys never match. `overallGrade` / `recommendation` are stored enums
+  (`coerceElrEnumDraft`) — do not persist UI labels. ELR Attachments
+  (`elr_attachments`) is not chat-editable: Word export fills 7.0 from the
+  live file list.
 - Document-chat empty-state chips: `chat.examplePrompts` on the type (Ask vs
   Agent). Name that template's sections (`Purpose & Scope`, `Objective`, …).
   Do not hardcode Define / Analyze in `ChatPanel`.
@@ -49,7 +76,8 @@ const sections = getWorkspaceSections(report.documentType);
   `getDocumentType()`, then editors / chat / eval. DOCX export uses each type's
   `export.templatePath` and `buildTemplateData` (investigation still has an
   explicit DMAIC branch in `generate-docx.ts`; generic documents use
-  `templates/generic-document-template.docx`).
+  `templates/generic-document-template.docx`; 3xper VQ uses
+  `templates/3xper-vendor-qualification-template.docx` via the DV xml merge).
 - `generic_document` is demo-only: one `body` section, `evaluation.kind === "none"`
   (hide Criteria / Run AI Check), headings enabled, Word import is type-owned
   (`wordImport.kind === "generic_body"` — do **not** set pack `wordImportEnabled`

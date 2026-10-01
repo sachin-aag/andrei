@@ -64,6 +64,129 @@ describe("classifyChatUserIntent", () => {
           "Hello! How can I help you with your statistical analysis today?",
         ],
       })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        mode: "plan",
+        recentAssistantTexts: [
+          "The caliper is on page 46 of the SAT protocol.",
+        ],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
+  });
+
+  it("treats an Agent follow-up after Ask-mode switch copy as a write", () => {
+    const askNote =
+      "(Note: We are currently in Ask mode. You can switch to Agent mode to have these rows populated directly into the document via suggestion cards.)";
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "agent",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go ahead",
+        mode: "agent",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I switched to Agent",
+        mode: "agent",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "write", reason: "switched_to_agent" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I switched to Agent — fill them",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "switched_to_agent" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "I switched to Agent",
+          mode: "agent",
+        })
+      )
+    ).toBe(false);
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "plan",
+        recentAssistantTexts: [askNote],
+      })
+    ).toEqual({ kind: "social", reason: "ack_without_task" });
+    expect(
+      classifyChatUserIntent({
+        userText: "I switched to Agent",
+        mode: "plan",
+      }).kind
+    ).toBe("read");
+  });
+
+  it("sends do-the-same and leftover can-you to Flash-Lite, not a lookup", () => {
+    expect(
+      classifyChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "can you do the same for @Preventive Maintenance",
+          mode: "agent",
+        })
+      )
+    ).toBe(true);
+    expect(
+      classifyChatUserIntent({
+        userText: "do the same for Preventive Maintenance",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "write", reason: "ambiguous_polite_request" });
+    expect(
+      classifyChatUserIntent({
+        userText: "can you do the same for @Preventive Maintenance",
+        mode: "plan",
+      })
+    ).toEqual({ kind: "read", reason: "ambiguous_polite_request" });
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "do you have the protocol?",
+          mode: "agent",
+        })
+      )
+    ).toBe(false);
+    expect(
+      classifyChatUserIntent({
+        userText: "do you have the protocol?",
+        mode: "agent",
+      })
+    ).toEqual({ kind: "read", reason: "question_or_lookup" });
+    expect(
+      classifyChatUserIntent({
+        userText: "go for it",
+        mode: "agent",
+        recentAssistantTexts: [
+          "Based on Master PMC-PR-014-R03, here are the retrieved preventive maintenance records.",
+        ],
+      })
+    ).toEqual({ kind: "write", reason: "confirm_write_offer" });
+    expect(
+      classifyChatUserIntent({
+        userText: "yes",
+        mode: "agent",
+        recentAssistantTexts: [
+          "Based on Master PMC-PR-014-R03, here are the retrieved preventive maintenance records.",
+        ],
+      })
     ).toEqual({ kind: "social", reason: "ack_without_task" });
   });
 
@@ -148,6 +271,48 @@ describe("classifyChatUserIntent", () => {
         classifyChatUserIntent({ userText: "draft Purpose" })
       )
     ).toBe(false);
+    expect(
+      needsLlmIntentClassification(
+        classifyChatUserIntent({
+          userText: "what is in the equipment table?",
+          mode: "agent",
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("treats missing-work complaints as write, including why-questions", () => {
+    for (const text of [
+      "nothing was filled",
+      "the table is still empty",
+      "I don't see anything in the table",
+      "you said you filled it",
+      "why isn't the table filled?",
+      "didn't fill anything",
+      "nothing showed up",
+      "suggestions are not landing",
+      "it is refusing to make an edit",
+      "despite being in agent mode, it did not have write capabilities",
+      "it is only summarising stuff in chat",
+      "still in ask mode",
+      "you said we are in ask mode",
+    ]) {
+      expect(classifyChatUserIntent({ userText: text, mode: "agent" })).toEqual({
+        kind: "write",
+        reason: "missing_work",
+      });
+      expect(
+        needsLlmIntentClassification(
+          classifyChatUserIntent({ userText: text, mode: "agent" })
+        )
+      ).toBe(false);
+    }
+    expect(
+      classifyChatUserIntent({
+        userText: "what is in the equipment table?",
+        mode: "agent",
+      }).kind
+    ).toBe("read");
   });
 
   it("does not let Agent mode turn questions or greetings into writes", () => {
@@ -402,13 +567,18 @@ describe("intentToolAvailabilityRule", () => {
     expect(rule).toContain("manage_worksheet");
     expect(rule).toContain("extract_sheet");
     expect(rule).toContain("plot_xy_scatter");
+    expect(rule).toContain("start hidden");
     expect(rule).not.toContain("propose_edit");
   });
 
-  it("names the stripped document tools on a read turn", () => {
+  it("names the hidden document tools on a read turn", () => {
     const rule = intentToolAvailabilityRule("read", "document");
     expect(rule).toContain("propose_edit");
     expect(rule).toContain("draft_field");
+    expect(rule).toContain("draft_identity");
+    expect(rule).toContain("start hidden");
+    expect(rule).toContain("becomes available on the next step");
+    expect(rule).toContain("still in Ask mode");
     expect(rule).not.toContain("write_column");
   });
 

@@ -45,6 +45,15 @@ import {
   type ChatMessageTarget,
 } from "@/lib/ai/chat/message-target";
 import {
+  CHAT_AUTO_CONTINUE_TEXT,
+  chatUserTurnIsAutoContinue,
+  continuationFromMetadata,
+  chatPlanProgressView,
+  livePlanProgressFromMessages,
+  planHasRemainingWork,
+} from "@/lib/ai/chat/pending-plan";
+import { ChatPlanProgress } from "@/components/report/chat-plan-progress";
+import {
   isRedundantInsertImageChip,
 } from "@/components/report/chat-insert-image-chips";
 import {
@@ -73,11 +82,8 @@ import {
   aiSuggestionLockReason,
   canSaveReportSection,
 } from "@/lib/reports/access";
-import type { DocumentType, SectionType } from "@/db/schema";
-import {
-  chatEditableSections,
-  sectionLabel as chatSectionLabel,
-} from "@/lib/ai/chat/fields";
+import type { DocumentType } from "@/db/schema";
+import { chatMentionableSectionCandidates } from "@/lib/ai/chat/fields";
 import { engineerFacingChangeLines } from "@/lib/ai/chat/change-summary";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
@@ -100,6 +106,8 @@ import {
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   chatWatchdogPhase,
+  isCannedAssistantNoticeText,
+  shouldHidePlanContinuingAssistantTurn,
   shouldShowChatClientError,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
@@ -159,6 +167,12 @@ import {
   useDocumentUploadingNotice,
 } from "@/components/report/document-uploading-notice";
 import {
+  buildPendingChatUserMessage,
+  mergePendingChatUserMessage,
+  pendingChatSendBelongsToSession,
+  shouldShowPendingChatUserOverlay,
+} from "@/components/report/chat-pending-send";
+import {
   CHAT_VISIBLE_TAIL,
   nextVisibleCount,
   shouldLoadOlderMessages,
@@ -206,6 +220,7 @@ function announceCompletedAssistantTurn(
     currentUserId: string;
     documentNo: string;
     documentType: DocumentType;
+    sectionLabel?: string | null;
   }
 ): void {
   const elapsedMs = elapsedSince(startedAt);
@@ -216,13 +231,9 @@ function announceCompletedAssistantTurn(
     agentDoneNotificationCopy({
       documentNoun,
       documentNo: ctx.documentNo,
+      sectionLabel: ctx.sectionLabel,
     })
   );
-}
-
-function sectionLabel(section: unknown): string {
-  if (typeof section === "string") return chatSectionLabel(section as SectionType);
-  return "section";
 }
 
 function filterPartsForActivityDisplay(
@@ -258,7 +269,9 @@ function appliedEditsFromParts(
     const tool = readChatToolPart(part);
     if (!tool?.output) continue;
     const status = tool.output.status;
-    if (status !== "applied") continue;
+    if (status !== "applied" && status !== "proposed" && status !== "drafted") {
+      continue;
+    }
     const section =
       typeof tool.output.section === "string" ? tool.output.section : "";
     const targetField =
@@ -359,6 +372,7 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions,
   streaming = false,
   filenameByAttachmentId,
+  labelByInternalId,
   onOpenCitation,
   showAnalyticsSwitch = false,
   onSwitchToAnalytics,
@@ -370,6 +384,7 @@ const MessageTurn = memo(function MessageTurn({
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
   filenameByAttachmentId?: AttachmentFilenameLookup;
+  labelByInternalId?: ReadonlyMap<string, string>;
   onOpenCitation?: (raw: string) => void;
   showAnalyticsSwitch?: boolean;
   onSwitchToAnalytics?: () => void;
@@ -377,8 +392,13 @@ const MessageTurn = memo(function MessageTurn({
 }) {
   const isUser = message.role === "user";
   const targetLabel = chatTarget ? chatMessageTargetLabel(chatTarget) : null;
+  const messageMetadata =
+    "metadata" in message
+      ? (message as { metadata?: unknown }).metadata
+      : undefined;
 
   if (isUser) {
+    if (chatUserTurnIsAutoContinue(messageMetadata)) return null;
     const parts = message.parts ?? [];
     const text = parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -421,10 +441,19 @@ const MessageTurn = memo(function MessageTurn({
 
   // Assistant turn: full-width, no bubble (Cursor-style), tool chips inline.
   const parts = message.parts ?? [];
+  const planContinuing = continuationFromMetadata(messageMetadata) != null;
   const showEmptyError = shouldShowEmptyAssistantError({
     parts,
     streaming,
+    planContinuing,
   });
+  if (
+    planContinuing &&
+    !streaming &&
+    shouldHidePlanContinuingAssistantTurn(parts)
+  ) {
+    return null;
+  }
   return (
     <div
       className="flex flex-col gap-2"
@@ -447,13 +476,22 @@ const MessageTurn = memo(function MessageTurn({
       ) : (
         buildChatActivityBlocks(
           filterPartsForActivityDisplay(parts),
-          filenameByAttachmentId
+          filenameByAttachmentId,
+          { streaming }
         ).map(
           (block, i) => {
             if (block.kind === "text") {
               if (!block.text.trim()) return null;
+              if (planContinuing && isCannedAssistantNoticeText(block.text)) {
+                return null;
+              }
               return (
-                <ChatMarkdown key={i} onOpenCitation={onOpenCitation}>
+                <ChatMarkdown
+                  key={i}
+                  onOpenCitation={onOpenCitation}
+                  filenameByAttachmentId={filenameByAttachmentId}
+                  labelByInternalId={labelByInternalId}
+                >
                   {block.text}
                 </ChatMarkdown>
               );
@@ -487,11 +525,7 @@ const MessageTurn = memo(function MessageTurn({
       ) : null}
       <TurnChangeSummary
         parts={parts}
-        metadata={
-          "metadata" in message
-            ? (message as { metadata?: unknown }).metadata
-            : undefined
-        }
+        metadata={messageMetadata}
       />
     </div>
   );
@@ -650,6 +684,21 @@ export function ChatPanel({
   const [mentionMenuToken, setMentionMenuToken] = useState(-1);
   const [analyticsSnapshot, setAnalyticsSnapshot] =
     useState<ReportAnalyticsView | null>(null);
+  const labelByInternalId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!analyticsSnapshot) return map;
+    for (const analysis of analyticsSnapshot.analyses) {
+      const title = analysis.title.trim();
+      if (title) map.set(analysis.id, title);
+    }
+    for (const sheet of dataSheets(analyticsSnapshot.worksheet)) {
+      if (sheet.name.trim()) map.set(sheet.id, sheet.name.trim());
+      for (const column of sheet.columns) {
+        if (column.name.trim()) map.set(column.id, column.name.trim());
+      }
+    }
+    return map;
+  }, [analyticsSnapshot]);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const storedComposerPrefs = useSyncExternalStore(
@@ -757,6 +806,14 @@ export function ChatPanel({
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const lastSendTargetRef = useRef<WorkProductView>("report");
   const [lastSendTarget, setLastSendTarget] = useState<WorkProductView>("report");
+  const pendingSendRef = useRef<UIMessage | null>(null);
+  const pendingRestoreRef = useRef<(() => void) | null>(null);
+  const pendingSendStartedRef = useRef(false);
+  const sendEpochRef = useRef(0);
+  const [pendingSend, setPendingSend] = useState<UIMessage | null>(null);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [pendingRequestStarted, setPendingRequestStarted] = useState(false);
+  const [sawStreamBusyForPending, setSawStreamBusyForPending] = useState(false);
   const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
@@ -770,13 +827,76 @@ export function ChatPanel({
     busy,
     elapsedMs,
     silentMs,
+    pendingPlan,
+    planChaining,
   } = runtime;
+  const pendingForDisplay = shouldShowPendingChatUserOverlay({
+    pending: pendingSend,
+    belongsToSession: pendingChatSendBelongsToSession(
+      pendingSessionId,
+      currentSessionId
+    ),
+    messages,
+    busy,
+    pendingRequestStarted,
+    sawStreamBusy: sawStreamBusyForPending,
+  })
+    ? pendingSend
+    : null;
+  const threadBusy = busy || pendingForDisplay != null;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const resetPendingSendState = useCallback(() => {
+    pendingSendRef.current = null;
+    pendingRestoreRef.current = null;
+    pendingSendStartedRef.current = false;
+    setPendingSend(null);
+    setPendingSessionId(null);
+    setPendingRequestStarted(false);
+    setSawStreamBusyForPending(false);
+  }, []);
+  const abortPendingSend = useCallback(
+    (restoreComposer: boolean) => {
+      sendEpochRef.current += 1;
+      if (
+        restoreComposer &&
+        pendingSendRef.current &&
+        !pendingSendStartedRef.current
+      ) {
+        pendingRestoreRef.current?.();
+      }
+      resetPendingSendState();
+    },
+    [resetPendingSendState]
+  );
+  const stopPendingOrTurn = useCallback(() => {
+    abortPendingSend(true);
+    stopTurn();
+  }, [abortPendingSend, stopTurn]);
+  useEffect(() => {
+    if (!pendingSend) return;
+    if (pendingRequestStarted && busy) {
+      queueMicrotask(() => {
+        setSawStreamBusyForPending(true);
+      });
+    }
+  }, [pendingSend, pendingRequestStarted, busy]);
+  useEffect(() => {
+    if (pendingRequestStarted && sawStreamBusyForPending && !busy) {
+      queueMicrotask(() => {
+        resetPendingSendState();
+      });
+    }
+  }, [
+    busy,
+    pendingRequestStarted,
+    resetPendingSendState,
+    sawStreamBusyForPending,
+  ]);
   const voice = useVoiceDictation({
     reportId: report.id,
     getPrefix: () => input,
     onComposerValue: setInput,
-    disabled: busy || initializing || attaching || !hostReady,
+    disabled: threadBusy || initializing || attaching || !hostReady,
   });
   const voiceLock = voice.locked;
   const voiceLockRef = useRef(voiceLock);
@@ -791,7 +911,7 @@ export function ChatPanel({
   const runningSessionIds = runningChatSessionIds(
     backgroundSessionIds,
     currentSessionId,
-    busy
+    threadBusy
   );
 
   const persistedEditCount = useMemo(
@@ -804,13 +924,13 @@ export function ChatPanel({
   );
   const persistedEditCountRef = useRef(0);
   useEffect(() => {
-    if (!busy) {
+    if (!threadBusy) {
       setAgentCommitInFlight(false);
     }
-  }, [busy, setAgentCommitInFlight]);
+  }, [threadBusy, setAgentCommitInFlight]);
   useEffect(() => {
-    onAgentBusyChange?.(busy && lastSendTargetRef.current === "analytics");
-  }, [busy, onAgentBusyChange]);
+    onAgentBusyChange?.(threadBusy && lastSendTargetRef.current === "analytics");
+  }, [threadBusy, onAgentBusyChange]);
   useEffect(() => {
     return () => onAgentBusyChange?.(false);
   }, [onAgentBusyChange]);
@@ -847,11 +967,13 @@ export function ChatPanel({
         folders,
         sections: targetingAnalytics
           ? []
-          : chatEditableSections(report.documentType).map((section) => ({
-              type: "section" as const,
-              id: section,
-              label: sectionLabel(section),
-            })),
+          : chatMentionableSectionCandidates(report.documentType).map(
+              (section) => ({
+                type: "section" as const,
+                id: section.id,
+                label: section.label,
+              })
+            ),
         sheets: targetingAnalytics
           ? mentionSheets.length > 0
             ? analyticsSheetMentionCandidates(mentionSheets)
@@ -1007,11 +1129,11 @@ export function ChatPanel({
   }, [input]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
-    const next = findMentionQuery(value, caret);
+    const next = findMentionQuery(value, caret, mentionCandidates);
     setMentionRange(next);
     setMentionIndex(0);
     if (next?.query.trim()) setMentionPath([]);
-  }, []);
+  }, [mentionCandidates]);
 
   const selectMention = useCallback(
     (candidate: MentionCandidate) => {
@@ -1083,11 +1205,12 @@ export function ChatPanel({
   }, [loadSessions, onWorksheetChanged, refresh, setAgentCommitInFlight]);
 
   const onTurnCompleted = useCallback(
-    (startedAt: number | null) => {
+    (startedAt: number | null, details?: { sectionLabel?: string | null }) => {
       announceCompletedAssistantTurn(startedAt, {
         currentUserId,
         documentNo: report.documentNo,
         documentType: report.documentType,
+        sectionLabel: details?.sectionLabel,
       });
     },
     [currentUserId, report.documentNo, report.documentType]
@@ -1101,10 +1224,13 @@ export function ChatPanel({
 
   const openSession = useCallback(
     (sessionId: string) => {
-      if (sessionId !== currentSessionId && currentSessionId && busy) {
+      if (sessionId !== currentSessionId && currentSessionId && threadBusy) {
         setBackgroundSessionIds((prev) =>
           rememberBackgroundSession(prev, currentSessionId)
         );
+      }
+      if (sessionId !== currentSessionId) {
+        abortPendingSend(false);
       }
       currentSessionIdRef.current = sessionId;
       mountSession(sessionId, true);
@@ -1112,23 +1238,36 @@ export function ChatPanel({
       setCurrentSessionId(sessionId);
       setHistoryOpen(false);
     },
-    [busy, currentSessionId, mountSession]
+    [abortPendingSend, threadBusy, currentSessionId, mountSession]
   );
 
+  const createSessionInFlightRef = useRef<Promise<string | null> | null>(null);
+
   const createSession = useCallback(async (): Promise<string | null> => {
-    try {
-      const res = await fetch(`${base}/sessions`, { method: "POST" });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { session: ChatSessionSummary };
-      setSessions((prev) => [data.session, ...prev]);
-      return data.session.id;
-    } catch {
-      return null;
-    }
+    const inFlight = createSessionInFlightRef.current;
+    if (inFlight) return inFlight;
+
+    const promise = (async (): Promise<string | null> => {
+      try {
+        const res = await fetch(`${base}/sessions`, { method: "POST" });
+        if (!res.ok) return null;
+        const data = (await res.json()) as { session: ChatSessionSummary };
+        setSessions((prev) => [data.session, ...prev]);
+        return data.session.id;
+      } catch {
+        return null;
+      } finally {
+        createSessionInFlightRef.current = null;
+      }
+    })();
+
+    createSessionInFlightRef.current = promise;
+    return promise;
   }, [base]);
 
   const startBlankChat = useCallback(async () => {
     setHistoryOpen(false);
+    abortPendingSend(false);
     const id = await createSession();
     if (!id) {
       toast.error("Could not start a new chat.");
@@ -1142,16 +1281,16 @@ export function ChatPanel({
     setPendingImages([]);
     setMentions([]);
     setMentionRange(null);
-  }, [createSession, mountSession]);
+  }, [abortPendingSend, createSession, mountSession]);
 
   const newChat = useCallback(async () => {
-    if (currentSessionId && busy) {
+    if (currentSessionId && threadBusy) {
       setBackgroundSessionIds((prev) =>
         rememberBackgroundSession(prev, currentSessionId)
       );
     }
     await startBlankChat();
-  }, [busy, currentSessionId, startBlankChat]);
+  }, [threadBusy, currentSessionId, startBlankChat]);
 
   const closeChatTab = useCallback(
     (sessionId: string) => {
@@ -1173,6 +1312,8 @@ export function ChatPanel({
 
       if (!closingCurrent) return;
 
+      abortPendingSend(false);
+
       if (nextId) {
         currentSessionIdRef.current = nextId;
         setRuntime(
@@ -1187,7 +1328,7 @@ export function ChatPanel({
       setRuntime(IDLE_CHAT_RUNTIME);
       void startBlankChat();
     },
-    [currentSessionId, mountedSessions, startBlankChat]
+    [abortPendingSend, currentSessionId, mountedSessions, startBlankChat]
   );
 
   const onSessionSettled = useCallback((sessionId: string) => {
@@ -1212,23 +1353,52 @@ export function ChatPanel({
     []
   );
 
+  const displayMessages = useMemo(
+    () =>
+      mergePendingChatUserMessage(messages, pendingForDisplay, {
+        allowTextMatch: pendingRequestStarted,
+      }),
+    [messages, pendingForDisplay, pendingRequestStarted]
+  );
   const visibleStartIndex = visibleMessageStartIndex(
-    messages.length,
+    displayMessages.length,
     visibleCount
   );
   const taggedMessages = useMemo(
     () =>
-      tagChatMessages(messages, {
-        inFlightTarget: busy ? lastSendTarget : null,
+      tagChatMessages(displayMessages, {
+        inFlightTarget: threadBusy ? lastSendTarget : null,
       }),
-    [busy, lastSendTarget, messages]
+    [lastSendTarget, displayMessages, threadBusy]
   );
   const visibleMessages = taggedMessages.slice(visibleStartIndex);
   const hiddenCount = visibleStartIndex;
+  const livePlanProgress = livePlanProgressFromMessages(taggedMessages);
+  const planView = pendingPlan
+    ? chatPlanProgressView(
+        pendingPlan,
+        report.documentType,
+        livePlanProgress
+      )
+    : null;
+  const planQueueVisible =
+    pendingPlan != null &&
+    planHasRemainingWork(pendingPlan) &&
+    planView != null &&
+    !planView.complete;
+  const planProgress =
+    planQueueVisible && pendingPlan ? (
+      <ChatPlanProgress
+        plan={pendingPlan}
+        documentType={report.documentType}
+        live={livePlanProgress}
+        active={threadBusy || planChaining}
+      />
+    ) : null;
 
   const loadOlderMessages = useCallback(() => {
     if (loadingOlderRef.current) return;
-    if (visibleCount >= messages.length) return;
+    if (visibleCount >= displayMessages.length) return;
     const el = scrollRef.current;
     if (el) {
       olderScrollRestoreRef.current = {
@@ -1237,8 +1407,10 @@ export function ChatPanel({
       };
     }
     loadingOlderRef.current = true;
-    setVisibleCount((current) => nextVisibleCount(current, messages.length));
-  }, [messages.length, visibleCount]);
+    setVisibleCount((current) =>
+      nextVisibleCount(current, displayMessages.length)
+    );
+  }, [displayMessages.length, visibleCount]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -1266,11 +1438,11 @@ export function ChatPanel({
     if (!visibleRef.current || restoringScrollRef.current) return;
     captureVisibleScroll();
     if (
-      shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
+      shouldLoadOlderMessages(el.scrollTop, visibleCount, displayMessages.length)
     ) {
       loadOlderMessages();
     }
-  }, [captureVisibleScroll, loadOlderMessages, messages.length, visibleCount]);
+  }, [captureVisibleScroll, displayMessages.length, loadOlderMessages, visibleCount]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -1324,7 +1496,7 @@ export function ChatPanel({
     if (!shouldStickChatToBottom(savedScrollRef.current)) return;
     pinChatScrollerToBottom(el);
     savedScrollRef.current = { kind: "bottom" };
-  }, [messages, status]);
+  }, [displayMessages, status]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1442,7 +1614,8 @@ export function ChatPanel({
     async (
       text: string,
       images?: PendingChatImage[],
-      target?: WorkProductView
+      target?: WorkProductView,
+      options?: { autoContinue?: boolean }
     ) => {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
@@ -1450,10 +1623,11 @@ export function ChatPanel({
       const sendTarget = target ?? chatTarget;
       if (
         (!trimmed && files.length === 0) ||
-        busy ||
+        threadBusy ||
         initializing ||
         attaching ||
-        voiceLockRef.current
+        voiceLockRef.current ||
+        pendingSendRef.current
       ) {
         return;
       }
@@ -1464,25 +1638,35 @@ export function ChatPanel({
       if (agentDonePrefs.notifications) {
         void requestAgentDoneNotificationPermission();
       }
-      let sessionId = currentSessionId;
-      if (!sessionId) {
-        sessionId = await createSession();
-        if (!sessionId) {
-          toast.error("Could not start a chat session.");
-          return;
-        }
-        currentSessionIdRef.current = sessionId;
-        mountSession(sessionId, false);
-        setCurrentSessionId(sessionId);
-      }
-      const sessionRuntime = await waitForValue(() =>
-        runtimeBySessionRef.current.get(sessionId)
-      );
-      if (!sessionRuntime) {
-        toast.error("Could not start a chat session.");
-        return;
-      }
-      if (sessionRuntime.busy) return;
+      const epoch = ++sendEpochRef.current;
+      const metadata = {
+        chatTarget: sendTarget,
+        ...(options?.autoContinue ? { autoContinue: true } : {}),
+      };
+      const pending = buildPendingChatUserMessage({
+        text: trimmed,
+        files,
+        metadata,
+      });
+      pendingSendRef.current = pending;
+      pendingSendStartedRef.current = false;
+      setPendingRequestStarted(false);
+      setPendingSend(pending);
+      setPendingSessionId(currentSessionId);
+      setSawStreamBusyForPending(false);
+      const tagsForRequest = mentions;
+      // Composer clears in the same tick as the optimistic bubble so Enter
+      // never sits on the typed text while section saves flush.
+      setInput("");
+      setPendingImages([]);
+      setMentionRange(null);
+      setMentions([]);
+      const restoreComposer = () => {
+        setInput(text);
+        setPendingImages(attached);
+        setMentions(tagsForRequest);
+      };
+      pendingRestoreRef.current = restoreComposer;
       lastSendTargetRef.current = sendTarget;
       setLastSendTarget(sendTarget);
       savedScrollRef.current = { kind: "bottom" };
@@ -1491,21 +1675,53 @@ export function ChatPanel({
         mode === "agent" &&
         sendTarget !== "analytics"
       ) {
-        try {
-          await flushPendingSectionSaves();
-        } catch {
-          toast.error(
-            "Could not save your latest edits before the assistant ran."
-          );
-          return;
-        }
         setAgentCommitInFlight(true);
       }
-      setInput("");
-      setPendingImages([]);
-      setMentionRange(null);
-      const tagsForRequest = mentions;
-      setMentions([]);
+      const sendWasCancelled = () => sendEpochRef.current !== epoch;
+      const failBeforeRequest = (message?: string) => {
+        if (sendWasCancelled()) return;
+        resetPendingSendState();
+        restoreComposer();
+        if (message) toast.error(message);
+      };
+      let sessionId = currentSessionId;
+      try {
+        const flushPromise = flushPendingSectionSaves();
+        if (!sessionId) {
+          const [, created] = await Promise.all([flushPromise, createSession()]);
+          sessionId = created;
+        } else {
+          await flushPromise;
+        }
+      } catch {
+        failBeforeRequest(
+          "Could not save your latest edits before the assistant ran."
+        );
+        return;
+      }
+      if (sendWasCancelled()) return;
+      if (!sessionId) {
+        failBeforeRequest("Could not start a chat session.");
+        return;
+      }
+      currentSessionIdRef.current = sessionId;
+      setPendingSessionId(sessionId);
+      if (!currentSessionId) {
+        mountSession(sessionId, false);
+        setCurrentSessionId(sessionId);
+      }
+      const sessionRuntime = await waitForValue(() =>
+        runtimeBySessionRef.current.get(sessionId)
+      );
+      if (sendWasCancelled()) return;
+      if (!sessionRuntime) {
+        failBeforeRequest("Could not start a chat session.");
+        return;
+      }
+      if (sessionRuntime.busy) {
+        failBeforeRequest();
+        return;
+      }
       for (const mention of tagsForRequest) {
         applyMentionFocus(mention);
       }
@@ -1522,21 +1738,22 @@ export function ChatPanel({
           id: mention.id,
         }));
       }
-      const metadata = { chatTarget: sendTarget };
-      if (trimmed && files.length > 0) {
-        void sessionRuntime.sendMessage(
-          { text: trimmed, files, metadata },
-          { body }
-        );
-      } else if (files.length > 0) {
-        void sessionRuntime.sendMessage({ files, metadata }, { body });
-      } else {
-        void sessionRuntime.sendMessage({ text: trimmed, metadata }, { body });
-      }
+      pendingSendStartedRef.current = true;
+      pendingSendRef.current = null;
+      setPendingRequestStarted(true);
+      void sessionRuntime.sendMessage(
+        {
+          id: pending.id,
+          role: "user",
+          parts: pending.parts,
+          metadata,
+        },
+        { body }
+      );
     },
     [
       attaching,
-      busy,
+      threadBusy,
       initializing,
       currentSessionId,
       createSession,
@@ -1551,6 +1768,7 @@ export function ChatPanel({
       workspaceChrome,
       flushPendingSectionSaves,
       setAgentCommitInFlight,
+      resetPendingSendState,
     ]
   );
 
@@ -1599,7 +1817,7 @@ export function ChatPanel({
         )}
         <button
           type="button"
-          onClick={newChat}
+          onClick={() => void newChat()}
           aria-label="New chat"
           title="New chat"
           className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
@@ -1690,7 +1908,7 @@ export function ChatPanel({
             </button>
           </div>
         ) : null}
-        {messages.length === 0 ? (
+        {displayMessages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
               {emptyChatIntro({
@@ -1708,7 +1926,7 @@ export function ChatPanel({
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing || voiceLock || !hostReady}
+                  disabled={threadBusy || initializing || voiceLock || !hostReady}
                   title={voiceLock ? "Stop voice input to send" : undefined}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
@@ -1725,17 +1943,18 @@ export function ChatPanel({
               message={m}
               chatTarget={m.chatTarget}
               filenameByAttachmentId={filenameByAttachmentId}
+              labelByInternalId={labelByInternalId}
               onOpenCitation={onOpenCitation}
               askUserActive={
-                visibleStartIndex + i === messages.length - 1 &&
-                !busy &&
+                visibleStartIndex + i === displayMessages.length - 1 &&
+                !threadBusy &&
                 !initializing &&
                 !voiceLock
               }
               onAnswerQuestions={(answerText) => void send(answerText, [])}
               streaming={
                 busy &&
-                visibleStartIndex + i === messages.length - 1 &&
+                visibleStartIndex + i === displayMessages.length - 1 &&
                 m.role === "assistant"
               }
               showAnalyticsSwitch={
@@ -1756,7 +1975,8 @@ export function ChatPanel({
             />
           ))
         )}
-        {busy ? (
+        {planProgress}
+        {threadBusy ? (
           <ChatBusyStatus
             mode={mode}
             stale={watchdog === "stale" || watchdog === "give_up"}
@@ -1765,10 +1985,29 @@ export function ChatPanel({
               notifications: readAgentDonePrefs(currentUserId).notifications,
               elapsedMs,
             })}
-            onCancel={stopTurn}
+            onCancel={stopPendingOrTurn}
           />
+        ) : planQueueVisible && !planChaining ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              data-testid="chat-plan-resume"
+              onClick={() =>
+                void send(CHAT_AUTO_CONTINUE_TEXT, [], "report", {
+                  autoContinue: true,
+                })
+              }
+              className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 px-2.5 py-1 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+            >
+              Resume remaining sections
+            </button>
+          </div>
         ) : null}
-        {shouldShowChatClientError({ error, busy }) ? (
+        {shouldShowChatClientError({
+          error,
+          busy: threadBusy,
+          planChaining,
+        }) ? (
           <p className="text-xs text-red-500" data-testid="chat-client-error">
             {CHAT_ASSISTANT_ERROR_MESSAGE}
           </p>
@@ -1790,7 +2029,7 @@ export function ChatPanel({
               value={composerChatTarget}
               options={CHAT_WORK_PRODUCT_OPTIONS}
               onChange={setComposerChatTarget}
-              disabled={busy}
+              disabled={threadBusy}
               ariaLabel="Work product"
               className="w-[7.5rem]"
               testId="chat-work-product-target"
@@ -1983,7 +2222,7 @@ export function ChatPanel({
                     value={mode}
                     options={modeOptions}
                     onChange={setMode}
-                    disabled={busy}
+                    disabled={threadBusy}
                     ariaLabel="Assistant mode"
                     variant="pill"
                     testId={targetingAnalytics ? "analytics-chat-mode" : undefined}
@@ -1992,7 +2231,7 @@ export function ChatPanel({
                     value={pace}
                     options={CHAT_PACE_OPTIONS}
                     onChange={setPace}
-                    disabled={busy}
+                    disabled={threadBusy}
                     ariaLabel="Answer depth"
                     variant="ghost"
                     showIcon={false}
@@ -2004,7 +2243,7 @@ export function ChatPanel({
             <div className="flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                disabled={busy || initializing || attaching || voiceLock || !hostReady}
+                disabled={threadBusy || initializing || attaching || voiceLock || !hostReady}
                 aria-label="Attach image"
                 title="Attach image"
                 data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
@@ -2022,14 +2261,14 @@ export function ChatPanel({
                 requesting={voice.status === "requesting"}
                 transcribing={voice.status === "stopping"}
                 level={voice.level}
-                disabled={busy || initializing || attaching || !hostReady}
+                disabled={threadBusy || initializing || attaching || !hostReady}
                 targetingAnalytics={targetingAnalytics}
                 onToggle={voice.toggle}
               />
-              {busy ? (
+              {threadBusy ? (
                 <button
                   type="button"
-                  onClick={stopTurn}
+                  onClick={stopPendingOrTurn}
                   aria-label="Stop generating"
                   title="Stop generating"
                   className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90"

@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { closeIncompleteChatToolParts } from "@/lib/ai/chat/tool-part-repair";
 import {
   isUnavailableToolStreamError,
   unavailableToolNameFromError,
@@ -108,8 +109,10 @@ export function isFailedChatFinishReason(
 export function shouldShowEmptyAssistantError(options: {
   parts: readonly ChatTurnPart[] | null | undefined;
   streaming: boolean;
+  planContinuing?: boolean;
 }): boolean {
-  if (options.streaming) return false;
+  if (options.streaming || options.planContinuing) return false;
+  if (assistantPartsAreCannedError(options.parts)) return true;
   return !assistantPartsHaveVisibleContent(options.parts);
 }
 
@@ -144,9 +147,86 @@ export function isChatClientDisconnectError(error: unknown): boolean {
 export function shouldShowChatClientError(options: {
   error: unknown;
   busy: boolean;
+  planChaining?: boolean;
 }): boolean {
-  if (options.busy || options.error == null) return false;
+  if (options.busy || options.planChaining || options.error == null) {
+    return false;
+  }
   return true;
+}
+
+/** True for the canned empty-turn or interrupt notices (not model prose). */
+export function isCannedAssistantNoticeText(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed === CHAT_ASSISTANT_ERROR_MESSAGE ||
+    trimmed === CHAT_ASSISTANT_INTERRUPTED_MESSAGE
+  );
+}
+
+/**
+ * Hide a leftover assistant row when remaining-section auto-continue is
+ * about to POST. Tool chips stay; canned “stopped / hit an error” copy
+ * and empty bubbles do not.
+ */
+export function shouldHidePlanContinuingAssistantTurn(
+  parts: readonly ChatTurnPart[] | null | undefined
+): boolean {
+  if (!parts || parts.length === 0) return true;
+  for (const part of parts) {
+    if (!part || typeof part.type !== "string") continue;
+    if (part.type === "text") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (!text || isCannedAssistantNoticeText(text)) continue;
+      return false;
+    }
+    if (part.type === "reasoning") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (text) return false;
+      continue;
+    }
+    if (part.type === "file" || part.type.startsWith("tool-")) return false;
+  }
+  return true;
+}
+
+/**
+ * True when the only visible assistant text is the canned empty-turn
+ * placeholder. A remaining-section finish that hydrates this way is not
+ * a user-facing failure if the plan is still chaining.
+ */
+export function assistantPartsAreCannedError(
+  parts: readonly ChatTurnPart[] | null | undefined
+): boolean {
+  if (!parts || parts.length === 0) return false;
+  let sawErrorText = false;
+  for (const part of parts) {
+    if (!part || typeof part.type !== "string") continue;
+    if (part.type === "text") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (!text) continue;
+      if (text === CHAT_ASSISTANT_ERROR_MESSAGE) {
+        sawErrorText = true;
+        continue;
+      }
+      return false;
+    }
+    if (part.type === "reasoning") {
+      const text = typeof part.text === "string" ? part.text.trim() : "";
+      if (text) return false;
+      continue;
+    }
+    if (part.type === "file" || part.type.startsWith("tool-")) return false;
+  }
+  return sawErrorText;
+}
+
+/** Toast an empty stream row only when hydrate did not recover a real reply. */
+export function shouldToastEmptyAssistantTurn(options: {
+  recoveredVisibleContent: boolean;
+  planContinuing: boolean;
+}): boolean {
+  return !options.recoveredVisibleContent && !options.planContinuing;
 }
 
 /**
@@ -220,24 +300,43 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
   return appendNoticeIfMissing(parts, CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
 }
 
+/** Gemini often leaves the last thought at `state: "streaming"` after the SSE ends. */
+function closeStreamingReasoningParts<T extends { type?: string; state?: unknown }>(
+  parts: readonly T[]
+): T[] {
+  let changed = false;
+  const next = parts.map((part) => {
+    if (part.type !== "reasoning" || part.state !== "streaming") return part;
+    changed = true;
+    return { ...part, state: "done" };
+  });
+  return changed ? next : [...parts];
+}
+
 /**
  * Persist a user-visible assistant row when the stream finishes empty, or
  * when it is aborted (explicit Cancel / deadline) so history is not an
  * orphaned user turn. Tab close no longer aborts the server turn.
  * A `tool-calls` stop with only tool chips is logged as incomplete — do
  * not append a “continue / re-prompt” notice. There is no tool-step cap.
+ * Remaining-section auto-continue must not persist “stopped before
+ * finishing” — the next POST is about to run.
  */
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;
   isAborted: boolean;
   finishReason?: string;
+  /** True when the remaining-section queue will POST another turn. */
+  planContinuing?: boolean;
 }): {
   parts: UIMessage["parts"];
   emptyFailure: boolean;
   interrupted: boolean;
   incomplete: boolean;
 } {
-  const parts = options.parts ?? [];
+  const parts = closeStreamingReasoningParts(
+    closeIncompleteChatToolParts(options.parts ?? [])
+  );
   const visible = assistantPartsHaveVisibleContent(parts);
   const hasVisibleText = parts.some((part) => partHasVisibleText(part));
 
@@ -248,6 +347,14 @@ export function partsForPersistedAssistantTurn(options: {
         emptyFailure: false,
         interrupted: false,
         incomplete: false,
+      };
+    }
+    if (options.planContinuing) {
+      return {
+        parts,
+        emptyFailure: false,
+        interrupted: false,
+        incomplete: true,
       };
     }
     if (visible) {

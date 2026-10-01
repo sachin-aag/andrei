@@ -70,6 +70,36 @@ describe("chatAssistantTurnMetadata", () => {
       }).switchToAnalytics
     ).toBeUndefined();
   });
+
+  it("stamps a continuation only when remaining section work exists", () => {
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "agent",
+        promptVersion: "chat-v94-section-plan",
+        chatTarget: "report",
+        continuation: {
+          remaining: 2,
+          nextLabel: "Calibration",
+          itemIndex: 4,
+          total: 10,
+        },
+      }).continuation
+    ).toEqual({
+      remaining: 2,
+      nextLabel: "Calibration",
+      itemIndex: 4,
+      total: 10,
+    });
+    expect(
+      chatAssistantTurnMetadata({
+        pace: "quick",
+        mode: "agent",
+        promptVersion: "chat-v94-section-plan",
+        chatTarget: "report",
+      }).continuation
+    ).toBeUndefined();
+  });
 });
 
 describe("isChatPace", () => {

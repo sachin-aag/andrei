@@ -26,6 +26,7 @@ import {
   clipLangfuseAttribute,
   endActiveLangfuseObservation,
   isLangfuseEnabled,
+  langfuseDeployContext,
   langfuseGenerateTextTelemetry,
   observationMetadata,
   observeRouteHandler,
@@ -38,6 +39,14 @@ describe("Langfuse v4 observation helpers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "");
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "");
+    vi.stubEnv("LANGFUSE_TRACING_ENVIRONMENT", "");
+    vi.stubEnv("LANGFUSE_RELEASE", "");
+    vi.stubEnv("ANDREI_CUSTOMER", "");
+    vi.stubEnv("NEXT_PUBLIC_ANDREI_CUSTOMER", "");
+    vi.stubEnv("ANDREI_VERCEL_DEPLOY_SCOPE", "");
   });
 
   afterEach(() => {
@@ -49,6 +58,45 @@ describe("Langfuse v4 observation helpers", () => {
     vi.stubEnv("LANGFUSE_SECRET_KEY", "");
     expect(isLangfuseEnabled()).toBe(false);
     expect(langfuseGenerateTextTelemetry({ functionId: "x" })).toEqual({});
+  });
+
+  it("resolves Langfuse environment from Vercel deploy identity", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "cursor/langfuse-deploy-metadata-61b0");
+    vi.stubEnv(
+      "VERCEL_GIT_COMMIT_SHA",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    vi.stubEnv("LANGFUSE_TRACING_ENVIRONMENT", "production");
+    vi.stubEnv("NEXT_PUBLIC_ANDREI_CUSTOMER", "mj");
+    expect(langfuseDeployContext()).toEqual({
+      environment: "preview",
+      release: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      gitBranch: "cursor/langfuse-deploy-metadata-61b0",
+      vercelEnv: "preview",
+      customer: "mj",
+    });
+  });
+
+  it("uses LANGFUSE_TRACING_ENVIRONMENT when Vercel env is unset", () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "");
+    vi.stubEnv("VERCEL_GIT_COMMIT_SHA", "");
+    vi.stubEnv("LANGFUSE_TRACING_ENVIRONMENT", "production");
+    vi.stubEnv("LANGFUSE_RELEASE", "local-release");
+    expect(langfuseDeployContext()).toEqual({
+      environment: "production",
+      release: "local-release",
+      gitBranch: undefined,
+      vercelEnv: undefined,
+      customer: undefined,
+    });
+  });
+
+  it("defaults environment to development off Vercel", () => {
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("LANGFUSE_TRACING_ENVIRONMENT", "");
+    expect(langfuseDeployContext().environment).toBe("development");
   });
 
   it("stringifies and clips metadata to 200 characters", () => {
@@ -88,6 +136,7 @@ describe("Langfuse v4 observation helpers", () => {
         recordInputs: true,
         recordOutputs: true,
         metadata: {
+          tracingEnvironment: "development",
           criterionCount: "4",
           promptVersion: "v2",
         },
@@ -125,8 +174,13 @@ describe("Langfuse v4 observation helpers", () => {
         sessionId: "session-1",
         userId: "user-1",
         traceName: "report-chat",
-        tags: ["document-chat"],
-        metadata: { reportId: "rpt-1", count: "2" },
+        tags: ["document-chat", "development"],
+        environment: "development",
+        metadata: {
+          tracingEnvironment: "development",
+          reportId: "rpt-1",
+          count: "2",
+        },
       },
       expect.any(Function)
     );

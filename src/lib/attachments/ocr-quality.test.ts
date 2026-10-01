@@ -83,6 +83,30 @@ describe("idRecall", () => {
     expect(isRequirementId("SW-SST-5.1.1")).toBe(true);
     expect(isRequirementId("SW-SST-")).toBe(false);
   });
+
+  it("indexes URS-33 when OCR wraps the ID at a table footer", () => {
+    expect(
+      requirementIds(
+        "URS-32 Location URS- 33 Stage and location Format. No.:-QAD-SOP-FS-003-F03-00"
+      )
+    ).toEqual(
+      expect.arrayContaining(["URS-32", "URS-33", "QAD-SOP-FS-003-F03-00"])
+    );
+  });
+});
+
+describe("MJ slash document numbers", () => {
+  it("treats PMC/PR/014 and SOP/DP/QA/014 as identifiers at query time", () => {
+    expect(
+      requirementIds("See PMC/PR/014 and SOP/DP/QA/014 for the procedure.")
+    ).toEqual(["PMC/PR/014", "SOP/DP/QA/014"]);
+    expect(isRequirementId("PMC/PR/014")).toBe(true);
+    expect(isRequirementId("SOP/DP/QA/014")).toBe(true);
+  });
+
+  it("still drops ISO/IEC slash forms via the deny prefix", () => {
+    expect(requirementIds("Conforms to ISO/IEC/1 and IEC/62304/1.")).toEqual([]);
+  });
 });
 
 describe("requirement IDs with an alphanumeric family prefix", () => {

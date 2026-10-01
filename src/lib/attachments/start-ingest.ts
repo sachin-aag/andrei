@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { start } from "workflow/api";
 import { db } from "@/db";
@@ -89,6 +89,32 @@ export async function startDocumentIngest(
     );
     scheduleInlineIngest(attachmentId, generation);
   }
+}
+
+const OPEN_RUN_STATUSES = ["pending", "running"] as const;
+
+/** A dead slice leaves its run `running`, which blocks the next claim. */
+export async function closeOpenIngestRuns(
+  attachmentId: string,
+  assetId: string | null,
+  message: string
+): Promise<void> {
+  await db
+    .update(attachmentIngestRuns)
+    .set({
+      status: "failed",
+      error: message,
+      completedAt: new Date(),
+    })
+    .where(
+      and(
+        inArray(attachmentIngestRuns.status, [...OPEN_RUN_STATUSES]),
+        or(
+          eq(attachmentIngestRuns.attachmentId, attachmentId),
+          assetId ? eq(attachmentIngestRuns.assetId, assetId) : sql`false`
+        )
+      )
+    );
 }
 
 /**
@@ -201,12 +227,15 @@ export async function requestIngestContinuation(input: {
 }): Promise<void> {
   const origin = ingestContinueOrigin();
   const token = mintIngestContinueToken(input);
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    [INGEST_CONTINUE_HEADER]: token,
+  };
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (bypass) headers["x-vercel-protection-bypass"] = bypass;
   const response = await fetch(`${origin}/api/internal/document-ingest/continue`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      [INGEST_CONTINUE_HEADER]: token,
-    },
+    headers,
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -243,6 +272,8 @@ export async function ensureFailedIfStillInFlight(
     processingPage: null,
     processingError: sanitizeIngestError(error),
   };
+
+  await closeOpenIngestRuns(attachmentId, row.assetId, failPatch.processingError);
 
   if (row.assetId) {
     await syncAssetProcessing(row.assetId, failPatch);

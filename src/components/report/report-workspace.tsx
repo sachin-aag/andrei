@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useSyncExternalStore,
   type ComponentType,
 } from "react";
@@ -53,6 +54,8 @@ import {
   type CanvasTabId,
 } from "./work-product-canvas";
 import { MarginGutter } from "./review-rail/margin-gutter";
+import { ReviewGutterPaintedProvider } from "./review-gutter-painted";
+import { isReviewGutterColumnPainted } from "./show-document-suggestion-card";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentCanvasStack } from "./attachment-canvas-stack";
@@ -170,6 +173,7 @@ import {
   ElrAuditTrailEditor,
   ElrBreakdownsEditor,
   ElrCalibrationEditor,
+  ElrCleaningValidationEditor,
   ElrConclusionEditor,
   ElrCsvStatusEditor,
   ElrDiscrepanciesEditor,
@@ -177,13 +181,19 @@ import {
   ElrMonitoringEditor,
   ElrObjectiveEditor,
   ElrPreventiveMaintenanceEditor,
+  ElrProcessValidationEditor,
   ElrQmsEditor,
+  ElrQraReviewEditor,
   ElrQualificationEditor,
   ElrResponsibilitiesEditor,
   ElrRevisionHistoryEditor,
+  ElrRiskActionsEditor,
   ElrScopeEditor,
   ElrSystemDescriptionEditor,
+  ElrSystemTrendsEditor,
 } from "./sections/elr/elr-section-editors";
+import { VQ_SECTION_EDITORS } from "./sections/vq/vq-section-editors";
+import { QSR_SECTION_EDITORS } from "./sections/qsr/qsr-section-editors";
 
 export type { WorkspaceMode };
 
@@ -193,6 +203,29 @@ export type { WorkspaceMode };
  * server-rendered section and replace it with a fallback, silently discarding
  * focus and keystrokes typed into it.
  */
+import {
+  FirAttachmentsEditor,
+  FirBatchDispositionEditor,
+  FirCapaEffectivenessEditor,
+  FirChronologyEditor,
+  FirCorrectionEditor,
+  FirCorrectiveActionEditor,
+  FirEventDescriptionEditor,
+  FirHistoricReviewEditor,
+  FirHumanErrorEditor,
+  FirImmediateActionEditor,
+  FirImpactAssessmentEditor,
+  FirInitialImpactEditor,
+  FirInterimControlEditor,
+  FirInvestigationDetailsEditor,
+  FirInvestigationTeamEditor,
+  FirInvestigationToolsEditor,
+  FirPreventiveActionEditor,
+  FirRootCauseEditor,
+  FirScopeAssessmentEditor,
+  FirStandardProceduresEditor,
+} from "@/components/report/sections/fir/fir-section-editors";
+
 const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
   define: DefineEditor,
   measure: MeasureEditor,
@@ -267,6 +300,9 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_abbreviations: ElrAbbreviationsEditor,
   elr_system_description: ElrSystemDescriptionEditor,
   elr_qualification: ElrQualificationEditor,
+  elr_process_validation: ElrProcessValidationEditor,
+  elr_cleaning_validation: ElrCleaningValidationEditor,
+  elr_qra_review: ElrQraReviewEditor,
   elr_media_fill: ElrMediaFillEditor,
   elr_monitoring: ElrMonitoringEditor,
   elr_calibration: ElrCalibrationEditor,
@@ -278,9 +314,34 @@ const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
   elr_audit_trail: ElrAuditTrailEditor,
   elr_csv_status: ElrCsvStatusEditor,
   elr_discrepancies: ElrDiscrepanciesEditor,
+  elr_system_trends: ElrSystemTrendsEditor,
+  elr_risk_actions: ElrRiskActionsEditor,
   elr_conclusion: ElrConclusionEditor,
   elr_attachments: ElrAttachmentsEditor,
   elr_revision_history: ElrRevisionHistoryEditor,
+};
+
+const FIR_SECTION_EDITORS: Record<string, ComponentType> = {
+  fir_event_description: FirEventDescriptionEditor,
+  fir_standard_procedures: FirStandardProceduresEditor,
+  fir_immediate_action: FirImmediateActionEditor,
+  fir_initial_impact: FirInitialImpactEditor,
+  fir_investigation_team: FirInvestigationTeamEditor,
+  fir_investigation_tools: FirInvestigationToolsEditor,
+  fir_chronology: FirChronologyEditor,
+  fir_investigation_details: FirInvestigationDetailsEditor,
+  fir_historic_review: FirHistoricReviewEditor,
+  fir_root_cause: FirRootCauseEditor,
+  fir_human_error: FirHumanErrorEditor,
+  fir_impact_assessment: FirImpactAssessmentEditor,
+  fir_scope_assessment: FirScopeAssessmentEditor,
+  fir_batch_disposition: FirBatchDispositionEditor,
+  fir_correction: FirCorrectionEditor,
+  fir_corrective_action: FirCorrectiveActionEditor,
+  fir_interim_control: FirInterimControlEditor,
+  fir_preventive_action: FirPreventiveActionEditor,
+  fir_capa_effectiveness: FirCapaEffectivenessEditor,
+  fir_attachments: FirAttachmentsEditor,
 };
 
 const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
@@ -293,6 +354,9 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   generic_document: { body: GenericDocumentEditor },
   quality_risk_assessment: QRA_SECTION_EDITORS,
   equipment_lifecycle_report: ELR_SECTION_EDITORS,
+  vendor_qualification: VQ_SECTION_EDITORS,
+  failure_investigation_report: FIR_SECTION_EDITORS,
+  qualification_summary_report: QSR_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({
@@ -400,6 +464,9 @@ export function ReportWorkspace({
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const reviewGutterAsideRef = useRef<HTMLElement>(null);
+  const [reviewGutterColumnPainted, setReviewGutterColumnPainted] =
+    useState(false);
   const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -495,6 +562,29 @@ export function ReportWorkspace({
   const showReviewGutter =
     reportSurface &&
     isReviewGutterVisible(commentsGutterVisible, false);
+
+  useLayoutEffect(() => {
+    if (!showReviewGutter) {
+      setReviewGutterColumnPainted(false);
+      return;
+    }
+    const el = reviewGutterAsideRef.current;
+    if (!el) {
+      setReviewGutterColumnPainted(false);
+      return;
+    }
+    const update = () => {
+      setReviewGutterColumnPainted(isReviewGutterColumnPainted(el));
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    const main = mainRef.current;
+    if (main) observer.observe(main);
+    return () => observer.disconnect();
+  }, [showReviewGutter]);
+
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -1167,6 +1257,7 @@ export function ReportWorkspace({
                   scrollTabId="report"
                   testId="report-document-canvas"
                 >
+                <ReviewGutterPaintedProvider painted={reviewGutterColumnPainted}>
                 <div
                   className={cn(
                     "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
@@ -1174,6 +1265,7 @@ export function ReportWorkspace({
                       continuousDocument,
                       reviewGutterVisible: showReviewGutter,
                     }),
+                    showReviewGutter && "review-gutter-open",
                     showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
                   style={
@@ -1250,6 +1342,7 @@ export function ReportWorkspace({
                   </div>
                   {showReviewGutter ? (
                     <aside
+                      ref={reviewGutterAsideRef}
                       className={REVIEW_GUTTER_ASIDE_CLASS}
                       aria-label="Review margin"
                     >
@@ -1259,6 +1352,7 @@ export function ReportWorkspace({
                     </aside>
                   ) : null}
                 </div>
+                </ReviewGutterPaintedProvider>
                 </CanvasTabPane>
                 {analyticsOpen ? (
                   <CanvasTabPane

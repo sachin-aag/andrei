@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import type { Editor } from "@tiptap/react";
 import type {
@@ -37,10 +38,12 @@ import {
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
+import { planPendingSectionFlush } from "@/lib/reports/pending-section-flush";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { canMutateAttachments } from "@/lib/reports/access";
 import type { UserRole } from "@/lib/auth/roles";
 import { ReportAttachmentsProvider } from "@/providers/report-attachments-provider";
+import { TableRefNumbersProvider } from "@/providers/table-ref-numbers";
 
 type SectionContents = Partial<SectionContentMap> & Record<string, unknown>;
 
@@ -208,9 +211,10 @@ type ReportContextValue = {
    */
   registerSectionFlush: (
     section: SectionType,
-    flush: () => Promise<void>
+    flush: () => Promise<void>,
+    needsFlush?: () => boolean
   ) => () => void;
-  /** Await every registered section autosave flush (no-ops when already persisted). */
+  /** Await dirty section autosave flushes (no-ops when already persisted). */
   flushPendingSectionSaves: () => Promise<void>;
   /**
    * True while an Agent-chrome report turn is applying edits. Pauses
@@ -223,6 +227,18 @@ type ReportContextValue = {
     section: SectionType,
     contentPath: string,
     editor: Editor
+  ) => () => void;
+  /**
+   * Push live TipTap JSON into provider state so flush() sees the latest
+   * keystrokes (onUpdate cannot flushSync during React 19 lifecycle).
+   * `isDirty` skips `getJSON()` for fields the engineer has not edited since
+   * the last sync. Omit it to always treat the field as dirty.
+   */
+  registerLiveEditorSync: (
+    section: SectionType,
+    contentPath: string,
+    sync: () => void,
+    isDirty?: () => boolean
   ) => () => void;
   getEditor: (section: SectionType, contentPath: string) => Editor | null;
   /** Key of the last-focused field (`section:contentPath`), rich or plain. */
@@ -320,6 +336,7 @@ type ReportEvaluationContextValue = Pick<
 type ReportEditorsContextValue = Pick<
   ReportContextValue,
   | "registerEditor"
+  | "registerLiveEditorSync"
   | "getEditor"
   | "activeFieldKey"
   | "activeFieldKind"
@@ -470,9 +487,22 @@ export function ReportProvider({
    * uses these editor refs to compute live anchor coordinates via `view.coordsAtPos`.
    */
   const editorsRef = useRef<Map<string, EditorRegistryEntry>>(new Map());
-  const sectionFlushesRef = useRef<Map<SectionType, () => Promise<void>>>(
-    new Map()
-  );
+  const liveEditorSyncsRef = useRef<
+    Map<
+      string,
+      {
+        section: SectionType;
+        sync: () => void;
+        isDirty: () => boolean;
+      }
+    >
+  >(new Map());
+  const sectionFlushesRef = useRef<
+    Map<
+      SectionType,
+      { flush: () => Promise<void>; needsFlush: () => boolean }
+    >
+  >(new Map());
   const [editorTick, setEditorTick] = useState(0);
   const [activeField, setActiveFieldState] = useState<{
     key: string;
@@ -511,6 +541,29 @@ export function ReportProvider({
         if (cur && cur.editor === editor) {
           editorsRef.current.delete(key);
           setEditorTick((n) => n + 1);
+        }
+      };
+    },
+    []
+  );
+
+  const registerLiveEditorSync = useCallback(
+    (
+      section: SectionType,
+      contentPath: string,
+      sync: () => void,
+      isDirty?: () => boolean
+    ) => {
+      const key = editorRegistryKey(section, contentPath);
+      const entry = {
+        section,
+        sync,
+        isDirty: isDirty ?? (() => true),
+      };
+      liveEditorSyncsRef.current.set(key, entry);
+      return () => {
+        if (liveEditorSyncsRef.current.get(key) === entry) {
+          liveEditorSyncsRef.current.delete(key);
         }
       };
     },
@@ -584,12 +637,22 @@ export function ReportProvider({
   /**
    * Every mounted section editor registers its autosave flush here so submit
    * and refresh can persist pending debounced edits before locking/reloading.
+   * Chat send skips sections whose `needsFlush` is false and whose live
+   * editors are clean.
    */
   const registerSectionFlush = useCallback(
-    (section: SectionType, flush: () => Promise<void>) => {
-      sectionFlushesRef.current.set(section, flush);
+    (
+      section: SectionType,
+      flush: () => Promise<void>,
+      needsFlush?: () => boolean
+    ) => {
+      const entry = {
+        flush,
+        needsFlush: needsFlush ?? (() => true),
+      };
+      sectionFlushesRef.current.set(section, entry);
       return () => {
-        if (sectionFlushesRef.current.get(section) === flush) {
+        if (sectionFlushesRef.current.get(section) === entry) {
           sectionFlushesRef.current.delete(section);
         }
       };
@@ -598,8 +661,27 @@ export function ReportProvider({
   );
 
   const flushPendingSectionSaves = useCallback(async () => {
-    const flushes = [...sectionFlushesRef.current.values()];
-    await Promise.all(flushes.map((flush) => flush()));
+    const plan = planPendingSectionFlush({
+      liveEditors: liveEditorSyncsRef.current.values(),
+      sections: [...sectionFlushesRef.current.entries()].map(
+        ([section, entry]) => ({
+          section,
+          flush: entry.flush,
+          needsFlush: entry.needsFlush,
+        })
+      ),
+    });
+    if (plan.skip) return;
+    flushSync(() => {
+      for (const sync of plan.editorsToSync) {
+        try {
+          sync();
+        } catch {
+          // A torn-down editor must not block the registered section PATCH.
+        }
+      }
+    });
+    await Promise.all(plan.sectionsToFlush.map((flush) => flush()));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -1164,6 +1246,7 @@ export function ReportProvider({
   const editorsValue = useMemo<ReportEditorsContextValue>(
     () => ({
       registerEditor,
+      registerLiveEditorSync,
       getEditor,
       activeFieldKey,
       activeFieldKind,
@@ -1175,6 +1258,7 @@ export function ReportProvider({
     }),
     [
       registerEditor,
+      registerLiveEditorSync,
       getEditor,
       activeFieldKey,
       activeFieldKind,
@@ -1211,7 +1295,13 @@ export function ReportProvider({
                                   canMutateAttachments={canMutateAttachments}
                                   isWorkspaceAdmin={currentUserRole === "admin"}
                                 >
-                                  {children}
+                                  <TableRefNumbersProvider
+                                    documentType={report.documentType}
+                                    sections={sections}
+                                    comments={comments}
+                                  >
+                                    {children}
+                                  </TableRefNumbersProvider>
                                 </ReportAttachmentsProvider>
                               </ReportEditorsContext.Provider>
                             </ReportCommentsContext.Provider>

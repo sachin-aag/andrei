@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveCitedAttachment } from "@/lib/citations/resolve-cited-attachment";
+import { resolveCitedAttachment, resolveExactCitedAttachment } from "@/lib/citations/resolve-cited-attachment";
 
 const attachments = [
   { id: "att_protocol", filename: "protocol.pdf" },
@@ -57,6 +57,19 @@ describe("resolveCitedAttachment", () => {
     ];
     expect(resolveCitedAttachment(twins, "protocol")).toEqual({
       status: "ambiguous",
+    });
+  });
+
+  it("does not exact-match a stem against a combined and filename", () => {
+    const combined = [
+      { id: "att_combo", filename: "E-PR-068 and E-PR-071.pdf" },
+    ];
+    expect(resolveExactCitedAttachment(combined, "E-PR-068")).toEqual({
+      status: "missing",
+    });
+    expect(resolveCitedAttachment(combined, "E-PR-068")).toEqual({
+      status: "found",
+      attachment: combined[0],
     });
   });
 });

@@ -5,6 +5,7 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   sectionContentHash,
+  sectionOrderWithOpenSuggestions,
   serializeAiFixCommentContent,
   sortGapCriteria,
   sortedOpenSuggestionsForSection,
@@ -82,6 +83,15 @@ describe("suggestion-gating", () => {
     expect(canSuggestFixes("define", evaluations, comments, content)).toBe(true);
     const gap = gapCriteriaForSection("define", evaluations, comments, content);
     expect(gap.map((g) => g.criterionKey)).toEqual(["define.location"]);
+  });
+
+  it("gap criteria excludes rows with an open ai_redraft", () => {
+    const evaluations = [baseEval({})];
+    const comments = [baseComment({ kind: "ai_redraft" })];
+    const gap = gapCriteriaForSection("define", evaluations, comments, {
+      narrative: { type: "doc", content: [] },
+    });
+    expect(gap).toHaveLength(0);
   });
 
   it("includes partially_met criteria in the gap set", () => {
@@ -236,6 +246,50 @@ describe("suggestion-gating", () => {
         "analyze",
       ])?.id
     ).toBe("c-define");
+  });
+
+  it("hands off to an open suggestion whose section is not in the card order", () => {
+    const comments = [
+      baseComment({ id: "c-objective", section: "qsr_objective" }),
+      baseComment({
+        id: "c-acronyms",
+        section: "qsr_acronyms",
+        createdAt: "2026-01-02T00:00:00Z",
+      }),
+    ];
+    expect(
+      nextOpenSuggestionAfterResolve(
+        "c-objective",
+        "qsr_objective",
+        comments,
+        [],
+        ["qsr_objective", "qsr_scope"]
+      )?.id
+    ).toBe("c-acronyms");
+  });
+
+  it("appends sections with leftover open suggestions after the card order", () => {
+    expect(
+      sectionOrderWithOpenSuggestions(
+        ["qsr_objective"],
+        [
+          baseComment({ id: "c-acro", section: "qsr_acronyms" }),
+          baseComment({ id: "c-obj", section: "qsr_objective" }),
+        ]
+      )
+    ).toEqual(["qsr_objective", "qsr_acronyms"]);
+  });
+
+  it("skips open suggestions whose section is null", () => {
+    expect(
+      sectionOrderWithOpenSuggestions(
+        ["qsr_objective"],
+        [
+          baseComment({ id: "c-null", section: null }),
+          baseComment({ id: "c-acro", section: "qsr_acronyms" }),
+        ]
+      )
+    ).toEqual(["qsr_objective", "qsr_acronyms"]);
   });
 
   it("returns null when the resolved card was the last open suggestion", () => {
@@ -529,5 +583,47 @@ describe("parseAiFixCommentContent supersededSuggestionIds", () => {
     expect(parsed.supersededSuggestionIds).toEqual(["old-edit"]);
     expect(parsed.suggestionBase).toBe("old");
     expect(parsed.suggestionIntent).toBe("new");
+  });
+});
+
+describe("parseAiFixCommentContent claimProvenance", () => {
+  it("round-trips verified and unsourced claims", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "E/PR/070",
+      reasoning: "Name the machine",
+      claimProvenance: {
+        policy: "block",
+        claims: [
+          {
+            text: "E/PR/070",
+            kind: "identifier",
+            status: "verified",
+            cited: { filename: "PQR-24-PR-102.pdf", page: 2 },
+            source: {
+              filename: "PQR-24-PR-102.pdf",
+              page: 2,
+              attachmentId: "att-pqr",
+            },
+          },
+        ],
+      },
+    });
+    expect(parseAiFixCommentContent(json).claimProvenance).toEqual({
+      policy: "block",
+      claims: [
+        {
+          text: "E/PR/070",
+          kind: "identifier",
+          status: "verified",
+          cited: { filename: "PQR-24-PR-102.pdf", page: 2 },
+          source: {
+            filename: "PQR-24-PR-102.pdf",
+            page: 2,
+            attachmentId: "att-pqr",
+          },
+        },
+      ],
+    });
   });
 });

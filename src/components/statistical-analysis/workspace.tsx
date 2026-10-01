@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,6 +24,7 @@ import {
   createOneWayAnova,
   createBoxplot,
   createHistogram,
+  createTimeSeries,
   createXyScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
@@ -38,6 +47,7 @@ import {
   normalizeWorksheet,
   renameDataSheet,
   restoreActiveSheet,
+  findColumn,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -49,11 +59,13 @@ import {
   BOXPLOT,
   CAPABILITY_SIXPACK_NORMAL,
   HISTOGRAM,
+  TIME_SERIES,
   ONE_WAY_ANOVA,
   XY_SCATTER,
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -76,7 +88,9 @@ import { CapabilityDialog } from "@/components/statistical-analysis/capability-d
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
 import { BoxplotDialog } from "@/components/statistical-analysis/boxplot-dialog";
 import { HistogramDialog } from "@/components/statistical-analysis/histogram-dialog";
+import { TimeSeriesDialog } from "@/components/statistical-analysis/time-series-dialog";
 import { HistogramView } from "@/components/statistical-analysis/histogram-view";
+import { TimeSeriesView } from "@/components/statistical-analysis/time-series-view";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
 import { XyScatterDialog } from "@/components/statistical-analysis/xy-scatter-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
@@ -88,6 +102,7 @@ import {
   WorksheetGrid,
   type ColumnMenuAction,
 } from "@/components/statistical-analysis/worksheet-grid";
+import { WorksheetSheetTabs } from "@/components/statistical-analysis/worksheet-sheet-tabs";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
 
 /** Coalesce mid-turn grid reloads so parallel column writes paint once. */
@@ -198,6 +213,19 @@ export function StatisticalWorkspace({
   const [histogramRowEnd, setHistogramRowEnd] = useState<number | null>(null);
   const [histogramSubmitting, setHistogramSubmitting] = useState(false);
   const [histogramError, setHistogramError] = useState<string | null>(null);
+  const [timeSeriesOpen, setTimeSeriesOpen] = useState(false);
+  const [timeSeriesColumnId, setTimeSeriesColumnId] = useState("");
+  const [timeSeriesSubmitting, setTimeSeriesSubmitting] = useState(false);
+  const [timeSeriesError, setTimeSeriesError] = useState<string | null>(null);
+  /**
+   * Switching to a filled sheet mounts every row — a 2,000-row instrument
+   * table is ~23,000 cells — which blocks the click if it runs urgently. The
+   * transition lets the current sheet stay interactive while the new one
+   * renders, and `pendingSheetId` is set urgently so the tab acknowledges the
+   * click on the very next paint.
+   */
+  const [switchingSheet, startSheetSwitch] = useTransition();
+  const [pendingSheetId, setPendingSheetId] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
@@ -205,7 +233,6 @@ export function StatisticalWorkspace({
   const [recomputingAnalysisId, setRecomputingAnalysisId] = useState<string | null>(
     null
   );
-  const sheetNameInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [version, setVersion] = useState(1);
@@ -539,6 +566,12 @@ export function StatisticalWorkspace({
         setHistogramOpen(true);
         return;
       }
+      if (isTimeSeriesAnalysis(analysis)) {
+        setTimeSeriesColumnId(analysis.config.columnId);
+        setTimeSeriesError(null);
+        setTimeSeriesOpen(true);
+        return;
+      }
       if (isScatterAnalysis(analysis)) {
         setPlotError(null);
         setPlotOpen(true);
@@ -572,10 +605,6 @@ export function StatisticalWorkspace({
     },
     [applyAnalytics, flush, readOnly, reportId]
   );
-
-  useEffect(() => {
-    if (editingSheetId !== null) sheetNameInputRef.current?.focus();
-  }, [editingSheetId]);
 
   const openAnalyzeForColumn = async (columnId: string) => {
     if (readOnly) return;
@@ -643,6 +672,28 @@ export function StatisticalWorkspace({
     setHistogramOpen(true);
   };
 
+  const switchToSheet = useCallback(
+    (sheetId: string) => {
+      // `switchWorksheetTab` always returns a new object, so re-clicking the
+      // active tab would re-mount every row and flash a spinner for nothing.
+      if (worksheetRef.current.activeSheetId === sheetId) return;
+      setPendingSheetId(sheetId);
+      startSheetSwitch(() => {
+        setWorksheet((current) => switchWorksheetTab(current, sheetId));
+      });
+    },
+    [startSheetSwitch]
+  );
+
+  const openTimeSeries = async (columnId: string) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
+    setTimeSeriesColumnId(columnId);
+    setTimeSeriesError(null);
+    setTimeSeriesOpen(true);
+  };
+
   const openWorksheetPlot = (kind: WorksheetPlotKind, columnId: string) => {
     switch (kind) {
       case CAPABILITY_SIXPACK_NORMAL:
@@ -655,6 +706,8 @@ export function StatisticalWorkspace({
         return openBoxplot(columnId);
       case XY_SCATTER:
         return openXyScatter(columnId);
+      case TIME_SERIES:
+        return openTimeSeries(columnId);
       default: {
         const exhaustive: never = kind;
         return exhaustive;
@@ -807,72 +860,25 @@ export function StatisticalWorkspace({
           className="mt-0 min-h-0 flex-1 overflow-hidden"
         >
           <div className="flex h-full min-h-0 flex-col">
-            <div
-              data-testid="worksheet-sheet-tabs"
-              className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
-            >
-              {worksheet.sheets.map((sheet) => {
-                const active = worksheet.activeSheetId === sheet.id;
-                const editing = editingSheetId === sheet.id;
-                return editing ? (
-                  <input
-                    key={sheet.id}
-                    ref={sheetNameInputRef}
-                    value={sheetNameDraft}
-                    aria-label="Data sheet name"
-                    data-testid={`worksheet-sheet-rename-${sheet.id}`}
-                    className="h-7 max-w-[10rem] rounded-md border border-[var(--ring)] bg-[var(--input)] px-2 text-xs font-medium"
-                    onChange={(event) => setSheetNameDraft(event.target.value)}
-                    onBlur={commitSheetRename}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        commitSheetRename();
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        cancelSheetRename();
-                      }
-                    }}
-                  />
-                ) : (
-                  <button
-                    key={sheet.id}
-                    type="button"
-                    aria-label={`${sheet.name} sheet`}
-                    data-testid={`worksheet-sheet-tab-${sheet.id}`}
-                    onClick={() =>
-                      setWorksheet((current) =>
-                        switchWorksheetTab(current, sheet.id)
-                      )
-                    }
-                    onDoubleClick={() => beginRenameSheet(sheet.id)}
-                    className={`rounded-md px-2 py-1 text-xs ${
-                      active
-                        ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
-                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
-                    }`}
-                  >
-                    {sheet.name}
-                  </button>
-                );
-              })}
-              {readOnly || worksheet.sheets.length <= 1 ? null : (
-                <button
-                  type="button"
-                  data-testid="delete-data-sheet"
-                  onClick={() => {
-                    setWorksheet((current) =>
-                      deleteDataSheet(current, current.activeSheetId)
-                    );
-                    setSelection(collapseSelection(0, 0));
-                  }}
-                  className="ml-auto rounded-md px-2 py-1 text-xs text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
-                >
-                  Delete sheet
-                </button>
-              )}
-            </div>
+            <WorksheetSheetTabs
+              worksheet={worksheet}
+              readOnly={readOnly}
+              editingSheetId={editingSheetId}
+              sheetNameDraft={sheetNameDraft}
+              onSheetNameDraftChange={setSheetNameDraft}
+              onBeginRename={beginRenameSheet}
+              onCommitRename={commitSheetRename}
+              onCancelRename={cancelSheetRename}
+              // switchToSheet defers the row render, so the tab needs to say
+              // it heard the click. Only the in-flight id counts, so a stale
+              // one cannot mark the wrong tab.
+              busySheetId={switchingSheet ? pendingSheetId : null}
+              onActivate={switchToSheet}
+              onDelete={(sheetId) => {
+                setWorksheet((current) => deleteDataSheet(current, sheetId));
+                setSelection(collapseSelection(0, 0));
+              }}
+            />
             <WorksheetGrid
               worksheet={worksheet}
               selection={selection}
@@ -1048,6 +1054,35 @@ export function StatisticalWorkspace({
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}
                     onRecompute={() => void recomputeSelectedAnalysis(selectedAnalysis)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis &&
+                  isTimeSeriesAnalysis(selectedAnalysis) ? (
+                  <TimeSeriesView
+                    analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
+                    readOnly={readOnly}
+                    editing={Boolean(editingAnalysisId)}
+                    recomputing={recomputingAnalysisId === selectedAnalysis.id}
+                    onRecompute={() =>
+                      void recomputeSelectedAnalysis(selectedAnalysis)
+                    }
                     onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
@@ -1582,6 +1617,146 @@ export function StatisticalWorkspace({
             );
           } finally {
             setHistogramSubmitting(false);
+          }
+        }}
+      />
+
+      <TimeSeriesDialog
+        key={
+          timeSeriesOpen
+            ? `time-series-${editingAnalysisId ?? "new"}`
+            : "time-series-closed"
+        }
+        open={timeSeriesOpen}
+        worksheet={worksheet}
+        defaultColumnId={timeSeriesColumnId || selectedColumnId}
+        defaultTimeColumnId={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.timeColumnId
+            : ""
+        }
+        defaultClockColumnId={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.clockColumnId ?? null
+            : null
+        }
+        defaultRowStart={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.rowStart ?? null
+            : null
+        }
+        defaultRowEnd={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.rowEnd ?? null
+            : null
+        }
+        defaultTitle={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        defaultLsl={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.lsl
+            : null
+        }
+        defaultUsl={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.usl
+            : null
+        }
+        defaultConditionColumnId={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.conditionColumnId ?? null
+            : null
+        }
+        defaultBands={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.bands ?? null
+            : null
+        }
+        defaultShowSpecLimits={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showSpecLimits !== false
+            : true
+        }
+        defaultShowExcursions={
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+            ? editingAnalysis.config.showExcursions !== false
+            : true
+        }
+        editMode={Boolean(
+          editingAnalysis && isTimeSeriesAnalysis(editingAnalysis)
+        )}
+        submitting={timeSeriesSubmitting}
+        error={timeSeriesError}
+        onOpenChange={(open) => {
+          setTimeSeriesOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
+        onSubmit={async (values) => {
+          setTimeSeriesSubmitting(true);
+          setTimeSeriesError(null);
+          try {
+            await flush().catch(() => undefined);
+            // Save the bands onto the column spec so the next batch sheet
+            // inherits them instead of being retyped.
+            if (values.conditionColumnId && values.bands?.length) {
+              const measurement = findColumn(worksheet, values.columnId);
+              const condition = findColumn(worksheet, values.conditionColumnId);
+              if (measurement && condition) {
+                setWorksheet((current) =>
+                  upsertSpecRow(current, {
+                    columnName: measurement.name,
+                    lsl: specRowForColumn(current, measurement.name)?.lsl ?? "",
+                    usl: specRowForColumn(current, measurement.name)?.usl ?? "",
+                    target:
+                      specRowForColumn(current, measurement.name)?.target ?? "",
+                    conditionColumnName: condition.name,
+                    bands: values.bands ?? undefined,
+                  })
+                );
+              }
+            }
+            const payload = {
+              columnId: values.columnId,
+              timeColumnId: values.timeColumnId,
+              clockColumnId: values.clockColumnId,
+              title: values.title || undefined,
+              lsl: values.lsl,
+              usl: values.usl,
+              conditionColumnId: values.conditionColumnId,
+              bands: values.bands,
+              showSpecLimits: values.showSpecLimits,
+              showExcursions: values.showExcursions,
+              rowStart: values.rowStart,
+              rowEnd: values.rowEnd,
+            };
+            if (editingAnalysisId && isTimeSeriesAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(
+                reportId,
+                editingAnalysisId,
+                payload
+              );
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Time series updated.");
+            } else {
+              const created = await createTimeSeries(reportId, payload);
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setTimeSeriesOpen(false);
+            clearAnalysisEdit();
+            setTab("results");
+          } catch (error) {
+            setTimeSeriesError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the time series."
+            );
+          } finally {
+            setTimeSeriesSubmitting(false);
           }
         }}
       />

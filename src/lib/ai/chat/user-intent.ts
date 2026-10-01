@@ -24,19 +24,25 @@ export const DOCUMENT_WRITE_TOOLS = [
   "remove_image",
   "plot_measurements",
   "select_analyze_method",
+  "draft_identity",
 ] as const;
 
 export const ANALYTICS_WRITE_TOOLS = [
   "write_column",
   "manage_worksheet",
   "extract_sheet",
+  "load_table",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",
   "plot_histogram",
+  "plot_time_series",
   "plot_measurements",
 ] as const;
+
+export const DOCUMENT_WRITE_TOOL_SET = new Set<string>(DOCUMENT_WRITE_TOOLS);
+export const ANALYTICS_WRITE_TOOL_SET = new Set<string>(ANALYTICS_WRITE_TOOLS);
 
 const GREETING_RE =
   /^(?:hi+|hello|hey+|yo|hiya|howdy|sup|what'?s up|whats up|good (?:morning|afternoon|evening|night))(?:\s+there)?(?:\s*[!.]*)?$/i;
@@ -49,6 +55,14 @@ const SMALL_TALK_RE =
 
 const CONFIRM_RE =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|k|go ahead|do it|please do|sounds good|yes please|please|go for it|do that|that works)(?:\s*[!.]*)?$/i;
+
+/**
+ * Stronger than a bare yes/ok. In Agent mode these mean proceed even when
+ * the prior assistant turn dumped findings instead of matching
+ * {@link ASSISTANT_WRITE_OFFER_RE} ("go for it" after a retrieval dump).
+ */
+const PROCEED_RE =
+  /^(?:go for it|do it|do that|please do|go ahead)(?:\s*[!.]*)?$/i;
 
 /**
  * A confirmation that carries its own instruction ("yes put it in the data
@@ -67,8 +81,19 @@ const START_REPORT_RE =
 const CONTINUE_RE =
   /\b(?:keep going|continue|you missed|still missing|go on|finish (?:it|the (?:draft|report|section|review)))\b/i;
 
+/**
+ * Complaints that promised work did not land. `QUESTION_START_RE` would
+ * otherwise swallow "why isn't the table filled" as a lookup, and Flash-Lite
+ * mapped those turns to read so write tools never loaded.
+ */
+const MISSING_WORK_RE =
+  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank|(?:suggestion|card)s? (?:are |is )?(?:not landing|did(?:n't| not) land|aren'?t landing)|refus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)|(?:no|without|did(?:n't| not) have) write (?:capability|capabilities|tools|access)|only summar(?:ising|izing|ised|ized)|read-only mode|still in ask mode|you (?:said|claimed) .{0,40}ask mode)\b/i;
+
 const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;
+
+/** Repeat-the-last-edit phrasing. Not a lookup — Lite decides write vs read. */
+const SAME_TASK_RE = /\bdo(?:\s+the)?\s+same\b|\bdo that\b/i;
 
 /**
  * "Can you", "could you", "please" read as questions to `QUESTION_START_RE`
@@ -106,15 +131,28 @@ const FILL_THE_WORKSHEET_RE =
 const ADVICE_QUESTION_RE =
   /\b(?:how should i|what should i (?:write|draft|put|say|include)|which section should i|how do i (?:write|draft))\b/i;
 
+/**
+ * High-precision lookups only. `can` / `could` / `would` / bare `do` are
+ * polite wrappers ("can you do the same") — those must not short-circuit
+ * Flash-Lite. `do you` stays a question ("do you have the protocol?").
+ */
 const QUESTION_START_RE =
-  /^(?:what|who|when|where|which|why|how|is|are|do|does|did|can|could|would|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
+  /^(?:what|who|when|where|which|why|how|is|are|do you|does|did|should|tell me|summar(?:y|ize)|explain|show|list|find|search|look)\b/i;
 
 const ASSISTANT_WRITE_OFFER_RE =
-  /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot)|ready to draft|start drafting|i(?:'ll| will) draft)\b/i;
+  /\b(?:shall i|should i|want me to|would you like(?: me)? to|do you want me to|i can (?:draft|write|fill|extract|plot|update|apply)|ready to (?:draft|update|write|fill|apply)|start drafting|i(?:'ll| will) (?:draft|update|apply)|please confirm to proceed)\b/i;
 
 /** Report chat pointed them at Analytics; a yes is continue-the-extract, not small talk. */
 const SWITCH_TO_ANALYTICS_OFFER_RE =
   /Switch to Analytics button|belongs on the Analytics worksheet/i;
+
+/** Prior Ask-mode copy that told them to switch so the next send can write. */
+const SWITCH_TO_AGENT_OFFER_RE =
+  /\b(?:currently in Ask mode|You are in Ask mode|in Ask mode\b|cannot edit (?:the )?(?:document|worksheet) in this mode|edit tools are disabled|switch to Agent(?: mode)?|switch the Ask\/Agent control to Agent)\b/i;
+
+/** They flipped Ask → Agent and said so. Deliver the earlier fill. */
+const SWITCHED_TO_AGENT_RE =
+  /\b(?:(?:i(?:'ve| have)?\s+)?switched to agent|now (?:i(?:'m| am) )?(?:in )?agent(?: mode)?|i(?:'m| am) (?:now )?in agent|agent mode now)\b/i;
 
 /** Skip-all on an Analytics page-number form — search, do not placeholder. */
 const ASK_USER_ANSWERS_RE = /^Answers to your questions:/i;
@@ -168,6 +206,16 @@ export function classifyChatUserIntent(
   const offeredWrite = (input.recentAssistantTexts ?? []).some((text) =>
     ASSISTANT_WRITE_OFFER_RE.test(text)
   );
+  const offeredAgentSwitch = (input.recentAssistantTexts ?? []).some((text) =>
+    SWITCH_TO_AGENT_OFFER_RE.test(text)
+  );
+
+  if (
+    (input.mode ?? "agent") === "agent" &&
+    SWITCHED_TO_AGENT_RE.test(latest)
+  ) {
+    return { kind: "write", reason: "switched_to_agent" };
+  }
 
   if (CONFIRM_RE.test(latest)) {
     if (offeredWrite) {
@@ -178,6 +226,12 @@ export function classifyChatUserIntent(
     );
     if (offeredAnalyticsSwitch) {
       return { kind: "write", reason: "confirm_analytics_switch" };
+    }
+    if ((input.mode ?? "agent") === "agent" && offeredAgentSwitch) {
+      return { kind: "write", reason: "confirm_write_offer" };
+    }
+    if ((input.mode ?? "agent") === "agent" && PROCEED_RE.test(latest)) {
+      return { kind: "write", reason: "confirm_write_offer" };
     }
     return { kind: "social", reason: "ack_without_task" };
   }
@@ -200,6 +254,10 @@ function classifyTaskText(
 ): ChatUserIntentDecision {
   if (CONTINUE_RE.test(text)) {
     return { kind: "write", reason: "continue_task" };
+  }
+
+  if (MISSING_WORK_RE.test(text)) {
+    return { kind: "write", reason: "missing_work" };
   }
 
   if (ADVICE_QUESTION_RE.test(text)) {
@@ -233,6 +291,15 @@ function classifyTaskText(
     return { kind: "write", reason: "produce_request" };
   }
 
+  // Polite leftover ("can you do the same for PM") is not a confident
+  // lookup. Flash-Lite decides; timeout keeps Agent writable / Ask read-only.
+  if (polite || SAME_TASK_RE.test(text) || SAME_TASK_RE.test(instruction)) {
+    return {
+      kind: mode === "agent" ? "write" : "read",
+      reason: "ambiguous_polite_request",
+    };
+  }
+
   // Neither a question nor a recognized write verb. Fall back to where the
   // engineer is rather than to read: stripping the edit tools in Agent mode
   // is what made the assistant claim it could not write and paste a markdown
@@ -244,11 +311,14 @@ function classifyTaskText(
   return { kind: "read", reason: "question_or_lookup" };
 }
 
-/** The unresolvable hole: rules would default Agent mush to write. */
+/** Rules were not sure — Flash-Lite should classify this turn. */
 export function needsLlmIntentClassification(
   decision: ChatUserIntentDecision
 ): boolean {
-  return decision.reason === "ambiguous_agent_mode";
+  return (
+    decision.reason === "ambiguous_agent_mode" ||
+    decision.reason === "ambiguous_polite_request"
+  );
 }
 
 /**
@@ -324,8 +394,8 @@ None. This message is small talk — reply in one short sentence and call nothin
     surface === "analytics" ? ANALYTICS_WRITE_TOOLS : DOCUMENT_WRITE_TOOLS
   ).join(", ");
   return `## Tools available this turn
-This message reads as a question, so the write tools (${hidden}) are not loaded. Do not call them — they will fail.
-Answer from evidence. If they actually want you to change the ${target}, say so in one line and ask them to confirm; the tools return on that next message. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit, and do not tell them to switch modes.`;
+This message reads as a question, so the write tools (${hidden}) start hidden.
+Do not call them for a lookup. If they actually asked to change the ${target} (including "it's still empty", "nothing was filled", "I don't see the change", "suggestions are not landing", or "you said you filled it"), call the matching write tool anyway — it becomes available on the next step. Do not paste a draft, table, or worksheet block into chat as a stand-in for the edit. Do not say the tools are disabled, that this session is read-only, that you are still in Ask mode, or that they should switch modes.`;
 }
 
 export function restrictToolsForIntent<T extends Record<string, unknown>>(

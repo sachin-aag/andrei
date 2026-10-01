@@ -36,6 +36,7 @@ export type ProductTourCopyContext = {
   documentTypeLabels: string[]
   insightsEnabled: boolean
   statisticalAnalysisEnabled: boolean
+  documentTemplatesEnabled: boolean
 };
 
 export type WalkthroughRole = UserRole;

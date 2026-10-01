@@ -4,8 +4,8 @@ This project uses three layers of quality checks:
 
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
-| **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 11 spec files, ~43 cases × 3 browsers |
+| **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~77 files, ~348 tests |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 15 spec files, ~47 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -149,6 +149,18 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 </details>
 
 <details>
+<summary><strong>not-found.spec.ts</strong> — branded 404</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| unknown path while signed out still goes to login | Workspace stays private; `/this-page-does-not-exist` → `/login` |
+| shows a branded 404 for unknown paths when signed in | HTTP 404, “This page isn’t here”, Back to reports + Document vault |
+| missing report routes show the branded 404 | `/reports/missing-report-id` and `/edit` use the same page |
+| Back to reports returns to the dashboard | Link lands on engineer home (`My reports`) |
+
+</details>
+
+<details>
 <summary><strong>product-walkthrough.spec.ts</strong> — first-login feature tour</summary>
 
 | Test | What it verifies |
@@ -167,13 +179,12 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 
 | Test | What it verifies |
 |------|------------------|
-| opens create dialog from New Report button | Dialog fields and actions |
-| upload pre-fills deviation number | `e2e/fixtures/minimal-report.docx` |
-| clear file resets upload | Clear button |
+| opens the template gallery from New Report | Demo New Report → `/templates` with Supply Chain, Design, Operations, and Quality open |
+| opens create dialog from a template tile | Deviations dialog fields and actions |
 | shows toast when deviation number is empty | Sonner validation |
 | shows toast for duplicate deviation number | Duplicate guard |
 | creates blank report and navigates to editor | `/reports/[id]/edit` |
-| cancel closes dialog | Dialog dismiss |
+| cancel closes dialog | Dialog dismiss, gallery remains |
 | manager does not see New Report button | Role gate |
 | deletes report from dashboard | Delete confirmation + toast |
 
@@ -217,6 +228,8 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 | starting a new chat while a turn is in flight leaves the composer usable | Hold the first `/chat` POST (do not forward it), click +, type and send in the empty thread; open-chat tabs show the parked turn as still working. Abort the held POST on teardown so `next start` is not left waiting on a half-open body. |
 | fills the composer with stub dictation after stop | Fake mic + `ALLOW_TEST_STUB_SPEECH`; transcribe `GET` 204; while recording the composer stays at the typed prefix, the wave + “Transcript appears when you stop” hint show, and Send stays disabled; after stop a unary PCM `POST` returns the canned phrase (no SSE session) and fills `chat-input`; Agent chrome still shows the mic; Analytics counterpart uses `analytics-chat-voice-input`. Chromium only (AudioWorklet). |
 
+Stub chat cannot assert tool calls or grounding. Section 5 write-path regressions live in `src/lib/ai/chat/qsr-rtm-draft-replay.test.ts`.
+
 </details>
 
 <details>
@@ -257,6 +270,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 |------|------------------|
 | does not blank Define while the gutter Apply is in flight | Seeded insert stays in the live editor for every sampled frame until it becomes ordinary text |
 | does not blank Define while inline Accept is in flight | Same for the inline Accept control on the highlighted span |
+| shows Apply all and Dismiss all for a single pending suggestion | Header bulk actions stay for one open card |
+| keeps Apply all and Dismiss all after dismissing one of two suggestions | Dismissing the first card leaves Apply all 1 / Dismiss all and the remaining inline preview |
 
 </details>
 
@@ -401,9 +416,9 @@ File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 
 **CreateReportButton** (`create-report-button.test.tsx`)
 
-- Opens dialog
-- Toast on empty deviation number
-- Cancel closes dialog
+- Demo New Report links to `/templates`
+- MJ still opens the create dialog
+- CreateReportDialog: toast on empty deviation number, cancel, templateId POST
 
 **SaveStatus** (`save-status.test.tsx`)
 
@@ -439,6 +454,33 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 | `content-hash.test.ts` | Staleness hash stability |
 | `resolve-google-language-model.test.ts` | Vertex / API key / Gateway routing |
 | `stub-fixtures.test.ts` | E2E stub JSON completeness and shape |
+
+</details>
+
+<details>
+<summary><strong>AI chat write path</strong> (`src/lib/ai/chat/`)</summary>
+
+Playwright stub chat (`ALLOW_TEST_STUB_CHAT`, `e2e/report-chat.spec.ts`) streams a canned reply. It **cannot** assert tool selection or citation grounding. Live Gemini in the browser is not a CI job (`docs/harness-plan.md` F2).
+
+**Quality floor beyond Vitest / Playwright:** git owns `scripts/eval/chat-draft-cases.json`. `pnpm chat-eval -- --replay` scores those cases against `groundDraftText`, QSR page-plan collapse, identity-incomplete search hits, and layer-1 harness tool availability (no LLM). `pnpm chat-eval -- --sync` upserts Langfuse dataset `chat-draft-quality-floor`. `--experiment` upserts that dataset, then `dataset.runExperiment` so prompt/gate changes compare in the Datasets UI (`quality_floor` per item, `pass_rate` on the run). Missing `LANGFUSE_*` keys skip sync/experiment. `--live` is reserved until a headless Agent turn exists. Add a case when an incident ships, then replay. Copy `chat-draft-cases.local.example.json` to the gitignored overlay for private traces.
+
+The layer that catches a production overblock (QSR section 5 dropping cover-page capacity, vacuum range, MOC) is a Vitest **replay** through `buildChatTools`:
+
+1. Mock `@/db` and `@/lib/attachments/retrieval` (same pattern as `tools.test.ts`).
+2. Seed empty section JSON (`emptyQsrContent` for QSR).
+3. Attach the evidence file via `listReadyDocumentsForReport`.
+4. Call the same tools the model called, in order: `read_document_page` and/or `start_document_review` → `continue_document_review` → `finish_document_review`, then `edit_table`.
+5. Assert the tool result (`proposed` / `unsupported_facts` / `review_incomplete`) and the persisted `ai_fix` table operation.
+
+| File | Focus |
+|------|--------|
+| `qsr-rtm-draft-replay.test.ts` | GLR-1301 section 5: cover `8000 L`, `760 mmHg` outside a neighbour window, `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour URS-37 still blocked, stock Complies still blocked, jacket IQ topic-match fills Stage/Section without a URS ID, IQ running header does not fill URS-1 Stage, 5.2 stays locked until a matching RTM finish, a 5.1 URS walk that skipped DQ unlocks 5.2 |
+| `tools.test.ts` | Tool schemas, ELR inventory lock, placeholder bounce, document-review start shape |
+| `ground-draft.test.ts` / `qsr-row-grounding.test.ts` | Pure grounding helpers (no `edit_table`) |
+| `harness-scenarios.ts` | Layer-1 tool *availability* (greeting / rewrite / empty inventory) — not write-path grounding |
+| `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour block, unread URS fail-closed, jacket IQ topic-match Stage, IQ header-only Stage blocked, mixed Table 3 + SOP not a cover walk, `Draft section 2,3,4` mixed, Table 3-only still a cover walk, SOP title list keeps search open, greeting / empty-inventory harness |
+
+`restoreFromFinishedReview` zeros skip counts, so it cannot reproduce a floor-8 skipped-file deadlock. Use a real start → continue → finish for that class of bug. Copy `qsr-rtm-draft-replay.test.ts` for the next incident; do not dump it into `tools.test.ts`.
 
 </details>
 
@@ -536,7 +578,8 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 |-----|---------|-------|
 | Unit | `pnpm test` | All Vitest. Retrieval eval unit tests are also gated in CI to run only when the harness / search files change. |
 | E2E | `pnpm test:e2e` | Postgres service container, `drizzle-kit push`, Chromium + Firefox + WebKit |
-| Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Does not upload. Skips if Vertex/GCS secrets are missing. |
+| Retrieval eval | `pnpm retrieval-eval -- --from-gcs` | Path-gated. Downloads synthetic PDFs from `RETRIEVAL_EVAL_GCS_BUCKET`, Vertex-ingests, searches, LLM-judges. Does not upload. If downloaded PDFs fail gold anchors, generates locally. Skips if Vertex/GCS secrets are missing. |
+| Chat-draft quality floor | `pnpm test -- src/lib/eval/chat-draft-cases.test.ts` (CI) / `pnpm chat-eval -- --replay` | Deterministic. No Vertex. `pnpm chat-eval -- --sync` / `--experiment` is laptop-only (Langfuse keys). |
 
 Workflow: `.github/workflows/ci.yml`
 
@@ -551,10 +594,11 @@ Workflow: `.github/workflows/ci.yml`
 | Pure logic, parsers, prompts | `src/lib/.../*.test.ts` next to source |
 | API route auth and status codes | `src/app/api/.../route.test.ts` — mock `@/db` + `getCurrentUser` |
 | React UI interactions | `src/components/.../*.test.tsx` — jsdom + RTL + `user-event` |
+| Chat write-path grounding (production `edit_table` / `draft_field` incident) | New `src/lib/ai/chat/*-replay.test.ts` — mock DB + retrieval, call `buildChatTools` in tool order. Not Playwright. Pattern: `qsr-rtm-draft-replay.test.ts`. Also add a row to `scripts/eval/chat-draft-cases.json` so `pnpm chat-eval -- --replay` / Langfuse `--experiment` catch the same floor. |
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.
 
 Colocate and name the test file after the source module. When you rename, split, or delete `foo.ts`, do the same to `foo.test.ts` — do not leave `section-scope.test.ts` after `section-scope.ts` is gone. Assert the current contract (e.g. `@` tags set scope). Do not keep tombstone tests (`not.toContain("old dropdown")`).
 
-Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only).
+Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only). Live Gemini is not how we regression-test grounding — replay the tool calls (see **AI chat write path** above).

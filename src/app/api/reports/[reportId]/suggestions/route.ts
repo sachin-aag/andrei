@@ -19,6 +19,7 @@ import {
 import { effectiveStatus } from "@/lib/ai/criteria-view";
 import {
   serializeAiFixCommentContent,
+  serializeAiRedraftCommentContent,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
@@ -215,10 +216,58 @@ async function handleSuggestionsPost(
 
   const workingContent = sectionContent as Record<string, unknown>;
 
-  const richSuggestions = llmSuggestions.filter((s) =>
+  const redraftSuggestions = llmSuggestions.filter((s) =>
+    Boolean(s.redraftMarkdown?.trim())
+  );
+  const locatedSuggestions = llmSuggestions.filter(
+    (s) => !s.redraftMarkdown?.trim()
+  );
+
+  for (const s of redraftSuggestions) {
+    const markdown = s.redraftMarkdown!.trim();
+    const suggestionId = createId();
+    const payload = withSuggestionRecord(
+      {
+        markdown,
+        reasoning: s.reasoning,
+      },
+      buildSuggestionRecord({
+        sectionContent: workingContent,
+        section,
+        targetField: s.targetField,
+        documentType: report.documentType,
+        input: { kind: "redraft", markdown },
+      })
+    );
+
+    await db.insert(comments).values({
+      id: suggestionId,
+      reportId,
+      sectionId: sectionRow.id,
+      section,
+      authorId: AI_AUTHOR_ID,
+      content: serializeAiRedraftCommentContent(payload),
+      anchorText: "",
+      contentPath: s.targetField,
+      fromPos: null,
+      toPos: null,
+      status: "open",
+      kind: "ai_redraft",
+      evaluationId: s.evaluationId,
+    });
+
+    applied.push({
+      suggestionId,
+      criterionKey: s.criterionKey,
+      evaluationId: s.evaluationId,
+      targetField: s.targetField,
+    });
+  }
+
+  const richSuggestions = locatedSuggestions.filter((s) =>
     isRichTargetField(section, s.targetField)
   );
-  const structuredSuggestions = llmSuggestions.filter(
+  const structuredSuggestions = locatedSuggestions.filter(
     (s) => !isRichTargetField(section, s.targetField)
   );
 
@@ -374,7 +423,7 @@ async function handleSuggestionsPost(
     });
   }
 
-  // Generation only creates open ai_fix comments — the document is untouched
+  // Generation only creates open AI suggestion comments — the document is untouched
   // until a human accepts one (which records suggestion_applied).
   if (applied.length > 0 || dropped.length > 0) {
     await recordAuditEvent({

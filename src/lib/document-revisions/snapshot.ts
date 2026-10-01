@@ -68,6 +68,25 @@ export function mergeManualSummary(existing: string, next: string): string {
   return "Edited document";
 }
 
+/** Cover identity lives on `reports.documentNo` / `date` as well as metadata. */
+export function identityRevisionSnapshot(row: {
+  metadata?: Record<string, unknown> | null;
+  documentNo?: string | null;
+  date?: Date | string | null;
+}): Record<string, unknown> {
+  const date =
+    row.date instanceof Date
+      ? row.date.toISOString()
+      : typeof row.date === "string"
+        ? row.date
+        : "";
+  return {
+    ...(row.metadata ?? {}),
+    documentNo: row.documentNo ?? "",
+    date,
+  };
+}
+
 export function manualRevisionSummary(
   documentType: DocumentType,
   section: string
@@ -88,7 +107,11 @@ async function collectLiveSnapshots(
 ): Promise<SectionSnapshot[]> {
   const [reportRow, sectionRows] = await Promise.all([
     tx
-      .select({ metadata: reports.metadata })
+      .select({
+        metadata: reports.metadata,
+        documentNo: reports.documentNo,
+        date: reports.date,
+      })
       .from(reports)
       .where(eq(reports.id, reportId))
       .then((rows) => rows[0]),
@@ -112,11 +135,15 @@ async function collectLiveSnapshots(
       contentHash: hashSectionContent(content),
     };
   });
-  const metadata = (reportRow?.metadata ?? {}) as Record<string, unknown>;
+  const identity = identityRevisionSnapshot({
+    metadata: (reportRow?.metadata ?? {}) as Record<string, unknown>,
+    documentNo: reportRow?.documentNo,
+    date: reportRow?.date,
+  });
   snapshots.push({
     section: DOCUMENT_REVISION_METADATA_SECTION,
-    content: metadata,
-    contentHash: hashSectionContent(metadata),
+    content: identity,
+    contentHash: hashSectionContent(identity),
   });
   return snapshots;
 }

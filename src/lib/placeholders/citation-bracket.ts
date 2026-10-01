@@ -1,18 +1,74 @@
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
+import { citationDisplayFilename } from "@/lib/citations/citation-filename";
 
-/** Citation-style `[12]` — not a fill-in placeholder. */
-export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
+/** Citation-style `[12]` or combined `[1,2,3]` — not a fill-in placeholder. */
+export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+(?:\s*,\s*\d+)*\s*\]$/;
 
-/** True when `[...]` is a numeric citation marker such as `[3]`. */
+/** True when `[...]` is a numeric citation marker such as `[3]` or `[1,2]`. */
 export function isNumericCitationMarker(match: string): boolean {
   return NUMERIC_ONLY_BRACKET.test(match);
 }
 
-/** Number inside `[3]`, or null when the span is not a numeric marker. */
+/** Numbers inside `[3]` / `[1, 2, 3]`, in written order. */
+export function citationNumbersFromMarker(match: string): number[] {
+  if (!isNumericCitationMarker(match)) return [];
+  const seen = new Set<number>();
+  const out: number[] = [];
+  const inner = match.slice(1, -1);
+  for (const part of inner.split(",")) {
+    const n = Number(part.trim());
+    if (!Number.isInteger(n) || n < 1 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+/** First number inside `[3]` / `[1,2]`, or null when not a numeric marker. */
 export function citationNumberFromMarker(match: string): number | null {
-  const matched = /^\[\s*(\d+)\s*\]$/.exec(match);
-  if (!matched) return null;
-  return Number(matched[1]);
+  return citationNumbersFromMarker(match)[0] ?? null;
+}
+
+/** `[1]` or combined `[1,2,3]` (no spaces). Empty when nothing to emit. */
+export function formatNumericCitationMarker(
+  numbers: readonly number[]
+): string {
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const n of numbers) {
+    if (!Number.isInteger(n) || n < 1 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  if (out.length === 0) return "";
+  return `[${out.join(",")}]`;
+}
+
+/** Click targets for each number inside a numeric marker. */
+export type NumericCitationLinkSpan = {
+  from: number;
+  to: number;
+  number: number;
+};
+
+export function numericCitationLinkSpans(
+  match: string
+): NumericCitationLinkSpan[] {
+  if (!isNumericCitationMarker(match)) return [];
+  const spans: NumericCitationLinkSpan[] = [];
+  const inner = match.slice(1, -1);
+  const re = /\d+/g;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(inner)) !== null) {
+    const number = Number(found[0]);
+    if (!Number.isInteger(number) || number < 1) continue;
+    spans.push({
+      from: 1 + found.index,
+      to: 1 + found.index + found[0].length,
+      number,
+    });
+  }
+  return spans;
 }
 
 /** Document source cite (`[file.pdf, p. N]`), not a numeric `[3]` marker. */
@@ -28,10 +84,16 @@ const TRAILING_TO_BE_FILLED_JUNK =
   /[,;:\s]*(?:<\s*)?to\s+be\s+filled(?:\s*>)?\s*$/i;
 
 /**
- * Page list after a filename: `, p. 4, 26` or repeated `p.` (`, p. 1, p. 2`).
- * Extra pages may omit `p.` (`p. 4, 26, 163`) or repeat it.
+ * One page or an inclusive range (`4`, `1-3`, `1–3`). Digits on both ends
+ * are recorded; the first is the jump target. Do not expand the range.
  */
-const PAGE_LIST_BODY = String.raw`,\s*p\.\s*\d+(?:\s*,\s*(?:p\.\s*)?\d+)*`;
+const PAGE_NUMBER = String.raw`\d+(?:\s*[-–]\s*\d+)?`;
+
+/**
+ * Page list after a filename: `, p. 4, 26`, `, p. 1-3`, or repeated `p.`
+ * (`, p. 1, p. 2`). Extra pages may omit `p.` (`p. 4, 26, 163`) or repeat it.
+ */
+const PAGE_LIST_BODY = String.raw`,\s*p\.\s*${PAGE_NUMBER}(?:\s*,\s*(?:p\.\s*)?${PAGE_NUMBER})*`;
 const PAGE_CITE_SUFFIX = new RegExp(`${PAGE_LIST_BODY}\\s*$`, "i");
 
 /**
@@ -75,26 +137,141 @@ function citeCoreWithoutPage(core: string): string {
 }
 
 /**
- * Comma that starts another source inside one `[...]`, not extra pages of
- * the same file (`p. 4, 26` / `p. 1, p. 2`) and not a comma glued to the
- * extension (`,.pdf`). Used for extension-less exhibits (Attachment / Appendix
- * / CUID / QMS ids). Filenames with `.pdf`/`.docx` split on the extension
- * instead, so commas in the title stay in the filename.
+ * Comma or semicolon that starts another source inside one `[...]`, not extra
+ * pages of the same file (`p. 4, 26` / `p. 1, p. 2` / `p. 1-3`) and not a
+ * comma glued to the extension (`,.pdf`). Used for extension-less exhibits
+ * (Attachment / Appendix / CUID / QMS ids). Filenames with `.pdf`/`.docx`
+ * split on the extension instead, so commas in the title stay in the filename.
  */
 const NEW_SOURCE_COMMA_RE =
-  /,\s+(?=(?:(?!p\.\s*\d)[^[\]])*?\.(?:pdf|docx)\b|Attachment[_\s-]?(?:[IVXLCDM]+|\d+)\b|Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b|[a-z0-9]{24}\b|\d{3,}-\d{4,})/i;
+  /[;,]\s+(?=(?:(?!p\.\s*\d)[^[\]])*?\.(?:pdf|docx)\b|Attachment[_\s-]?(?:[IVXLCDM]+|\d+)\b|Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b|[a-z0-9]{24}\b|\d{3,}-\d{4,})/i;
 
 const PAGE_GROUP_RE = new RegExp(PAGE_LIST_BODY, "i");
 const FILE_EXT_RE = /\.(?:pdf|docx)\b/gi;
-/** Comma between sources — not the comma before another `p. N` of this file. */
-const SOURCE_SEPARATOR_RE = /^\s*,\s+(?!p\.\s*\d)/;
+/** Comma or semicolon between sources — not another `p. N` of this file. */
+const SOURCE_SEPARATOR_RE = /^\s*[;,]\s+(?!p\.\s*\d)/;
+const LEFTOVER_SOURCE_SEP_RE = /^\s*[;,]\s*/;
+
+/**
+ * Hyphenated / slashed exhibit ids (`E-PR-068`, `SOP/DP/QA/014`) that sit
+ * beside a `.pdf`/`.docx` in an `and`-combined cite. Not a batch code
+ * (`B-2024-117`) — those stay placeholders unless they already pass
+ * `isCitationShapedCore`.
+ */
+const SOURCE_STEM_RE =
+  /^(?:[A-Z]{1,8}(?:[-_/][A-Z0-9]{2,})+|[A-Z]{1,8}(?:\/[A-Z0-9]+)+)$/i;
+
+function looksLikeSourceStem(text: string): boolean {
+  const trimmed = citeCoreWithoutPage(text.trim());
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (isCitationShapedCore(trimmed)) return true;
+  // Hyphenated English titles (`QDF-Filling`) match SOURCE_STEM_RE; a real
+  // exhibit id also carries a digit (`E-PR-068`, `SOP/DP/QA/014`).
+  return SOURCE_STEM_RE.test(trimmed) && /\d/.test(trimmed);
+}
+
+const AND_SOURCE_SEP_RE = /^\s*and\s+/i;
+
+/**
+ * Consume `,` / `;` / `and` between two `.pdf`/`.docx` anchors. Called only
+ * when a later extension already exists, so `and` is structural here — not a
+ * guess about exhibit ids.
+ */
+function skipSourceSeparator(inner: string, cursor: number): number {
+  let i = cursor;
+  while (i < inner.length && /\s/.test(inner[i]!)) i += 1;
+  if (inner[i] === "," || inner[i] === ";") {
+    i += 1;
+    while (i < inner.length && /\s/.test(inner[i]!)) i += 1;
+    return i;
+  }
+  const rest = inner.slice(cursor);
+  const andSep = AND_SOURCE_SEP_RE.exec(rest);
+  if (!andSep) return cursor;
+  return cursor + andSep[0].length;
+}
+
+function citationBasename(filename: string): string {
+  return filename.replace(/^.*[/\\]/, "").trim().toLowerCase();
+}
+
+function knownFilenameKeys(knownFilenames: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const name of knownFilenames) {
+    const key = citationBasename(citationDisplayFilename(name));
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+function citedFilenameKeys(cited: string): string[] {
+  const base = citationBasename(citationDisplayFilename(cited));
+  if (!base) return [];
+  if (/\.(?:pdf|docx)$/i.test(base)) return [base];
+  return [base, `${base}.pdf`, `${base}.docx`];
+}
+
+function citedMatchesKnownFile(cited: string, known: Set<string>): boolean {
+  if (known.size === 0) return false;
+  return citedFilenameKeys(cited).some((key) => known.has(key));
+}
+
+/**
+ * True when `cited` is exactly a known attached/retrieved basename.
+ * Includes-based fuzzy match is intentionally not used here — a stem like
+ * `E-PR-068` would otherwise match `E-PR-068 and E-PR-071.pdf`.
+ */
+export function isExactKnownCitationFilename(
+  cited: string,
+  knownFilenames: readonly string[]
+): boolean {
+  const citedNorm = citationBasename(cited);
+  if (!citedNorm) return false;
+  return knownFilenames.some((name) => citationBasename(name) === citedNorm);
+}
+
+/**
+ * Peel `E-PR-068 and E-PR-071.pdf` only when both sides **exactly** match
+ * attached filenames (`E-PR-068.pdf` + `E-PR-071.pdf`). A slightly wrong
+ * LLM name (`E-PR-71`) does not peel — fuzzy `filenameMatches` is for
+ * click-to-open, not for deciding how many files exist. No attachment
+ * list, or a title like `QDF-Filling and capping machine.pdf`, stays one
+ * file. Two `.pdf`/`.docx` extensions still split via `skipSourceSeparator`.
+ */
+function peelAndSourcePrefix(
+  inner: string,
+  cursor: number,
+  extIndex: number,
+  known: Set<string>
+): { prefix: string | null; start: number } {
+  if (known.size === 0) return { prefix: null, start: cursor };
+  const between = inner.slice(cursor, extIndex);
+  const re = /\s+and\s+/gi;
+  let last: { index: number; length: number } | null = null;
+  let found: RegExpExecArray | null;
+  while ((found = re.exec(between)) !== null) {
+    last = { index: found.index, length: found[0].length };
+  }
+  if (!last) return { prefix: null, start: cursor };
+  const left = between.slice(0, last.index).trim();
+  const right = between.slice(last.index + last.length).trim();
+  const ext = inner.slice(extIndex).match(/^\.(?:pdf|docx)\b/i)?.[0] ?? "";
+  const rightFile = `${right}${ext}`;
+  if (!citedMatchesKnownFile(left, known) || !citedMatchesKnownFile(rightFile, known)) {
+    return { prefix: null, start: cursor };
+  }
+  return { prefix: left, start: cursor + last.index + last.length };
+}
 
 /**
  * Split on each `.pdf` / `.docx` so commas before the extension stay in the
  * filename. Page lists after the extension (including repeated `p.`) stay
  * with that file. Two extensions still yield two parts.
  */
-function splitByPdfDocxAnchors(inner: string): string[] | null {
+function splitByPdfDocxAnchors(
+  inner: string,
+  known: Set<string>
+): string[] | null {
   const extRe = new RegExp(FILE_EXT_RE.source, "gi");
   const matches: { index: number; length: number }[] = [];
   let found: RegExpExecArray | null;
@@ -104,17 +281,19 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
   if (matches.length === 0) return null;
 
   const ranges: { start: number; end: number }[] = [];
+  const prefixes: string[] = [];
   let cursor = 0;
   for (let i = 0; i < matches.length; i++) {
     const ext = matches[i]!;
     while (cursor < inner.length && /\s/.test(inner[cursor]!)) cursor += 1;
     if (i > 0) {
-      if (inner.startsWith(", ", cursor)) {
-        cursor += 2;
-      } else if (inner[cursor] === ",") {
-        cursor += 1;
-        while (cursor < inner.length && /\s/.test(inner[cursor]!)) cursor += 1;
-      }
+      const skipped = skipSourceSeparator(inner, cursor);
+      if (skipped !== cursor) cursor = skipped;
+    }
+    const peeled = peelAndSourcePrefix(inner, cursor, ext.index, known);
+    if (peeled.prefix) {
+      prefixes.push(peeled.prefix);
+      cursor = peeled.start;
     }
     if (ext.index < cursor) return null;
     let end = ext.index + ext.length;
@@ -127,33 +306,63 @@ function splitByPdfDocxAnchors(inner: string): string[] | null {
     cursor = end;
   }
 
-  const leftover = inner.slice(cursor);
-  if (/^\s*,\s+/.test(leftover)) {
-    const rest = leftover.replace(/^\s*,\s+/, "").trim();
-    const parts = ranges
-      .map((range) => inner.slice(range.start, range.end).trim())
+  const asParts = (extra: string[] = []): string[] =>
+    [...prefixes, ...ranges.map((range) => inner.slice(range.start, range.end).trim()), ...extra]
+      .map((part) => part.trim())
       .filter(Boolean);
-    if (rest) parts.push(...splitWithoutFileExtensions(rest));
+
+  const leftover = inner.slice(cursor);
+  const leftoverSep = LEFTOVER_SOURCE_SEP_RE.exec(leftover);
+  if (leftoverSep) {
+    const rest = leftover.slice(leftoverSep[0].length).trim();
+    const parts = asParts(rest ? splitWithoutFileExtensions(rest) : []);
     return parts.length > 0 ? parts : null;
   }
   if (leftover.trim() && ranges.length > 0) {
+    const leftoverAnd = AND_SOURCE_SEP_RE.exec(leftover);
+    if (leftoverAnd) {
+      const rest = leftover.slice(leftoverAnd[0].length).trim();
+      // After a complete `.pdf`/`.docx`, `and` starts another source only
+      // when that remainder is already a cite (Appendix / exhibit / file)
+      // or an attached name — not English leftover (`and capping machine`).
+      if (
+        rest &&
+        (isCitationShapedCore(rest) || citedMatchesKnownFile(rest, known))
+      ) {
+        const parts = asParts(splitWithoutFileExtensions(rest));
+        return parts.length > 0 ? parts : null;
+      }
+    }
     ranges[ranges.length - 1]!.end = inner.length;
   }
-  const parts = ranges
-    .map((range) => inner.slice(range.start, range.end).trim())
-    .filter(Boolean);
+  const parts = asParts();
   return parts.length > 0 ? parts : null;
 }
 
 /**
- * Split `[file A, p. N, file B, p. M]` into one inner string per source.
- * Same-file page lists (`p. 4, 26, 163` or `p. 1, p. 2`) stay a single part.
- * Commas inside a `.pdf`/`.docx` filename are not treated as a new source.
+ * Split `[file A, p. N, file B, p. M]` (or `;` / `and` between files) into one inner
+ * string per source. Same-file page lists (`p. 4, 26, 163`, `p. 1, p. 2`,
+ * `p. 1-3`) stay a single part. Commas inside a `.pdf`/`.docx` filename are
+ * not treated as a new source. Compact `E-PR-068 and E-PR-071.pdf` splits
+ * only when those names are attached/retrieved as two files; English `and`
+ * titles and an exact combined basename stay one filename.
  */
-export function splitSourceCitationParts(inner: string): string[] {
+export function splitSourceCitationParts(
+  inner: string,
+  knownFilenames?: readonly string[]
+): string[] {
   const trimmed = inner.trim();
   if (!trimmed) return [];
-  const byExt = splitByPdfDocxAnchors(trimmed);
+  if (
+    knownFilenames &&
+    isExactKnownCitationFilename(citeCoreWithoutPage(trimmed), knownFilenames)
+  ) {
+    return [trimmed];
+  }
+  const byExt = splitByPdfDocxAnchors(
+    trimmed,
+    knownFilenameKeys(knownFilenames ?? [])
+  );
   if (byExt) return byExt;
   return splitWithoutFileExtensions(trimmed);
 }
@@ -202,14 +411,29 @@ export type SourceCitationLinkSpan = {
  * each can open on its own.
  */
 export function sourceCitationLinkSpans(
-  match: string
+  match: string,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): SourceCitationLinkSpan[] {
   if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
     return [];
   }
+  // A bare CUID2 is accepted as a cite because the model copies attachment ids
+  // out of the document index — but an analysis id is the same 24 chars in a
+  // different namespace, and one reached a report's Citations list rendered as
+  // a live link. When the caller knows this report's attachment ids, an
+  // id-shaped token that is not one of them is not a source. Callers without
+  // that list keep the old shape-only behaviour.
+  if (
+    knownAttachmentIds &&
+    isAttachmentIdCite(citationCoreFromInner(match.slice(1, -1)) || "") &&
+    !attachmentIdCiteIsKnown(match, knownAttachmentIds)
+  ) {
+    return [];
+  }
   const inner = match.slice(1, -1);
   const core = citationCoreFromInner(inner);
-  const parts = splitSourceCitationParts(core || inner);
+  const parts = splitSourceCitationParts(core || inner, knownFilenames);
   if (parts.length <= 1) {
     return [
       {
@@ -264,15 +488,60 @@ function pageNumbersFromCore(core: string): number[] {
  * Parse `[filename, p. N]` / `[filename]` into a filename and page list.
  * The first page is the jump target when the cite lists several.
  */
-export function parseSourceCitation(match: string): ParsedSourceCitation | null {
+export function parseSourceCitation(
+  match: string,
+  knownFilenames?: readonly string[]
+): ParsedSourceCitation | null {
   if (!isSourceCitationBracket(match)) return null;
   const core = citationCoreFromInner(match.slice(1, -1));
   if (!core) return null;
-  const part = splitSourceCitationParts(core)[0] ?? core;
+  const part = splitSourceCitationParts(core, knownFilenames)[0] ?? core;
   if (!part) return null;
   const filename = citeCoreWithoutPage(part);
   if (!filename) return null;
   return { filename, pages: pageNumbersFromCore(part) };
+}
+
+/**
+ * Filename and pages from a source bracket without peeling `and` stems.
+ * Use this before split when matching against a known attached file.
+ */
+export function parseSourceCitationUnsplit(
+  match: string
+): ParsedSourceCitation | null {
+  if (!isSourceCitationBracket(match)) return null;
+  const core = citationCoreFromInner(match.slice(1, -1));
+  if (!core) return null;
+  const filename = citeCoreWithoutPage(core);
+  if (!filename) return null;
+  return { filename, pages: pageNumbersFromCore(core) };
+}
+
+function canonicalizeSourceCitationPart(part: string): string {
+  const filename = citeCoreWithoutPage(part);
+  const display = citationDisplayFilename(filename);
+  if (!filename || display === filename) return part.trim();
+  return part.trim().replace(filename, display);
+}
+
+/**
+ * Drop a trailing `_YYYYMMDDHHmmss` download stamp from each filename in a
+ * source bracket so parked cites show the document number, not the export name.
+ */
+export function canonicalizeSourceCitationBracket(
+  match: string,
+  knownFilenames?: readonly string[]
+): string {
+  if (!isSourceCitationBracket(match) || isNumericCitationMarker(match)) {
+    return match;
+  }
+  const inner = match.slice(1, -1);
+  const core = citationCoreFromInner(inner);
+  const parts = splitSourceCitationParts(core || inner, knownFilenames);
+  if (parts.length === 0) return match;
+  const next = parts.map((part) => canonicalizeSourceCitationPart(part));
+  if (next.every((part, i) => part === parts[i]!.trim())) return match;
+  return `[${next.join(", ")}]`;
 }
 
 /** True when `core` is one or more Attachment_XIV-style exhibit labels. */
@@ -328,13 +597,46 @@ function isAttachmentIdCite(core: string): boolean {
   return parts.length > 0 && parts.every((part) => ATTACHMENT_ID_TOKEN.test(part));
 }
 
+/** True when every id-shaped token in the cite is an attachment on this report. */
+function attachmentIdCiteIsKnown(
+  match: string,
+  knownAttachmentIds: readonly string[]
+): boolean {
+  const known = new Set(knownAttachmentIds.map((id) => id.toLowerCase()));
+  const core = citeCoreWithoutPage(
+    citationCoreFromInner(match.slice(1, -1)) || ""
+  );
+  const parts = core
+    .split(/\s*,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 && parts.every((part) => known.has(part.toLowerCase()));
+}
+
+function isCitationShapedCore(core: string): boolean {
+  if (!core) return false;
+  if (PAGE_CITE_SUFFIX.test(core)) return true;
+  if (isAttachmentLabelCite(core)) return true;
+  if (isAppendixCite(core)) return true;
+  if (isDocumentNumberCite(core)) return true;
+  if (isQmsDocumentIdCite(core)) return true;
+  if (isAttachmentIdCite(core)) return true;
+  return hasSupportedAttachmentExtension(citeCoreWithoutPage(core));
+}
+
 /**
  * True when `[...]` is a document citation, not a Placeholders-panel token.
  *
  * Recognizes:
  * - numeric `[12]`
- * - page cites `[name, p. N]` / `[name, p. N, M]` / `[name, p. 1, p. 2]`
- *   (any name; extension optional; commas in the filename stay in that cite)
+ * - page cites `[name, p. N]` / `[name, p. N, M]` / `[name, p. 1, p. 2]` /
+ *   `[name, p. 1-3]` (any name; extension optional; commas in the filename stay
+ *   in that cite)
+ * - combined sources in one bracket, comma, semicolon, or `and` separated
+ *   (`[A.pdf, p. 1; B.pdf, p. 1-3]`, `[E-PR-068.pdf and E-PR-071.pdf, p. 1]`)
+ *   when every part is a cite or a hyphenated/slashed exhibit stem. Compact
+ *   `E-PR-068 and E-PR-071.pdf` (one extension) splits only when those files
+ *   are in `knownFilenames`.
  * - bare attachment filenames using supported extensions from file-types
  * - extension-less exhibit labels (`[Attachment_XIV]`, lists, optional page)
  * - appendix / report-number cites (`[Appendix B]`,
@@ -350,13 +652,17 @@ export function isCitationShapedBracket(match: string): boolean {
 
   const core = citationCoreFromInner(match.slice(1, -1));
   if (!core) return false;
-  if (PAGE_CITE_SUFFIX.test(core)) return true;
-  if (isAttachmentLabelCite(core)) return true;
-  if (isAppendixCite(core)) return true;
-  if (isDocumentNumberCite(core)) return true;
-  if (isQmsDocumentIdCite(core)) return true;
-  if (isAttachmentIdCite(core)) return true;
-  return hasSupportedAttachmentExtension(citeCoreWithoutPage(core));
+  const parts = splitSourceCitationParts(core);
+  if (parts.length > 1) {
+    const shaped = parts.filter((part) => isCitationShapedCore(part));
+    if (shaped.length === 0) return false;
+    return parts.every(
+      (part) =>
+        isCitationShapedCore(part) ||
+        looksLikeSourceStem(citeCoreWithoutPage(part))
+    );
+  }
+  return isCitationShapedCore(core);
 }
 
 /**

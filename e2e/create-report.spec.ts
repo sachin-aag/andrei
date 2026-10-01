@@ -4,12 +4,18 @@ import {
   createReport,
   deleteReport,
   newReportButton,
+  openDemoTemplate,
   openNewReportDialog,
   uniqueDeviationNo,
 } from "./helpers/reports";
 import { waitForReportEditor } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
+
+async function openDeviationsTemplate(page: import("@playwright/test").Page) {
+  await newReportButton(page).click();
+  await openDemoTemplate(page, "Deviations");
+}
 
 test.describe("create report", () => {
   let createdReportId: string | null = null;
@@ -25,15 +31,37 @@ test.describe("create report", () => {
     await loginAsEngineer(page);
   });
 
-  test("opens create dialog from New Report button", async ({ page }) => {
+  test("opens the template gallery from New Report", async ({ page }) => {
+    await newReportButton(page).click();
+    await expect(page).toHaveURL(/\/templates/);
+    await expect(page.getByRole("heading", { name: /^templates$/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Supply Chain$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Design$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Operations$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Quality$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Vendor Qualification$/i })
+    ).toBeVisible();
+  });
+
+  test("opens create dialog from a template tile", async ({ page }) => {
     await openNewReportDialog(page);
+    await expect(page.locator("#documentType")).toHaveCount(0);
     await expect(page.locator("#documentNo")).toBeVisible();
     await expect(page.getByRole("button", { name: /^create$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
   });
 
   test("shows toast when deviation number is empty", async ({ page }) => {
-    await newReportButton(page).click();
+    await openDeviationsTemplate(page);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page.getByText(/deviation number is required/i)).toBeVisible();
   });
@@ -44,7 +72,7 @@ test.describe("create report", () => {
     createdReportId = created.id;
 
     await page.goto("/");
-    await newReportButton(page).click();
+    await openDeviationsTemplate(page);
     await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(
@@ -54,7 +82,7 @@ test.describe("create report", () => {
 
   test("creates blank report and navigates to editor", async ({ page }) => {
     const deviationNo = uniqueDeviationNo("NEW");
-    await newReportButton(page).click();
+    await openDeviationsTemplate(page);
     await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page).toHaveURL(/\/reports\/[^/]+\/edit/, { timeout: 30_000 });
@@ -64,12 +92,12 @@ test.describe("create report", () => {
   });
 
   test("cancel closes dialog", async ({ page }) => {
-    await newReportButton(page).click();
+    await openDeviationsTemplate(page);
     await page.getByRole("button", { name: /^cancel$/i }).click();
     await expect(
-      page.getByRole("heading", { name: /create investigation report/i })
+      page.getByRole("heading", { name: /create deviations/i })
     ).toHaveCount(0);
-    await expect(page.getByText(/my reports/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^templates$/i })).toBeVisible();
   });
 
   test("deletes report from dashboard", async ({ page }) => {

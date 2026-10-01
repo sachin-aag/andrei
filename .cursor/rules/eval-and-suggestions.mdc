@@ -35,6 +35,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
 
 - Entry: `generateSuggestionsForSection()`. Gate ≡ apply via
   `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
+  ELR `math.quantity_as_prose` is a deterministic repair: skip the LLM and
+  persist a whole-field `ai_redraft` that flattens leftover quantity math.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
@@ -44,12 +46,71 @@ DV mixes LLM criteria with deterministic `check()` functions.
   section → flip comment. Never resolve without a successful apply. Zero-ops
   dismiss (`already_present`), not resolve. A superseded sibling is
   `dismissed` with `resolutionReason: "superseded_by:<id>"`, never `resolved`.
+  Table ops on the same table supersede only when the later op covers or
+  invalidates the earlier coordinates (`insert_rows` after the header shifts
+  row 1; an append does not dismiss a disjoint `edit_cells` of row 1).
+  `insert_rows` prefers `afterRowKey` (first-cell text) over `afterRow` so a
+  later insert in the same batch does not land on a stale index.   `edit_cells`
+  prefers `rowKey` (first-cell text, e.g. URS-13) over `row` the same way;
+  each cell rematches by its own `rowKey` (a reused dummy numeric row must
+  not dump the whole batch onto the first key); identity cells (`insertText`
+  already equals the live cell) are
+  `already_present` (locatable, not applyable). A sibling cell whose
+  `expectedText` no longer matches (or whose `rowKey` is missing) is dropped
+  from the batch so the remaining cells still preview — do not mark the
+  whole table card stale. A mixed fill-empty batch also skips rewriting
+  filled cells so the empty remainder still lands; a batch that only
+  rewrites filled cells still applies. QSR RTM Stage / Section / Remarks
+  may still be overwritten in that mixed batch (a filled 13.6 may become
+  `13.6 – Gasket material verified as PTFE`: section number plus a one-line
+  test description; page numbers and header blocks are stripped). Leftover `<…>` cells are dropped
+  on apply for any table kind. Pending table-preview insert marks also keep the
+  card previewable (`alreadyMarked` in validate, same as Apply). Do not insert
+  `{ banner }` group rows; existing template banners keep their colspan, and
+  data rows never inherit a banner colspan. A newer `delete_rows` supersedes an older delete whose rows it
+  deletes or would shift up (below the smallest deleted row). A newer
+  `edit_cells` supersedes an older delete of a row it edits. Sequential /
+  Apply-all apply of that pair must not treat a filled empty
+  `expectedRowAtAfter` as stale — only changed snapshot cells that already
+  had text. Pending table-preview insert marks on a seeded empty row are
+  the live apply of `edit_cells` — commit them (narrative `alreadyMarked`)
+  instead of comparing `expectedText: ""` to the painted cell.
+  Table N is the 1-based ordinal among filled grids in document order
+  (starter abbreviation rows occupy Table 1; empty unused shells stay
+  unnumbered). Apply and preview must not number from the current field
+  only, and a stale `Table 1.` caption is rewritten when a preceding table
+  already occupies that ordinal. Inserting, filling, or deleting a table
+  cascades later filled captions in the same turn (Word SEQ — the server
+  owns N; do not let propose_edit change the digits). Body mentions are
+  Word REF: chat writes `[[table]]` / `[[table:Section]]`, stored as a
+  `tableRef` atom bound to table identity; display N updates on cascade.
+  Engineers insert the same atom from **Table ref** in the editor toolbar
+  or **Insert table reference** on right-click (Word Cross-reference list
+  of numbered tables), or by typing / pasting `[[table]]` /
+  `[[table:Section]]`.   Typed "Table 8" stays plain text — do not auto-
+  convert it. Markdown conversion strips a typed "Table N" / "the table"
+  immediately before `[[table]]` so chat cannot preview "Table 1 Table 1".
+  Flatten and merge treat the live label (`Table N` / `the table`) as field
+  text, so a typed "Table 8" that already matches a REF is identity — not a
+  green-only insert beside the atom. Locator paints the whole atom when a
+  delete overlaps it. An insert-only propose_edit that restates the unique
+  sentence (copying it plus `[[table]]`) rewrites that span instead of
+  appending a second copy. Do not regex-replace frozen "Table N" digits in
+  existing prose.
 - Bulk apply re-merges each open suggestion against the in-memory doc.
   Overlapping edits in a section apply recursively; non-overlapping edits
   persist as one section PATCH. Preview applied wording before that PATCH
   so insert text does not vanish during save. Range-contained siblings are
   dismissed, not applied into an overwrite. Locate failures stay open; the
   toast reports them. Do not dismiss a skip — that is a silent failure.
+  Apply all dismisses a same-table leftover invalidated by an operation
+  applied earlier in the batch (`superseded_by:<id>`), not as a skip. The
+  Apply all count only includes locatable suggestions; Dismiss all still
+  counts every open suggestion so stale leftovers can be cleared. Bulk
+  visibility and apply/dismiss also walk sections that still have an open
+  AI comment even when they are not evaluatable (QSR acronyms / other
+  details, ELR attachments) so dismissing 1 of N cannot hide the header
+  while a leftover is still inline.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.
@@ -62,3 +123,7 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Whole-field is derived: planned operations cover every merge block
   (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
   edit vs rewrite; `propose_edit` does not refuse large spans.
+- Seeded tables whose cells are blank or unchanged from the template are
+  empty, not partial (`isEmptyTableScaffoldDoc`). Seed-matching prose
+  around those tables (QSR 6.1) and short seed-only labels (QSR 6.3
+  “Agitator Type:”) are empty too; canned default paragraphs are not.

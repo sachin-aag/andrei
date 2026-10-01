@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   axisTickValues,
   formatAxisTick,
+  formatTimeAxisTick,
   niceAxisDomain,
   niceNumber,
   paddedExtent,
@@ -52,5 +53,42 @@ describe("xTickAnchor", () => {
     expect(xTickAnchor(0, 6)).toBe("start");
     expect(xTickAnchor(2, 6)).toBe("middle");
     expect(xTickAnchor(5, 6)).toBe("end");
+  });
+});
+
+describe("formatTimeAxisTick", () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  it("shows the clock inside a single day", () => {
+    expect(formatTimeAxisTick(at("2026-05-22T20:59:00Z"), 7 * 60_000)).toBe(
+      "20:59"
+    );
+  });
+
+  it("adds the date once the span crosses a day", () => {
+    expect(
+      formatTimeAxisTick(at("2026-05-22T20:59:00Z"), 3 * 86_400_000)
+    ).toBe("22 May 20:59");
+  });
+
+  it("drops the clock over a month", () => {
+    expect(
+      formatTimeAxisTick(at("2026-05-22T20:59:00Z"), 60 * 86_400_000)
+    ).toBe("22 May");
+  });
+
+  it("adds the year over a year", () => {
+    expect(
+      formatTimeAxisTick(at("2026-05-22T20:59:00Z"), 800 * 86_400_000)
+    ).toBe("22 May 2026");
+  });
+
+  it("reads UTC, so an excursion does not move with the viewer", () => {
+    // Instrument stamps are wall-clock readings, not zoned instants.
+    expect(formatTimeAxisTick(at("2026-05-22T00:30:00Z"), 60_000)).toBe("00:30");
+  });
+
+  it("returns empty for a value that is not a time", () => {
+    expect(formatTimeAxisTick(Number.NaN, 60_000)).toBe("");
   });
 });

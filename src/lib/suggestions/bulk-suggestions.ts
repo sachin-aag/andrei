@@ -1,23 +1,39 @@
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SuggestionApplyMode } from "@/lib/document-types";
 import {
+  isChatIdentitySection,
+  type ChatIdentityReport,
+} from "@/lib/ai/chat/identity";
+import {
+  acceptSuggestion,
   applySuggestionToContent,
+  type IdentityApplyPatch,
   patchSection,
   stripSuggestionFromContent,
 } from "@/lib/suggestions/accept-suggestion";
+import { applyIdentityPatchToReport } from "@/lib/suggestions/identity-suggestion";
 import { patchCommentStatuses } from "@/lib/suggestions/persist-comment-status";
 import { partitionBulkApplies } from "@/lib/suggestions/suggestion-overlap";
 import {
   findSupersededSuggestions,
   resolutionReasonSupersededBy,
+  tableOpSupersedes,
   withResolutionReason,
 } from "@/lib/suggestions/supersession";
 import {
   parseAiFixCommentContent,
+  sectionOrderWithOpenSuggestions,
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
 import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
+import {
+  cascadeFilledTableCaptionsInSections,
+  documentContentsFromReportState,
+  relatedSectionContentsAfterCascade,
+} from "@/lib/suggestions/document-table-number";
+import { getWorkspaceSections } from "@/lib/document-types";
+import type { DocumentTableContent } from "@/lib/suggestions/table-operation";
 
 export type BulkSuggestionResult = {
   appliedIds: string[];
@@ -26,6 +42,7 @@ export type BulkSuggestionResult = {
   dismissedIds: string[];
   dismissedContent: Record<string, string>;
   nextSection: Record<string, unknown>;
+  relatedSections?: Partial<Record<SectionType, Record<string, unknown>>>;
 };
 
 export type ReportBulkSuggestionResult = {
@@ -44,6 +61,7 @@ type ReportBulkArgs = {
   comments: readonly CommentRecord[];
   evaluations: readonly EvaluationRecord[];
   sectionContentFor: (section: SectionType) => Record<string, unknown> | undefined;
+  documentType?: DocumentType;
   /** Called before a section's batch so the caller can pause its auto-save. */
   onSectionStart?: (section: SectionType, firstCommentId: string) => void;
   /** Called with the section's next content before persist, so the editor can
@@ -55,7 +73,18 @@ type ReportBulkArgs = {
   ) => void;
   /** Always called once a section's batch is over, including on failure. */
   onSectionEnd?: (section: SectionType) => void;
+  /** Live cover/header scalars — required to apply an identity card. */
+  identityCurrent?: ChatIdentityReport;
+  /** Called after a header identity PATCH so later sections see the new scalars. */
+  onIdentitySettled?: (next: IdentityApplyPatch) => void;
 };
+
+function appliedCommentThatSupersedesTableOp(
+  appliedComments: readonly CommentRecord[],
+  leftover: CommentRecord
+): CommentRecord | undefined {
+  return appliedComments.find((applied) => tableOpSupersedes(applied, leftover));
+}
 
 function applyOneInMemory(args: {
   section: SectionType;
@@ -64,8 +93,13 @@ function applyOneInMemory(args: {
   applyMode?: SuggestionApplyMode;
   applied: Set<string>;
   appliedIds: string[];
+  appliedComments: CommentRecord[];
   skippedIds: string[];
+  dismissedIds: string[];
+  supersededById: Map<string, string>;
+  alreadyPresentIds: Set<string>;
   ignorePlaceBeforePairedBlock?: boolean;
+  documentContents?: readonly DocumentTableContent[];
 }): Record<string, unknown> {
   if (args.applied.has(args.comment.id)) return args.sectionContent;
   args.applied.add(args.comment.id);
@@ -75,16 +109,31 @@ function applyOneInMemory(args: {
     sectionContent: args.sectionContent,
     applyMode: args.applyMode,
     ignorePlaceBeforePairedBlock: args.ignorePlaceBeforePairedBlock,
+    documentContents: args.documentContents,
   });
-  if (!result.ok) {
+  if (!result.ok || result.remainder === "conflict") {
+    if (!result.ok && result.reason === "noop") {
+      args.dismissedIds.push(args.comment.id);
+      args.alreadyPresentIds.add(args.comment.id);
+      return args.sectionContent;
+    }
+    const supersededBy = appliedCommentThatSupersedesTableOp(
+      args.appliedComments,
+      args.comment
+    );
+    if (supersededBy) {
+      args.dismissedIds.push(args.comment.id);
+      args.supersededById.set(args.comment.id, supersededBy.id);
+      return args.sectionContent;
+    }
     args.skippedIds.push(args.comment.id);
+    if (result.ok && result.remainder === "conflict") {
+      return result.nextSection;
+    }
     return args.sectionContent;
   }
-  if (result.remainder === "conflict") {
-    args.skippedIds.push(args.comment.id);
-    return result.nextSection;
-  }
   args.appliedIds.push(args.comment.id);
+  args.appliedComments.push(args.comment);
   return result.nextSection;
 }
 
@@ -103,7 +152,20 @@ export async function acceptAllSuggestions(args: {
   applyMode?: SuggestionApplyMode;
   /** Fired with in-memory applied content before the section PATCH. */
   onPreview?: (nextSection: Record<string, unknown>) => void;
+  /** Caption cascade on later tables — persist + paint those sections too. */
+  onRelatedSectionSettled?: (
+    section: SectionType,
+    nextSection: Record<string, unknown>
+  ) => void;
+  documentType?: DocumentType;
+  allSectionContent?: Readonly<Partial<Record<string, unknown>>>;
+  tableNumberComments?: readonly CommentRecord[];
+  identityCurrent?: ChatIdentityReport;
+  onIdentitySettled?: (next: IdentityApplyPatch) => void;
 }): Promise<BulkSuggestionResult> {
+  if (isChatIdentitySection(args.section)) {
+    return acceptAllIdentitySuggestions(args);
+  }
   const partition = partitionBulkApplies({
     section: args.section,
     comments: args.comments,
@@ -115,9 +177,15 @@ export async function acceptAllSuggestions(args: {
     sectionContent: args.sectionContent,
   });
   const supersededIds = new Set(supersededPairs.map((pair) => pair.supersededId));
+  const supersededById = new Map(
+    supersededPairs.map((pair) => [pair.supersededId, pair.supersededBy])
+  );
 
   let current = args.sectionContent;
   const appliedIds: string[] = [];
+  const appliedComments: CommentRecord[] = [];
+  const dismissedIds: string[] = [...supersededIds];
+  const alreadyPresentIds = new Set<string>();
   // Leave unlocatable leftovers open. Dismissing them is a silent failure;
   // the toast reports the skip and the card stays so the engineer can act.
   const skippedIds: string[] = partition.unlocatableIds.filter(
@@ -130,6 +198,34 @@ export async function acceptAllSuggestions(args: {
   const overlappingIds = new Set(
     partition.overlapping.flatMap((group) => group.map((c) => c.id))
   );
+
+  const contentsFor = (
+    commentId: string,
+    sectionContent: Record<string, unknown>
+  ) =>
+    args.documentType
+      ? documentContentsFromReportState({
+          documentType: args.documentType,
+          sections: {
+            ...args.allSectionContent,
+            [args.section]: sectionContent,
+          },
+          comments: args.tableNumberComments ?? args.comments,
+          exceptCommentId: commentId,
+        })
+      : undefined;
+
+  const applyArgs = {
+    section: args.section,
+    applyMode: args.applyMode,
+    applied,
+    appliedIds,
+    appliedComments,
+    skippedIds,
+    dismissedIds,
+    supersededById,
+    alreadyPresentIds,
+  };
 
   for (const comment of args.comments) {
     if (applied.has(comment.id)) continue;
@@ -144,33 +240,26 @@ export async function acceptAllSuggestions(args: {
         if (supersededIds.has(member.id)) continue;
         const payload = parseAiFixCommentContent(member.content);
         current = applyOneInMemory({
-          section: args.section,
+          ...applyArgs,
           comment: member,
           sectionContent: current,
-          applyMode: args.applyMode,
-          applied,
-          appliedIds,
-          skippedIds,
           ignorePlaceBeforePairedBlock: Boolean(
             payload.pairedBlockSuggestionId &&
               clusterIds.has(payload.pairedBlockSuggestionId)
           ),
+          documentContents: contentsFor(member.id, current),
         });
       }
       continue;
     }
     current = applyOneInMemory({
-      section: args.section,
+      ...applyArgs,
       comment,
       sectionContent: current,
-      applyMode: args.applyMode,
-      applied,
-      appliedIds,
-      skippedIds,
+      documentContents: contentsFor(comment.id, current),
     });
   }
 
-  const dismissedIds = [...supersededIds];
   if (
     appliedIds.length === 0 &&
     dismissedIds.length === 0 &&
@@ -186,15 +275,53 @@ export async function acceptAllSuggestions(args: {
     };
   }
 
+  let relatedSections: Partial<Record<SectionType, Record<string, unknown>>> =
+    {};
+  if (appliedIds.length > 0 && args.documentType) {
+    const cascaded = cascadeFilledTableCaptionsInSections({
+      documentType: args.documentType,
+      sections: {
+        ...args.allSectionContent,
+        [args.section]: current,
+      },
+    });
+    const primary = cascaded.sections[args.section];
+    if (primary && typeof primary === "object") {
+      current = primary as Record<string, unknown>;
+    }
+    relatedSections = relatedSectionContentsAfterCascade({
+      primarySection: args.section,
+      changedSections: cascaded.changedSections,
+      sections: cascaded.sections,
+    });
+  }
+
   // Push the applied wording into the editor before the network round-trip
   // so insert text does not vanish while the section PATCH is in flight.
   if (appliedIds.length > 0) {
     args.onPreview?.(current);
+    for (const [section, content] of Object.entries(relatedSections)) {
+      if (!content) continue;
+      args.onRelatedSectionSettled?.(section as SectionType, content);
+    }
 
     try {
       await patchSection(args.reportId, args.section, current);
+      for (const [section, content] of Object.entries(relatedSections)) {
+        if (!content) continue;
+        await patchSection(args.reportId, section as SectionType, content);
+      }
     } catch {
       args.onPreview?.(args.sectionContent);
+      for (const section of Object.keys(relatedSections)) {
+        const original = args.allSectionContent?.[section];
+        if (original && typeof original === "object") {
+          args.onRelatedSectionSettled?.(
+            section as SectionType,
+            original as Record<string, unknown>
+          );
+        }
+      }
       return {
         appliedIds: [],
         skippedIds,
@@ -211,15 +338,17 @@ export async function acceptAllSuggestions(args: {
     appliedIds,
     "resolved"
   );
-  const supersededById = new Map(
-    supersededPairs.map((pair) => [pair.supersededId, pair.supersededBy])
-  );
   const commentById = new Map(args.comments.map((c) => [c.id, c]));
   const dismissContent: Record<string, string> = {};
   for (const id of dismissedIds) {
     const row = commentById.get(id);
+    if (!row) continue;
+    if (alreadyPresentIds.has(id)) {
+      dismissContent[id] = withResolutionReason(row.content, "already_present");
+      continue;
+    }
     const by = supersededById.get(id);
-    if (!row || !by) continue;
+    if (!by) continue;
     dismissContent[id] = withResolutionReason(
       row.content,
       resolutionReasonSupersededBy(by)
@@ -241,6 +370,7 @@ export async function acceptAllSuggestions(args: {
     dismissedIds,
     dismissedContent: dismissContent,
     nextSection: current,
+    relatedSections,
   };
 }
 
@@ -251,6 +381,9 @@ export async function dismissAllSuggestions(args: {
   sectionContent: Record<string, unknown>;
   onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
+  if (isChatIdentitySection(args.section)) {
+    return dismissAllIdentitySuggestions(args);
+  }
   let current = args.sectionContent;
   let changed = false;
   const candidateIds = args.comments.map((c) => c.id);
@@ -304,6 +437,100 @@ export function shouldShowSuggestionBulkActions(queueTotal: number): boolean {
   return queueTotal >= 1;
 }
 
+async function acceptAllIdentitySuggestions(args: {
+  reportId: string;
+  section: SectionType;
+  comments: readonly CommentRecord[];
+  documentType?: DocumentType;
+  identityCurrent?: ChatIdentityReport;
+  onIdentitySettled?: (next: IdentityApplyPatch) => void;
+}): Promise<BulkSuggestionResult> {
+  const appliedIds: string[] = [];
+  const skippedIds: string[] = [];
+  const failedIds: string[] = [];
+  const dismissedIds: string[] = [];
+  const dismissedContent: Record<string, string> = {};
+  if (!args.documentType || !args.identityCurrent) {
+    return {
+      appliedIds,
+      skippedIds: args.comments.map((comment) => comment.id),
+      failedIds,
+      dismissedIds,
+      dismissedContent,
+      nextSection: {},
+    };
+  }
+  let live = args.identityCurrent;
+  for (const comment of args.comments) {
+    const result = await acceptSuggestion({
+      reportId: args.reportId,
+      section: args.section,
+      comment,
+      sectionContent: {},
+      documentType: args.documentType,
+      identityCurrent: live,
+    });
+    if (!result.ok) {
+      if (result.reason === "duplicate_document_no") {
+        skippedIds.push(comment.id);
+      } else {
+        failedIds.push(comment.id);
+      }
+      continue;
+    }
+    const selfDismissed = result.dismissed.find((row) => row.id === comment.id);
+    if (selfDismissed) {
+      dismissedIds.push(comment.id);
+      dismissedContent[comment.id] = selfDismissed.content;
+      continue;
+    }
+    appliedIds.push(comment.id);
+    if (result.nextIdentity) {
+      live = applyIdentityPatchToReport(
+        {
+          documentNo: live.documentNo,
+          date:
+            typeof live.date === "string"
+              ? live.date
+              : live.date.toISOString(),
+          metadata: live.metadata ?? {},
+        },
+        result.nextIdentity
+      );
+      args.onIdentitySettled?.(result.nextIdentity);
+    }
+  }
+  return {
+    appliedIds,
+    skippedIds,
+    failedIds,
+    dismissedIds,
+    dismissedContent,
+    nextSection: {},
+  };
+}
+
+async function dismissAllIdentitySuggestions(args: {
+  reportId: string;
+  comments: readonly CommentRecord[];
+}): Promise<BulkSuggestionResult> {
+  const candidateIds = args.comments.map((comment) => comment.id);
+  const { failedIds } = await patchCommentStatuses(
+    args.reportId,
+    candidateIds,
+    "dismissed"
+  );
+  const failed = new Set(failedIds);
+  return {
+    appliedIds: candidateIds.filter((id) => !failed.has(id)),
+    skippedIds: [],
+    failedIds,
+    dismissedIds: [],
+    dismissedContent: {},
+    nextSection: {},
+  };
+}
+
 /**
  * Per-section queues in document order, skipping sections with nothing open.
  * Each section keeps its own severity ordering.
@@ -314,7 +541,10 @@ export function reportSuggestionQueues(
   evaluations: readonly EvaluationRecord[]
 ): { section: SectionType; comments: CommentRecord[] }[] {
   const queues: { section: SectionType; comments: CommentRecord[] }[] = [];
-  for (const section of sectionOrder) {
+  for (const section of sectionOrderWithOpenSuggestions(
+    sectionOrder,
+    comments
+  )) {
     const open = sortedOpenSuggestionsForSection(
       section,
       [...comments],
@@ -333,7 +563,7 @@ export function reportSuggestionQueues(
 export async function acceptAllSuggestionsInReport(
   args: ReportBulkArgs & { applyMode?: SuggestionApplyMode }
 ): Promise<ReportBulkSuggestionResult> {
-  return runReportBulk(args, (queue, sectionContent, onPreview) =>
+  return runReportBulk(args, (queue, sectionContent, onPreview, live) =>
     acceptAllSuggestions({
       reportId: args.reportId,
       section: queue.section,
@@ -341,6 +571,15 @@ export async function acceptAllSuggestionsInReport(
       sectionContent,
       applyMode: args.applyMode,
       onPreview,
+      onRelatedSectionSettled: (section, next) => {
+        live[section] = next;
+        args.onSectionSettled?.(section, next);
+      },
+      documentType: args.documentType,
+      allSectionContent: live,
+      tableNumberComments: args.comments,
+      identityCurrent: args.identityCurrent,
+      onIdentitySettled: args.onIdentitySettled,
     })
   );
 }
@@ -364,7 +603,8 @@ async function runReportBulk(
   runSection: (
     queue: { section: SectionType; comments: CommentRecord[] },
     sectionContent: Record<string, unknown>,
-    onPreview: (nextSection: Record<string, unknown>) => void
+    onPreview: (nextSection: Record<string, unknown>) => void,
+    live: Partial<Record<string, unknown>>
   ) => Promise<BulkSuggestionResult>
 ): Promise<ReportBulkSuggestionResult> {
   const appliedIds: string[] = [];
@@ -374,6 +614,14 @@ async function runReportBulk(
   const dismissedContent: Record<string, string> = {};
   const changedSections: SectionType[] = [];
 
+  const live: Partial<Record<string, unknown>> = {};
+  if (args.documentType) {
+    for (const section of getWorkspaceSections(args.documentType)) {
+      const content = args.sectionContentFor(section.key);
+      if (content) live[section.key] = content;
+    }
+  }
+
   const queues = reportSuggestionQueues(
     args.sectionOrder,
     args.comments,
@@ -381,17 +629,26 @@ async function runReportBulk(
   );
 
   for (const queue of queues) {
-    const sectionContent = args.sectionContentFor(queue.section);
+    const sectionContent = isChatIdentitySection(queue.section)
+      ? (args.sectionContentFor(queue.section) ?? {})
+      : args.sectionContentFor(queue.section);
     if (!sectionContent) {
       skippedIds.push(...queue.comments.map((c) => c.id));
       continue;
     }
+    live[queue.section] = sectionContent;
 
     args.onSectionStart?.(queue.section, queue.comments[0].id);
     try {
-      const result = await runSection(queue, sectionContent, (next) => {
-        args.onSectionSettled?.(queue.section, next);
-      });
+      const result = await runSection(
+        queue,
+        sectionContent,
+        (next) => {
+          live[queue.section] = next;
+          args.onSectionSettled?.(queue.section, next);
+        },
+        live
+      );
 
       appliedIds.push(...result.appliedIds);
       skippedIds.push(...result.skippedIds);
@@ -400,6 +657,11 @@ async function runReportBulk(
       Object.assign(dismissedContent, result.dismissedContent);
       if (result.appliedIds.length > 0) {
         changedSections.push(queue.section);
+      }
+      for (const section of Object.keys(result.relatedSections ?? {})) {
+        if (!changedSections.includes(section as SectionType)) {
+          changedSections.push(section as SectionType);
+        }
       }
     } finally {
       args.onSectionEnd?.(queue.section);
@@ -418,20 +680,41 @@ async function runReportBulk(
 
 export function formatBulkApplyToast(
   applied: number,
-  skipped: number
+  skipped: number,
+  dismissed = 0
 ): string {
-  if (applied === 0 && skipped === 0) return "No suggestions to apply.";
+  if (applied === 0 && skipped === 0 && dismissed === 0) {
+    return "No suggestions to apply.";
+  }
   if (applied === 0) {
+    if (dismissed > 0 && skipped === 0) {
+      return dismissed === 1
+        ? "1 suggestion was already replaced and was dismissed."
+        : `${dismissed} suggestions were already replaced and were dismissed.`;
+    }
     return skipped === 1
       ? "This suggestion no longer fits. Dismiss it or run Suggest fixes again."
       : "None of these suggestions could be applied. Dismiss them or run Suggest fixes again.";
   }
   const appliedText =
     applied === 1 ? "Applied 1 suggestion" : `Applied ${applied} suggestions`;
-  if (skipped === 0) return appliedText;
-  return skipped === 1
-    ? `${appliedText}. 1 no longer fits and was left open.`
-    : `${appliedText}. ${skipped} no longer fit and were left open.`;
+  const extras: string[] = [];
+  if (dismissed > 0) {
+    extras.push(
+      dismissed === 1
+        ? "1 replaced by it was dismissed"
+        : `${dismissed} replaced by them were dismissed`
+    );
+  }
+  if (skipped > 0) {
+    extras.push(
+      skipped === 1
+        ? "1 no longer fits and was left open"
+        : `${skipped} no longer fit and were left open`
+    );
+  }
+  if (extras.length === 0) return appliedText;
+  return `${appliedText}. ${extras.join(". ")}.`;
 }
 
 export function formatBulkDismissToast(

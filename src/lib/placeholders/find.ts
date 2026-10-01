@@ -131,6 +131,17 @@ export function isLikelyHtmlTag(inner: string): boolean {
   return HTML_TAG_NAMES.has(name);
 }
 
+/**
+ * Comparison copy such as `(< 1 CFU/plate>)` or `< 0.5 µm>` — not a fill-in.
+ * Bare `<12>` stays a placeholder (digits only, no leading space or unit).
+ */
+export function isComparisonInequalityAngle(inner: string): boolean {
+  if (/^\s+\d/.test(inner)) return true;
+  return /^\d+(?:\.\d+)?\s*(?:%|cfu\b|µm|um\b|ppm|ppb|iu\b|cfu\/)/i.test(
+    inner.trim()
+  );
+}
+
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
 /**
@@ -153,7 +164,10 @@ export function isActionablePlaceholderBracket(match: string): boolean {
  */
 export function isActionablePlaceholderAngle(match: string): boolean {
   if (!/^<[^<>]+>$/.test(match)) return false;
-  return !isLikelyHtmlTag(match.slice(1, -1));
+  const inner = match.slice(1, -1);
+  if (isLikelyHtmlTag(inner)) return false;
+  if (isComparisonInequalityAngle(inner)) return false;
+  return true;
 }
 
 export function collectPlaceholderSpans(text: string): TextSpan[] {
@@ -322,7 +336,23 @@ function scanBlockForPlaceholders(
   section: SectionType,
   contentPath: string
 ): Placeholder[] {
-  const { chunks } = collectTextChunks(block, blockContentStart);
+  // Direct text children only — same model as scanPmBlockForPlaceholders.
+  // Nested blocks (paragraph inside listItem / tableCell / blockquote) are
+  // scanned when walk() visits those children. Flattening descendants here
+  // used to double-count every placeholder in lists and tables.
+  const chunks: TextChunk[] = [];
+  let cursor = blockContentStart;
+  for (const child of block.content ?? []) {
+    if (child.type === "text") {
+      const text = child.text ?? "";
+      if (text.length > 0) {
+        chunks.push({ pmStart: cursor, text });
+      }
+      cursor += text.length;
+      continue;
+    }
+    cursor = collectTextChunks(child, cursor).end;
+  }
   if (chunks.length === 0) return [];
 
   const flat = chunks.map((c) => c.text).join("");

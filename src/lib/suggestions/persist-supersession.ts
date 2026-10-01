@@ -51,7 +51,8 @@ function toCommentRecord(
 
 /**
  * After inserting a new open AI suggestion, dismiss older open suggestions
- * whose ranges it fully covers, or older table ops on the same table.
+ * whose ranges it fully covers, or older table ops that the new op covers
+ * or invalidates on the same table.
  * Uses `dismissed` + payload reason — never `resolved` (that would claim
  * an edit was applied). Stamps replaced ids onto the newer comment so the
  * card can say it replaced an older suggestion after the older one is gone.

@@ -1,4 +1,7 @@
-import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  ANALYTICS_WRITE_TOOL_SET,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import {
   DEFAULT_ATTACHMENT_LOCATE_TOOLS,
   DEFAULT_SEARCH_TOOL,
@@ -6,14 +9,17 @@ import {
   callToolName,
   collectToolCalls,
   contentToolName,
+  createSearchGate,
   searchLoopDirective,
   stepSearchHitCount,
   toolPayload,
   unwrapToolPayload,
   withoutSearchTool,
+  type SearchGate,
   type SearchLoopDirective,
   type SearchLoopStep,
 } from "@/lib/ai/chat/search-loop";
+import { stepsRequestedHiddenWriteTool } from "@/lib/ai/chat/unsupported-tool";
 
 export const ANALYTICS_SEARCH_LOOP_LIMIT = SEARCH_LOOP_EMPTY_LIMIT;
 
@@ -32,6 +38,8 @@ const WRITE_AFTER_SEARCH_TOOLS = [
   "write_column",
   "manage_worksheet",
   "extract_sheet",
+  "load_table",
+  "plot_time_series",
   "run_capability_sixpack",
   "run_one_way_anova",
   "plot_xy_scatter",
@@ -45,13 +53,9 @@ export type AnalyticsChatStep = SearchLoopStep;
 export type AnalyticsSearchLoopDirective = SearchLoopDirective;
 
 /** Per-request latch: once search is closed, execute refuses further greps. */
-export type AnalyticsSearchGate = {
-  closed: boolean;
-};
+export type AnalyticsSearchGate = SearchGate;
 
-export function createAnalyticsSearchGate(): AnalyticsSearchGate {
-  return { closed: false };
-}
+export const createAnalyticsSearchGate = createSearchGate;
 
 /**
  * Flash-Lite greps forever on a named table (wrong title, stale chunk
@@ -74,11 +78,17 @@ const WRITE_COLUMN_TOOL = "write_column";
 const MANAGE_WORKSHEET_TOOL = "manage_worksheet";
 const ASK_USER_TOOL = "ask_user";
 
-/** Page text the model can copy from — outline is not enough to dump. */
+/**
+ * Page text the model can copy from — outline is not enough to dump.
+ * `load_table` counts: it writes the parsed rows verbatim, so the readiness
+ * guard ("you greped but have not read anything") is already satisfied and
+ * plots must not stay hidden behind a page read that would add nothing.
+ */
 const DUMP_SOURCE_TOOLS = new Set([
   "read_document_page",
   "scan_attachments",
   "extract_numeric_series",
+  "load_table",
 ]);
 
 function withoutTools(
@@ -417,6 +427,7 @@ export function analyticsGatherDirective(
 
 const PLOT_TOOLS = [
   "run_capability_sixpack",
+  "plot_time_series",
   "run_one_way_anova",
   "plot_xy_scatter",
   "plot_boxplot",
@@ -441,6 +452,29 @@ function stepsHadDumpSource(steps: readonly AnalyticsChatStep[]): boolean {
   return steps.some((step) => stepReadDumpSource(step));
 }
 
+const LOAD_TABLE_TOOL = "load_table";
+/** Listing the parsed tables twice without loading one is a stuck turn. */
+const LOAD_TABLE_LIST_LIMIT = 2;
+
+/**
+ * `load_table` with no tableId lists what was parsed; with one it loads. A
+ * model that keeps listing is not going to start loading on the third try, so
+ * hide the tool and let it fall back to reading pages.
+ */
+export function analyticsLoadTableDirective(
+  steps: readonly AnalyticsChatStep[]
+): "continue" | "finish" {
+  let lists = 0;
+  for (const step of steps) {
+    eachNamedToolOutput(step, LOAD_TABLE_TOOL, (output) => {
+      const record = writeColumnRecord(output);
+      if (record?.status === "loaded") lists = -Infinity;
+      else if (record?.status === "listed") lists += 1;
+    });
+  }
+  return lists >= LOAD_TABLE_LIST_LIMIT ? "finish" : "continue";
+}
+
 function readTools(hidden: ReadonlySet<string>): string[] {
   const tools = [...READ_AFTER_SEARCH_TOOLS, SEARCH_TOOL];
   return hidden.size > 0 ? withoutTools(tools, hidden) : tools;
@@ -459,10 +493,23 @@ export function prepareAnalyticsChatStep(input: {
   role?: AnalyticsChatRole;
   /** `skip_page_and_search` / `locate_request` must not open another page form. */
   intentReason?: string;
+  /**
+   * The worksheet already holds data. Set from the report, not from this
+   * turn's steps: searching a document for the *specification* is not
+   * gathering data, and a sheet filled on an earlier turn is still filled.
+   */
+  worksheetHasData?: boolean;
 }): AnalyticsPrepareStep | undefined {
   if (input.intent === "social") {
     return { activeTools: [] };
   }
+  const unlockWrites =
+    input.canEdit &&
+    input.intent === "read" &&
+    stepsRequestedHiddenWriteTool(input.steps, ANALYTICS_WRITE_TOOL_SET);
+  const intent: ChatUserIntentKind | undefined = unlockWrites
+    ? "write"
+    : input.intent;
   const searchDirective = analyticsSearchLoopDirective(input.steps);
   const writeDirective = analyticsWriteLoopDirective(input.steps);
   const dumpReady = analyticsDumpReadinessDirective(input.steps);
@@ -476,7 +523,11 @@ export function prepareAnalyticsChatStep(input: {
   const stillGathering = dumpReady === "read_first" || gather === "gather";
   const hideWrite = writeDirective === "finish" || stillGathering;
   const hideManage = manageDirective === "finish";
-  const hidePlots = stillGathering;
+  // Plots are hidden while data is still being gathered — but only when there
+  // is no data yet. With a filled worksheet, a grep for the acceptance limits
+  // is exactly the right move before plotting, and hiding the plot tools for
+  // it makes the model conclude the plot kind does not exist.
+  const hidePlots = stillGathering && !input.worksheetHasData;
   const dumpSource = stepsHadDumpSource(input.steps);
   const locateIntent =
     input.intentReason === "skip_page_and_search" ||
@@ -490,8 +541,11 @@ export function prepareAnalyticsChatStep(input: {
     (!dumpSource &&
       (stepsHadSearch(input.steps) ||
         locateIntent ||
-        input.intent === "read"));
+        intent === "read"));
   const hidden = new Set<string>();
+  if (analyticsLoadTableDirective(input.steps) === "finish") {
+    hidden.add(LOAD_TABLE_TOOL);
+  }
   if (hideWrite) hidden.add(WRITE_COLUMN_TOOL);
   if (hideManage) hidden.add(MANAGE_WORKSHEET_TOOL);
   if (hideAsk) hidden.add(ASK_USER_TOOL);
@@ -504,7 +558,7 @@ export function prepareAnalyticsChatStep(input: {
   // non-progress tools (read_worksheet) is a stall pump on the orchestrator.
   const forceContinue =
     input.role === "sheet_worker" &&
-    input.intent !== "read" &&
+    intent !== "read" &&
     writeDirective !== "finish" &&
     stillGathering;
 
@@ -523,19 +577,21 @@ export function prepareAnalyticsChatStep(input: {
   };
 
   if (searchDirective !== "read") {
-    if (input.intent === "read") {
+    if (intent === "read") {
       return { activeTools: readTools(hidden) };
     }
     if (!input.canEdit) {
       return hidden.size > 0 ? { activeTools: readTools(hidden) } : undefined;
     }
-    if (hidden.size > 0) {
+    // A remapped unsupported_tool unlocks writes on a read turn. Returning
+    // undefined would keep advertisedTools, which still omit write tools.
+    if (hidden.size > 0 || unlockWrites) {
       return withChoice(writableTools(true));
     }
     return undefined;
   }
   const activeTools: string[] = [...READ_AFTER_SEARCH_TOOLS];
-  if (input.canEdit && input.intent !== "read") {
+  if (input.canEdit && intent !== "read") {
     activeTools.push(...WRITE_AFTER_SEARCH_TOOLS);
   }
   const next =

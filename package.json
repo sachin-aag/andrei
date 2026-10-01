@@ -18,11 +18,15 @@
     "prepare": "husky",
     "typecheck": "tsc --noEmit",
     "build-mechanical-template": "node scripts/build-mechanical-dv-template.mjs",
+    "build-elr-template": "node scripts/build-mj-elr-template.mjs",
+    "build-vq-template": "node scripts/build-3xper-vq-template.mjs",
+    "build-qsr-template": "tsx scripts/build-3xper-qsr-template.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:ensure-workspace-users": "tsx --env-file=.env --env-file=.env.local scripts/ensure-workspace-users.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
+    "db:rechunk-skipped-table-pages": "tsx --env-file=.env --env-file=.env.local scripts/rechunk-skipped-table-pages.ts",
     "db:push": "drizzle-kit push",
     "db:local:up": "docker compose up -d",
     "db:local:down": "docker compose down",
@@ -38,7 +42,8 @@
     "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
     "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
     "retrieval-eval": "tsx scripts/eval/retrieval-eval.ts",
-    "retrieval-eval:upload": "tsx scripts/eval/upload-retrieval-corpus.ts"
+    "retrieval-eval:upload": "tsx scripts/eval/upload-retrieval-corpus.ts",
+    "chat-eval": "tsx scripts/eval/chat-draft-eval.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
@@ -51,6 +56,7 @@
     "@langfuse/client": "^5.11.1",
     "@langfuse/otel": "^5.11.0",
     "@langfuse/tracing": "^5.11.0",
+    "@leeoniya/ufuzzy": "^1.0.19",
     "@napi-rs/canvas": "^1.0.0",
     "@napi-rs/canvas-linux-x64-gnu": "^1.0.0",
     "@neondatabase/serverless": "^1.1.0",

@@ -1,6 +1,7 @@
 import { classifyChatUserIntent } from "@/lib/ai/chat/user-intent";
 import type { DocumentType } from "@/db/schema";
 import type { ChatSectionScope } from "@/lib/ai/chat/fields";
+import { isPlaceholderFillTurn } from "@/lib/ai/chat/placeholder-fill";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import { requirementIds } from "@/lib/attachments/ocr-quality";
 import { getDocumentType } from "@/lib/document-types";
@@ -77,6 +78,11 @@ export type ClassifyRetrievalPolicyInput = {
   totalReadyPages?: number;
   outlineSiblingCount?: number;
   hasDocuments?: boolean;
+  /**
+   * C2: placeholders in a populated table. `false` keeps empty-inventory
+   * walks; omit to classify from the user text alone.
+   */
+  hasPopulatedPlaceholders?: boolean;
 };
 
 export function recentUserMessageTexts(
@@ -138,6 +144,12 @@ export function classifyRetrievalPolicy(
 
   if (FOCUSED_OVERRIDE_RE.test(latest) && !hasInventoryLanguage(combined)) {
     return { policy: "focused", reason: "explicit_quick_overview" };
+  }
+
+  // Closed-set placeholder fill of a populated table — never a page walk.
+  // Empty inventories still escalate via the empty-table gate / open-set.
+  if (isPlaceholderFillTurn(latest) && input.hasPopulatedPlaceholders !== false) {
+    return { policy: "adaptive", reason: "placeholder_fill" };
   }
 
   // Score inventory shape on the latest turn only. An earlier "draft the

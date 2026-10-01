@@ -1,7 +1,9 @@
 # Agent-Generated Charts — Implementation Plan
 
-Status: **not started**. Written 2026-08-25 for execution after
-`cursor/agent-insert-image-7c1f` merges to `main`.
+Status: **shipped** — `plot_measurements`, `measurement_scatter` and
+`insert_image` are live; see `CLAUDE.md`. Written 2026-08-25 and left here for
+the reasoning, not the task list. The derivability principle below is what
+`src/lib/ai/chat/analysis-evidence.ts` uses for computed-fact grounding.
 
 ## What this is
 

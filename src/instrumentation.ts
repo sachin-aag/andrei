@@ -1,5 +1,6 @@
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { langfuseDeployContext } from "@/lib/observability/langfuse";
 
 function langfuseConfigured(): boolean {
   return Boolean(
@@ -20,8 +21,11 @@ let langfuseSpanProcessor: LangfuseSpanProcessor | undefined;
 /** Lazily created so CI/test without LANGFUSE_* keys does not warn on import. */
 export function getLangfuseSpanProcessor(): LangfuseSpanProcessor | null {
   if (!langfuseConfigured()) return null;
+  const deploy = langfuseDeployContext();
   langfuseSpanProcessor ??= new LangfuseSpanProcessor({
     baseUrl: langfuseBaseUrl(),
+    environment: deploy.environment,
+    ...(deploy.release ? { release: deploy.release } : {}),
     // Next.js route handlers are short-lived; export immediately then forceFlush.
     exportMode: "immediate",
     // Selects the v4 observations-first ingestion path (SDK 5.4+ also

@@ -128,7 +128,8 @@ export async function listAttachmentLibrary(
         .where(
           and(
             eq(attachmentAssets.ownerId, user.id),
-            isNotNull(attachmentAssets.deletedAt)
+            isNotNull(attachmentAssets.deletedAt),
+            eq(attachmentAssets.listedInLibrary, true)
           )
         )
         .orderBy(asc(attachmentAssets.uploadedAt)),
@@ -172,7 +173,11 @@ export async function listOwnedLibraryAssets(
     .select()
     .from(attachmentAssets)
     .where(
-      and(eq(attachmentAssets.ownerId, ownerId), isNull(attachmentAssets.deletedAt))
+      and(
+        eq(attachmentAssets.ownerId, ownerId),
+        isNull(attachmentAssets.deletedAt),
+        eq(attachmentAssets.listedInLibrary, true)
+      )
     )
     .orderBy(asc(attachmentAssets.uploadedAt));
 

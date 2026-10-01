@@ -3,9 +3,10 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import {
-  citationNumberFromMarker,
+  citationNumbersFromMarker,
   isNumericCitationMarker,
   isSourceCitationBracket,
+  numericCitationLinkSpans,
   sourceCitationLinkSpans,
 } from "@/lib/placeholders/citation-bracket";
 import { BRACKET_SPAN_REGEX } from "@/lib/placeholders/find";
@@ -21,6 +22,8 @@ export type CitationHighlight = {
   text: string;
   /** Source bracket to open, when known. */
   openRaw: string | null;
+  /** Combined `[1,2]` inner digit — styled as a click target, not a second bubble. */
+  part?: boolean;
 };
 
 export type CitationOpenHandlers = {
@@ -50,7 +53,9 @@ function pmOffsetToPos(chunks: TextChunk[], offset: number): number {
 function scanBlockForCitations(
   block: PMNode,
   blockPos: number,
-  numberedSources: ReadonlyMap<number, string>
+  numberedSources: ReadonlyMap<number, string>,
+  knownFilenames: readonly string[],
+  knownAttachmentIds: readonly string[]
 ): CitationHighlight[] {
   const chunks: TextChunk[] = [];
   block.forEach((child, offset) => {
@@ -71,23 +76,52 @@ function scanBlockForCitations(
     if (toPos <= fromPos) continue;
 
     if (isNumericCitationMarker(text)) {
-      const number = citationNumberFromMarker(text);
-      if (number == null) continue;
-      const parked = numberedSources.get(number);
-      const parkedSpans = parked ? sourceCitationLinkSpans(parked) : [];
+      const numbers = citationNumbersFromMarker(text);
+      if (numbers.length === 0) continue;
+      if (numbers.length === 1) {
+        const number = numbers[0]!;
+        const parked = numberedSources.get(number);
+        const parkedSpans = parked
+          ? sourceCitationLinkSpans(parked, knownFilenames, knownAttachmentIds)
+          : [];
+        highlights.push({
+          fromPos,
+          toPos,
+          kind: "numeric",
+          number,
+          text,
+          openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
+        });
+        continue;
+      }
       highlights.push({
         fromPos,
         toPos,
         kind: "numeric",
-        number,
+        number: null,
         text,
-        openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
+        openRaw: null,
       });
+      for (const span of numericCitationLinkSpans(text)) {
+        const parked = numberedSources.get(span.number);
+        const parkedSpans = parked
+          ? sourceCitationLinkSpans(parked, knownFilenames, knownAttachmentIds)
+          : [];
+        highlights.push({
+          fromPos: pmOffsetToPos(chunks, match.index + span.from),
+          toPos: pmOffsetToPos(chunks, match.index + span.to),
+          kind: "numeric",
+          number: span.number,
+          text: String(span.number),
+          openRaw: parkedSpans[0]?.openRaw ?? parked ?? null,
+          part: true,
+        });
+      }
       continue;
     }
 
     if (isSourceCitationBracket(text)) {
-      for (const span of sourceCitationLinkSpans(text)) {
+      for (const span of sourceCitationLinkSpans(text, knownFilenames, knownAttachmentIds)) {
         highlights.push({
           fromPos: pmOffsetToPos(chunks, match.index + span.from),
           toPos: pmOffsetToPos(chunks, match.index + span.to),
@@ -111,7 +145,11 @@ const CITATION_BLOCK_NAMES = new Set([
   "blockquote",
 ]);
 
-export function findCitationHighlightsInPmDoc(doc: PMNode): CitationHighlight[] {
+export function findCitationHighlightsInPmDoc(
+  doc: PMNode,
+  knownFilenames: readonly string[] = [],
+  knownAttachmentIds: readonly string[] = []
+): CitationHighlight[] {
   const numberedSources = sourceCitationsByNumber(
     doc.textBetween(0, doc.content.size, "\n")
   );
@@ -119,7 +157,15 @@ export function findCitationHighlightsInPmDoc(doc: PMNode): CitationHighlight[] 
 
   doc.descendants((node, pos) => {
     if (!CITATION_BLOCK_NAMES.has(node.type.name)) return true;
-    highlights.push(...scanBlockForCitations(node, pos, numberedSources));
+    highlights.push(
+      ...scanBlockForCitations(
+        node,
+        pos,
+        numberedSources,
+        knownFilenames,
+        knownAttachmentIds
+      )
+    );
     return true;
   });
 
@@ -131,7 +177,7 @@ export function findNumericCitationMarkersInPmDoc(
   doc: PMNode
 ): CitationHighlight[] {
   return findCitationHighlightsInPmDoc(doc).filter(
-    (highlight) => highlight.kind === "numeric"
+    (highlight) => highlight.kind === "numeric" && highlight.number != null
   );
 }
 
@@ -144,7 +190,11 @@ function citationDecorationAttrs(highlight: CitationHighlight): {
   title?: string;
 } {
   const className =
-    highlight.kind === "numeric" ? "citation-ref" : "citation-source";
+    highlight.kind === "numeric"
+      ? highlight.part
+        ? "citation-ref-n"
+        : "citation-ref"
+      : "citation-source";
   const attrs: {
     class: string;
     "data-citation-number"?: string;
@@ -190,14 +240,25 @@ export function buildCitationDecorations(
  * attachment tab at the cited page. Decorations never persist into saved
  * TipTap JSON.
  */
+export const citationRefreshMeta = "citationRefresh";
+
 export function createCitationHighlightExtension(
-  getHandlers?: () => CitationOpenHandlers
+  getHandlers?: () => CitationOpenHandlers,
+  getKnownFilenames?: () => readonly string[],
+  getKnownAttachmentIds?: () => readonly string[]
 ) {
   return Extension.create({
     name: "citationHighlights",
     addProseMirrorPlugins() {
       const rebuild = (doc: PMNode) =>
-        buildCitationDecorations(doc, findCitationHighlightsInPmDoc(doc));
+        buildCitationDecorations(
+          doc,
+          findCitationHighlightsInPmDoc(
+            doc,
+            getKnownFilenames?.() ?? [],
+            getKnownAttachmentIds?.() ?? []
+          )
+        );
 
       return [
         new Plugin<DecorationSet>({
@@ -207,7 +268,9 @@ export function createCitationHighlightExtension(
               return rebuild(doc);
             },
             apply(tr, prev, _oldState, newState) {
-              if (tr.docChanged) return rebuild(newState.doc);
+              if (tr.docChanged || tr.getMeta(citationRefreshMeta)) {
+                return rebuild(newState.doc);
+              }
               return prev.map(tr.mapping, tr.doc);
             },
           },

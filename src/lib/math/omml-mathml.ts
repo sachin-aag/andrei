@@ -25,10 +25,40 @@ function ensureOmmlMathNamespace(omml: string): string {
   return trimmed;
 }
 
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Word refuses a DOCX when OMML `m:t` contains a raw `<` (`<1 CFU/plate`).
+ * Decode existing entities then re-escape so we never double-encode `&lt;`.
+ */
+export function escapeOmmlTextNodes(omml: string): string {
+  return omml.replace(
+    /<m:t(\s[^>]*)?>([\s\S]*?)<\/m:t>/g,
+    (_m, attrs: string | undefined, text: string) =>
+      `<m:t${attrs ?? ""}>${escapeXml(decodeXmlEntities(text))}</m:t>`
+  );
+}
+
 /** mml2omml adds xmlns:w on `<m:oMath>`; nested inside `<w:r>` Word may ignore it. */
 function cleanOmmlForWord(omml: string): string {
-  return ensureOmmlMathNamespace(
-    omml.replace(/ xmlns:w="[^"]*"/g, "").trim()
+  return escapeOmmlTextNodes(
+    ensureOmmlMathNamespace(omml.replace(/ xmlns:w="[^"]*"/g, "").trim())
   );
 }
 

@@ -24,10 +24,33 @@ export type MentionQuery = {
 };
 
 /**
- * Locate the `@…` token the caret sits in. The token must start the word, and
- * may contain spaces so multi-word filenames stay searchable.
+ * True when the engineer already typed a full tag and kept going (space +
+ * more words). The menu must close — showing "No matching tags" after
+ * `@Preventive Maintenance section` is a miss.
  */
-export function findMentionQuery(text: string, caret: number): MentionQuery | null {
+export function mentionQueryContinuesPastCompletedTag(
+  query: string,
+  candidates: readonly MentionCandidate[]
+): boolean {
+  if (filterMentionCandidates(candidates, query).length > 0) return false;
+  const needle = query.toLowerCase();
+  return candidates.some((candidate) => {
+    const label = candidate.label.toLowerCase();
+    if (!label || !needle.startsWith(label)) return false;
+    return /^\s/.test(needle.slice(label.length));
+  });
+}
+
+/**
+ * Locate the `@…` token the caret sits in. The token must start the word, and
+ * may contain spaces so multi-word filenames stay searchable. Once the query is
+ * an exact tag plus more words, the mention is done and the menu closes.
+ */
+export function findMentionQuery(
+  text: string,
+  caret: number,
+  candidates: readonly MentionCandidate[] = []
+): MentionQuery | null {
   const position = Math.max(0, Math.min(caret, text.length));
   const upToCaret = text.slice(0, position);
   const start = upToCaret.lastIndexOf("@");
@@ -39,6 +62,7 @@ export function findMentionQuery(text: string, caret: number): MentionQuery | nu
   const query = upToCaret.slice(start + 1);
   if (query.length > MAX_MENTION_QUERY_CHARS) return null;
   if (/[\n\r]/.test(query)) return null;
+  if (mentionQueryContinuesPastCompletedTag(query, candidates)) return null;
 
   return { query, start, end: position };
 }
@@ -58,13 +82,13 @@ function candidateSearchText(candidate: MentionCandidate): {
  * No default cap — the @ menu must list every section/sheet, not a slice.
  */
 export function filterMentionCandidates(
-  candidates: MentionCandidate[],
+  candidates: readonly MentionCandidate[],
   query: string,
   limit?: number
 ): MentionCandidate[] {
   const needle = query.trim().toLowerCase();
   const ranked = (() => {
-    if (!needle) return candidates;
+    if (!needle) return [...candidates];
     const prefix: MentionCandidate[] = [];
     const contains: MentionCandidate[] = [];
     for (const candidate of candidates) {

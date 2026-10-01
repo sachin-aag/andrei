@@ -20,6 +20,10 @@ vi.mock("@/lib/statistical-analysis/capture-analysis-preview", () => ({
 
 vi.mock("@/lib/statistical-analysis/client", () => ({
   saveAnalysisPreview: vi.fn(),
+  isPermanentPreviewSaveError: (error: unknown) => {
+    const status = (error as { status?: number } | null)?.status;
+    return typeof status === "number" && status >= 400 && status < 500;
+  },
 }));
 
 const PREVIEW = {
@@ -144,5 +148,44 @@ describe("useAnalysisPreviewCapture", () => {
       analysisPreviewMatchKey(edited)
     );
     expect(onUploaded).toHaveBeenCalledWith(emptyAnalytics);
+  });
+
+  it("stops recapturing after the save fails permanently", async () => {
+    // A 400 from the preview route used to be retried on every re-render, and
+    // each retry rasterizes the whole plot before posting it.
+    vi.mocked(captureAnalysisPreviewFromElement).mockResolvedValue(PREVIEW);
+    const failure: Error & { status?: number } = new Error("kind not allowed");
+    failure.status = 400;
+    vi.mocked(saveAnalysisPreview).mockRejectedValue(failure);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const analysis = sixpack({ id: "an-permafail" });
+    const captureRef = { current: document.createElement("div") };
+    const { rerender } = renderHook(
+      ({ item }: { item: StatisticalAnalysisSummary }) =>
+        useAnalysisPreviewCapture({
+          reportId: "report-1",
+          analysis: item,
+          captureRef,
+          readOnly: false,
+          onUploaded: vi.fn(),
+        }),
+      { initialProps: { item: analysis } }
+    );
+
+    await act(async () => {});
+    expect(saveAnalysisPreview).toHaveBeenCalledTimes(1);
+
+    // Same analysis, new object identity — exactly what a poll or reload does.
+    rerender({ item: { ...analysis } });
+    await act(async () => {});
+    rerender({ item: { ...analysis } });
+    await act(async () => {});
+
+    expect(saveAnalysisPreview).toHaveBeenCalledTimes(1);
+    expect(captureAnalysisPreviewFromElement).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
   });
 });

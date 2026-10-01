@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
@@ -41,7 +41,12 @@ import {
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
-import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { applyTableOperation, type DocumentTableContent } from "@/lib/suggestions/table-operation";
+import {
+  cascadeFilledTableCaptionsInSections,
+  documentContentsFromReportState,
+  relatedSectionContentsAfterCascade,
+} from "@/lib/suggestions/document-table-number";
 import { suggestionEditFromComment, frozenPayloadStillPending } from "@/lib/suggestions/validate-suggestion";
 import type { PlannedOperation } from "@/lib/suggestions/diff-plan";
 import {
@@ -51,23 +56,55 @@ import {
 } from "@/lib/suggestions/resolve-merge";
 import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
 import { fetchWithKeepaliveIfSmall } from "@/lib/suggestions/keepalive-fetch";
+import {
+  identityBaseFromPayload,
+  identityIntentFromPayload,
+  isIdentitySuggestion,
+  mergeIdentitySuggestion,
+} from "@/lib/suggestions/identity-suggestion";
+import type { ChatIdentityReport } from "@/lib/ai/chat/identity";
+
+/** Same copy as `DUPLICATE_DOCUMENT_NO_ERROR` — keep client-safe (no `@/db`). */
+const IDENTITY_DUPLICATE_DOCUMENT_NO_ERROR =
+  "You already have a report with this document number";
+
+export type IdentityApplyPatch = {
+  documentNo?: string;
+  date?: string;
+  metadata?: Record<string, unknown>;
+  updatedAt?: string;
+};
 
 export type AcceptSuggestionResult =
   | {
       ok: true;
       nextSection: Record<string, unknown>;
+      nextRelatedSections?: Partial<Record<SectionType, Record<string, unknown>>>;
       remainder?: "conflict";
       dismissed: CommentRecord[];
+      nextIdentity?: IdentityApplyPatch;
     }
   | {
       ok: false;
-      reason: LocateStatus | "save_failed" | "status_failed" | "placeholder_conflict";
+      reason:
+        | LocateStatus
+        | "save_failed"
+        | "status_failed"
+        | "placeholder_conflict"
+        | "duplicate_document_no";
       error?: unknown;
     };
 
 export type DismissSuggestionResult =
   | { ok: true; nextSection: Record<string, unknown> | null }
   | { ok: false; reason: "status_failed" | "save_failed"; error?: unknown };
+
+export class IdentityDuplicateError extends Error {
+  constructor(message = IDENTITY_DUPLICATE_DOCUMENT_NO_ERROR) {
+    super(message);
+    this.name = "IdentityDuplicateError";
+  }
+}
 
 export class SectionPersistError extends Error {
   readonly status: number;
@@ -90,6 +127,8 @@ export type ApplySuggestionToContentArgs = {
    * lead-in must body-append rather than jump in front of an existing table.
    */
   ignorePlaceBeforePairedBlock?: boolean;
+  /** Filled tables in document order — used to assign `Table N` on apply. */
+  documentContents?: readonly DocumentTableContent[];
 };
 
 export type ApplySuggestionToContentResult =
@@ -226,12 +265,29 @@ export function applySuggestionToContent(
       return { ok: false, reason: "not_found" };
     }
     const doc = getRichFieldValue(sectionContent, path);
+    // Live/persisted table previews paint pending insert marks into empty
+    // cells (and may already have inserted extra rows). cellPlainText includes
+    // those marks, so expectedText "" looks stale and Apply-all skips the
+    // fill. Commit the preview the same way narrative Apply does.
+    if (narrativeHasSuggestionMarks(doc, comment.id)) {
+      const nextDoc = persistAsTrackedChange
+        ? commitNarrativeSuggestionMarks(doc, comment.id)
+        : acceptPendingNarrativeSuggestion(doc, comment.id);
+      return {
+        ok: true,
+        nextSection: setRichFieldValue(sectionContent, path, nextDoc),
+      };
+    }
     const result = applyTableOperation(doc, payload.tableOperation, {
       section,
       targetField: path,
+      documentContents: args.documentContents,
     });
     if (!result.ok) {
-      return { ok: false, reason: "not_found" };
+      return {
+        ok: false,
+        reason: result.status === "already_present" ? "noop" : "not_found",
+      };
     }
     let nextDoc = result.doc;
     if (payload.second) {
@@ -360,6 +416,177 @@ export async function patchSection(
   );
 }
 
+function applyCaptionCascadeToAppliedSection(args: {
+  documentType?: DocumentType;
+  reportSections?: Readonly<Partial<Record<string, unknown>>>;
+  section: SectionType;
+  content: Record<string, unknown>;
+}): {
+  content: Record<string, unknown>;
+  related: Partial<Record<SectionType, Record<string, unknown>>>;
+} {
+  if (!args.documentType || !args.reportSections) {
+    return { content: args.content, related: {} };
+  }
+  const cascaded = cascadeFilledTableCaptionsInSections({
+    documentType: args.documentType,
+    sections: {
+      ...args.reportSections,
+      [args.section]: args.content,
+    },
+  });
+  const primary = cascaded.sections[args.section];
+  const content =
+    primary && typeof primary === "object"
+      ? (primary as Record<string, unknown>)
+      : args.content;
+  return {
+    content,
+    related: relatedSectionContentsAfterCascade({
+      primarySection: args.section,
+      changedSections: cascaded.changedSections,
+      sections: cascaded.sections,
+    }),
+  };
+}
+
+export function applyRelatedSectionUpdates(
+  replaceSection: (section: SectionType, content: unknown) => void,
+  related: Partial<Record<SectionType, Record<string, unknown>>> | undefined
+): void {
+  if (!related) return;
+  for (const [section, content] of Object.entries(related)) {
+    if (!content) continue;
+    replaceSection(section as SectionType, content);
+  }
+}
+
+async function patchSectionAndRelated(
+  reportId: string,
+  section: SectionType,
+  content: Record<string, unknown>,
+  related: Partial<Record<SectionType, Record<string, unknown>>>
+): Promise<void> {
+  await patchSection(reportId, section, content);
+  for (const [relatedSection, relatedContent] of Object.entries(related)) {
+    if (!relatedContent) continue;
+    await patchSection(
+      reportId,
+      relatedSection as SectionType,
+      relatedContent
+    );
+  }
+}
+
+async function patchIdentityReport(
+  reportId: string,
+  body: IdentityApplyPatch
+): Promise<{ report: IdentityApplyPatch }> {
+  const res = await fetchWithKeepaliveIfSmall(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) {
+    throw new IdentityDuplicateError();
+  }
+  if (!res.ok) {
+    throw new SectionPersistError(res.status, "Failed to save identity");
+  }
+  return (await res.json()) as { report: IdentityApplyPatch };
+}
+
+async function acceptIdentitySuggestion(args: {
+  reportId: string;
+  comment: CommentRecord;
+  documentType: DocumentType;
+  identityCurrent: ChatIdentityReport;
+}): Promise<AcceptSuggestionResult> {
+  const payload = parseAiFixCommentContent(args.comment.content);
+  const merged = mergeIdentitySuggestion({
+    documentType: args.documentType,
+    live: args.identityCurrent,
+    base: identityBaseFromPayload(payload),
+    intent: identityIntentFromPayload(payload),
+  });
+  if (merged.status === "already_present") {
+    const dismissedContent = withResolutionReason(
+      args.comment.content,
+      "already_present"
+    );
+    try {
+      await patchCommentStatus(args.reportId, args.comment.id, "dismissed", {
+        content: dismissedContent,
+      });
+    } catch (error) {
+      return { ok: false, reason: "status_failed", error };
+    }
+    return {
+      ok: true,
+      nextSection: {},
+      dismissed: [
+        {
+          ...args.comment,
+          status: "dismissed",
+          content: dismissedContent,
+        },
+      ],
+    };
+  }
+
+  const body: IdentityApplyPatch = {};
+  if (merged.documentNo !== undefined) body.documentNo = merged.documentNo;
+  if (merged.date !== undefined) body.date = merged.date.toISOString();
+  if (merged.metadata !== undefined) body.metadata = merged.metadata;
+
+  let saved: { report: IdentityApplyPatch };
+  try {
+    saved = await patchIdentityReport(args.reportId, body);
+  } catch (error) {
+    if (error instanceof IdentityDuplicateError) {
+      return { ok: false, reason: "duplicate_document_no", error };
+    }
+    return { ok: false, reason: "save_failed", error };
+  }
+
+  try {
+    await patchCommentStatus(args.reportId, args.comment.id, "resolved");
+  } catch (error) {
+    return { ok: false, reason: "status_failed", error };
+  }
+
+  return {
+    ok: true,
+    nextSection: {},
+    dismissed: [],
+    remainder: merged.status === "conflict" ? "conflict" : undefined,
+    nextIdentity: identityPatchFromSave(body, saved.report),
+  };
+}
+
+function identityDateString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === "string" ? value : String(value);
+}
+
+/** PATCH body first so applied fields land even if the JSON report is partial. */
+function identityPatchFromSave(
+  body: IdentityApplyPatch,
+  saved: IdentityApplyPatch
+): IdentityApplyPatch {
+  const updatedAt =
+    identityDateString(saved.updatedAt) ?? new Date().toISOString();
+  return {
+    ...body,
+    ...(saved.documentNo !== undefined ? { documentNo: saved.documentNo } : {}),
+    ...(saved.date !== undefined
+      ? { date: identityDateString(saved.date) }
+      : {}),
+    ...(saved.metadata !== undefined ? { metadata: saved.metadata } : {}),
+    updatedAt,
+  };
+}
+
 /**
  * Single writer for accepting an AI suggestion from any UI surface.
  * Order: locate → apply → PATCH section → flip comment status.
@@ -376,7 +603,22 @@ export async function acceptSuggestion(args: {
   applyMode?: SuggestionApplyMode;
   /** Open siblings used to compute range-containment supersession. */
   openComments?: readonly CommentRecord[];
+  documentType?: DocumentType;
+  reportSections?: Readonly<Partial<Record<string, unknown>>>;
+  /** Live cover/header scalars — required to apply an identity card. */
+  identityCurrent?: ChatIdentityReport;
 }): Promise<AcceptSuggestionResult> {
+  if (isIdentitySuggestion(args.comment)) {
+    if (!args.documentType || !args.identityCurrent) {
+      return { ok: false, reason: "not_found" };
+    }
+    return acceptIdentitySuggestion({
+      reportId: args.reportId,
+      comment: args.comment,
+      documentType: args.documentType,
+      identityCurrent: args.identityCurrent,
+    });
+  }
   const pair = findOpenBlockPair(args.comment, args.openComments ?? []);
   const sequence =
     pair && pair.leadIn.id !== pair.block.id
@@ -390,10 +632,23 @@ export async function acceptSuggestion(args: {
   const operationsById = new Map<string, PlannedOperation[]>();
   let remainder: "conflict" | undefined;
   for (const item of uniqueSequence) {
+    const documentContents =
+      args.documentType && args.reportSections
+        ? documentContentsFromReportState({
+            documentType: args.documentType,
+            sections: {
+              ...args.reportSections,
+              [args.section]: content,
+            },
+            comments: args.openComments ?? [],
+            exceptCommentId: item.id,
+          })
+        : undefined;
     const next = applySuggestionToContent({
       ...args,
       comment: item,
       sectionContent: content,
+      documentContents,
       ignorePlaceBeforePairedBlock:
         uniqueSequence.length > 1 && item.id === uniqueSequence[0]?.id,
     });
@@ -430,6 +685,13 @@ export async function acceptSuggestion(args: {
   if (resolved.length === 0 && remainder !== "conflict") {
     return { ok: false, reason: "not_found" };
   }
+  const cascaded = applyCaptionCascadeToAppliedSection({
+    documentType: args.documentType,
+    reportSections: args.reportSections,
+    section: args.section,
+    content,
+  });
+  content = cascaded.content;
   const resolvedIds = new Set(resolved.map((item) => item.id));
   const superseded = suggestionsSupersededBy(args.comment, {
     section: args.section,
@@ -437,7 +699,12 @@ export async function acceptSuggestion(args: {
     sectionContent: args.sectionContent,
   }).filter((sibling) => !resolvedIds.has(sibling.id));
   try {
-    await patchSection(args.reportId, args.section, content);
+    await patchSectionAndRelated(
+      args.reportId,
+      args.section,
+      content,
+      cascaded.related
+    );
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
@@ -456,6 +723,7 @@ export async function acceptSuggestion(args: {
     return {
       ok: true,
       nextSection: content,
+      nextRelatedSections: cascaded.related,
       remainder: "conflict",
       dismissed,
     };
@@ -486,7 +754,13 @@ export async function acceptSuggestion(args: {
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
-  return { ok: true, nextSection: content, remainder, dismissed };
+  return {
+    ok: true,
+    nextSection: content,
+    nextRelatedSections: cascaded.related,
+    remainder,
+    dismissed,
+  };
 }
 
 /**
@@ -501,6 +775,14 @@ export async function dismissSuggestion(args: {
   sectionContent: Record<string, unknown>;
   fieldContentPath?: string;
 }): Promise<DismissSuggestionResult> {
+  if (isIdentitySuggestion(args.comment)) {
+    try {
+      await patchCommentStatus(args.reportId, args.comment.id, "dismissed");
+    } catch (error) {
+      return { ok: false, reason: "status_failed", error };
+    }
+    return { ok: true, nextSection: null };
+  }
   const nextSection = stripSuggestionFromContent(args);
   if (nextSection) {
     try {

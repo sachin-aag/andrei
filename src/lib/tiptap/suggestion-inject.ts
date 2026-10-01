@@ -108,7 +108,7 @@ export function collectPendingSuggestionMarkIds(
   const ids = new Set<string>();
 
   function visit(node: JSONContent) {
-    if (node.type === "text" && node.marks?.length) {
+    if (node.marks?.length) {
       for (const mark of node.marks) {
         if (
           mark.type !== "suggestionInsert" &&
@@ -144,6 +144,20 @@ export function richDocsMatchIgnoringAiPreview(
   return (
     JSON.stringify(stripPendingSuggestionsExcept(a, null)) ===
     JSON.stringify(stripPendingSuggestionsExcept(b, null))
+  );
+}
+
+/**
+ * True when the engineer typed visible text (not TipTap table chrome such as
+ * colwidth). Focused RTM tables otherwise look dirty and skip the first inject.
+ */
+export function richFieldHasLocalTextEdits(
+  live: JSONContent,
+  canonical: JSONContent
+): boolean {
+  return (
+    plainTextFromTiptapJson(stripPendingSuggestionsExcept(live, null)) !==
+    plainTextFromTiptapJson(stripPendingSuggestionsExcept(canonical, null))
   );
 }
 

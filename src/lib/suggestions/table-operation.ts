@@ -1,7 +1,14 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
+import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
+import {
+  ELR_TABLE_CAPTION_TITLES,
+  elrTableHeadersForSection,
+} from "@/lib/document-types/elr/sections";
+import { QSR_RTM_FAMILY_HEADERS } from "@/lib/document-types/qsr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
+import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
 import {
@@ -9,6 +16,8 @@ import {
   insertNodesIntoFieldBody,
 } from "@/lib/suggestions/block-insert";
 import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
+import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { displaySectionLabel } from "@/types/sections";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
 export type TableOperation =
@@ -20,8 +29,14 @@ export type TableOperation =
   | {
       kind: "insert_rows";
       tableIndex: number;
-      /** Omit to append after the last existing row. */
+      /** Omit to append after the last existing row. Ignored when afterRowKey matches. */
       afterRow?: number;
+      /**
+       * First-cell text of the live row to insert after (URS-16, a banner
+       * label, …). Prefer this over afterRow — numeric indexes shift after
+       * earlier inserts in the same batch.
+       */
+      afterRowKey?: string;
       rows: string[][];
       expectedRowAtAfter?: string[];
     }
@@ -62,6 +77,8 @@ export type TableOperation =
        * block that contains it. Omit to append before a trailing Citations list.
        */
       afterAnchor?: string;
+      /** Caption title. The server inserts `Table N. {title}` above the table. */
+      title?: string;
     };
 
 export type TableCellEdit = {
@@ -70,6 +87,17 @@ export type TableCellEdit = {
   /** Omit to capture the current cell before proposing. */
   expectedText?: string;
   insertText: string;
+  /**
+   * First-cell text of the live row (URS-13, a banner label, …). Prefer this
+   * over `row` — numeric indexes shift after banners or earlier inserts.
+   */
+  rowKey?: string;
+  /**
+   * Live sibling cells on this row (documentRef, system id, …). Grounding
+   * uses this to keep a date on the cited file instead of a colliding SOP.
+   * Apply also reads a URS-N / first-cell key from this when `rowKey` is omitted.
+   */
+  rowContext?: string;
 };
 
 export type TableRowDelete = {
@@ -77,9 +105,26 @@ export type TableRowDelete = {
   expectedCells: string[];
 };
 
+/** One section's JSON, in document order, used to assign `Table N`. */
+export type DocumentTableContent = {
+  section: string;
+  content: unknown;
+};
+
 export type TableOperationContext = {
   section: SectionType;
   targetField: string;
+  /**
+   * Legacy fallback: `maxCaption + 1` among already-published `Table N.`
+   * captions. Used only when `documentContents` is omitted.
+   */
+  existingTableCount?: number;
+  /**
+   * Filled tables in document order. `Table N` is this table's 1-based
+   * ordinal among data-bearing grids (empty unused shells do not count).
+   * The target is treated as filled even if it is still a shell.
+   */
+  documentContents?: readonly DocumentTableContent[];
 };
 
 export type TableOperationStatus =
@@ -88,11 +133,225 @@ export type TableOperationStatus =
   | "bad_scope"
   | "stale"
   | "fixed_schema"
-  | "invalid";
+  | "invalid"
+  | "already_present";
 
 export type TableOperationResult =
-  | { ok: true; status: "ok"; doc: JSONContent }
+  | {
+      ok: true;
+      status: "ok";
+      doc: JSONContent;
+      tableNumber?: number;
+      /** Cells that actually change the live table (identity / dummy leftovers dropped). */
+      appliedOperation?: TableOperation;
+    }
   | { ok: false; status: Exclude<TableOperationStatus, "ok">; hint: string };
+
+export const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s+/i;
+
+function tableCaptionParagraph(number: number, title: string): JSONContent {
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text: `Table ${number}. ${title.trim()}` }],
+  };
+}
+
+function walkJsonContent(
+  value: unknown,
+  visit: (node: JSONContent) => void
+): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const child of value) walkJsonContent(child, visit);
+    return;
+  }
+  const node = value as JSONContent;
+  visit(node);
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) walkJsonContent(child, visit);
+    return;
+  }
+  if (!node.type) {
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      walkJsonContent(child, visit);
+    }
+  }
+}
+
+/** Count tables and `Table N. …` captions in a TipTap doc or section JSON. */
+export function countNumberedTablesInContent(value: unknown): {
+  tableCount: number;
+  maxCaption: number;
+} {
+  let tableCount = 0;
+  let maxCaption = 0;
+  walkJsonContent(value, (node) => {
+    if (node.type === "table") {
+      tableCount += 1;
+      return;
+    }
+    if (node.type !== "paragraph") return;
+    const match = TABLE_CAPTION_RE.exec(flattenForAnchor(node).text.trim());
+    if (match) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n)) maxCaption = Math.max(maxCaption, n);
+    }
+  });
+  return { tableCount, maxCaption };
+}
+
+/**
+ * Next `Table N` is `maxCaption + 1`. Uncaptioned seeded shells do not consume N.
+ * Prefer `filledTableNumberInDocument` when assigning a caption — fill order
+ * among published captions is not document order.
+ */
+export function existingTableCountFromContents(
+  contents: readonly unknown[]
+): number {
+  let maxCaption = 0;
+  for (const content of contents) {
+    maxCaption = Math.max(
+      maxCaption,
+      countNumberedTablesInContent(content).maxCaption
+    );
+  }
+  return maxCaption;
+}
+
+function isTipTapDoc(value: unknown): value is JSONContent {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as JSONContent).type === "doc"
+  );
+}
+
+function richFieldDocsInSection(
+  section: string,
+  content: unknown
+): { field: string; doc: JSONContent }[] {
+  if (!content || typeof content !== "object") return [];
+  const paths = RICH_FIELD_PATHS[section];
+  if (paths && paths.length > 0 && !isTipTapDoc(content)) {
+    return paths.map((field) => ({
+      field,
+      doc: getRichFieldValue(content as Record<string, unknown>, field),
+    }));
+  }
+  if (isTipTapDoc(content)) {
+    return [{ field: "", doc: content }];
+  }
+  return [];
+}
+
+function walkFilledTablesInDocument(
+  contents: readonly DocumentTableContent[],
+  visit: (args: {
+    section: string;
+    field: string;
+    tableIndex: number;
+    table: JSONContent;
+  }) => boolean | void
+): void {
+  for (const row of contents) {
+    for (const { field, doc } of richFieldDocsInSection(row.section, row.content)) {
+      const tables = collectTables(doc);
+      for (let tableIndex = 0; tableIndex < tables.length; tableIndex += 1) {
+        const table = tables[tableIndex];
+        if (!table) continue;
+        if (visit({ section: row.section, field, tableIndex, table }) === false) {
+          return;
+        }
+      }
+    }
+  }
+}
+
+/** Count data-bearing tables in document order. Empty unused shells do not count. */
+export function countFilledTablesInDocument(
+  contents: readonly DocumentTableContent[]
+): number {
+  let count = 0;
+  walkFilledTablesInDocument(contents, ({ table }) => {
+    if (tableHasData(table)) count += 1;
+  });
+  return count;
+}
+
+/**
+ * Section that owns printed Table N among filled grids. Empty unused shells
+ * do not consume N — same ordinal as the context-map caption.
+ */
+export function sectionForPrintedTableNumber(
+  contents: readonly DocumentTableContent[],
+  printed: number
+): string | undefined {
+  if (!Number.isInteger(printed) || printed < 1) return undefined;
+  let ordinal = 0;
+  let found: string | undefined;
+  walkFilledTablesInDocument(contents, ({ section, table }) => {
+    if (!tableHasData(table)) return;
+    ordinal += 1;
+    if (ordinal === printed) {
+      found = section;
+      return false;
+    }
+  });
+  return found;
+}
+
+/**
+ * 1-based ordinal of the target table among filled grids in document order.
+ * The target counts even if it is still an empty shell. Missing target → undefined.
+ */
+export function filledTableNumberInDocument(args: {
+  contents: readonly DocumentTableContent[];
+  target: { section: string; targetField: string; tableIndex: number };
+}): number | undefined {
+  let ordinal = 0;
+  let found: number | undefined;
+  walkFilledTablesInDocument(args.contents, ({ section, field, tableIndex, table }) => {
+    const fieldMatches =
+      field === args.target.targetField ||
+      (field === "" &&
+        (args.target.targetField === "" ||
+          args.target.targetField === "narrative" ||
+          args.target.targetField === "table"));
+    const matched =
+      section === args.target.section &&
+      fieldMatches &&
+      tableIndex === args.target.tableIndex;
+    if (!tableHasData(table) && !matched) return;
+    ordinal += 1;
+    if (matched) {
+      found = ordinal;
+      return false;
+    }
+  });
+  return found;
+}
+
+function expectedTableNumber(
+  doc: JSONContent,
+  tableIndex: number,
+  context?: TableOperationContext
+): number {
+  if (context?.documentContents) {
+    return (
+      filledTableNumberInDocument({
+        contents: context.documentContents,
+        target: {
+          section: context.section,
+          targetField: context.targetField,
+          tableIndex,
+        },
+      }) ?? countFilledTablesInDocument(context.documentContents) + 1
+    );
+  }
+  return (
+    (context?.existingTableCount ?? existingTableCountFromContents([doc])) + 1
+  );
+}
 
 const EMPTY_CELL_LABEL = "(empty)";
 
@@ -102,12 +361,257 @@ const DEFAULT_CELL_ATTRS = {
   colwidth: null,
 } as const;
 
-/** True when this field is a seeded DV matrix with a locked column schema. */
+/** True when this field is a seeded matrix with a locked column schema. */
 export function isFixedColumnTable(
   section: string,
   targetField: string
 ): boolean {
-  return targetField === "table" && dvTableHeadersForSection(section).length > 0;
+  if (targetField !== "table") return false;
+  return (
+    dvTableHeadersForSection(section).length > 0 ||
+    elrTableHeadersForSection(section).length > 0
+  );
+}
+
+export function defaultTableCaptionTitle(section: string): string {
+  const elrTitle =
+    ELR_TABLE_CAPTION_TITLES[section as keyof typeof ELR_TABLE_CAPTION_TITLES];
+  return elrTitle ?? displaySectionLabel(section);
+}
+
+function captionMatch(node: JSONContent | undefined): number | null {
+  if (!node || node.type !== "paragraph") return null;
+  const match = TABLE_CAPTION_RE.exec(flattenForAnchor(node).text.trim());
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Caption number sitting immediately above this table, if any. */
+export function captionNumberAboveTable(
+  doc: JSONContent | null | undefined,
+  tableIndex: number
+): number | null {
+  if (!doc) return null;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return null;
+  return captionMatch(location.parent.content[location.index - 1]);
+}
+
+function tableHasData(table: JSONContent): boolean {
+  const rows = tableRows(table);
+  for (let i = 1; i < rows.length; i += 1) {
+    for (const cell of rowCells(rows[i]!)) {
+      if (cellPlainText(cell)) return true;
+    }
+  }
+  return false;
+}
+
+function captionTitleFromParagraph(node: JSONContent): string {
+  const text = flattenForAnchor(node).text.trim();
+  const match = TABLE_CAPTION_RE.exec(text);
+  if (!match) return "";
+  return text.slice(match[0].length).trim();
+}
+
+function writeCaptionParagraph(
+  node: JSONContent,
+  number: number,
+  title: string
+): void {
+  node.type = "paragraph";
+  node.content = [{ type: "text", text: `Table ${number}. ${title.trim()}` }];
+}
+
+/**
+ * Insert or rewrite `Table N. {title}` immediately above a filled table.
+ * With `documentContents`, N is the filled-grid ordinal and a stale caption
+ * is rewritten. Without it, an existing caption is kept (fill-order fallback).
+ */
+export function ensureCaptionOnFilledTable(
+  doc: JSONContent,
+  tableIndex: number,
+  context?: TableOperationContext
+): { doc: JSONContent; tableNumber?: number } {
+  const tables = collectTables(doc);
+  const table = tables[tableIndex];
+  if (!table || !tableHasData(table)) return { doc };
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return { doc };
+  const defaultTitle = defaultTableCaptionTitle(context?.section ?? "");
+  const existingCaption = captionNumberAboveTable(doc, tableIndex);
+  const useDocumentOrder = Boolean(context?.documentContents);
+  const tableNumber = expectedTableNumber(doc, tableIndex, context);
+  if (existingCaption !== null) {
+    if (!useDocumentOrder || existingCaption === tableNumber) {
+      return { doc, tableNumber: useDocumentOrder ? tableNumber : existingCaption };
+    }
+    const captionNode = location.parent.content[location.index - 1];
+    if (captionNode) {
+      const title =
+        captionTitleFromParagraph(captionNode) || defaultTitle;
+      writeCaptionParagraph(captionNode, tableNumber, title);
+    }
+    return { doc, tableNumber };
+  }
+  location.parent.content.splice(
+    location.index,
+    0,
+    tableCaptionParagraph(tableNumber, defaultTitle)
+  );
+  return { doc, tableNumber };
+}
+
+/** Drop a leftover `Table N.` paragraph above an empty unused grid. */
+function stripCaptionAboveEmptyTable(
+  doc: JSONContent,
+  tableIndex: number
+): boolean {
+  const table = collectTables(doc)[tableIndex];
+  if (!table || tableHasData(table)) return false;
+  const location = collectTableLocations(doc)[tableIndex];
+  if (!location?.parent.content) return false;
+  if (captionMatch(location.parent.content[location.index - 1]) === null) {
+    return false;
+  }
+  location.parent.content.splice(location.index - 1, 1);
+  return true;
+}
+
+/**
+ * Word-style SEQ: rewrite every filled-grid caption to 1..N in document
+ * order (keep the title after `Table N. `) and strip captions on empty shells.
+ */
+export function renumberFilledTableCaptions(
+  contents: readonly DocumentTableContent[]
+): {
+  contents: DocumentTableContent[];
+  changedSections: string[];
+} {
+  const next: DocumentTableContent[] = contents.map((row) => ({
+    section: row.section,
+    content: structuredClone(row.content),
+  }));
+
+  for (const row of next) {
+    if (!row.content || typeof row.content !== "object") continue;
+    for (const { field, doc } of richFieldDocsInSection(
+      row.section,
+      row.content
+    )) {
+      const working = structuredClone(doc);
+      const tableCount = collectTables(working).length;
+      for (let tableIndex = 0; tableIndex < tableCount; tableIndex += 1) {
+        const table = collectTables(working)[tableIndex];
+        if (!table) continue;
+        if (tableHasData(table)) {
+          ensureCaptionOnFilledTable(working, tableIndex, {
+            section: row.section,
+            targetField: field || "narrative",
+            documentContents: next,
+          });
+        } else {
+          stripCaptionAboveEmptyTable(working, tableIndex);
+        }
+      }
+      if (field === "") {
+        row.content = working;
+      } else {
+        row.content = setRichFieldValue(
+          row.content as Record<string, unknown>,
+          field,
+          working
+        );
+      }
+    }
+  }
+
+  const changedSections: string[] = [];
+  for (let index = 0; index < contents.length; index += 1) {
+    const before = contents[index];
+    const after = next[index];
+    if (!before || !after) continue;
+    if (JSON.stringify(before.content) !== JSON.stringify(after.content)) {
+      changedSections.push(after.section);
+    }
+  }
+  return { contents: next, changedSections };
+}
+
+function markdownTableHasData(markdown: string): boolean {
+  const rows = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|"));
+  for (const line of rows.slice(2)) {
+    const cells = line
+      .split("|")
+      .slice(1, -1)
+      .map((cell) => cell.trim())
+      .filter((cell) => cell.length > 0 && !/^:?-{3,}:?$/.test(cell));
+    if (cells.length > 0) return true;
+  }
+  return false;
+}
+
+/** Prepend or rewrite `Table N. {title}` on GFM when rewriting a filled table field. */
+export function prefixTableCaptionMarkdown(
+  markdown: string,
+  existingTableCount: number,
+  title: string,
+  tableNumber?: number
+): { markdown: string; tableNumber?: number } {
+  const leading = markdown.match(/^\s*/)?.[0] ?? "";
+  const trimmed = markdown.replace(/^\s+/, "");
+  const lines = trimmed.split(/\r?\n/);
+  const firstLine = lines[0]?.trim() ?? "";
+  const match = TABLE_CAPTION_RE.exec(firstLine);
+  const expected = tableNumber ?? existingTableCount + 1;
+  if (match) {
+    const n = Number(match[1]);
+    if (tableNumber === undefined || !Number.isFinite(n) || n === tableNumber) {
+      return {
+        markdown,
+        tableNumber: Number.isFinite(n) ? n : undefined,
+      };
+    }
+    const restTitle = firstLine.slice(match[0].length).trim() || title.trim();
+    lines[0] = `Table ${tableNumber}. ${restTitle}`;
+    return {
+      markdown: `${leading}${lines.join("\n")}`,
+      tableNumber,
+    };
+  }
+  if (!markdownTableHasData(markdown)) return { markdown };
+  return {
+    markdown: `Table ${expected}. ${title.trim()}\n\n${trimmed}`,
+    tableNumber: expected,
+  };
+}
+
+function captionAfterFill(
+  result: TableOperationResult,
+  tableIndex: number,
+  context?: TableOperationContext
+): TableOperationResult {
+  if (!result.ok) return result;
+  const captioned = ensureCaptionOnFilledTable(
+    result.doc,
+    tableIndex,
+    context
+  );
+  return {
+    ok: true,
+    status: "ok",
+    doc: captioned.doc,
+    ...(captioned.tableNumber !== undefined
+      ? { tableNumber: captioned.tableNumber }
+      : {}),
+    ...(result.appliedOperation
+      ? { appliedOperation: result.appliedOperation }
+      : {}),
+  };
 }
 
 export function normalizeTableCellText(text: string): string {
@@ -130,6 +634,434 @@ function rowCells(row: JSONContent): JSONContent[] {
 
 function tableRows(table: JSONContent): JSONContent[] {
   return (table.content ?? []).filter((n) => n.type === "tableRow");
+}
+
+function cellColspan(cell: JSONContent): number {
+  const raw = cell.attrs?.colspan;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : 1;
+}
+
+function visualColumnCount(row: JSONContent): number {
+  return rowCells(row).reduce((sum, cell) => sum + cellColspan(cell), 0);
+}
+
+/** One physical cell that spans the full header width. */
+export function isBannerTableRow(row: JSONContent): boolean {
+  const cells = rowCells(row);
+  return cells.length === 1 && cellColspan(cells[0]!) > 1;
+}
+
+function headerColumnCount(table: JSONContent): number {
+  const header = tableRows(table)[0];
+  if (!header) return 0;
+  return Math.max(visualColumnCount(header), rowCells(header).length);
+}
+
+function firstCellText(row: JSONContent): string {
+  const cell = rowCells(row)[0];
+  return cell ? cellPlainText(cell) : "";
+}
+
+function rowsMatchingAfterKey(
+  rows: readonly JSONContent[],
+  key: string
+): number[] {
+  const wanted = normalizeTableCellText(key);
+  if (!wanted) return [];
+  const hits: number[] = [];
+  rows.forEach((row, index) => {
+    if (firstCellText(row) === wanted) hits.push(index);
+  });
+  return hits;
+}
+
+export type ResolveInsertAfterRowResult =
+  | { ok: true; afterRow: number }
+  | { ok: false; status: "bad_scope" | "invalid"; hint: string };
+
+/** Resolve insert_rows afterRowKey (preferred) or afterRow against live rows. */
+export function resolveInsertAfterRow(
+  rows: readonly JSONContent[],
+  operation: Extract<TableOperation, { kind: "insert_rows" }>
+): ResolveInsertAfterRowResult {
+  const key = operation.afterRowKey?.trim() ?? "";
+  if (key) {
+    const hits = rowsMatchingAfterKey(rows, key);
+    if (hits.length === 0) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint: `afterRowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`,
+      };
+    }
+    if (hits.length > 1) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint: `afterRowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`,
+      };
+    }
+    return { ok: true, afterRow: hits[0]! };
+  }
+  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
+  if (afterRow < 0 || afterRow >= rows.length) {
+    return {
+      ok: false,
+      status: "bad_scope",
+      hint: `afterRow ${afterRow} does not exist. Re-read with read_section.`,
+    };
+  }
+  return { ok: true, afterRow };
+}
+
+const URS_ROW_KEY_RE = /\bURS-\d+\b/i;
+
+function firstContextLine(context: string): string {
+  return normalizeTableCellText(context.split(/\n/)[0] ?? "");
+}
+
+/**
+ * Live first-cell identity for an edit_cells target. URS-N wins over a stale
+ * numeric row so a targeted URS-13 edit still lands after banners or inserts.
+ */
+export function inferEditCellRowKey(
+  cell: TableCellEdit,
+  rows: readonly JSONContent[]
+): string {
+  const explicit = normalizeTableCellText(cell.rowKey ?? "");
+  if (explicit) return explicit;
+  const context = cell.rowContext ?? "";
+  const urs = context.match(URS_ROW_KEY_RE);
+  if (urs) return normalizeTableCellText(urs[0]!);
+  // Only when the numeric row exists — an out-of-range row with col-0
+  // expectedText "a" must stay bad_scope, not rematch onto the "a" row.
+  if (cell.col === 0 && cell.row >= 0 && cell.row < rows.length) {
+    for (const candidate of [cell.expectedText, cell.insertText]) {
+      const key = normalizeTableCellText(candidate ?? "");
+      if (key && rowsMatchingAfterKey(rows, key).length === 1) return key;
+    }
+  }
+  const firstLine = firstContextLine(context);
+  if (firstLine && rowsMatchingAfterKey(rows, firstLine).length === 1) {
+    return firstLine;
+  }
+  return "";
+}
+
+export type ResolveEditCellsResult =
+  | { ok: true; cells: TableCellEdit[] }
+  | {
+      ok: false;
+      status: "bad_scope" | "stale" | "invalid" | "already_present" | "fixed_schema";
+      hint: string;
+    };
+
+function nextCellText(cell: TableCellEdit): string {
+  return normalizeTableCellText(normalizeSuggestionInsertText(cell.insertText));
+}
+
+/**
+ * Whole-cell leftover tokens, including HTML-shaped labels such as
+ * `<section>` that live placeholder scanning skips.
+ */
+export function isLeftoverPlaceholderCellText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/^<[^<>]+>$/.test(trimmed)) return true;
+  return collectPlaceholderSpans(trimmed).length > 0;
+}
+
+function liveCellIsEmpty(text: string): boolean {
+  const live = normalizeTableCellText(text);
+  return !live || isLeftoverPlaceholderCellText(live);
+}
+
+/** After a table-placeholder lookup bounce, these three may persist. */
+const PERSISTED_TABLE_LOOKUP_PLACEHOLDERS = new Set([
+  "<date>",
+  "<identifier>",
+  "<number>",
+]);
+
+function isPersistedLookupPlaceholder(text: string): boolean {
+  return PERSISTED_TABLE_LOOKUP_PLACEHOLDERS.has(text.trim().toLowerCase());
+}
+
+function isDroppableLeftoverPlaceholderCell(text: string): boolean {
+  return (
+    isLeftoverPlaceholderCellText(text) && !isPersistedLookupPlaceholder(text)
+  );
+}
+
+function blankLeftoverPlaceholderCells(values: readonly string[]): string[] {
+  return values.map((value) =>
+    isDroppableLeftoverPlaceholderCell(value) ? "" : value
+  );
+}
+
+/** Drop leftover `<…>` cells so they never persist, except gated lookup tokens. */
+export function dropLeftoverPlaceholderCells(
+  operation: TableOperation
+): TableOperation {
+  switch (operation.kind) {
+    case "edit_cells":
+      return {
+        ...operation,
+        cells: operation.cells.filter(
+          (cell) => !isDroppableLeftoverPlaceholderCell(cell.insertText)
+        ),
+      };
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map(blankLeftoverPlaceholderCells),
+      };
+    case "create_table":
+      return {
+        ...operation,
+        rows: operation.rows?.map(blankLeftoverPlaceholderCells),
+      };
+    case "insert_column":
+      return {
+        ...operation,
+        values: operation.values
+          ? blankLeftoverPlaceholderCells(operation.values)
+          : operation.values,
+      };
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
+function agreedSiblingRowKey(
+  keysByOriginalRow: Map<number, Set<string>>,
+  originalRow: number
+): string {
+  const keys = keysByOriginalRow.get(originalRow);
+  if (!keys || keys.size !== 1) return "";
+  return [...keys][0] ?? "";
+}
+
+/** Family / Remarks indexes on a QSR RTM header row (legacy Stage/Section too). */
+function qsrRtmReferenceColumns(
+  headers: readonly string[]
+): ReadonlySet<number> | null {
+  const cols = new Set<number>();
+  const families = new Set<string>(QSR_RTM_FAMILY_HEADERS);
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i]!;
+    const name = header.toLowerCase();
+    if (name === "remarks" || families.has(header)) cols.add(i);
+    else if (name.includes("qualification stage")) cols.add(i);
+    else if (name.includes("reference") && name.includes("section")) {
+      cols.add(i);
+    }
+  }
+  return cols.size > 0 ? cols : null;
+}
+
+/**
+ * Rematch each edit_cells cell onto its own live URS / first-cell row, then
+ * drop cells whose insertText already equals the live cell (identity). Empty
+ * leftover → already_present.
+ *
+ * Do not group by the numeric `row` and reuse the first inferred key: the
+ * model often repeats one dummy row for every URS while `rowKey` differs.
+ * An unkeyed sibling on the same numeric row inherits a key only when every
+ * keyed sibling on that dummy row agrees.
+ *
+ * One already-filled or stale cell must not fail the whole batch: a 23-cell
+ * "fill missing" card that hits two live Stage values would otherwise mark
+ * the suggestion stale and skip inline preview for the empty remainder.
+ * A mixed fill-empty batch also skips rewriting filled cells so the empty
+ * remainder still lands; a batch that only rewrites filled cells still applies.
+ * QSR RTM family columns and Remarks are the exception: a follow-up may
+ * overwrite a filled number with the cited heading (13.6 → 13.6 – Gasket material verified as PTFE).
+ */
+export function resolveEditCells(
+  rows: readonly JSONContent[],
+  cells: readonly TableCellEdit[],
+  options?: { fixedColumns?: boolean }
+): ResolveEditCellsResult {
+  if (cells.length === 0) {
+    return {
+      ok: false,
+      status: "invalid",
+      hint: "edit_cells requires at least one cell.",
+    };
+  }
+
+  const inferredKeys = cells.map((cell) => inferEditCellRowKey(cell, rows));
+  const keysByOriginalRow = new Map<number, Set<string>>();
+  cells.forEach((cell, index) => {
+    const inferred = inferredKeys[index];
+    if (!inferred) return;
+    const group = keysByOriginalRow.get(cell.row) ?? new Set<string>();
+    group.add(inferred);
+    keysByOriginalRow.set(cell.row, group);
+  });
+
+  const remapped: TableCellEdit[] = [];
+  const skipExpectedFor = new Set<string>();
+  let lastScopeHint = "";
+  for (let index = 0; index < cells.length; index += 1) {
+    const cell = cells[index]!;
+    const key =
+      inferredKeys[index] || agreedSiblingRowKey(keysByOriginalRow, cell.row);
+    let liveRow = cell.row;
+    if (key) {
+      const hits = rowsMatchingAfterKey(rows, key);
+      if (hits.length === 0) {
+        lastScopeHint = `rowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`;
+        continue;
+      }
+      if (hits.length > 1) {
+        lastScopeHint = `rowKey "${key}" matches rows ${hits.join(", ")}. Quote a unique first-cell value.`;
+        continue;
+      }
+      liveRow = hits[0]!;
+    }
+    if (liveRow < 0 || liveRow >= rows.length) {
+      lastScopeHint = `Row ${liveRow} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`;
+      continue;
+    }
+    const rematchedAway = Boolean(key) && liveRow !== cell.row;
+    remapped.push({
+      ...cell,
+      row: liveRow,
+      ...(key ? { rowKey: key } : {}),
+    });
+    if (rematchedAway) skipExpectedFor.add(`${liveRow},${cell.col}`);
+  }
+
+  if (remapped.length === 0) {
+    return {
+      ok: false,
+      status: "bad_scope",
+      hint:
+        lastScopeHint ||
+        "No edit_cells target resolved to a live row. Copy the first-cell text from read_section.",
+    };
+  }
+
+  const firstNextByCoord = new Map<string, string>();
+  const changing: TableCellEdit[] = [];
+  const headers = rows[0] ? rowSnapshot(rows[0]) : [];
+  let sawIdentity = false;
+  let sawStale = false;
+  let sawMissing = false;
+  for (const cell of remapped) {
+    const coord = `${cell.row},${cell.col}`;
+    const row = rows[cell.row];
+    if (!row) {
+      sawMissing = true;
+      lastScopeHint = `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`;
+      continue;
+    }
+    const node = rowCells(row)[cell.col];
+    if (!node) {
+      sawMissing = true;
+      lastScopeHint = `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headers)}`;
+      continue;
+    }
+    if (options?.fixedColumns && cell.row === 0) {
+      const nextText = nextCellText(cell);
+      const current = cellPlainText(node);
+      if (nextText !== current) {
+        return {
+          ok: false,
+          status: "fixed_schema",
+          hint: "This matrix has a fixed column schema. Do not rename header cells.",
+        };
+      }
+    }
+    const live = cellPlainText(node);
+    const next = nextCellText(cell);
+    const firstNext = firstNextByCoord.get(coord);
+    if (firstNext !== undefined) {
+      if (firstNext === next) continue;
+      return {
+        ok: false,
+        status: "invalid",
+        hint: `Duplicate cell target [${cell.row},${cell.col}].`,
+      };
+    }
+    firstNextByCoord.set(coord, next);
+    if (next === live) {
+      sawIdentity = true;
+      continue;
+    }
+    const rematchedAway = skipExpectedFor.has(coord);
+    // When rowKey rematched onto a different live row, expectedText was
+    // snapshotted from the stale numeric index — the row key is the
+    // concurrency token, not that leftover cell text.
+    if (cell.expectedText !== undefined && !rematchedAway) {
+      const expected = normalizeTableCellText(cell.expectedText);
+      if (live !== expected) {
+        sawStale = true;
+        continue;
+      }
+    }
+    // Dummy-row fill (expectedText "") rematched onto a cell that already
+    // has different text — drop it; do not overwrite, and do not fail the
+    // rest of the batch.
+    if (rematchedAway) {
+      const expected = normalizeTableCellText(cell.expectedText ?? "");
+      if (expected === "" && live !== "") {
+        sawStale = true;
+        continue;
+      }
+    }
+    changing.push(cell);
+  }
+  const fillsEmpty: TableCellEdit[] = [];
+  const rewritesFilled: TableCellEdit[] = [];
+  for (const cell of changing) {
+    const node = rowCells(rows[cell.row]!)[cell.col];
+    const live = node ? cellPlainText(node) : "";
+    if (liveCellIsEmpty(live)) fillsEmpty.push(cell);
+    else rewritesFilled.push(cell);
+  }
+  const rtmCols = qsrRtmReferenceColumns(headers);
+  const applied =
+    fillsEmpty.length > 0 && rewritesFilled.length > 0
+      ? [
+          ...fillsEmpty,
+          ...rewritesFilled.filter((cell) => rtmCols?.has(cell.col) === true),
+        ]
+      : changing;
+  if (applied.length === 0) {
+    if (sawStale && !sawIdentity) {
+      return {
+        ok: false,
+        status: "stale",
+        hint: "Cell values no longer match expectedText. Re-read with read_section.",
+      };
+    }
+    if (!sawIdentity && sawMissing) {
+      return {
+        ok: false,
+        status: "bad_scope",
+        hint:
+          lastScopeHint ||
+          "No edit_cells target resolved to a live cell. Re-read with read_section.",
+      };
+    }
+    return {
+      ok: false,
+      status: "already_present",
+      hint: "Those cells already have the proposed text. Re-read with read_section and edit a cell that still needs a change.",
+    };
+  }
+  return { ok: true, cells: applied };
 }
 
 type TableLocation = {
@@ -222,6 +1154,34 @@ function cellsMatch(
   );
 }
 
+/**
+ * `insert_rows` snapshots the live anchor row at persist. Apply-all (and
+ * sequential Apply) may fill that empty seeded row first via a sibling
+ * `edit_cells`. Previously empty snapshot cells may now have text; filled
+ * snapshot cells must still match or the insert is stale.
+ */
+function expectedRowAtAfterStillValid(
+  actual: readonly string[],
+  expected: readonly string[] | undefined
+): boolean {
+  if (!expected) return true;
+  const exp0 = normalizeTableCellText(expected[0] ?? "");
+  if (exp0.length > 0 && (actual[0] ?? "") !== exp0) return false;
+  if (actual.length !== expected.length) {
+    const restEmpty = expected
+      .slice(1)
+      .every((cell) => normalizeTableCellText(cell).length === 0);
+    return exp0.length > 0 && restEmpty;
+  }
+  if (cellsMatch(actual, expected)) return true;
+  for (let i = 0; i < expected.length; i++) {
+    const exp = normalizeTableCellText(expected[i] ?? "");
+    if (exp.length === 0) continue;
+    if ((actual[i] ?? "") !== exp) return false;
+  }
+  return true;
+}
+
 function cellParagraphFromText(text: string): JSONContent {
   const normalized = normalizeSuggestionInsertText(text);
   if (!normalized) return { type: "paragraph" };
@@ -259,6 +1219,26 @@ function templateAttrs(cells: JSONContent[], index: number): JSONContent["attrs"
   return template?.attrs ? structuredClone(template.attrs) : { ...DEFAULT_CELL_ATTRS };
 }
 
+/** Copy paint attrs from a data row; never inherit a banner colspan/rowspan. */
+function dataCellAttrs(
+  templateCells: JSONContent[],
+  index: number
+): JSONContent["attrs"] {
+  const attrs = templateAttrs(templateCells, index) ?? { ...DEFAULT_CELL_ATTRS };
+  return { ...attrs, colspan: 1, rowspan: 1 };
+}
+
+function dataTemplateCells(
+  rows: readonly JSONContent[],
+  afterRow: number
+): JSONContent[] {
+  for (let i = afterRow; i >= 1; i -= 1) {
+    const cells = rowCells(rows[i]!);
+    if (cells.length > 1 && !isBannerTableRow(rows[i]!)) return cells;
+  }
+  return rowCells(rows[0] ?? { type: "tableRow", content: [] });
+}
+
 /**
  * Fill optional concurrency snapshots from the current table before a proposal
  * is persisted. This keeps model input concise while preserving stale-edit
@@ -277,21 +1257,44 @@ export function captureTableOperationSnapshots(
   const headers = headersOf(table);
 
   switch (captured.kind) {
-    case "edit_cells":
-      captured.cells = captured.cells.map((cell) => {
-        if (cell.expectedText !== undefined) return cell;
+    case "edit_cells": {
+      const resolved = resolveEditCells(rows, captured.cells);
+      const cells = resolved.ok ? resolved.cells : captured.cells;
+      captured.cells = cells.map((cell) => {
         const row = rows[cell.row];
         const node = row ? rowCells(row)[cell.col] : undefined;
-        return node ? { ...cell, expectedText: cellPlainText(node) } : cell;
+        const rowContext =
+          cell.rowContext ??
+          (row ? rowSnapshot(row).filter(Boolean).join("\n") : undefined);
+        const rowKey =
+          cell.rowKey ??
+          (row ? inferEditCellRowKey(cell, rows) || firstCellText(row) : undefined);
+        return {
+          ...cell,
+          ...(rowKey ? { rowKey } : {}),
+          ...(rowContext ? { rowContext } : {}),
+          ...(node ? { expectedText: cellPlainText(node) } : {}),
+        };
       });
       return captured;
+    }
     case "insert_rows": {
-      if (captured.afterRow === undefined) {
+      const resolved = resolveInsertAfterRow(rows, captured);
+      if (resolved.ok) {
+        captured.afterRow = resolved.afterRow;
+        if (captured.expectedRowAtAfter === undefined) {
+          const anchor = rows[resolved.afterRow];
+          if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        }
+      } else if (
+        captured.afterRow === undefined &&
+        !captured.afterRowKey?.trim()
+      ) {
         captured.afterRow = Math.max(0, rows.length - 1);
-      }
-      if (captured.expectedRowAtAfter === undefined) {
-        const anchor = rows[captured.afterRow];
-        if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        if (captured.expectedRowAtAfter === undefined) {
+          const anchor = rows[captured.afterRow];
+          if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+        }
       }
       return captured;
     }
@@ -370,6 +1373,15 @@ function applyCreateTable(
       })),
     ],
   };
+  const title = operation.title?.trim() ?? "";
+  const existing = context?.documentContents
+    ? countFilledTablesInDocument(context.documentContents)
+    : (context?.existingTableCount ?? existingTableCountFromContents([doc]));
+  const tableNumber = title ? existing + 1 : undefined;
+  const nodes: JSONContent[] =
+    title && tableNumber !== undefined
+      ? [tableCaptionParagraph(tableNumber, title), table]
+      : [table];
   const afterAnchor = operation.afterAnchor?.trim() ?? "";
   if (afterAnchor) {
     const located = topLevelIndexAfterAnchor(doc, afterAnchor);
@@ -381,11 +1393,11 @@ function applyCreateTable(
           : "afterAnchor was not found in the field. Call read_section and quote a unique span, or omit afterAnchor to append before Citations."
       );
     }
-    insertNodesAfterTopLevelIndex(doc, located.index, [table]);
-    return { ok: true, status: "ok", doc };
+    insertNodesAfterTopLevelIndex(doc, located.index, nodes);
+    return { ok: true, status: "ok", doc, tableNumber };
   }
-  insertNodesIntoFieldBody(doc, [table]);
-  return { ok: true, status: "ok", doc };
+  insertNodesIntoFieldBody(doc, nodes);
+  return { ok: true, status: "ok", doc, tableNumber };
 }
 
 export function applyTableOperation(
@@ -419,9 +1431,17 @@ export function applyTableOperation(
 
   switch (operation.kind) {
     case "edit_cells":
-      return applyEditCells(next, table, operation, fixedColumns);
+      return captionAfterFill(
+        applyEditCells(next, table, operation, fixedColumns),
+        operation.tableIndex,
+        context
+      );
     case "insert_rows":
-      return applyInsertRows(next, table, operation);
+      return captionAfterFill(
+        applyInsertRows(next, table, operation),
+        operation.tableIndex,
+        context
+      );
     case "delete_rows":
       return applyDeleteRows(next, table, operation);
     case "delete_table":
@@ -439,7 +1459,11 @@ export function applyTableOperation(
           "This matrix has a fixed column schema. Do not add columns. Edit cells or insert rows instead."
         );
       }
-      return applyInsertColumn(next, table, operation);
+      return captionAfterFill(
+        applyInsertColumn(next, table, operation),
+        operation.tableIndex,
+        context
+      );
     case "delete_column":
       if (fixedColumns) {
         return fail(
@@ -461,59 +1485,21 @@ function applyEditCells(
   operation: Extract<TableOperation, { kind: "edit_cells" }>,
   fixedColumns: boolean
 ): TableOperationResult {
-  if (operation.cells.length === 0) {
-    return fail("invalid", "edit_cells requires at least one cell.");
-  }
-  const seen = new Set<string>();
   const rows = tableRows(table);
-  for (const cell of operation.cells) {
-    const key = `${cell.row},${cell.col}`;
-    if (seen.has(key)) {
-      return fail("invalid", `Duplicate cell target [${cell.row},${cell.col}].`);
-    }
-    seen.add(key);
-    const row = rows[cell.row];
-    if (!row) {
-      return fail(
-        "bad_scope",
-        `Row ${cell.row} does not exist (table has ${rows.length} row(s), 0-based). Seeded matrices have a header (row 0) and one empty data row (row 1). Use insert_rows to add more data rows, then edit_cells.`
-      );
-    }
-    const cells = rowCells(row);
-    const node = cells[cell.col];
-    if (!node) {
-      return fail(
-        "bad_scope",
-        `Cell [${cell.row},${cell.col}] does not exist. ${liveHeadersHint(headersOf(table))}`
-      );
-    }
-    if (fixedColumns && cell.row === 0) {
-      const nextText = normalizeTableCellText(
-        normalizeSuggestionInsertText(cell.insertText)
-      );
-      const current = cellPlainText(node);
-      if (nextText !== current) {
-        return fail(
-          "fixed_schema",
-          "This matrix has a fixed column schema. Do not rename header cells."
-        );
-      }
-    }
-    if (cell.expectedText !== undefined) {
-      const expected = normalizeTableCellText(cell.expectedText);
-      if (cellPlainText(node) !== expected) {
-        return fail(
-          "stale",
-          `Cell [${cell.row},${cell.col}] no longer matches expectedText. Re-read with read_section.`
-        );
-      }
-    }
+  const resolved = resolveEditCells(rows, operation.cells, { fixedColumns });
+  if (!resolved.ok) {
+    return fail(resolved.status, resolved.hint);
   }
-  for (const cell of operation.cells) {
+  for (const cell of resolved.cells) {
     const node = rowCells(rows[cell.row]!)[cell.col]!;
     setCellText(node, cell.insertText);
   }
-  return { ok: true, status: "ok", doc };
+  return {
+    ok: true,
+    status: "ok",
+    doc,
+    appliedOperation: { ...operation, cells: resolved.cells },
+  };
 }
 
 function applyInsertRows(
@@ -525,37 +1511,40 @@ function applyInsertRows(
     return fail("invalid", "insert_rows requires at least one row.");
   }
   const rows = tableRows(table);
-  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
-  if (afterRow < 0 || afterRow >= rows.length) {
-    return fail(
-      "bad_scope",
-      `afterRow ${afterRow} does not exist. Re-read with read_section.`
-    );
+  const resolved = resolveInsertAfterRow(rows, operation);
+  if (!resolved.ok) {
+    return fail(resolved.status, resolved.hint);
   }
+  const afterRow = resolved.afterRow;
   const anchor = rows[afterRow]!;
-  if (!cellsMatch(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
+  if (!expectedRowAtAfterStillValid(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
-      `Row ${operation.afterRow} no longer matches the expected snapshot. Re-read with read_section.`
+      `Row ${afterRow} no longer matches the expected snapshot. Re-read with read_section.`
     );
   }
-  const headerCols = rows[0] ? rowCells(rows[0]).length : 0;
-  const colCount = Math.max(rowCells(anchor).length, headerCols);
-  if (colCount === 0) {
+  const visualCols = headerColumnCount(table);
+  const templateCells = dataTemplateCells(rows, afterRow);
+  const headerPhysical = rows[0] ? rowCells(rows[0]).length : 0;
+  const dataCols =
+    visualCols === headerPhysical
+      ? visualCols
+      : templateCells.length || headerPhysical;
+  if (visualCols === 0 && dataCols === 0) {
     return fail("invalid", "Cannot insert into a table with no columns.");
   }
   for (const [i, row] of operation.rows.entries()) {
-    if (row.length !== colCount) {
+    if (row.length !== dataCols) {
       return fail(
         "invalid",
-        `Inserted row ${i} has ${row.length} cell(s); the table has ${colCount} column(s). ${liveHeadersHint(headersOf(table))}`
+        `Inserted row ${i} has ${row.length} cell(s); the table has ${dataCols} column(s). ${liveHeadersHint(headersOf(table))}`
       );
     }
   }
-  const newRows = operation.rows.map((cells) => ({
+  const newRows = operation.rows.map((row) => ({
     type: "tableRow" as const,
-    content: cells.map((text, col) =>
-      makeCell("tableCell", text, templateAttrs(rowCells(anchor), col))
+    content: row.map((text, col) =>
+      makeCell("tableCell", text, dataCellAttrs(templateCells, col))
     ),
   }));
   const content = [...(table.content ?? [])];
@@ -643,8 +1632,12 @@ function applyDeleteTable(
   if (!location.parent.content) {
     return fail("invalid", "Cannot remove this table.");
   }
+  const remove = new Set([location.index]);
+  if (captionMatch(location.parent.content[location.index - 1]) !== null) {
+    remove.add(location.index - 1);
+  }
   location.parent.content = location.parent.content.filter(
-    (_, index) => index !== location.index
+    (_, index) => !remove.has(index)
   );
   return {
     ok: true,
@@ -818,6 +1811,33 @@ function nestedKindPayload(
   return null;
 }
 
+/** `{ insert_rows: [row, row] }` — an array, not `{ insert_rows: { rows } }`. */
+function nestedInsertRowsAlias(
+  raw: Record<string, unknown>
+): unknown[] | null {
+  if (Array.isArray(raw.insert_rows) && raw.insert_rows.length > 0) {
+    return raw.insert_rows;
+  }
+  for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
+    if (mapped !== "insert_rows") continue;
+    const nested = raw[alias];
+    if (Array.isArray(nested) && nested.length > 0) return nested;
+  }
+  return null;
+}
+
+function stripNestedKindKeys(
+  raw: Record<string, unknown>,
+  kind: TableOperationKind
+): Record<string, unknown> {
+  const rest = { ...raw };
+  delete rest[kind];
+  for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
+    if (mapped === kind) delete rest[alias];
+  }
+  return rest;
+}
+
 /**
  * Models often nest the op: `{ create_table: { headers, rows } }` instead of
  * `{ kind: "create_table", headers, rows }`. Hoist that object onto the root.
@@ -839,12 +1859,17 @@ function hoistNestedTableKind(
   if (existingKind) {
     const nested = nestedKindPayload(current, existingKind);
     if (nested) {
-      const rest = { ...current };
-      delete rest[existingKind];
-      for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
-        if (mapped === existingKind) delete rest[alias];
+      return { ...nested, ...stripNestedKindKeys(current, existingKind), kind: existingKind };
+    }
+    if (existingKind === "insert_rows") {
+      const nestedRows = nestedInsertRowsAlias(current);
+      if (nestedRows && (!Array.isArray(current.rows) || current.rows.length === 0)) {
+        return {
+          ...stripNestedKindKeys(current, existingKind),
+          kind: existingKind,
+          rows: nestedRows,
+        };
       }
-      return { ...nested, ...rest, kind: existingKind };
     }
     return { ...current, kind: existingKind };
   }
@@ -852,12 +1877,15 @@ function hoistNestedTableKind(
   for (const kind of TABLE_OPERATION_KINDS) {
     const nested = nestedKindPayload(current, kind);
     if (!nested) continue;
-    const rest = { ...current };
-    delete rest[kind];
-    for (const [alias, mapped] of Object.entries(TABLE_KIND_ALIASES)) {
-      if (mapped === kind) delete rest[alias];
-    }
-    return { ...rest, ...nested, kind };
+    return { ...stripNestedKindKeys(current, kind), ...nested, kind };
+  }
+  const nestedRows = nestedInsertRowsAlias(current);
+  if (nestedRows) {
+    return {
+      ...stripNestedKindKeys(current, "insert_rows"),
+      kind: "insert_rows",
+      rows: nestedRows,
+    };
   }
   return current;
 }
@@ -923,6 +1951,47 @@ function asStringMatrix(value: unknown, headers?: string[]): string[][] | null {
   return rows;
 }
 
+function cellsFromInsertRowObject(item: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(item.cells)) {
+    return coerceMatrixRow(item.cells);
+  }
+  const single = asCellString(item.cells);
+  if (single !== null && single.trim()) return [single];
+  return undefined;
+}
+
+/** Model aliases for a merged group row — skip these; insert_rows is data cells only. */
+function isBannerInsertItem(item: unknown): boolean {
+  if (!isRecord(item)) return false;
+  if (typeof item.banner === "string" && item.banner.trim()) return true;
+  return item.isBanner === true || item.banner === true;
+}
+
+/** One insert_rows item: string[] or `{ cells }` — `{ banner }` / `{ isBanner }` are skipped. */
+function asInsertTableRow(item: unknown): string[] | undefined {
+  if (isBannerInsertItem(item)) return undefined;
+  if (isRecord(item)) {
+    const fromCells = cellsFromInsertRowObject(item);
+    if (fromCells && fromCells.length > 0) return fromCells;
+  }
+  const cells = coerceMatrixRow(item);
+  if (!cells || cells.length === 0) return undefined;
+  return cells;
+}
+
+function asInsertTableRows(value: unknown): string[][] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const rows: string[][] = [];
+  for (const item of value) {
+    if (isBannerInsertItem(item)) continue;
+    const row = asInsertTableRow(item);
+    if (!row) return undefined;
+    rows.push(row);
+  }
+  if (rows.length === 0) return undefined;
+  return rows;
+}
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string") return value;
@@ -964,10 +2033,12 @@ function coerceEditCellsShape(next: Record<string, unknown>): void {
         : typeof item.expected === "string"
           ? item.expected
           : undefined;
+    const rowKey = firstString(item.rowKey, item.afterRowKey);
     return {
       ...item,
       ...(insertText !== undefined ? { insertText } : {}),
       ...(expectedText !== undefined ? { expectedText } : {}),
+      ...(rowKey !== undefined ? { rowKey } : {}),
     };
   });
 }
@@ -994,6 +2065,35 @@ function coerceInsertColumnShape(next: Record<string, unknown>): void {
   }
 }
 
+function looksLikeCellEdits(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every(
+    (item) =>
+      isRecord(item) &&
+      asInt(item.row) !== null &&
+      asInt(item.col) !== null &&
+      firstString(item.insertText, item.value, item.text, item.content) !==
+        undefined
+  );
+}
+
+function coerceInsertRowsShape(next: Record<string, unknown>): void {
+  if (!(Array.isArray(next.rows) && next.rows.length > 0)) {
+    const nestedRows = nestedInsertRowsAlias(next);
+    if (nestedRows) {
+      next.rows = nestedRows;
+    } else if (
+      Array.isArray(next.cells) &&
+      next.cells.length > 0 &&
+      !looksLikeCellEdits(next.cells)
+    ) {
+      next.rows = next.cells;
+    }
+  }
+  const dataRows = asInsertTableRows(next.rows);
+  if (dataRows) next.rows = dataRows;
+}
+
 /**
  * Repair common model mistakes so `edit_table` can return a hint (or succeed)
  * instead of throwing at the tool schema. Does not invent cell text.
@@ -1007,6 +2107,7 @@ export function coerceTableOperationInput(raw: unknown): unknown {
 
   if (next.kind === "edit_cells") coerceEditCellsShape(next);
   if (next.kind === "insert_column") coerceInsertColumnShape(next);
+  if (next.kind === "insert_rows") coerceInsertRowsShape(next);
 
   if (next.kind !== "delete_rows") return next;
 
@@ -1064,6 +2165,12 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
           expectedText:
             typeof item.expectedText === "string" ? item.expectedText : undefined,
           insertText: item.insertText,
+          rowKey:
+            typeof item.rowKey === "string" && item.rowKey.trim()
+              ? item.rowKey
+              : undefined,
+          rowContext:
+            typeof item.rowContext === "string" ? item.rowContext : undefined,
         });
       }
       return { kind: "edit_cells", tableIndex, cells };
@@ -1073,8 +2180,16 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         coerced.afterRow === undefined || coerced.afterRow === null
           ? undefined
           : asInt(coerced.afterRow);
-      const rows = asStringMatrix(coerced.rows);
-      if (afterRow === null || (afterRow !== undefined && afterRow < 0) || !rows) {
+      const afterRowKey =
+        typeof coerced.afterRowKey === "string" && coerced.afterRowKey.trim()
+          ? coerced.afterRowKey
+          : undefined;
+      const rowsFromField = asInsertTableRows(coerced.rows);
+      if (
+        afterRow === null ||
+        (afterRow !== undefined && afterRow < 0) ||
+        !rowsFromField
+      ) {
         return undefined;
       }
       const expectedRowAtAfter = coerced.expectedRowAtAfter
@@ -1085,7 +2200,8 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         kind: "insert_rows",
         tableIndex,
         afterRow,
-        rows,
+        ...(afterRowKey ? { afterRowKey } : {}),
+        rows: rowsFromField,
         expectedRowAtAfter,
       };
     }
@@ -1170,7 +2286,11 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         typeof coerced.afterAnchor === "string" && coerced.afterAnchor.trim()
           ? coerced.afterAnchor.trim()
           : undefined;
-      return { kind: "create_table", headers, rows, afterAnchor };
+      const title =
+        typeof coerced.title === "string" && coerced.title.trim()
+          ? coerced.title.trim()
+          : undefined;
+      return { kind: "create_table", headers, rows, afterAnchor, title };
     }
     default:
       return undefined;
@@ -1188,13 +2308,16 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `delete_table needs tableIndex from read_section (0 for the first table). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "create_table") {
-    return `create_table needs kind: "create_table" with headers (and optional rows, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
+    return `create_table needs kind: "create_table" with headers (and optional rows, title, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "edit_cells") {
-    return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
+    return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. Prefer rowKey (first-cell text, e.g. URS-13) over row. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "insert_column") {
     return `insert_column needs kind: "insert_column" with header (and optional afterCol, values). Omit afterCol to append as the last column. ${TABLE_EDIT_RECOVERY}`;
+  }
+  if (kind === "insert_rows") {
+    return `insert_rows needs kind: "insert_rows" with rows: [["col1","col2"], ...]. Do not pass cells, { banner }, or nest insert_rows: [...]. Prefer afterRowKey (first-cell text) over afterRow. ${TABLE_EDIT_RECOVERY}`;
   }
   return `The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table. Put kind at the top of operation (kind: edit_cells, tableIndex, cells) — not nested as { edit_cells: { cells } }. ${TABLE_EDIT_RECOVERY}`;
 }
@@ -1213,6 +2336,8 @@ export function tableOperationHint(
       return "This matrix has a fixed column schema. Edit cells or add/delete rows — do not add, delete, or rename columns, and do not remove the table.";
     case "invalid":
       return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, or create_table with kind at the top of operation. Call read_section and copy tableIndex plus [row,col] from tables[] / structuredText. Do not recover with propose_edit or draft_field.";
+    case "already_present":
+      return "Those cells already have the proposed text. Re-read with read_section and edit a cell that still needs a change.";
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -1224,15 +2349,32 @@ export function summarizeTableOperation(operation: TableOperation): string {
   switch (operation.kind) {
     case "edit_cells": {
       const n = operation.cells.length;
+      const keys: string[] = [];
+      const seen = new Set<string>();
+      for (const cell of operation.cells) {
+        const key = cell.rowKey?.replace(/\s+/g, " ").trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        keys.push(key);
+      }
+      const shown = keys.slice(0, 3);
+      const extra = keys.length - shown.length;
+      const onRows =
+        shown.length === 0
+          ? ""
+          : ` on ${shown.join(", ")}${extra > 0 ? ` (+${extra} more)` : ""}`;
       return n === 1
-        ? `Update 1 table cell`
-        : `Update ${n} table cells`;
+        ? `Update 1 table cell${onRows}`
+        : `Update ${n} table cells${onRows}`;
     }
     case "insert_rows": {
       const n = operation.rows.length;
+      const where = operation.afterRowKey
+        ? `"${operation.afterRowKey}"`
+        : `row ${operation.afterRow ?? "last"}`;
       return n === 1
-        ? `Insert 1 row after row ${operation.afterRow ?? "last"}`
-        : `Insert ${n} rows after row ${operation.afterRow ?? "last"}`;
+        ? `Insert 1 row after ${where}`
+        : `Insert ${n} rows after ${where}`;
     }
     case "delete_rows": {
       const n = operation.rows.length;
@@ -1253,9 +2395,12 @@ export function summarizeTableOperation(operation: TableOperation): string {
     case "create_table": {
       const n = (operation.rows ?? []).length;
       const cols = operation.headers.length;
+      const titled = operation.title?.trim()
+        ? ` “${operation.title.trim()}”`
+        : "";
       return n === 0
-        ? `Create a ${cols}-column table`
-        : `Create a ${cols}-column table with ${n} row${n === 1 ? "" : "s"}`;
+        ? `Create a ${cols}-column table${titled}`
+        : `Create a ${cols}-column table${titled} with ${n} row${n === 1 ? "" : "s"}`;
     }
     default: {
       const _exhaustive: never = operation;
@@ -1276,7 +2421,8 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
       });
     case "insert_rows":
       return operation.rows.map(
-        (row, i) => `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
+        (row, i) =>
+          `New row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
       );
     case "delete_rows":
       return operation.rows.map(
@@ -1300,6 +2446,9 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
       return [`Column ${operation.col}: ${operation.expectedHeaderText}`];
     case "create_table":
       return [
+        ...(operation.title?.trim()
+          ? [`Title: ${operation.title.trim()}`]
+          : []),
         `Headers: ${operation.headers.map((h) => h || EMPTY_CELL_LABEL).join(" | ")}`,
         ...(operation.rows ?? []).map(
           (row, i) =>

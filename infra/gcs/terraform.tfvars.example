@@ -1,16 +1,31 @@
 project_id                    = "andrei-493614"
-bucket_name                   = "andrei-493614-attachments"
 location                      = "EU"
 runtime_service_account_email = "andrei-vercel@andrei-493614.iam.gserviceaccount.com"
 
-cors_origins = [
-  "https://mj.andreihealth.com",
-  "https://andrei-v2.vercel.app",
-  "https://demo.andreihealth.com",
-  "https://andrei-demo.vercel.app",
-  "https://andrei-convergent.vercel.app",
-  "https://convergent.andreihealth.com",
-  "http://localhost:3000",
-]
+# One bucket per Vercel pack. `shared` is the live MJ/demo/Convergent bucket —
+# keep bucket_name exactly as-is. New customers: add a key, omit bucket_name
+# (defaults to andrei-493614-{key}-attachments), terraform apply, then set
+# that project's GCS_BUCKET from `terraform output -json bucket_names`.
+tenants = {
+  shared = {
+    bucket_name = "andrei-493614-attachments"
+    cors_origins = [
+      "https://mj.andreihealth.com",
+      "https://andrei-v2.vercel.app",
+      "https://demo.andreihealth.com",
+      "https://andrei-demo.vercel.app",
+      "https://andrei-convergent.vercel.app",
+      "https://convergent.andreihealth.com",
+      "http://localhost:3000",
+    ]
+  }
+  "3xper" = {
+    cors_origins = [
+      "https://3xper.andreihealth.com",
+      "https://andrei-3xper.vercel.app",
+      "http://localhost:3000",
+    ]
+  }
+}
 
 # staging_temp_age_days = 7

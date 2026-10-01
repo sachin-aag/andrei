@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatEditableSections, sectionLabel } from "@/lib/ai/chat/fields";
+import { chatMentionableSectionCandidates } from "@/lib/ai/chat/fields";
 import {
   MENTIONS_ATTACHMENTS_GROUP,
   MENTIONS_PLOTS_GROUP,
@@ -55,11 +55,11 @@ function file(
   };
 }
 
-function sectionCandidates(documentType: "design_verification" | "quality_risk_assessment" | "investigation_report"): MentionCandidate[] {
-  return chatEditableSections(documentType).map((section) => ({
+function sectionCandidates(documentType: "design_verification" | "quality_risk_assessment" | "investigation_report" | "qualification_summary_report"): MentionCandidate[] {
+  return chatMentionableSectionCandidates(documentType).map((section) => ({
     type: "section",
-    id: section,
-    label: sectionLabel(section),
+    id: section.id,
+    label: section.label,
   }));
 }
 
@@ -99,7 +99,7 @@ describe("buildChatMentionMenu", () => {
 
     const listed = mentionMenuAtPath(menu, [MENTIONS_SECTIONS_GROUP]);
     expect(listed.map((entry) => entry.kind === "item" && entry.candidate.id)).toEqual(
-      chatEditableSections("design_verification")
+      chatMentionableSectionCandidates("design_verification").map((item) => item.id)
     );
     expect(listed.length).toBeGreaterThan(8);
   });
@@ -116,8 +116,28 @@ describe("buildChatMentionMenu", () => {
     });
 
     const listed = mentionMenuAtPath(menu, [MENTIONS_SECTIONS_GROUP]);
-    expect(listed).toHaveLength(chatEditableSections("quality_risk_assessment").length);
+    expect(listed).toHaveLength(
+      chatMentionableSectionCandidates("quality_risk_assessment").length
+    );
     expect(listed.length).toBeGreaterThan(8);
+  });
+
+  it("lists Cover identity first on a qualification summary report", () => {
+    const sections = sectionCandidates("qualification_summary_report");
+    const menu = buildChatMentionMenu({
+      targetingAnalytics: false,
+      attachments: [],
+      folders: [],
+      sections,
+      sheets: [],
+      analyses: [],
+    });
+
+    const listed = mentionMenuAtPath(menu, [MENTIONS_SECTIONS_GROUP]);
+    expect(listed[0]).toMatchObject({
+      kind: "item",
+      candidate: { id: "identity", label: "Cover identity" },
+    });
   });
 
   it("nests attachment folders and skips files that are not ready", () => {

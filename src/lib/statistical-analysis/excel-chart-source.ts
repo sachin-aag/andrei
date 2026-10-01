@@ -39,6 +39,7 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -1274,7 +1275,11 @@ export function buildAnalysisChartSource(
   analysis: StatisticalAnalysisSummary
 ): AnalysisChartSource {
   const colors = chartBrandColors(resolveCustomerId());
-  if (isScatterAnalysis(analysis) || isXyScatterAnalysis(analysis)) {
+  if (
+    isScatterAnalysis(analysis) ||
+    isXyScatterAnalysis(analysis) ||
+    isTimeSeriesAnalysis(analysis)
+  ) {
     const combined: AnalysisChartSource = { tables: [], charts: [] };
     for (const [index, spec] of analysis.results.specs.entries()) {
       const part = specCharts(spec, colors, `scatter-${index}`);

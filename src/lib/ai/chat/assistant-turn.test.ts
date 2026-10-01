@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  assistantPartsAreCannedError,
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
   assistantProgressSignature,
@@ -8,10 +9,13 @@ import {
   chatWatchdogPhase,
   formatChatLlmError,
   isChatClientDisconnectError,
+  isCannedAssistantNoticeText,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
+  shouldHidePlanContinuingAssistantTurn,
   shouldShowChatClientError,
   shouldShowEmptyAssistantError,
+  shouldToastEmptyAssistantTurn,
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
@@ -99,6 +103,32 @@ describe("shouldShowEmptyAssistantError", () => {
       })
     ).toBe(false);
   });
+
+  it("hides the empty-turn error when a remaining-section plan is still chaining", () => {
+    expect(
+      shouldShowEmptyAssistantError({
+        parts: [],
+        streaming: false,
+        planContinuing: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowEmptyAssistantError({
+        parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
+        streaming: false,
+        planContinuing: true,
+      })
+    ).toBe(false);
+  });
+
+  it("treats the canned empty-turn placeholder as a visible failure", () => {
+    expect(
+      shouldShowEmptyAssistantError({
+        parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
+        streaming: false,
+      })
+    ).toBe(true);
+  });
 });
 
 describe("isChatClientDisconnectError", () => {
@@ -148,6 +178,53 @@ describe("shouldShowChatClientError", () => {
     expect(shouldShowChatClientError({ error: undefined, busy: false })).toBe(
       false
     );
+    expect(
+      shouldShowChatClientError({
+        error: new TypeError("Failed to fetch"),
+        busy: false,
+        planChaining: true,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("assistantPartsAreCannedError", () => {
+  it("matches only the empty-turn placeholder text", () => {
+    expect(assistantPartsAreCannedError([])).toBe(false);
+    expect(
+      assistantPartsAreCannedError([
+        { type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE },
+      ])
+    ).toBe(true);
+    expect(
+      assistantPartsAreCannedError([
+        { type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE },
+        { type: "tool-edit_table" },
+      ])
+    ).toBe(false);
+  });
+});
+
+describe("shouldToastEmptyAssistantTurn", () => {
+  it("skips the toast when hydrate recovered content or the plan is chaining", () => {
+    expect(
+      shouldToastEmptyAssistantTurn({
+        recoveredVisibleContent: false,
+        planContinuing: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldToastEmptyAssistantTurn({
+        recoveredVisibleContent: true,
+        planContinuing: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldToastEmptyAssistantTurn({
+        recoveredVisibleContent: false,
+        planContinuing: true,
+      })
+    ).toBe(false);
   });
 });
 
@@ -360,19 +437,60 @@ describe("partsForPersistedAssistantTurn", () => {
     });
   });
 
-  it("keeps aborted tool progress and appends the interrupted line", () => {
+  it("closes aborted tool chips so the next turn is not missing a tool result", () => {
     const parts = [
-      { type: "tool-search_documents", toolCallId: "call_1" },
+      { type: "tool-search_documents", toolCallId: "call_1", state: "input-available" },
     ] as unknown as UIMessage["parts"];
     expect(
       partsForPersistedAssistantTurn({ parts, isAborted: true })
     ).toEqual({
       parts: [
-        parts[0],
+        {
+          type: "tool-search_documents",
+          toolCallId: "call_1",
+          state: "output-error",
+          errorText:
+            "This tool call was interrupted before it finished.",
+          output: { status: "interrupted", reason: "incomplete" },
+        },
         { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE },
       ],
       emptyFailure: false,
       interrupted: true,
+      incomplete: true,
+    });
+  });
+
+  it("does not append the interrupted line when the remaining-section queue will continue", () => {
+    const parts = [
+      {
+        type: "tool-start_document_review",
+        toolCallId: "call_1",
+        state: "input-available",
+      },
+    ] as unknown as UIMessage["parts"];
+    const result = partsForPersistedAssistantTurn({
+      parts,
+      isAborted: true,
+      planContinuing: true,
+    });
+    expect(result.interrupted).toBe(false);
+    expect(result.emptyFailure).toBe(false);
+    expect(result.incomplete).toBe(true);
+    expect(result.parts.some((part) => part.type === "text")).toBe(false);
+  });
+
+  it("does not persist a canned interrupt for an empty aborted turn that will continue", () => {
+    expect(
+      partsForPersistedAssistantTurn({
+        parts: [],
+        isAborted: true,
+        planContinuing: true,
+      })
+    ).toEqual({
+      parts: [],
+      emptyFailure: false,
+      interrupted: false,
       incomplete: true,
     });
   });
@@ -434,9 +552,9 @@ describe("partsForPersistedAssistantTurn", () => {
     });
   });
 
-  it("does not append wrap-up copy when tool-calls stop after a search chip", () => {
+  it("closes an unfinished search chip when the model stops on tool-calls", () => {
     const parts = [
-      { type: "tool-search_documents", toolCallId: "call_1" },
+      { type: "tool-search_documents", toolCallId: "call_1", state: "input-available" },
     ] as unknown as UIMessage["parts"];
     expect(
       partsForPersistedAssistantTurn({
@@ -445,11 +563,93 @@ describe("partsForPersistedAssistantTurn", () => {
         finishReason: "tool-calls",
       })
     ).toEqual({
-      parts,
+      parts: [
+        {
+          type: "tool-search_documents",
+          toolCallId: "call_1",
+          state: "output-error",
+          errorText:
+            "This tool call was interrupted before it finished.",
+          output: { status: "interrupted", reason: "incomplete" },
+        },
+      ],
       emptyFailure: false,
       interrupted: false,
       incomplete: true,
     });
+  });
+
+  it("marks leftover streaming thoughts as done so reload does not keep Thinking", () => {
+    const parts = [
+      {
+        type: "reasoning",
+        text: "Clarifying URS-65.",
+        state: "streaming",
+      },
+      { type: "text", text: "Drafted the RTM." },
+    ] as unknown as UIMessage["parts"];
+    expect(
+      partsForPersistedAssistantTurn({ parts, isAborted: false })
+    ).toEqual({
+      parts: [
+        {
+          type: "reasoning",
+          text: "Clarifying URS-65.",
+          state: "done",
+        },
+        { type: "text", text: "Drafted the RTM." },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      incomplete: false,
+    });
+  });
+});
+
+describe("isCannedAssistantNoticeText", () => {
+  it("matches the empty-turn and interrupt notices", () => {
+    expect(isCannedAssistantNoticeText(CHAT_ASSISTANT_ERROR_MESSAGE)).toBe(
+      true
+    );
+    expect(
+      isCannedAssistantNoticeText(CHAT_ASSISTANT_INTERRUPTED_MESSAGE)
+    ).toBe(true);
+    expect(isCannedAssistantNoticeText("Draft Access Control.")).toBe(false);
+  });
+});
+
+describe("shouldHidePlanContinuingAssistantTurn", () => {
+  it("hides empty and canned-notice rows", () => {
+    expect(shouldHidePlanContinuingAssistantTurn([])).toBe(true);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE },
+      ])
+    ).toBe(true);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE },
+      ])
+    ).toBe(true);
+  });
+
+  it("keeps tool chips and real wrap-up prose", () => {
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "tool-start_document_review" },
+      ])
+    ).toBe(false);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE },
+        { type: "tool-continue_document_review" },
+      ])
+    ).toBe(false);
+    expect(
+      shouldHidePlanContinuingAssistantTurn([
+        { type: "text", text: "Drafted Access Control." },
+      ])
+    ).toBe(false);
   });
 });
 
@@ -468,7 +668,7 @@ describe("chatUiStreamErrorText", () => {
     );
     const formatted = chatUiStreamErrorText(error);
     expect(formatted.recoverable).toBe(true);
-    expect(formatted.text).toContain("edit_table is not available this turn");
+    expect(formatted.text).toContain("edit_table is not available this step");
     expect(formatted.text).not.toBe(CHAT_ASSISTANT_ERROR_MESSAGE);
   });
 

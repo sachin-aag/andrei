@@ -1,17 +1,30 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { JSONContent } from "@tiptap/core";
+import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
+  applySuggestionToContent,
   dismissSuggestion,
+  IdentityDuplicateError,
   patchSection,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   injectSuggestionMarks,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
+import { serializeAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import {
+  ELR_MONITORING_HEADERS,
+  EMPTY_ELR_CONTENT,
+} from "@/lib/document-types/elr/sections";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 const reportId = "report-1";
 const comment: CommentRecord = {
@@ -377,6 +390,82 @@ describe("acceptSuggestion table operations", () => {
     if (!result.ok) expect(result.reason).toBe("not_found");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("commits a painted edit_cells preview instead of treating expectedText as stale", () => {
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "12/01/25 [1]" },
+      ],
+    };
+    const seeded = seededTableDoc(["Sr. No.", "Date"]);
+    const preview = buildTableOperationPreviewDoc(seeded, operation, {
+      id: "preview-fill",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-16T15:30:20.584Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const fillComment: CommentRecord = {
+      ...comment,
+      id: "preview-fill",
+      section: "elr_breakdowns",
+      contentPath: "table",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Populate Row 1",
+        tableOperation: operation,
+      }),
+      anchorText: "Update 2 table cells",
+    };
+
+    const result = applySuggestionToContent({
+      section: "elr_breakdowns",
+      comment: fillComment,
+      sectionContent: { table: preview.doc },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const json = JSON.stringify(result.nextSection);
+    expect(json).toContain("12/01/25 [1]");
+    expect(json).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("returns noop for identity edit_cells", () => {
+    const operation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "" },
+      ],
+    };
+    const identityComment: CommentRecord = {
+      ...comment,
+      id: "identity-fill",
+      section: "elr_breakdowns",
+      contentPath: "table",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "No change",
+        tableOperation: operation,
+      }),
+      anchorText: "Update 1 table cell",
+    };
+    const result = applySuggestionToContent({
+      section: "elr_breakdowns",
+      comment: identityComment,
+      sectionContent: { table: seededTableDoc(["Sr. No.", "Date"]) },
+    });
+    expect(result).toEqual({ ok: false, reason: "noop" });
+  });
 });
 
 describe("acceptSuggestion split citation", () => {
@@ -628,6 +717,83 @@ describe("acceptSuggestion same-turn table pair", () => {
   });
 });
 
+describe("acceptSuggestion table caption cascade", () => {
+  it("PATCHes later tables when a mid-document grid is filled", async () => {
+    const fetches: Array<{ url: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        fetches.push({ url: String(url) });
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const monitoring = applyTableOperation(
+      seededTableDoc([...ELR_MONITORING_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 0, insertText: "1" }],
+      },
+      { section: "elr_monitoring", targetField: "table", existingTableCount: 1 }
+    );
+    expect(monitoring.ok).toBe(true);
+    if (!monitoring.ok) return;
+
+    const fillComment: CommentRecord = {
+      ...comment,
+      id: "media-fill-fill",
+      section: "elr_media_fill",
+      contentPath: "table",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Fill media fill",
+        tableOperation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 1, col: 0, insertText: "APS-1" }],
+        },
+      }),
+      anchorText: "fill",
+    };
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "elr_media_fill",
+      comment: fillComment,
+      sectionContent: EMPTY_ELR_CONTENT.elr_media_fill as Record<string, unknown>,
+      documentType: "equipment_lifecycle_report",
+      reportSections: {
+        elr_abbreviations: EMPTY_ELR_CONTENT.elr_abbreviations,
+        elr_media_fill: EMPTY_ELR_CONTENT.elr_media_fill,
+        elr_monitoring: { table: monitoring.doc },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(flattenForAnchor(getRichFieldValue(result.nextSection, "table")).text).toContain(
+      "Table 2."
+    );
+    expect(result.nextRelatedSections?.elr_monitoring).toBeDefined();
+    expect(
+      flattenForAnchor(
+        getRichFieldValue(
+          result.nextRelatedSections!.elr_monitoring!,
+          "table"
+        )
+      ).text
+    ).toContain("Table 3. Monitoring records");
+    expect(fetches.some((row) => row.url.includes("/sections/elr_media_fill"))).toBe(
+      true
+    );
+    expect(fetches.some((row) => row.url.includes("/sections/elr_monitoring"))).toBe(
+      true
+    );
+  });
+});
+
 describe("patchSection", () => {
   it("uses keepalive so Apply can finish after Back", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
@@ -645,5 +811,202 @@ describe("patchSection", () => {
       })
     );
     vi.unstubAllGlobals();
+  });
+});
+
+describe("acceptSuggestion identity header card", () => {
+  const identityComment: CommentRecord = {
+    ...comment,
+    id: "ident-1",
+    sectionId: null,
+    section: "identity" as CommentRecord["section"],
+    contentPath: "documentNo",
+    content: serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "Report No.: QSR/GLR-1301",
+      reasoning: "Copied from the protocol cover.",
+      identityOperation: {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+      },
+      suggestionBase: { documentNo: "" },
+      suggestionIntent: { documentNo: "QSR/GLR-1301" },
+    }),
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("PATCHes the report row then resolves the card", async () => {
+    const fetches: Array<{ url: string; status?: number; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        fetches.push({ url: String(url), body });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            report: {
+              documentNo: "QSR/GLR-1301",
+              metadata: {},
+              updatedAt: "2026-10-01T15:00:02.000Z",
+            },
+          }),
+        } as Response;
+      })
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "identity" as SectionType,
+      comment: identityComment,
+      sectionContent: {},
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.nextIdentity).toMatchObject({
+      documentNo: "QSR/GLR-1301",
+      updatedAt: "2026-10-01T15:00:02.000Z",
+    });
+    expect(fetches[0]?.url).toBe("/api/reports/report-1");
+    expect(fetches[0]?.body).toMatchObject({ documentNo: "QSR/GLR-1301" });
+    expect(fetches[1]?.url).toContain("/comments/ident-1");
+    expect(fetches[1]?.body).toEqual({ status: "resolved" });
+  });
+
+  it("returns ELR period dates and a clock so Apply can hydrate the header", async () => {
+    const elrComment: CommentRecord = {
+      ...identityComment,
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "ELR period — from: 01/04/2025; ELR period — to: 31/03/2026",
+        reasoning: "FY window from the last PRQ.",
+        identityOperation: {
+          fields: [
+            { key: "periodFrom", value: "01/04/2025" },
+            { key: "periodTo", value: "31/03/2026" },
+          ],
+        },
+        suggestionBase: { periodFrom: "", periodTo: "" },
+        suggestionIntent: {
+          periodFrom: "01/04/2025",
+          periodTo: "31/03/2026",
+        },
+      }),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          report: {
+            metadata: {
+              periodFrom: "01/04/2025",
+              periodTo: "31/03/2026",
+            },
+            updatedAt: "2026-10-01T15:00:02.000Z",
+          },
+        }),
+      }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "identity" as SectionType,
+      comment: elrComment,
+      sectionContent: {},
+      documentType: "equipment_lifecycle_report",
+      identityCurrent: {
+        documentNo: "S/PR/070",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.nextIdentity).toMatchObject({
+      metadata: {
+        periodFrom: "01/04/2025",
+        periodTo: "31/03/2026",
+      },
+      updatedAt: "2026-10-01T15:00:02.000Z",
+    });
+  });
+
+  it("stamps updatedAt when the PATCH JSON omits it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T15:00:03.000Z"));
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            report: { documentNo: "QSR/GLR-1301", metadata: {} },
+          }),
+        }) as Response)
+      );
+
+      const result = await acceptSuggestion({
+        reportId,
+        section: "identity" as SectionType,
+        comment: identityComment,
+        sectionContent: {},
+        documentType: "qualification_summary_report",
+        identityCurrent: {
+          documentNo: "",
+          date: "2026-01-01T00:00:00.000Z",
+          metadata: {},
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.nextIdentity?.documentNo).toBe("QSR/GLR-1301");
+      expect(result.nextIdentity?.updatedAt).toBe("2026-10-01T15:00:03.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails the whole apply when the document number is taken", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({}),
+      }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "identity" as SectionType,
+      comment: identityComment,
+      sectionContent: {},
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate_document_no");
+    expect(result.error).toBeInstanceOf(IdentityDuplicateError);
   });
 });

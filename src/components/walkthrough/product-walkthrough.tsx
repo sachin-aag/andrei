@@ -65,6 +65,7 @@ export function ProductWalkthroughProvider({
       documentTypeLabels: listDocumentTypes().map((type) => type.label),
       insightsEnabled: pack.insightsEnabled,
       statisticalAnalysisEnabled: pack.statisticalAnalysisEnabled,
+      documentTemplatesEnabled: pack.documentTemplatesEnabled,
     };
   }, []);
 

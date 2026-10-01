@@ -1,11 +1,11 @@
 import type { JSONContent } from "@tiptap/core";
-import type { DocumentType, SectionType } from "@/db/schema";
+import { documentTypeEnum, type DocumentType, type SectionType } from "@/db/schema";
 import { displaySectionLabel } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { getDocumentType } from "@/lib/document-types";
+import { getDocumentType, resolveSection } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -16,6 +16,13 @@ import {
   flattenDocForChat,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
+import { elrPlanRequiredFields } from "@/lib/document-types/elr/plan-complete";
+import {
+  CHAT_IDENTITY_SECTION,
+  chatIdentityLabel,
+  hasChatIdentity,
+  isChatIdentitySection,
+} from "@/lib/ai/chat/identity";
 
 /** Sections the drafting chat can read + edit (type-owned, not DMAIC-only). */
 export function chatEditableSections(
@@ -36,6 +43,34 @@ export function isChatEditableSection(
   documentType: DocumentType = "investigation_report"
 ): value is SectionType {
   return (chatEditableSections(documentType) as readonly string[]).includes(value);
+}
+
+/** Body sections plus the synthetic cover/header identity block. */
+export function isChatMentionableSection(
+  value: string,
+  documentType: DocumentType = "investigation_report"
+): boolean {
+  return (
+    isChatEditableSection(value, documentType) ||
+    (isChatIdentitySection(value) && hasChatIdentity(documentType))
+  );
+}
+
+/** Composer @ menu: identity first when the type has a cover/header form. */
+export function chatMentionableSectionCandidates(
+  documentType: DocumentType = "investigation_report"
+): Array<{ id: string; label: string }> {
+  const items: Array<{ id: string; label: string }> = [];
+  if (hasChatIdentity(documentType)) {
+    items.push({
+      id: CHAT_IDENTITY_SECTION,
+      label: chatIdentityLabel(documentType),
+    });
+  }
+  for (const section of chatEditableSections(documentType)) {
+    items.push({ id: section, label: sectionLabel(section) });
+  }
+  return items;
 }
 
 /** Sections included in prompt/tools for the current focus. */
@@ -89,6 +124,17 @@ export function primaryFieldForSection(section: SectionType): string {
     case "results_and_discussions":
       return "table";
     default:
+      if (
+        section === "vq_section_g" ||
+        section === "vq_section_h" ||
+        section === "vq_section_i" ||
+        section === "vq_section_j" ||
+        section === "vq_section_n" ||
+        section === "vq_section_a"
+      ) {
+        return "table";
+      }
+      if (section === "vq_cover") return "answers.cover_manufacturer";
       return "narrative";
   }
 }
@@ -166,40 +212,150 @@ function isBlankTableCellText(text: string): boolean {
   return text === "(empty)" || text.trim() === "";
 }
 
-function nodeHasVisibleContent(node: JSONContent): boolean {
-  if (node.type === "text" && (node.text ?? "").trim()) return true;
-  if (node.type === "image" || node.type === "imageInline") return true;
-  for (const child of node.content ?? []) {
-    if (nodeHasVisibleContent(child)) return true;
-  }
-  return false;
+/** First-column URS-N on an RTM is a row key, not drafted requirement text. */
+const URS_ID_SCAFFOLD_RE = /^URS-\d+$/i;
+
+function isUrsIdScaffoldCell(
+  cell: { col: number; text: string },
+  headers: readonly string[]
+): boolean {
+  if (cell.col !== 0) return false;
+  if (!/^urs id$/i.test((headers[0] ?? "").trim())) return false;
+  return URS_ID_SCAFFOLD_RE.test(normalizeScaffoldCellText(cell.text));
 }
 
-function docHasNonTableContent(doc: JSONContent): boolean {
-  for (const node of doc.content ?? []) {
-    if (node.type === "table") continue;
-    if (nodeHasVisibleContent(node)) return true;
-  }
-  return false;
-}
-
-/**
- * Header-only seeded tables (blank data cells, no surrounding prose/images)
- * are empty shells — not partial drafts. `sectionHasTable` still sees them
- * so `tableSchemaReadStep` copies live headers before `edit_table`.
- */
-export function isEmptyTableScaffoldDoc(doc: JSONContent): boolean {
+function isElrTrendsRecapScaffold(doc: JSONContent): boolean {
   const tables = summarizeTablesInDoc(doc);
   if (tables.length === 0) return false;
   if (countImagesInDoc(doc) > 0) return false;
   if (docHasNonTableContent(doc)) return false;
   for (const table of tables) {
-    for (const cell of table.cells) {
-      if (cell.row === 0) continue;
+    const headers = table.headers.map((header) => header.trim().toLowerCase());
+    const sectionIdx = headers.findIndex((header) => header === "section");
+    const summaryIdx = headers.findIndex((header) => header === "summary");
+    if (sectionIdx < 0 || summaryIdx < 0) return false;
+    const dataCells = table.cells.filter((cell) => cell.row > 0);
+    if (dataCells.length === 0) return false;
+    for (const cell of dataCells) {
+      if (cell.col === 0 || cell.col === sectionIdx) continue;
       if (!isBlankTableCellText(cell.text)) return false;
     }
   }
   return true;
+}
+
+function docHasNonTableContent(doc: JSONContent): boolean {
+  return normalizedNonTableProse(doc).length > 0;
+}
+
+function nodePlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map((child) => nodePlainText(child)).join(" ");
+}
+
+/** Visible prose outside tables, collapsed for seed comparison. */
+function normalizedNonTableProse(doc: JSONContent): string {
+  return (doc.content ?? [])
+    .filter((node) => node.type !== "table")
+    .map((node) => nodePlainText(node).replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function normalizedAnchorText(doc: JSONContent): string {
+  return flattenForAnchor(doc).text.replace(/\s+/g, " ").trim();
+}
+
+function emptyContentForSection(
+  section: SectionType
+): Record<string, unknown> | undefined {
+  for (const type of documentTypeEnum.enumValues) {
+    const found = resolveSection(type, section);
+    if (!found) continue;
+    const empty = found.emptyContent;
+    if (empty && typeof empty === "object" && !Array.isArray(empty)) {
+      return empty as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+export function seedFieldDoc(
+  section: SectionType,
+  targetField: string
+): JSONContent | undefined {
+  if (!isRichTargetField(section, targetField)) return undefined;
+  const empty = emptyContentForSection(section);
+  if (!empty) return undefined;
+  return getRichFieldValue(empty, targetField);
+}
+
+function normalizeScaffoldCellText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function cellMatchesSeedText(
+  cell: { row: number; col: number; text: string },
+  seedCells: ReadonlyArray<{ row: number; col: number; text: string }>
+): boolean {
+  const seedCell = seedCells.find(
+    (candidate) => candidate.row === cell.row && candidate.col === cell.col
+  );
+  if (!seedCell) return false;
+  return (
+    normalizeScaffoldCellText(cell.text) ===
+    normalizeScaffoldCellText(seedCell.text)
+  );
+}
+
+/**
+ * Seeded tables whose cells are blank or unchanged from the template are
+ * empty shells — not partial drafts. Surrounding prose is allowed when it
+ * matches the seed (QSR 6.1 “Auxiliary Equipment:” between two volume
+ * tables). Extra engineer sentences are not. `sectionHasTable` still sees
+ * them so `tableSchemaReadStep` copies live headers before `edit_table`.
+ */
+export function isEmptyTableScaffoldDoc(
+  doc: JSONContent,
+  seedDoc?: JSONContent | null
+): boolean {
+  const tables = summarizeTablesInDoc(doc);
+  if (tables.length === 0) return false;
+  if (countImagesInDoc(doc) > 0) return false;
+  const seedProse = seedDoc ? normalizedNonTableProse(seedDoc) : "";
+  const liveProse = normalizedNonTableProse(doc);
+  if (liveProse !== seedProse && liveProse.length > 0) return false;
+  const seedTables = seedDoc ? summarizeTablesInDoc(seedDoc) : [];
+  for (const table of tables) {
+    const seedTable = seedTables[table.tableIndex];
+    for (const cell of table.cells) {
+      if (cell.row === 0) continue;
+      if (isBlankTableCellText(cell.text)) continue;
+      if (isUrsIdScaffoldCell(cell, table.headers)) continue;
+      if (seedTable && cellMatchesSeedText(cell, seedTable.cells)) continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Short seed-only narratives and unchanged table scaffolds (QSR 6.3 Other
+ * Details Parameter / Details rows) are empty. A canned
+ * paragraph that is the intended default (QSR 1.2 Scope) stays filled.
+ */
+function isUnchangedSeedNarrative(
+  doc: JSONContent,
+  seedDoc?: JSONContent | null
+): boolean {
+  if (!seedDoc) return false;
+  if (countImagesInDoc(doc) > 0) return false;
+  if (summarizeTablesInDoc(doc).length > 0) return false;
+  if (summarizeTablesInDoc(seedDoc).length > 0) return false;
+  const live = normalizedAnchorText(doc);
+  const seed = normalizedAnchorText(seedDoc);
+  if (!seed || live !== seed) return false;
+  return seed.length < SECTION_PARTIAL_CHAR_LIMIT;
 }
 
 export function fieldFillState(
@@ -210,7 +366,17 @@ export function fieldFillState(
   const record = content ?? {};
   if (isRichTargetField(section, targetField)) {
     const doc = getRichFieldValue(record, targetField);
-    if (isEmptyTableScaffoldDoc(doc)) return "empty";
+    const seed = seedFieldDoc(section, targetField);
+    if (isEmptyTableScaffoldDoc(doc, seed) || isUnchangedSeedNarrative(doc, seed)) {
+      return "empty";
+    }
+    if (
+      section === "elr_system_trends" &&
+      targetField === "table" &&
+      isElrTrendsRecapScaffold(doc)
+    ) {
+      return "empty";
+    }
   }
   const text = sectionFieldPlainText(record, section, targetField);
   const charCount = text.replace(/\s+/g, " ").trim().length;
@@ -223,8 +389,38 @@ export function fieldFillState(
 }
 
 /**
+ * MJ ELR: a populated evidence table is not "filled" until the assessment
+ * states a count (and trend / overallGrade / recommendation siblings exist).
+ * Investigation and DV section keys never match `elrPlanRequiredFields`.
+ */
+function capElrSectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  aggregated: SectionFillState
+): SectionFillState {
+  if (aggregated === "empty") return aggregated;
+  const required = elrPlanRequiredFields(section);
+  if (!required) return aggregated;
+  const record = content ?? {};
+  const hasRows = listFieldTables(record, section, "table").some(
+    (table) => table.dataRowCount > 0
+  );
+  if (hasRows && required.includes("narrative") && section !== "elr_system_trends") {
+    const narrative = sectionFieldPlainText(record, section, "narrative");
+    if (!/\d/.test(narrative)) return "partial";
+  }
+  for (const field of required) {
+    if (field === "narrative" && !hasRows) continue;
+    if (fieldFillState(record, section, field) === "empty") return "partial";
+  }
+  return aggregated;
+}
+
+/**
  * Aggregate of per-field fill state. Empty only when every editable field is
  * empty — a populated table is not hidden behind an empty narrative.
+ * MJ ELR evidence sections stay partial until the assessment states a count
+ * (and trend / overallGrade / recommendation siblings exist).
  */
 export function sectionFillState(
   content: Record<string, unknown> | undefined,
@@ -237,9 +433,45 @@ export function sectionFillState(
   const states = fields.map((field) =>
     fieldFillState(content, section, field.targetField)
   );
-  if (states.every((state) => state === "empty")) return "empty";
-  if (states.some((state) => state === "filled")) return "filled";
-  return "partial";
+  const aggregated: SectionFillState = states.every((state) => state === "empty")
+    ? "empty"
+    : states.some((state) => state === "filled")
+      ? "filled"
+      : "partial";
+  return capVqSectionFillState(
+    content,
+    section,
+    capElrSectionFillState(content, section, aggregated)
+  );
+}
+
+function answersFillState(
+  content: Record<string, unknown> | undefined
+): SectionFillState {
+  const answers = content?.answers;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
+    return "empty";
+  }
+  const values = Object.values(answers).filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+  if (values.length === 0) return "empty";
+  const chars = values.join(" ").replace(/\s+/g, " ").trim().length;
+  if (chars < SECTION_PARTIAL_CHAR_LIMIT) return "partial";
+  return "filled";
+}
+
+function capVqSectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType,
+  aggregated: SectionFillState
+): SectionFillState {
+  if (!section.startsWith("vq_")) return aggregated;
+  const answerState = answersFillState(content);
+  if (aggregated === "empty") return answerState;
+  if (answerState === "filled" || aggregated === "filled") return "filled";
+  if (answerState === "partial" || aggregated === "partial") return "partial";
+  return aggregated;
 }
 
 /**
@@ -304,10 +536,14 @@ const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
   generic_document: true,
   quality_risk_assessment: true,
   equipment_lifecycle_report: true,
+  failure_investigation_report: true,
+  vendor_qualification: true,
+  qualification_summary_report: true,
 };
 
 /** Human label for a section (registry, then shared map, then title-cased key). */
 export function sectionLabel(section: SectionType): string {
+  if (section === CHAT_IDENTITY_SECTION) return "Cover identity";
   for (const type of Object.keys(ALL_DOCUMENT_TYPES) as DocumentType[]) {
     const match = getDocumentType(type).sections.find((s) => s.key === section);
     if (match) return match.label;

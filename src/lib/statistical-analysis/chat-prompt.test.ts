@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v51-orchestrator-no-page-drain"
+      "analytics-chat-v65-orchestrator-no-page-drain"
     );
   });
 
@@ -34,7 +34,7 @@ describe("analytics chat prompt", () => {
     };
     const read = buildAnalyticsChatSystemPrompt({ ...base, intent: "read" });
     expect(read).toContain("Tools available this turn");
-    expect(read).toContain("are not loaded");
+    expect(read).toContain("start hidden");
 
     const write = buildAnalyticsChatSystemPrompt({ ...base, intent: "write" });
     expect(write).not.toContain("Tools available this turn");
@@ -138,6 +138,8 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("## User intent (required)");
     expect(prompt).toContain("An empty worksheet is not a request to fill it");
     expect(prompt).toContain("Do not volunteer a fill or plot on a greeting");
+    expect(prompt).toContain("This send is Agent");
+    expect(prompt).toContain("Do not write that you are still in Ask mode");
     expect(prompt).not.toContain("draft_field");
   });
 
@@ -151,8 +153,9 @@ describe("analytics chat prompt", () => {
       mode: "plan",
     });
     expect(prompt).toContain("## Mode: ASK");
-    expect(prompt).toContain("switch to Agent");
+    expect(prompt).toContain("switch the Ask/Agent control to Agent");
     expect(prompt).toContain("Ask mode: search and extract only");
+    expect(prompt).toContain("Do not say the whole session is locked in Ask");
     expect(prompt).not.toContain("The engineer can save the worksheet");
   });
 
@@ -196,6 +199,24 @@ describe("analytics chat prompt", () => {
     });
     expect(two).toContain("Ready documents (index only");
     expect(two).toContain("list_attachments");
+    expect(two).toContain("never show it");
     expect(two).not.toContain("do not recount the list");
+  });
+});
+
+describe("ragged column guidance", () => {
+  it("tells the model a short column means the dump is not done", () => {
+    const prompt = buildAnalyticsChatSystemPrompt({
+      documentNo: "DEV-1",
+      status: "draft",
+      documents: [],
+      analytics: emptyAnalytics,
+      canEdit: true,
+      mode: "agent",
+      intent: "write",
+    });
+    expect(prompt).toContain("ragged / incomplete true is NOT a completed dump");
+    expect(prompt).toContain("columns of one table are the same height");
+    expect(prompt).toContain("Do not run an analysis on it");
   });
 });

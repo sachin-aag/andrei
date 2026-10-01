@@ -15,10 +15,14 @@ export function isChatMessageTarget(
   return value === "report" || value === "analytics";
 }
 
-export function chatUserTurnMetadata(chatTarget: ChatMessageTarget): {
-  chatTarget: ChatMessageTarget;
-} {
-  return { chatTarget };
+export function chatUserTurnMetadata(
+  chatTarget: ChatMessageTarget,
+  extra?: { autoContinue?: boolean }
+): { chatTarget: ChatMessageTarget; autoContinue?: true } {
+  return {
+    chatTarget,
+    ...(extra?.autoContinue ? { autoContinue: true as const } : {}),
+  };
 }
 
 export function assistantOffersAnalyticsSwitch(metadata: unknown): boolean {
@@ -67,6 +71,7 @@ const REPORT_ONLY_TOOLS = new Set([
   "insert_image",
   "remove_image",
   "select_analyze_method",
+  "draft_identity",
   "start_document_review",
   "continue_document_review",
   "finish_document_review",

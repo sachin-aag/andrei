@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DOCUMENT_AI_REQUIRED_ERROR } from "./document-ai-ocr";
 import {
   canReprocessAttachment,
   IngestNeedsContinuationError,
@@ -45,6 +46,26 @@ describe("sanitizeIngestError", () => {
       )
     ).toBe(
       "Document ingestion could not reach the Vertex extract model. Gemini 3.x requires location global, not us-central1."
+    );
+  });
+
+  it("keeps a failed resume instead of a generic ingest failed", () => {
+    expect(
+      sanitizeIngestError(
+        new Error("Could not continue document ingest (401): Authentication Required")
+      )
+    ).toBe(
+      "Document ingestion stopped between batches and could not resume. Reprocess the attachment to continue."
+    );
+  });
+
+  it("fails closed when Document AI OCR is not configured", () => {
+    expect(
+      sanitizeIngestError(
+        new Error(DOCUMENT_AI_REQUIRED_ERROR)
+      )
+    ).toBe(
+      "Document ingestion requires Document AI OCR. Set DOCUMENT_AI_PROCESSOR_ID and DOCUMENT_AI_LOCATION."
     );
   });
 

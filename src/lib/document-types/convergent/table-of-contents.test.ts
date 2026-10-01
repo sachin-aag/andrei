@@ -4,6 +4,7 @@ import {
   getConvergentTableOfContents,
   getReportTableOfContents,
   numberTableOfContents,
+  outlineLabelsForSection,
   stripOutlinePrefix,
 } from "./table-of-contents";
 
@@ -224,25 +225,62 @@ describe("getReportTableOfContents", () => {
       "3.2 Abbreviations",
       "3.3 Equipment and System Description",
       "3.4 Qualification and Periodic Re-Qualification History",
-      "3.5 Media Fill / Aseptic Process Simulation",
-      "3.6 Monitoring",
-      "3.7 Calibration of Associated Instruments",
-      "3.8 Preventive Maintenance",
-      "3.9 Breakdowns and Trends",
-      "3.10 QMS Records since Last Periodic Re-Qualification",
-      "3.11 Alarm Trends",
-      "3.12 Access Control",
-      "3.13 Audit Trail Review",
-      "3.14 Computerized System Validation Status",
+      "3.5 Process Validation Review",
+      "3.6 Cleaning Validation Review",
+      "3.7 Quality Risk Assessment Review",
+      "3.8 Media Fill / Aseptic Process Simulation",
+      "3.9 Alarm Trends",
+      "3.10 Monitoring",
+      "3.11 Calibration of Associated Instruments",
+      "3.12 Preventive Maintenance",
+      "3.13 Breakdowns and Trends",
+      "3.14 QMS Records since Last Periodic Re-Qualification",
+      "3.15 Access Control",
+      "3.16 Audit Trail Review",
+      "3.17 Computerized System Validation Status",
     ]);
+    const alarms = observations?.children?.find(
+      (c) => c.label === "3.9 Alarm Trends"
+    );
+    expect(alarms?.sectionKey).toBe("elr_alarms");
+    expect(alarms?.children?.[0]).toEqual({
+      label: "3.9.1 Alarm Trend Summary",
+      sectionKey: "elr_alarms",
+    });
+    expect(
+      outlineLabelsForSection(
+        "equipment_lifecycle_report",
+        "elr_preventive_maintenance",
+        "mj"
+      )
+    ).toEqual(["3.12 Preventive Maintenance"]);
+    expect(
+      outlineLabelsForSection("equipment_lifecycle_report", "elr_monitoring", "mj")
+    ).toEqual(["3.10 Monitoring"]);
+    expect(
+      outlineLabelsForSection("equipment_lifecycle_report", "elr_alarms", "mj")
+    ).toEqual(["3.9 Alarm Trends", "3.9.1 Alarm Trend Summary"]);
     const breakdowns = observations?.children?.find(
-      (c) => c.label === "3.9 Breakdowns and Trends"
+      (c) => c.label === "3.13 Breakdowns and Trends"
     );
     expect(breakdowns?.sectionKey).toBe("elr_breakdowns");
     expect(breakdowns?.children?.[0]).toEqual({
-      label: "3.9.1 Breakdown Trend Summary",
+      label: "3.13.1 Breakdown Trend Summary",
       sectionKey: "elr_breakdowns",
     });
+    const summary = toc.find((e) => e.label === "5. Summary and Conclusion");
+    expect(summary?.sectionKey).toBeUndefined();
+    expect(summary?.children).toEqual([
+      {
+        label: "5.1 System Trends and Patterns",
+        sectionKey: "elr_system_trends",
+      },
+      {
+        label: "5.2 Risk Assessment and Prioritized Actions",
+        sectionKey: "elr_risk_actions",
+      },
+      { label: "5.3 Conclusion", sectionKey: "elr_conclusion" },
+    ]);
     expect(toc.find((e) => e.label === "6. Recommendation")?.sectionKey).toBe(
       "elr_conclusion"
     );
@@ -252,6 +290,38 @@ describe("getReportTableOfContents", () => {
   it("returns a numbered body row for generic documents", () => {
     expect(getReportTableOfContents("generic_document", "demo")).toEqual([
       { label: "1. Document", sectionKey: "body" },
+    ]);
+  });
+
+  it("numbers 3xper vendor qualification Cover through scoring", () => {
+    const toc = getReportTableOfContents("vendor_qualification", "3xper");
+    expect(toc[0]).toEqual({ label: "1. Cover", sectionKey: "vq_cover" });
+    expect(toc.at(-1)?.sectionKey).toBe("vq_scoring");
+    expect(toc).toHaveLength(16);
+  });
+
+  it("numbers the 3xper qualification summary report like the form Index", () => {
+    const toc = getReportTableOfContents("qualification_summary_report", "3xper");
+    expect(toc.map((entry) => entry.label)).toEqual([
+      "1. Introduction",
+      "2. Overview and Background",
+      "3. Qualification Lifecycle",
+      "4. Standard Operation Procedures",
+      "5. Requirement Traceability Matrix",
+      "6. Qualified Operating Parameter Details",
+      "7. Conclusion",
+    ]);
+    expect(toc[0].children?.[0]).toEqual({
+      label: "1.1 Objective",
+      sectionKey: "qsr_objective",
+    });
+    expect(toc[4].children?.map((entry) => entry.sectionKey)).toEqual([
+      "qsr_rtm_process",
+      "qsr_rtm_control",
+      "qsr_rtm_gmp",
+      "qsr_rtm_safety",
+      "qsr_rtm_csv",
+      "qsr_rtm_maintenance",
     ]);
   });
 });

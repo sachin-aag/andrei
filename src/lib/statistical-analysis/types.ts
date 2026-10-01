@@ -28,6 +28,7 @@ export const XY_SCATTER = "xy_scatter" as const;
 export const ONE_WAY_ANOVA = "one_way_anova" as const;
 export const BOXPLOT = "boxplot" as const;
 export const HISTOGRAM = "histogram" as const;
+export const TIME_SERIES = "time_series" as const;
 
 export const MIN_ANOVA_GROUPS = 2;
 export const MAX_ANOVA_GROUPS = 40;
@@ -38,6 +39,17 @@ export const MAX_BOXPLOT_GROUPS = 80;
 export const MIN_BOXPLOT_N = 1;
 /** A single numeric point still draws one histogram bar. */
 export const MIN_HISTOGRAM_N = 1;
+/** Two readings are the fewest that make a line. */
+export const MIN_TIME_SERIES_N = 2;
+/**
+ * Points kept in a saved time series. A cycle print is ~2,000 one-minute
+ * readings and the worksheet holds 10,000; beyond this the figure gains
+ * nothing and the stored JSON gets heavy. Decimation never drops an
+ * out-of-band reading — see `computeTimeSeries`.
+ */
+export const MAX_TIME_SERIES_POINTS = 4_000;
+/** Conditional bands on one series (one per recorded setpoint). */
+export const MAX_TIME_SERIES_BANDS = 12;
 export const MIN_XY_POINTS = 2;
 export const MAX_SCATTER_LEGEND_GROUPS = 24;
 /** X-axis label when a worksheet scatter has no second column (1D vs index). */
@@ -87,7 +99,8 @@ export type AnalysisKind =
   | typeof XY_SCATTER
   | typeof ONE_WAY_ANOVA
   | typeof BOXPLOT
-  | typeof HISTOGRAM;
+  | typeof HISTOGRAM
+  | typeof TIME_SERIES;
 
 export function boxplotFallbackTitle(
   yColumnName: string,
@@ -97,6 +110,14 @@ export function boxplotFallbackTitle(
   const by =
     categoryNames.length > 0 ? ` by ${categoryNames.join(", ")}` : "";
   const base = `Boxplot of ${yColumnName}${by}`;
+  return rowLabel ? `${base} (${rowLabel})` : base;
+}
+
+export function timeSeriesFallbackTitle(
+  columnName: string,
+  rowLabel: string
+): string {
+  const base = `${columnName} over time`;
   return rowLabel ? `${base} (${rowLabel})` : base;
 }
 
@@ -156,6 +177,18 @@ export type WorksheetSpecRow = {
   lsl: string;
   usl: string;
   target: string;
+  /**
+   * Conditional acceptance limits for this column — the setpoint / timepoint /
+   * grade column whose value picks the band, and one band per value.
+   *
+   * A specification belongs to the measurement, not to each plot of it. Stored
+   * here, limits taken from a cited document once apply to every sheet that
+   * has a column of this name, so plotting eight batches does not mean
+   * restating the bands eight times (or re-deriving them eight times, which is
+   * eight chances to get one wrong).
+   */
+  conditionColumnName?: string;
+  bands?: TimeSeriesBand[];
 };
 
 /**
@@ -628,13 +661,160 @@ export type HistogramAnalysisSummary = AnalysisSummaryBase & {
   results: HistogramResult;
 };
 
+/** One acceptance band, selected by a value in the condition column. */
+export type TimeSeriesBand = {
+  /** Condition-column value this band applies to, verbatim. */
+  when: string;
+  lsl: number | null;
+  usl: number | null;
+};
+
+export type TimeSeriesConfig = {
+  /** Numeric measurement column. */
+  columnId: string;
+  columnName: string;
+  /** Timestamp column — a date, or a full date-time. */
+  timeColumnId: string;
+  timeColumnName: string;
+  /**
+   * Optional clock-time column. Instrument prints split the stamp across
+   * DATE and TIME, so the two are joined rather than forcing a rewrite.
+   */
+  clockColumnId?: string | null;
+  clockColumnName?: string | null;
+  title: string;
+  /** Fixed limits. Ignored when `bands` is set. */
+  lsl: number | null;
+  usl: number | null;
+  /**
+   * Limits selected per row by another column — a lyophilizer's vacuum band
+   * depends on the recorded setpoint, a stability limit on the timepoint.
+   */
+  conditionColumnId?: string | null;
+  conditionColumnName?: string | null;
+  bands?: TimeSeriesBand[] | null;
+  /** Draw the acceptance band. Default on. */
+  showSpecLimits?: boolean;
+  /** Shade the out-of-band runs. Default on. */
+  showExcursions?: boolean;
+  /** 1-based inclusive. Null with `rowEnd` null means the whole column. */
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
+  rows?: number[] | null;
+};
+
+export type TimeSeriesPoint = {
+  /** Epoch milliseconds. */
+  t: number;
+  /** The timestamp as printed, for tick labels. */
+  label: string;
+  value: number;
+  /** 1-based worksheet row. */
+  row: number;
+};
+
+/**
+ * One contiguous out-of-band run. `readings` and `elapsedMinutes` are separate
+ * on purpose: eight readings one minute apart span seven minutes, and mixing
+ * the two conventions is what put four different durations for one excursion
+ * into ERF/26/022.
+ */
+export type TimeSeriesExcursion = {
+  startLabel: string;
+  endLabel: string;
+  startRow: number;
+  endRow: number;
+  readings: number;
+  elapsedMs: number | null;
+  elapsedMinutes: number | null;
+  /** `H:MM:SS`, the way an instrument cursor reports a delta. */
+  elapsedClock: string | null;
+  min: number;
+  max: number;
+  direction: "low" | "high" | "mixed";
+  lsl: number | null;
+  usl: number | null;
+  /** Condition-column value in force, when the band is conditional. */
+  condition: string | null;
+};
+
+/** The band in force over one stretch of the x axis, for shading. */
+export type TimeSeriesBandSegment = {
+  from: number;
+  to: number;
+  lsl: number | null;
+  usl: number | null;
+  condition: string | null;
+};
+
+export type TimeSeriesResult = {
+  /**
+   * Chart form of the same points, so the Excel-chart export, the PNG
+   * fallback, and document insert all work without a second renderer. `x` is
+   * epoch milliseconds with `layout.xTickFormat = "time"`; `limits` carries a
+   * fixed band only — a conditional band steps, and that is drawn from
+   * `bandSegments` by the time-series view.
+   */
+  specs: ChartSpec[];
+  n: number;
+  /** Rows dropped for a non-numeric value or an unparseable timestamp. */
+  skipped: number;
+  /**
+   * Readings that had an acceptance band in force. Zero means nothing was
+   * assessed — which is emphatically not the same as nothing being out of
+   * band, and must never be reported as a pass.
+   */
+  judgedReadings: number;
+  points: TimeSeriesPoint[];
+  /** True when `points` is a decimated view of `n` readings. */
+  decimated: boolean;
+  start: number;
+  end: number;
+  min: number;
+  max: number;
+  mean: number;
+  excursions: TimeSeriesExcursion[];
+  /** Out-of-band readings across every run. */
+  excursionReadings: number;
+  bandSegments: TimeSeriesBandSegment[];
+};
+
+export type TimeSeriesComputeErrorCode =
+  | "too_few_values"
+  | "invalid_specs"
+  | "missing_column"
+  | "unparsed_timestamps";
+
+export type TimeSeriesComputeSuccess = {
+  ok: true;
+  result: TimeSeriesResult;
+};
+
+export type TimeSeriesComputeFailure = {
+  ok: false;
+  code: TimeSeriesComputeErrorCode;
+  message: string;
+};
+
+export type TimeSeriesComputeOutcome =
+  | TimeSeriesComputeSuccess
+  | TimeSeriesComputeFailure;
+
+export type TimeSeriesAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof TIME_SERIES;
+  config: TimeSeriesConfig;
+  results: TimeSeriesResult;
+};
+
 export type StatisticalAnalysisSummary =
   | SixpackAnalysisSummary
   | ScatterAnalysisSummary
   | XyScatterAnalysisSummary
   | AnovaAnalysisSummary
   | BoxplotAnalysisSummary
-  | HistogramAnalysisSummary;
+  | HistogramAnalysisSummary
+  | TimeSeriesAnalysisSummary;
 
 export function isSixpackAnalysis(
   analysis: StatisticalAnalysisSummary
@@ -670,6 +850,23 @@ export function isHistogramAnalysis(
   analysis: StatisticalAnalysisSummary
 ): analysis is HistogramAnalysisSummary {
   return analysis.kind === HISTOGRAM;
+}
+
+export function isTimeSeriesAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is TimeSeriesAnalysisSummary {
+  return analysis.kind === TIME_SERIES;
+}
+
+/** Overlay checkboxes default on. */
+export function timeSeriesOverlays(config: {
+  showSpecLimits?: boolean;
+  showExcursions?: boolean;
+}): { showSpecLimits: boolean; showExcursions: boolean } {
+  return {
+    showSpecLimits: config.showSpecLimits !== false,
+    showExcursions: config.showExcursions !== false,
+  };
 }
 
 /**

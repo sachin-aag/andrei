@@ -17,14 +17,20 @@ alwaysApply: false
 
 # Chat and attachments
 
-Follow the **latest user message**. Agent mode may edit when they asked to
+Follow the **latest user message**. Ask vs Agent is per send, not the
+whole thread — a prior "currently in Ask mode" assistant note is stale
+once the composer is Agent ("I switched to Agent" / yes after that copy
+is write). Stamp THIS SEND as a prefix on the latest user ModelMessage
+and in `composerModeTurnRule` — never as a mid-thread `role: "system"`
+message (Gemini: system messages only at the beginning). Agent mode may edit when they asked to
 write; empty sections and ready attachments are not a request to draft.
 Greetings ("hi", "hello", "thanks") must not search or call write tools
 (Document `draft_field` / Analytics `write_column`). Classifier:
 `classifyChatUserIntent` in `src/lib/ai/chat/user-intent.ts` (rules) plus
 `resolveChatUserIntent` in `src/lib/ai/chat/resolve-user-intent.ts`
-(Flash-Lite when rules would emit `ambiguous_agent_mode`, and on Document
-chat when the text looks like a worksheet dump). The same call may set
+(Flash-Lite when rules would emit `ambiguous_agent_mode` or
+`ambiguous_polite_request` such as "can you do the same for X", and on
+Document chat when the text looks like a worksheet dump). The same call may set
 `switchToAnalytics` when Lite is ≥0.75 sure the destination is the Analytics
 grid — Report chat then shows a Switch to Analytics button; clicking it
 sets Analytics and resends the original request. A yes / go for it after
@@ -32,19 +38,52 @@ that copy is a write. Stub chat,
 timeout, and parse failures keep the rules decision with no widget.
 Retrieval maps those turns to focused (`reason: no_task`) and skips
 kickoff evidence. A yes after the assistant offered to draft is a write
-request.
+request. Agent-mode "go for it" / "do it" is write even when the prior
+turn dumped findings instead of matching the offer regex. Polite leftovers
+(`can you` without a produce verb, "do the same") go to Lite — they are
+not `question_or_lookup`. Real lookups (`what` / `who` / `do you`) stay
+on rules. Missing-work complaints ("nothing was filled", "why isn't the
+table filled", "I don't see the change", "suggestions are not landing",
+"refusing to make an edit", "only summarising") are write on Agent
+(`reason: missing_work`) so Lite is skipped. An explicit "insert the
+suggestion" / "edit the document" turn reads the section first, then the
+next step must call `edit_table` (table in scope) or `propose_edit`. Do not
+claim Agent mode is read-only or paste a markdown table. ELR section numbers
+in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
+Maintenance, 3.15 Access Control). A printed Table N is only the number on
+the context map. Agent read keeps write tools
+registered on the ToolSet; `advertisedTools` hides them. A remapped
+`unsupported_tool` for a write tool unlocks them on the next step
+(Document `prepareReportChatStep` and Analytics `prepareAnalyticsChatStep`).
+`list_suggestions` lists open / approved / dismissed AI cards (section + preview, no comment ids). Wrap-up
+must not claim a fill unless a tool this turn returned proposed, drafted,
+or applied.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design
 output, verification objective, ECO/DCR). Exception: when intent is **write**
 and the target section is **filled or partial**, call `read_section` first
 (gate on fill state + write intent — not draft/fill verbs). Review against
-criteria and any cached AI Check gap hints; if there are no material gaps,
-report that it is already drafted and ask whether they want a specific
-change. Explicit rewrite language is the escape hatch. If there are gaps,
+criteria and any cached AI Check gap hints; if there are no material gaps
+and they did not already name a change, report that it is already drafted
+and ask whether they want a specific change. A named cell or document edit
+is that change: after the read, call `edit_table` or `propose_edit`. Explicit
+rewrite language is the escape hatch. If there are gaps,
 make a targeted edit. Do not pad length or invent gaps. If a gap conflicts
 with an omit-if rule, ask once whether to include it. Do not quiz
 them for facts already in the section or that you would put in `hint`.
+An unset title-page identity field with two mutually exclusive answers in
+the attachments (ELR: both Vial and Cartridge, `formatScope` unset) is a
+fork: `ask_user` once before drafting. That is not a fact already in
+retrieved evidence. Type-owned `chat.contextIdentity` surfaces those fields
+and `chat.identityFields` lists the scalars Agent fills with `draft_identity`
+(one suggestion card for the whole header — Apply / Dismiss; remaining-section
+treats a complete proposal as done; duplicate document numbers fail at
+propose and at Apply; no citations — those fields print on the cover and
+running header). QSR
+Capacity / Size (`keepUnits`) restores the printed unit from this turn's
+cited quotes when the model writes a bare number (`8000` → `8000 L`);
+conflicting units stay bare, and 8000 is not converted to 8 KL.
 `prepareStep` hides `draft_field` while that gate is active. The document
 index (filename/topics) is not evidence. Evidence preview is already in the
 system prompt when kickoff retrieval hits.
@@ -52,15 +91,149 @@ system prompt when kickoff retrieval hits.
 After a cited search hit, a locate/read (`read_document_page` /
 `document_outline` / Analytics scan-extract), or two empty greps, hide
 `search_documents` for the rest of the turn (`searchLoopDirective` shared
-with Analytics). Do not hide search while a document review is
-`in_progress` / `ready_to_finish`. Prior-turn tool JSON is compacted before
+with Analytics). An identifier-only grep that hits a protocol family
+keeps search open until every attached protocol family (DQ, IQ, OQ, PQ) has been queried (any order) (`shouldKeepRtmProtocolSearchOpen`) — a hit on one family is
+not enough while DQ / IQ / OQ / PQ are still unsearched. Document-chat attachment cover sheets (ATTACHMENT NO. /
+certificate-of locators, `divider=true`), split tables (`continues=true`,
+Page N of M with N < M), and title lists without identifier values
+(`identityIncomplete=true` — SOP Name / Document Name without a document
+number) are not a complete cited data page: they
+set `keepSearchOpen` and `searchHitCount` treats `dividerHits` /
+`identityIncompleteHits >= returnedCount` as 0 so the following page can
+be read or grep can continue. `read_document_page`
+includes the next page as `continuation` when the transcript prints Page N
+of M. Analytics still hides after a real cited page (it does not keep grep
+open for split tables). Do not hide search while a document review is
+`in_progress` / `ready_to_finish`, or when a tool result sets
+`keepSearchOpen` / `status: unsupported_facts`. Prior-turn tool JSON is compacted before
 `convertToModelMessages` (page transcripts, finish findings, write
 payloads). Finished document-review coverage is rehydrated across turns
-when the ready-attachment coverage key is unchanged; comprehensive
-retrieval does not force another walk on a zero coverage delta unless the
-latest message is explicit pushback (`you missed`, `look again`,
-`re-check`, a test-family code). Pushback skips rehydrate so a finished
-session does not hide `start_document_review`.
+when the ready-attachment coverage key is unchanged (the key is the
+selected documents' **full** page counts plus the current section/objective,
+not a silent 300-page prefix); comprehensive retrieval does not force another walk on a zero
+coverage delta unless the latest message is explicit pushback
+(`you missed`, `look again`, `re-check`, a test-family code). Pushback
+skips rehydrate so a finished session does not hide
+`start_document_review`. `planReviewPages` queues pages that score on the current
+objective (floor 8; nearby same-file pages if almost nothing matches). ELR
+inventory tables score against the live column schema (headers / aliases, plus
+a typed `{modifier} {section noun}` that is not URS language such as
+`monitoring systems`), nested method names (non-viable / settle plate / glove /
+LAF). Preferred-filename boost is PRQR/PRQP (monitoring no longer prefers
+the alarm-trend PDF). Preferred files with
+zero hits are still queued as a stratified sample (PRQR/PMC on breakdowns,
+CCF/CAPA/PRQR on QMS, cap `REVIEW_PREFERRED_MISSING_PAGE_CAP`) so a few CSV-IQ
+/ FAT headers cannot floor-8-pad them out — not every page of a 200-page CCF.
+CSV-OQ / CSV-IQ / RTM / URS pages
+score 0 unless they look like a dated result table (QSR RTM and
+Operating Range skip URS demotion and prefer `urs` / `user requirement`
+filenames plus the URS heading family; 5.1–5.6 share one `|obj:qsr_rtm`
+finish so a URS walk unlocks the sibling tables — including Gemini NL
+objectives such as control philosophy / GMP requirements). Header-only UNCONTROLLED
+COPY / Sign/Date chrome is 0. Haystack uses outline + pageContext + the first
+4000 transcript characters. `start_document_review`
+for an ELR inventory still omits a single-file pin so PRQR / PRQP / PQR
+rows can split, but it does not page-list a file typed as a different
+inventory (a calibration planner is not QMS). Monitoring and Breakdowns drop
+alarm-trend files and cite the already-drafted Alarm Trends table instead. Running-header `document no`
+is not a column hit. A truncated matching finish that cannot unlock
+`edit_table` (floor-8 skip of PRQR) does not `forceStart` again — remaining
+section must not mill until the 270s abort. The planning chip names queued files. Complementary grep ORs
+those column phrases. `REVIEW_PAGE_FETCH_CAP`
+(2500) is listing safety only. ELR inventory walks then cap at
+`REVIEW_INVENTORY_WALK_CAP` (48) so one continue can drain scored CCF
+pages; DV catalogs keep the listing cap. QSR Table 3
+(`qsr_qualification_documents`) is not ELR qualification history: do not
+demote URS or walk 48 protocol body pages — queue the first two pages of
+every attached lifecycle file and omit `attachmentIds`. Collapse `|obj:`
+onto that cover walk only when every named identity shares the cover
+plan — mixed SOP Number / Reference Number copy is a scored body walk.
+QSR RTM / Operating Range omit `attachmentIds` so the server keeps the URS
+(a 12-page URS is a 12-page walk), not DQ/IQ/OQ/PQ bodies.
+`continue_document_review` stops starting batches after ~60s and round-robins
+batches across attachments. `start_document_review`
+reports `truncated` / `skippedDocuments`. Call `list_attachments` first
+when the file set is unknown. Rehydrate only a finish with `status=complete`
+and `truncated !== true`.
+
+`edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
+`afterRow`. `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
+over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
+group a batch by a reused dummy numeric row. An already-filled or missing
+`rowKey` sibling is dropped so remaining cells still preview. Do not insert `{ banner }` group rows; existing template banners
+keep their colspan and data rows do not inherit it.
+Hard facts in `draft_field` / `propose_edit` / `edit_table` are gated
+against the citation ledger's served quotes (`groundDraftText`). That
+gate is fact-level (`citation-exemption.ts`): never skip a whole
+section. Exempt title-page / user-confirmed identity, the ELR
+1 April–31 March window, and facts already written in this report
+(sibling table or another section). Copied attachment facts still need
+a page in Purpose, Responsibilities, assessments, and recaps. Tables
+stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
+60-finding sample) so those transcripts can hydrate. Empty ledger or
+pages with no quotes fail open, except QSR RTM / Operating Range / Qual
+Docs / References, which fail closed when the URS or source protocol is
+attached but unread. Those rows also require the fact in the same URS-N
+quote window (`qsr-row-grounding.ts`) or on the URS cover / outside any
+URS-N window (capacity, MOC) — a neighbour URS on the same page still
+bounces. A column-major URS page (one or more blocks of IDs, then the requirement
+sentences) keeps each block's sentences out of the last ID's window and
+still lets every ID in that block use them, even when another row's
+parameter shares a word such as glass or thickness. URS-1 does not match
+URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing.
+Digits in URS-N are not a measured number. A decimal such as 25.0 is
+not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
+to persist `<number>` or ask the engineer to type it. Integer `3` is not
+`3.5`. A named date column (Effective Date) must match the source value
+next to that same label — presence of a signature or observation date on
+the cited page is not that field. A leading minus is part of the number
+(`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
+leading tilde is approximate (`~50±10 RPM` is not `−50 ± 10 RPM`). A ±
+window is not independent evidence for the setpoint (`50±10 RPM` is not
+`−50 ± 10 RPM`). The high end of a range is not evidence for the low end
+(`20 °C` is not `−20 °C to 150 °C`). Stock Complies / bare Section 13 still need a named-stage protocol page that
+  either names that URS ID or topic-matches that row's Parameters in the
+  protocol body (not the running header). Verified on the result line counts
+  as a pass; Verified By in a signature block does not. An executed
+  verification record (Actual observation / Verified By columns plus a
+  signature date that is not the Effective Date / Issued On header date)
+  is a pass with no pass word; an unexecuted template (no signature date)
+  is not, and a fail / does-not-meet statement vetoes every pass. Unsupported family-column /
+  Remarks cells clear
+instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
+dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
+`Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
+prints that heading. An explicit empty `edit_cells` of filled
+DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when
+the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
+only at row level (labeled Result / Remarks N/A, `not applicable for this
+…`, or a bare N/A inside that URS-N window) — a stray `Model Number NA`
+spec cell does not. When a saved cell differs from the request, the
+`edit_table` `proposed` result carries `adjustedCells` (`requested` /
+`saved`) plus `proposedRowKeys` / `proposedCellCount` / `droppedRowKeys`
+so the wrap-up names only the rows on the card (one `edit_table` is one
+card, not one card per URS row). The card title counts only cells that
+actually change — identity Remarks and dummy leftover cells are dropped
+before persist. QSR RTM family columns / Remarks on the card are the
+grounded cells from chat (`edit_table` insertText) — there is no family
+ranker that rewrites IQ to PQ or swaps a neighbour heading. Existing
+Table 5–10 rows stored Stage + Section: open / export / chat merge keeps
+URS identity and Remarks, drops Stage / Section, and leaves DQ/IQ/OQ/PQ
+blank so the assistant can refill (no SQL). A page
+counter (`16`) or logged reading (`12.72 °C`) in Section still clears.
+Wrap-up quotes `adjustedCells.saved`
+Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`
+(no persist; `unsupported_facts`). On a blocked write, those tools run
+one closed-set repair search (C1 retriever), seed new quotes, and
+re-ground the original text — not a Flash-Lite subagent. Prose leftover
+`<date>` / `<identifier>` / `<number>` persist after that lookup when
+the facts are still missing. Table leftovers bounce once
+(`unsupported_facts` + `keepSearchOpen`) so a subsequent grep can still
+fill the cell; a retry in the same turn may persist leftover `<date>` /
+`<identifier>` / `<number>`, but other leftover `<…>` cells are dropped
+instead of persisting `<remarks>` / `<result>`. Uncited
+numbers do not `citation_move` onto a coincidental ledger page. Analytics
+`write_column` stays ungated.
 
 ## Spectrum
 
@@ -105,6 +278,7 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   helper from `src/lib/attachments/`.
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`).
+  Include `list_suggestions` (open / approved / dismissed AI cards).
   Missing from the allowlist = silent Plan-mode gap. Analytics tools stay
   off that list. File-set questions (how many attachments, which files in which
   folder, PDF vs Word, status, filename/topic) use `list_attachments`
@@ -122,6 +296,8 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   question or document-review step) remaps onto the internal `unsupported_tool`
   fallback so the stream continues with a hint — do not let `AI_NoSuchToolError`
   fail the chat. Keep that fallback out of `activeTools` / the Plan allowlist.
+  On Agent read, a write-tool `unsupported_tool` unlocks the registered write
+  tools on the next step (do not paste a markdown table as a stand-in).
 - Analytics never asks which page to read. `ask_user` is hidden on a lookup,
   after Skip / “find it”, and after any grep (including TOC-only) until a
   page is read/scanned. Page-number questions are rejected if they still
@@ -140,25 +316,49 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   plots copy the saved Analytics preview at the same 600px display width
   as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
   a 300px height cap — that turns a sixpack into a thin unreadable strip.
-- Report chat `editPolicy` is derived on the **server**. Document **and**
-  Agent chrome **propose** (red/green `ai_fix` comments; nothing lands
-  until Apply / Dismiss, including Apply all / Dismiss all for one or more
-  open suggestions). Same-turn `propose_edit` calls serialize; locatable
-  spans within 20 characters on the same field fold into one card (no
-  per-field budget). Lead-in / table / figure / citation-split / cell-scope
-  edits stay separate. Do not trust a client `editPolicy`. Plan-mode
-  allowlist does not gain edit tools. The `commit` tool path remains for
-  tests; live report chat never derives it.
+- Document **and** Agent chrome **propose** (red/green `ai_fix` comments;
+  nothing lands until Apply / Dismiss, including Apply all / Dismiss all
+  for one or more open suggestions). Same-turn `propose_edit` calls
+  serialize; locatable spans within 20 characters on the same field fold
+  into one card (no per-field budget). Lead-in / table / figure /
+  citation-split / cell-scope edits stay separate. Plan-mode allowlist
+  does not gain edit tools. There is no `commit` edit-policy path.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 - Report and Analytics `stopWhen` is Cancel or the wall-clock deadline
   (`CHAT_SERVER_ABORT_MS` from request start, not from `streamText`).
   Do not add a tool-step cap — users must never hit one. Do not persist
-  a “ran out of steps / ask me to continue” notice. When the 270s abort
+  a “ran out of steps / ask me to continue” notice. Multi-section Agent
+  drafts persist a `pending_plan` on the chat session. After each turn
+  the client POSTs `Continue the remaining sections.` with `autoContinue`
+  (auto-continue user rows stay hidden; one live remaining-section widget
+  sits **below** the transcript, above Working… / Resume — collapsed
+  `N of M — current`, expand for done / running / pending). Do not persist
+  or show “The assistant stopped before finishing” when that next POST
+  will run. Three remaining-section turns on the same in-progress item
+  without completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including
+  review-only 270s aborts) pause the queue (`same_section_limit`); Resume
+  clears attempts. The N of N chip
+  spins only while the turn is running; it shows Paused on Cancel and hides
+  when every remaining section is drafted. MJ ELR evidence sections stay
+  in progress after `edit_table` until the same turn drafts the assessment
+  with a count (and `trend` / `overallGrade` / `recommendation`); Access
+  Control also needs contiguous annexure Sr. rows and the continuation page
+  of a Page N of M split; ELR Attachments is filled at Word export from the
+  live file list (do not draft `elr_attachments`);
+  investigation and DV queues still advance on the table or narrative they
+  already draft. Working… hides
+  when the stream is idle even if the optimistic send still has a stale
+  pending id after hydrate. The agent-done notice is `Assistant is done
+  with {section}`. Do not toast a false “hit an error” between successful
+  section turns. Cancel pauses the queue; a new typed prompt pauses it;
+  reopening the thread does not auto-chain. When the 270s abort
   fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`
   so we can count it. Loop guards live in
   `prepareStep`
-  (`tableEditLoopDirective`, `prepareDocumentReviewStep`,
+  (`tableEditLoopDirective` — `review_incomplete` starts
+  `start_document_review` instead of emptying tools,
+  `prepareDocumentReviewStep`,
   `alreadyDraftedReadStep`, `tableSchemaReadStep` on write turns whose
   in-scope section already has a table, Analytics search hide after a
   cited page or two empty greps, Analytics `write_column` hide after a
@@ -215,18 +415,43 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   section intent are scored on the latest user turn only (an earlier
   equipment/UUT draft must not keep “draft the remaining sections” on
   the adaptive path). Inventory-section scope needs latest-turn inventory
-  language or open-set produce before comprehensive. Header-only seeded
-  tables (blank data cells, no surrounding prose) are empty, not partial
-  — `sectionHasTable` still sees them. Search hits include `citation`
+  language or open-set produce before comprehensive.   Seeded tables whose cells are blank or unchanged from the
+  template are empty, not partial, including seed prose that belongs
+  to the template (QSR 6.1 “Auxiliary Equipment:”, 6.3 “Agitator Type:”)
+  — `sectionHasTable` still sees them. Extra engineer sentences are not
+  empty. Canned default paragraphs (QSR 1.2 Scope) stay filled. Empty ELR inventory fills
+  (`chat.inventorySections` table fields) require a finished review
+  whose coverage key matches that section (`coverageKeySatisfiesObjective`
+  on `|obj:`). `isFinished()` after a qualification walk does not unlock
+  Associated Instruments. Adaptive idle with an empty in-scope
+  inventory still forces `start_document_review`
+  (`requireInventoryReview`). Recompute that flag from the live
+  `finishedCoverageKey` in `prepareStep` — a matching finish this turn
+  must not force another start because the table is still empty, unless the
+  finish was a floor-8 skip (`reviewedPages <= 8` and selected files were
+  not queued) or a preferred evidence family was skipped (PRQR). Skipping
+  the alarm-trend PDF on monitoring or breakdowns is finished coverage —
+  Alarm Trends already owns that file. Hide review tools after that finish
+  and draft. `start_document_review`
+  returns `already_complete` for the same `|obj:` instead of resetting.
+  Gate empty tables only — filling missing
+  cells on a partial table is not another full walk. `draft_field` of
+  those `table` fields returns `use_edit_table`. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). The saved field converts those to numbered `[n]`
   markers plus a trailing Citations: list on every pack — there is no
-  inline `[filename, p. N]` document style. Do not reject or rewrite a
+  inline `[filename, p. N]` document style. User-visible chat never quotes
+  24-character attachment / analysis / suggestion ids — `ChatMarkdown`
+  rewrites them to filenames and plot titles. Do not reject or rewrite a
   draft that omitted a known page. Clicking those brackets (or numbered `[n]` that maps to
   a parked source) in the document, chat, or suggestion Sources opens or
   reuses that attachment canvas tab and scrolls the PDF to the cited
-  page. Combined `[file A, p. N, file B, p. M]` is two links; extra pages
-  of one file stay one link. Word preview cannot jump to a page.
+  page. Combined `[file A, p. N, file B, p. M]` (two extensions, comma, or
+  semicolon) is two links; extra pages of one file stay one link. Compact
+  `[E-PR-068 and E-PR-071.pdf, p. 1]` is two links only when those files are
+  attached (or on the citation ledger); otherwise it stays one filename.
+  English `and` titles (`QDF-Filling and capping machine.pdf`) stay one
+  link. Word preview cannot jump to a page.
   Open attachment canvases stay mounted while the tab is open (hidden/inert
   like Analytics) so switching to Report does not show “Loading preview…”
   or reset the page. `openDocument(id)` without a page does not jump to 1;
@@ -234,10 +459,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   or the tab X) unmounts the preview and restores the last canvas tab that
   was active before that file. **Focused** is an explicit skim.
   Adaptive turns skip auto-evidence so the model must grep.
-  Adaptive/focused turns do not expose `start_document_review`. Comprehensive
+  Adaptive/focused turns do not expose `start_document_review` unless an
+  empty in-scope ELR inventory still needs a matching review
+  (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
-  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). `finish_document_review` caps the findings sample;
+  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
+  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and

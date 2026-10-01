@@ -36,6 +36,8 @@ export const CORPUS_ANCHORS = {
   digitalCalipers: "Digital Calipers",
   swEval7: "SW-EVAL-7",
   interlock: "Laser interlock latency",
+  pmcPr014: "PMC/PR/014",
+  sopDpQa014: "SOP/DP/QA/014",
 } as const;
 
 export type CorpusFile = {
@@ -71,17 +73,18 @@ export async function buildProtocolEquipmentPdf(): Promise<Buffer> {
   const font = await doc.embedFont(StandardFonts.Helvetica);
 
   const header = doc.addPage([612, 792]);
-  drawLines(
-    header,
-    font,
-    Array.from({ length: 38 }, (_, index) => uutHeaderLine(index))
-  );
+  drawLines(header, font, [
+    "The equipment. A system. This report.",
+    "Cover sheet — equipment. Separate system. Separate report.",
+    ...Array.from({ length: 36 }, (_, index) => uutHeaderLine(index)),
+  ]);
 
   const required = doc.addPage([612, 792]);
   drawLines(required, font, [
     ...Array.from({ length: REQUIRED_EQUIPMENT_HEADER_LINES }, (_, index) =>
       uutHeaderLine(index)
     ),
+    "Equipment system report — required instruments",
     CORPUS_ANCHORS.requiredTable,
     "Instrument / Vendor / Calibration",
     `${CORPUS_ANCHORS.spectrumAnalyzer} / ${CORPUS_ANCHORS.narda} / N/A`,
@@ -113,6 +116,7 @@ export async function buildSoftwareRequirementsPdf(): Promise<Buffer> {
     "Software Requirements Specification",
     "Eval corpus document — not a customer record",
     "This cover page has no requirement identifiers.",
+    "The equipment. A system. This report. Cover only — not a data table.",
     "Revision A. Product: retrieval eval corpus. Controlled copy for search tests only.",
     "Do not cite this cover as containing SW-EVAL-7 or any equipment table.",
   ]);
@@ -122,6 +126,8 @@ export async function buildSoftwareRequirementsPdf(): Promise<Buffer> {
     "TABLE SOFTWARE REQUIREMENTS",
     "ID / Description / Result",
     `${CORPUS_ANCHORS.swEval7} ${CORPUS_ANCHORS.interlock} Pass`,
+    `${CORPUS_ANCHORS.pmcPr014} Preventive maintenance procedure Pass`,
+    `${CORPUS_ANCHORS.sopDpQa014} Validation Qualification Procedure Pass`,
     "SW-EVAL-8 Waveform buffer depth Pass",
     "SW-EVAL-9 Footswitch debounce Pass",
     "SW-EVAL-10 Display brightness ramp Pass",
@@ -176,6 +182,11 @@ export async function assertCorpusAnchors(
   assertAbsent(executedPage, CORPUS_ANCHORS.narda, "protocol p.3");
   assertContains(requirementsPage, CORPUS_ANCHORS.swEval7, "software p.2");
   assertContains(requirementsPage, CORPUS_ANCHORS.interlock, "software p.2");
+  assertContains(requirementsPage, CORPUS_ANCHORS.pmcPr014, "software p.2");
+  assertContains(requirementsPage, CORPUS_ANCHORS.sopDpQa014, "software p.2");
+  const protocolCover = pageText(protocolLayer.pages, PROTOCOL_PAGES.header);
+  assertAbsent(protocolCover, CORPUS_ANCHORS.pmcPr014, "protocol p.1");
+  assertAbsent(protocolCover, CORPUS_ANCHORS.requiredTable, "protocol p.1");
   for (const page of [...protocolLayer.pages, ...softwareLayer.pages]) {
     if (page.text.length < MIN_TEXT_LAYER_CHARS) {
       throw new Error(

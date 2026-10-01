@@ -26,6 +26,74 @@ export function clipLangfuseAttribute(value: string): string {
     : value.slice(0, LANGFUSE_ATTRIBUTE_MAX_CHARS);
 }
 
+export type LangfuseDeployContext = {
+  /** First-class Langfuse environment (`production` / `preview` / `development`). */
+  environment: string;
+  /** Git SHA (`VERCEL_GIT_COMMIT_SHA` or `LANGFUSE_RELEASE`). */
+  release?: string;
+  gitBranch?: string;
+  vercelEnv?: string;
+  customer?: string;
+};
+
+/**
+ * Deploy identity for Langfuse filters. `VERCEL_ENV` wins so a Vercel env
+ * var of `LANGFUSE_TRACING_ENVIRONMENT=production` on Preview cannot collapse
+ * preview traces into production.
+ */
+export function langfuseDeployContext(): LangfuseDeployContext {
+  const vercelEnv = process.env.VERCEL_ENV?.trim() || undefined;
+  const environment =
+    vercelEnv ||
+    process.env.LANGFUSE_TRACING_ENVIRONMENT?.trim() ||
+    "development";
+  const release =
+    process.env.LANGFUSE_RELEASE?.trim() ||
+    process.env.VERCEL_GIT_COMMIT_SHA?.trim() ||
+    undefined;
+  const gitBranch = process.env.VERCEL_GIT_COMMIT_REF?.trim() || undefined;
+  const customer =
+    process.env.NEXT_PUBLIC_ANDREI_CUSTOMER?.trim() ||
+    process.env.ANDREI_CUSTOMER?.trim() ||
+    process.env.ANDREI_VERCEL_DEPLOY_SCOPE?.trim() ||
+    undefined;
+  return { environment, release, gitBranch, vercelEnv, customer };
+}
+
+/** Metadata keys stamped on every generation / propagated observation. */
+export function langfuseDeployMetadata(): Record<string, unknown> {
+  const ctx = langfuseDeployContext();
+  return {
+    tracingEnvironment: ctx.environment,
+    release: ctx.release,
+    gitBranch: ctx.gitBranch,
+    vercelEnv: ctx.vercelEnv,
+    customer: ctx.customer,
+  };
+}
+
+function withDeployObservationMetadata(
+  metadata?: Record<string, unknown>
+): Record<string, string> {
+  return observationMetadata({
+    ...langfuseDeployMetadata(),
+    ...metadata,
+  });
+}
+
+function uniqueClippedTags(tags: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tag of tags) {
+    if (!tag) continue;
+    const clipped = clipLangfuseAttribute(tag);
+    if (seen.has(clipped)) continue;
+    seen.add(clipped);
+    out.push(clipped);
+  }
+  return out;
+}
+
 /**
  * Coerce metadata to `Record<string, string>` with values ≤200 characters.
  * Non-string values are stringified so v4 observation filters keep them.
@@ -59,9 +127,7 @@ export function langfuseGenerateTextTelemetry(options: {
       functionId: options.functionId,
       recordInputs: true,
       recordOutputs: true,
-      metadata: options.metadata
-        ? observationMetadata(options.metadata)
-        : undefined,
+      metadata: withDeployObservationMetadata(options.metadata),
     },
   } as const;
 }
@@ -108,9 +174,13 @@ export function withPropagatedAttributes<T>(
 ): T {
   if (!isLangfuseEnabled()) return fn();
   const { metadata, ...rest } = params;
+  const deploy = langfuseDeployContext();
+  const release = rest.version ?? deploy.release;
   return propagateAttributes(
     {
       ...rest,
+      environment: rest.environment ?? deploy.environment,
+      ...(release ? { version: release } : {}),
       userId: rest.userId ? clipLangfuseAttribute(rest.userId) : undefined,
       sessionId: rest.sessionId
         ? clipLangfuseAttribute(rest.sessionId)
@@ -118,8 +188,11 @@ export function withPropagatedAttributes<T>(
       traceName: rest.traceName
         ? clipLangfuseAttribute(rest.traceName)
         : undefined,
-      metadata: metadata ? observationMetadata(metadata) : undefined,
-      tags: rest.tags?.map(clipLangfuseAttribute),
+      metadata: withDeployObservationMetadata(metadata),
+      tags: uniqueClippedTags([
+        ...(rest.tags ?? []),
+        deploy.vercelEnv ?? deploy.environment,
+      ]),
     },
     fn
   );

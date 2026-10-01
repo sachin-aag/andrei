@@ -13,6 +13,8 @@ import {
   exportAuditEventsPdf,
 } from "@/lib/audit/export";
 import { listAuditEvents, listReportSignatures } from "@/lib/audit/queries";
+import { listAttachmentFolders } from "@/lib/attachments/folders";
+import { listActiveAttachments } from "@/lib/attachments/list-active";
 import { reportExportDocxArchiveName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import {
@@ -157,8 +159,15 @@ export async function buildCompleteRecordExportZip(
   const managerIds = await listReportManagerIds(reportId);
   const reportWithManagers = withAssignedManagerIds(report, managerIds);
 
-  const [sectionRows, commentRows, signatures, versions, attachmentRows] =
-    await Promise.all([
+  const [
+    sectionRows,
+    commentRows,
+    signatures,
+    versions,
+    attachmentRows,
+    attachments,
+    attachmentFolders,
+  ] = await Promise.all([
       db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
       db.select().from(comments).where(eq(comments.reportId, reportId)),
       listReportSignatures(reportId),
@@ -183,6 +192,8 @@ export async function buildCompleteRecordExportZip(
             isNull(reportAttachments.deletedAt)
           )
         ),
+      listActiveAttachments(reportId),
+      listAttachmentFolders(reportId),
     ]);
 
   const auditArtifactsPromise = includeAuditTrail
@@ -210,6 +221,8 @@ export async function buildCompleteRecordExportZip(
         signedAt: sig.signedAt,
         contentHash: sig.contentHash,
       })),
+      attachments,
+      attachmentFolders,
     }),
     buildEvidenceSourceExportEntries(attachmentRows),
   ]);

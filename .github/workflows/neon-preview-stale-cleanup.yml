@@ -25,6 +25,8 @@ jobs:
             label: demo
           - neon_project_id: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
             label: convergent
+          - neon_project_id: ${{ vars.NEON_PROJECT_ID_3XPER }}
+            label: 3xper
           - neon_project_id: ${{ vars.NEON_PROJECT_ID }}
             label: mj-legacy
     steps:

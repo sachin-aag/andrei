@@ -468,3 +468,29 @@ describe("resolveNamedAnalyticsPlot", () => {
     expect(result.message).toContain("Nothing was inserted");
   });
 });
+
+describe("resolveAnalyticsImage without a captured preview", () => {
+  it("reports no_preview so the caller can render it instead of giving up", () => {
+    // A plot created by chat has no preview until a human opens it. That is a
+    // recoverable state, not a dead end.
+    const result = resolveAnalyticsImage(
+      {
+        id: "anl_1",
+        workspaceId: "ws",
+        kind: "capability_sixpack_normal",
+        title: "Assay sixpack",
+        sourceHash: "h",
+        stale: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        previewImage: null,
+        config: {} as never,
+        results: {} as never,
+      } as never,
+      "anl_1"
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("no_preview");
+    expect(result.message).not.toContain("Open it in Analytics");
+  });
+});

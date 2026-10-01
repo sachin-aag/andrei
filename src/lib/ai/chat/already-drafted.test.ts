@@ -6,6 +6,7 @@ import {
   alreadyDraftedGapHints,
   alreadyDraftedReadStep,
   detectAlreadyDraftedSection,
+  isExplicitDocumentEdit,
   isExplicitSectionRewrite,
   withoutDraftFieldTools,
 } from "./already-drafted";
@@ -45,6 +46,22 @@ describe("isExplicitSectionRewrite", () => {
     expect(isExplicitSectionRewrite("draft testers section")).toBe(false);
     expect(isExplicitSectionRewrite("remove VCS from Purpose")).toBe(false);
     expect(isExplicitSectionRewrite("")).toBe(false);
+  });
+});
+
+describe("isExplicitDocumentEdit", () => {
+  it("matches a request to land a suggestion in the document", () => {
+    expect(
+      isExplicitDocumentEdit("insert the suggestion please. edit the document")
+    ).toBe(true);
+    expect(isExplicitDocumentEdit("suggestions are not landing")).toBe(true);
+    expect(isExplicitDocumentEdit("it is only summarising the change")).toBe(
+      true
+    );
+  });
+
+  it("does not treat a lookup as a document edit", () => {
+    expect(isExplicitDocumentEdit("what is in section 3.12?")).toBe(false);
   });
 });
 
@@ -335,8 +352,12 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("read_section");
     expect(block).toContain("Do not call search_documents or ask_user yet");
     expect(block).toContain("targeted propose_edit");
+    expect(block).toContain("insert, apply, or edit the document");
+    expect(block).toContain("Do not say write tools are disabled");
     expect(block).toContain("hint field is an expected format");
     expect(block).toContain("Material gap only");
+    expect(block).toContain("Empty cells they asked to fill");
+    expect(block).toContain("13.6 → 13.6 – Gasket material verified as PTFE");
     expect(block).toContain("Omit-if conflict");
   });
 

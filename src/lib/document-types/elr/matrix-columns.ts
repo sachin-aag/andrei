@@ -75,6 +75,237 @@ export const QUALIFICATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<Qualificat
     { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
   ];
 
+export type ProcessValidationColumnId =
+  | "serial"
+  | "stage"
+  | "documentNo"
+  | "productProcess"
+  | "formatApplicability"
+  | "dateCompleted"
+  | "outcome"
+  | "deviationRef"
+  | "nextDueDate"
+  | "remarks";
+
+export const PROCESS_VALIDATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<ProcessValidationColumnId>[] =
+  [
+    serialFor<ProcessValidationColumnId>(),
+    {
+      id: "stage",
+      label: "Validation Stage",
+      aliases: ["validation stage", "stage", "ppq", "cpv"],
+    },
+    {
+      id: "documentNo",
+      label: "Protocol / Report No.",
+      aliases: [
+        "protocol report no",
+        "protocol no",
+        "report no",
+        "document no",
+        "document reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "productProcess",
+      label: "Product / Process",
+      aliases: ["product process", "product", "process"],
+    },
+    {
+      id: "formatApplicability",
+      label: "Format Applicability",
+      aliases: ["format applicability", "format", "applicability"],
+    },
+    {
+      id: "dateCompleted",
+      label: "Date Completed",
+      aliases: ["date completed", "completion date", "date"],
+    },
+    {
+      id: "outcome",
+      label: "Outcome",
+      aliases: ["outcome", "result", "status"],
+      inferFromContent: "passFail",
+    },
+    {
+      id: "deviationRef",
+      label: "Linked Deviation / Change Control Ref.",
+      aliases: [
+        "linked deviation change control ref",
+        "linked deviation ref",
+        "change control ref",
+        "deviation ref",
+      ],
+    },
+    {
+      id: "nextDueDate",
+      label: "Next Due / Review Date",
+      aliases: [
+        "next due review date",
+        "next due date",
+        "review date",
+        "due date",
+      ],
+    },
+    { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
+  ];
+
+export type CleaningValidationColumnId =
+  | "serial"
+  | "stage"
+  | "documentNo"
+  | "productResidue"
+  | "cleaningMethod"
+  | "formatApplicability"
+  | "dateCompleted"
+  | "outcome"
+  | "deviationRef"
+  | "nextDueDate"
+  | "remarks";
+
+export const CLEANING_VALIDATION_COLUMN_SCHEMA: readonly MatrixColumnSchema<CleaningValidationColumnId>[] =
+  [
+    serialFor<CleaningValidationColumnId>(),
+    {
+      id: "stage",
+      label: "Validation Stage",
+      aliases: ["validation stage", "stage"],
+    },
+    {
+      id: "documentNo",
+      label: "Protocol / Report No.",
+      aliases: [
+        "protocol report no",
+        "protocol no",
+        "report no",
+        "document no",
+        "document reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "productResidue",
+      label: "Product / Residue",
+      aliases: ["product residue", "product", "residue"],
+    },
+    {
+      id: "cleaningMethod",
+      label: "Cleaning Method",
+      aliases: ["cleaning method", "method", "sop"],
+    },
+    {
+      id: "formatApplicability",
+      label: "Format Applicability",
+      aliases: ["format applicability", "format", "applicability"],
+    },
+    {
+      id: "dateCompleted",
+      label: "Date Completed",
+      aliases: ["date completed", "completion date", "date"],
+    },
+    {
+      id: "outcome",
+      label: "Outcome",
+      aliases: ["outcome", "result", "status"],
+      inferFromContent: "passFail",
+    },
+    {
+      id: "deviationRef",
+      label: "Linked Deviation / Change Control Ref.",
+      aliases: [
+        "linked deviation change control ref",
+        "linked deviation ref",
+        "change control ref",
+        "deviation ref",
+      ],
+    },
+    {
+      id: "nextDueDate",
+      label: "Next Due / Review Date",
+      aliases: [
+        "next due review date",
+        "next due date",
+        "review date",
+        "due date",
+      ],
+    },
+    { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
+  ];
+
+export type QraReviewColumnId =
+  | "serial"
+  | "documentNo"
+  | "title"
+  | "dateApproved"
+  | "highestResidualRisk"
+  | "reviewDueDate"
+  | "changeSinceLastPrq"
+  | "changeControlRef"
+  | "remarks";
+
+export const QRA_REVIEW_COLUMN_SCHEMA: readonly MatrixColumnSchema<QraReviewColumnId>[] =
+  [
+    serialFor<QraReviewColumnId>(),
+    {
+      id: "documentNo",
+      label: "QRA / Document No.",
+      aliases: [
+        "qra document no",
+        "qra no",
+        "document no",
+        "document reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "title",
+      label: "Title / Scope",
+      aliases: ["title scope", "title", "scope"],
+    },
+    {
+      id: "dateApproved",
+      label: "Date Approved",
+      aliases: ["date approved", "approved", "approval date"],
+    },
+    {
+      id: "highestResidualRisk",
+      label: "Highest residual risk",
+      aliases: [
+        "highest residual risk",
+        "residual risk",
+        "highest risk",
+        "risk grade",
+      ],
+    },
+    {
+      id: "reviewDueDate",
+      label: "Review / Reassessment Due",
+      aliases: [
+        "review reassessment due",
+        "reassessment due",
+        "review due",
+        "due date",
+      ],
+    },
+    {
+      id: "changeSinceLastPrq",
+      label: "Change since last PRQ (Y/N)",
+      aliases: [
+        "change since last prq y n",
+        "change since last prq",
+        "change since last rq",
+        "change",
+      ],
+    },
+    {
+      id: "changeControlRef",
+      label: "Change Control Ref.",
+      aliases: ["change control ref", "change control", "ccf"],
+    },
+    { id: "remarks", label: "Remarks", aliases: ["remarks", "remark", "notes"] },
+  ];
+
 export type MediaFillColumnId =
   | "serial"
   | "mediaFillNo"
@@ -451,11 +682,18 @@ export const ALARM_COLUMN_SCHEMA: readonly MatrixColumnSchema<AlarmColumnId>[] =
 export type AccessControlColumnId =
   | "serial"
   | "systemName"
-  | "userName"
-  | "role"
-  | "action"
-  | "date"
-  | "documentRef";
+  | "task"
+  | "operator"
+  | "supervisor"
+  | "maintenance"
+  | "administrator";
+
+export const ACCESS_CONTROL_ROLE_IDS = [
+  "operator",
+  "supervisor",
+  "maintenance",
+  "administrator",
+] as const satisfies readonly AccessControlColumnId[];
 
 export const ACCESS_CONTROL_COLUMN_SCHEMA: readonly MatrixColumnSchema<AccessControlColumnId>[] =
   [
@@ -466,25 +704,34 @@ export const ACCESS_CONTROL_COLUMN_SCHEMA: readonly MatrixColumnSchema<AccessCon
       aliases: ["system name id", "system name", "system"],
     },
     {
-      id: "userName",
-      label: "User Name / ID",
-      aliases: ["user name id", "user name", "user", "user id"],
+      id: "task",
+      label: "Task",
+      aliases: [
+        "task",
+        "authorized function",
+        "privilege matrix",
+        "access matrix",
+      ],
     },
     {
-      id: "role",
-      label: "Role / Privilege Level",
-      aliases: ["role privilege level", "role", "privilege", "access level"],
+      id: "operator",
+      label: "Operator",
+      aliases: ["operator"],
     },
     {
-      id: "action",
-      label: "Action (Granted / Modified / Revoked)",
-      aliases: ["action granted modified revoked", "action"],
+      id: "supervisor",
+      label: "Supervisor",
+      aliases: ["supervisor"],
     },
-    { id: "date", label: "Date", aliases: ["date"] },
     {
-      id: "documentRef",
-      label: "Document Reference",
-      aliases: ["document reference", "document ref", "document no"],
+      id: "maintenance",
+      label: "Maintenance",
+      aliases: ["maintenance"],
+    },
+    {
+      id: "administrator",
+      label: "Administrator",
+      aliases: ["administrator", "admin"],
     },
   ];
 
@@ -537,6 +784,7 @@ export type CsvStatusColumnId =
   | "systemName"
   | "validationStatus"
   | "lastValidationDate"
+  | "revalidationDueDate"
   | "documentRef"
   | "changeSinceLastPrq"
   | "changeControlRef"
@@ -562,6 +810,17 @@ export const CSV_STATUS_COLUMN_SCHEMA: readonly MatrixColumnSchema<CsvStatusColu
         "last validation revalidation date",
         "last validation date",
         "validation date",
+      ],
+    },
+    {
+      id: "revalidationDueDate",
+      label: "Revalidation Due Date",
+      aliases: [
+        "revalidation due date",
+        "next revalidation due",
+        "next revalidation date",
+        "periodic review due",
+        "due date",
       ],
     },
     {
@@ -604,6 +863,46 @@ export const RESPONSIBILITIES_COLUMN_SCHEMA: readonly MatrixColumnSchema<Respons
     },
   ];
 
+export type ElrAttachmentsColumnId =
+  | "serial"
+  | "attachmentNo"
+  | "title"
+  | "documentRef"
+  | "pageCount"
+  | "location";
+
+export const ATTACHMENTS_COLUMN_SCHEMA: readonly MatrixColumnSchema<ElrAttachmentsColumnId>[] =
+  [
+    serialFor<ElrAttachmentsColumnId>(),
+    {
+      id: "attachmentNo",
+      label: "Attachment No.",
+      aliases: ["attachment no", "attachment", "annexure"],
+    },
+    { id: "title", label: "Title", aliases: ["title", "name", "filename"] },
+    {
+      id: "documentRef",
+      label: "Document Reference No.",
+      aliases: [
+        "document reference no",
+        "document no",
+        "document reference",
+        "reference no",
+      ],
+      inferFromContent: "idLike",
+    },
+    {
+      id: "pageCount",
+      label: "No. of Pages",
+      aliases: ["no of pages", "pages", "page count"],
+    },
+    {
+      id: "location",
+      label: "Location",
+      aliases: ["location", "path", "folder", "directory"],
+    },
+  ];
+
 export type ElrRevisionHistoryColumnId =
   | "revision"
   | "effectiveDate"
@@ -631,5 +930,127 @@ export const ELR_REVISION_HISTORY_COLUMN_SCHEMA: readonly MatrixColumnSchema<Elr
       id: "changeControlNo",
       label: "Change Control No.",
       aliases: ["change control no", "change control", "ccf"],
+    },
+  ];
+
+export type SystemTrendsColumnId =
+  | "serial"
+  | "section"
+  | "summary"
+  | "trend"
+  | "impact"
+  | "carriedToRisk";
+
+export const SYSTEM_TRENDS_COLUMN_SCHEMA: readonly MatrixColumnSchema<SystemTrendsColumnId>[] =
+  [
+    serialFor<SystemTrendsColumnId>(),
+    {
+      id: "section",
+      label: "Section",
+      aliases: ["section", "section no", "heading"],
+    },
+    {
+      id: "summary",
+      label: "Summary",
+      aliases: ["summary", "recap", "findings"],
+    },
+    {
+      id: "trend",
+      label: "Trend (increasing / stable / decreasing / none)",
+      aliases: [
+        "trend increasing stable decreasing none",
+        "trend increasing stable decreasing",
+        "trend",
+        "direction",
+      ],
+    },
+    {
+      id: "impact",
+      label: "Product or runtime impact",
+      aliases: [
+        "product or runtime impact",
+        "product impact",
+        "runtime impact",
+        "impact",
+      ],
+    },
+    {
+      id: "carriedToRisk",
+      label: "Carried to risk (Risk ID)",
+      aliases: [
+        "carried to risk risk id",
+        "carried to risk",
+        "risk id",
+        "risk",
+      ],
+    },
+  ];
+
+export type RiskActionColumnId =
+  | "serial"
+  | "risk"
+  | "source"
+  | "occurrence"
+  | "severity"
+  | "priority"
+  | "action"
+  | "actionType"
+  | "owner"
+  | "targetDate"
+  | "reference";
+
+export const RISK_ACTION_COLUMN_SCHEMA: readonly MatrixColumnSchema<RiskActionColumnId>[] =
+  [
+    serialFor<RiskActionColumnId>(),
+    { id: "risk", label: "Risk", aliases: ["risk", "issue", "finding"] },
+    {
+      id: "source",
+      label: "Source (section / records)",
+      aliases: [
+        "source section records",
+        "source",
+        "section",
+        "records",
+      ],
+    },
+    {
+      id: "occurrence",
+      label: "Occurrence in period",
+      aliases: ["occurrence in period", "occurrence", "frequency", "count"],
+    },
+    {
+      id: "severity",
+      label: "Severity",
+      aliases: ["severity", "impact"],
+    },
+    {
+      id: "priority",
+      label: "Priority (High / Medium / Low)",
+      aliases: ["priority high medium low", "priority"],
+    },
+    {
+      id: "action",
+      label: "Recommended action",
+      aliases: ["recommended action", "action", "recommendation"],
+    },
+    {
+      id: "actionType",
+      label: "Action type (CAPA / PM revision / change control / monitoring)",
+      aliases: [
+        "action type capa pm revision change control monitoring",
+        "action type",
+        "type",
+      ],
+    },
+    { id: "owner", label: "Owner", aliases: ["owner", "responsible"] },
+    {
+      id: "targetDate",
+      label: "Target date",
+      aliases: ["target date", "due date", "date"],
+    },
+    {
+      id: "reference",
+      label: "Reference",
+      aliases: ["reference", "document reference", "capa ref", "ccf"],
     },
   ];

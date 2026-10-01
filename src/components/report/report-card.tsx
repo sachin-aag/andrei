@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/report/status-badge";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
 import type { DocumentType, ReportStatus } from "@/db/schema";
 import { documentTypeShortLabel } from "@/lib/document-types";
+import { demoTemplateTitleFromMetadata } from "@/lib/document-templates";
 
 function untitledFallback(documentType: DocumentType | undefined): string {
   switch (documentType) {
@@ -19,6 +20,12 @@ function untitledFallback(documentType: DocumentType | undefined): string {
       return "Untitled quality risk assessment";
     case "equipment_lifecycle_report":
       return "Untitled equipment lifecycle report";
+    case "vendor_qualification":
+      return "Untitled vendor qualification";
+    case "qualification_summary_report":
+      return "Untitled qualification summary report";
+    case "failure_investigation_report":
+      return "Untitled DS investigation";
     case "investigation_report":
     case undefined:
       return "Untitled deviation";
@@ -39,6 +46,7 @@ export type ReportCardData = {
   assignedManagerId: string | null;
   assignedManagerIds?: string[];
   updatedAt: Date;
+  metadata?: Record<string, unknown> | null;
 };
 
 export function ReportCard({
@@ -61,9 +69,11 @@ export function ReportCard({
   const title =
     displayTitle ??
     (report.documentNo || untitledFallback(report.documentType));
-  const typeLabel = report.documentType
-    ? documentTypeShortLabel(report.documentType)
-    : "Investigation";
+  const typeLabel =
+    demoTemplateTitleFromMetadata(report.metadata) ??
+    (report.documentType
+      ? documentTypeShortLabel(report.documentType)
+      : "Investigation");
   const managerLabel = managerNames.length === 1 ? "Manager" : "Managers";
 
   return (

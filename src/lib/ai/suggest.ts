@@ -19,7 +19,16 @@ import {
   recordAiUsage,
 } from "@/lib/ai/usage";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
-import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
+import {
+  isAllowedTargetField,
+  RICH_FIELD_PATHS,
+} from "@/lib/ai/suggest-target-fields";
+import {
+  QUANTITY_MATH_CRITERION_KEY,
+  flattenQuantityMathInDoc,
+} from "@/lib/math/quantity-math";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { suggestionEditsPlaceholder } from "@/lib/placeholders/suggestion-placeholder-policy";
 import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
@@ -61,6 +70,8 @@ export type RawSuggestion = {
     insertText: string;
     scope?: EditScope;
   };
+  /** Whole-field replacement (quantity-math repair). Skips locate/probe. */
+  redraftMarkdown?: string;
 };
 
 export type SuggestionEvidenceSource = {
@@ -286,11 +297,43 @@ function finalizeRawSuggestion(
 
 function suggestionHasContent(s: RawSuggestion): boolean {
   return Boolean(
-    s.deleteText.trim() ||
+    s.redraftMarkdown?.trim() ||
+      s.deleteText.trim() ||
       s.insertText.trim() ||
       s.second?.deleteText.trim() ||
       s.second?.insertText.trim()
   );
+}
+
+function quantityMathRepairSuggestions(args: {
+  section: SectionType;
+  content: unknown;
+  evaluationId: string;
+  reasoning: string;
+}): GeneratedSuggestion[] {
+  const paths = RICH_FIELD_PATHS[args.section] ?? [];
+  const sectionContent = (args.content ?? {}) as Record<string, unknown>;
+  const out: GeneratedSuggestion[] = [];
+  for (const targetField of paths) {
+    const fieldDoc = getRichFieldValue(sectionContent, targetField);
+    const { doc: next, samples } = flattenQuantityMathInDoc(fieldDoc);
+    if (samples.length === 0) continue;
+    const markdown = richJsonToPlainText(next, {
+      tableFormat: "markdown",
+    }).trim();
+    if (!markdown) continue;
+    out.push({
+      criterionKey: QUANTITY_MATH_CRITERION_KEY,
+      targetField,
+      anchorText: "",
+      deleteText: "",
+      insertText: "",
+      reasoning: args.reasoning,
+      redraftMarkdown: markdown,
+      evaluationId: args.evaluationId,
+    });
+  }
+  return out;
 }
 
 export async function generateSuggestionsForSection({
@@ -322,14 +365,49 @@ export async function generateSuggestionsForSection({
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
   }
+
+  const quantityGaps = gapCriteria.filter(
+    (g) => g.criterionKey === QUANTITY_MATH_CRITERION_KEY
+  );
+  const llmGaps = gapCriteria.filter(
+    (g) => g.criterionKey !== QUANTITY_MATH_CRITERION_KEY
+  );
+  const quantitySuggestions: GeneratedSuggestion[] = [];
+  const quantityDropped: Array<{
+    criterionKey: string;
+    reason: SuggestionDropReason;
+  }> = [];
+  for (const g of quantityGaps) {
+    const repairs = quantityMathRepairSuggestions({
+      section,
+      content,
+      evaluationId: g.evaluationId,
+      reasoning: g.reasoning,
+    });
+    if (repairs.length === 0) {
+      quantityDropped.push({
+        criterionKey: g.criterionKey,
+        reason: "empty_edit",
+      });
+    } else {
+      quantitySuggestions.push(...repairs);
+    }
+  }
+
+  if (llmGaps.length === 0) {
+    return { suggestions: quantitySuggestions, dropped: quantityDropped };
+  }
+
   const existingFieldText = sectionContentForPrompt(section, content);
 
   if (isTestSkipSuggestions()) {
-    const allowedKeys = new Set(gapCriteria.map((g) => g.criterionKey));
-    const evalIdByKey = new Map(gapCriteria.map((g) => [g.criterionKey, g.evaluationId]));
+    const allowedKeys = new Set(llmGaps.map((g) => g.criterionKey));
+    const evalIdByKey = new Map(llmGaps.map((g) => [g.criterionKey, g.evaluationId]));
     const rawSuggestions = getStubSuggestionsForSection(section, allowedKeys);
-    const suggestions: GeneratedSuggestion[] = [];
-    const dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> = [];
+    const suggestions: GeneratedSuggestion[] = [...quantitySuggestions];
+    const dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> = [
+      ...quantityDropped,
+    ];
     const seenKeys = new Set<string>();
 
     for (const s of rawSuggestions) {
@@ -354,7 +432,7 @@ export async function generateSuggestionsForSection({
         evaluationId,
       });
     }
-    for (const g of gapCriteria) {
+    for (const g of llmGaps) {
       if (!seenKeys.has(g.criterionKey)) {
         dropped.push({ criterionKey: g.criterionKey, reason: "schema_invalid" });
       }
@@ -367,12 +445,12 @@ export async function generateSuggestionsForSection({
   const priorBlock = buildPriorSectionsBlock(section, allSections);
   const evidenceByCriterion = await retrieveEvidenceForCriteria({
     reportId,
-    gapCriteria,
+    gapCriteria: llmGaps,
   });
   const evidenceBlock = buildEvidenceBlock(evidenceByCriterion);
 
   const callModel = async (
-    batch: typeof gapCriteria
+    batch: typeof llmGaps
   ): Promise<RawSuggestion[]> => {
     const userPrompt = buildSuggestionUserPrompt({
       section,
@@ -444,29 +522,34 @@ export async function generateSuggestionsForSection({
 
   let rawSuggestions: RawSuggestion[] = [];
   try {
-    rawSuggestions = await callModel(gapCriteria);
+    rawSuggestions = await callModel(llmGaps);
     const firstKeys = new Set(rawSuggestions.map((s) => s.criterionKey));
-    const missing = gapCriteria.filter((g) => !firstKeys.has(g.criterionKey));
-    if (missing.length > 0 && missing.length < gapCriteria.length) {
+    const missing = llmGaps.filter((g) => !firstKeys.has(g.criterionKey));
+    if (missing.length > 0 && missing.length < llmGaps.length) {
       const retryRaw = await callModel(missing);
       rawSuggestions = [...rawSuggestions, ...retryRaw];
     }
   } catch (err) {
     console.error("[suggest] LLM call failed", err);
     return {
-      suggestions: [],
-      dropped: gapCriteria.map((g) => ({
-        criterionKey: g.criterionKey,
-        reason: "schema_invalid" as const,
-      })),
+      suggestions: quantitySuggestions,
+      dropped: [
+        ...quantityDropped,
+        ...llmGaps.map((g) => ({
+          criterionKey: g.criterionKey,
+          reason: "schema_invalid" as const,
+        })),
+      ],
     };
   }
 
-  const allowedKeys = new Set(gapCriteria.map((g) => g.criterionKey));
-  const evalIdByKey = new Map(gapCriteria.map((g) => [g.criterionKey, g.evaluationId]));
+  const allowedKeys = new Set(llmGaps.map((g) => g.criterionKey));
+  const evalIdByKey = new Map(llmGaps.map((g) => [g.criterionKey, g.evaluationId]));
 
-  const suggestions: GeneratedSuggestion[] = [];
-  const dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> = [];
+  const suggestions: GeneratedSuggestion[] = [...quantitySuggestions];
+  const dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> = [
+    ...quantityDropped,
+  ];
   const seenKeys = new Set<string>();
 
   for (const s of rawSuggestions) {
@@ -507,7 +590,7 @@ export async function generateSuggestionsForSection({
     });
   }
 
-  for (const g of gapCriteria) {
+  for (const g of llmGaps) {
     if (!seenKeys.has(g.criterionKey)) {
       dropped.push({ criterionKey: g.criterionKey, reason: "schema_invalid" });
     }

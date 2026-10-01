@@ -26,13 +26,11 @@ import {
   CHAT_PROMPT_VERSION,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
+import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-reminder";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
-import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
-import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
-import { engineerFacingHistorySummary } from "@/lib/ai/chat/change-summary";
+import { isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
-import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
   chatAssistantTurnMetadata,
@@ -51,10 +49,10 @@ import {
   primaryFieldForSection,
   sectionHasTable,
 } from "@/lib/ai/chat/fields";
-import { tableSchemaReadStep } from "@/lib/ai/chat/table-schema";
 import { getDocumentType } from "@/lib/document-types";
 import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
+  DOCUMENT_WRITE_TOOLS,
   messageHasChatImage,
   recentAssistantMessageTexts,
   restrictToolsForIntent,
@@ -65,15 +63,28 @@ import {
 } from "@/lib/ai/chat/resolve-user-intent";
 import {
   alreadyDraftedGapHints,
-  detectAlreadyDraftedSection,
-  alreadyDraftedReadStep,
-  withoutDraftFieldTools,
+  isExplicitDocumentEdit,
 } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
   findChatSession,
+  saveChatPendingPlan,
   touchChatSession,
 } from "@/lib/ai/chat/sessions";
+import {
+  advancePlanAfterTurn,
+  chatUserTurnIsAutoContinue,
+  currentPlanTurnSections,
+  inScopeEmptyInventoryNeedsReview,
+  livePlanProgressFromParts,
+  parseChatPendingPlan,
+  persistablePendingPlan,
+  planCoverageObjective,
+  planKeepsComprehensive,
+  resolvePlanAtTurnStart,
+  shouldAutoContinuePlan,
+  type ChatPendingPlan,
+} from "@/lib/ai/chat/pending-plan";
 import {
   clearAssistantTurn,
   drainSseStream,
@@ -108,25 +119,22 @@ import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import { getReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
-  classifyRetrievalPolicy,
   isRetrievalPushback,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
   DocumentReviewSession,
   pickPlanModeChatTools,
-  prepareDocumentReviewStep,
+  reviewContinueBudgetMs,
 } from "@/lib/ai/chat/document-review";
 import {
   rehydrateDocumentReviewIfCoverageUnchanged,
   retrievalPolicyAfterCoverageDelta,
 } from "@/lib/ai/chat/document-review-rehydrate";
-import {
-  searchLoopDirective,
-  withoutSearchTool,
-} from "@/lib/ai/chat/search-loop";
+import { createSearchGate } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
-import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
+import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
+import { geminiSafeModelMessages } from "@/lib/ai/chat/gemini-messages";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   captureChatAssistantFailure,
@@ -144,7 +152,12 @@ import {
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
-import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
+import { prepareReportChatStep, shouldForceListAttachments } from "@/lib/ai/chat/step-policy";
+import { assembleChatTurnPlan } from "@/lib/ai/chat/turn-plan";
+import {
+  renderPlaceholderFillEvidence,
+} from "@/lib/ai/chat/placeholder-fill";
+import { searchPlaceholderFill } from "@/lib/ai/chat/placeholder-fill-search";
 import {
   advertisedChatToolNames,
   withUnsupportedChatToolFallback,
@@ -236,14 +249,17 @@ async function handleChatPost(
   const workspaceChrome: WorkspaceChrome = isWorkspaceChrome(body.workspaceChrome)
     ? body.workspaceChrome
     : "document";
-  const editPolicy = deriveChatEditPolicy({ workspaceChrome, canEdit });
-  const turnEdits: TurnEditItem[] = [];
 
   // Resolve the session (create one if the client didn't supply a valid id).
+  let existingPlan: ChatPendingPlan | null = null;
   let sessionId = body.sessionId?.trim() || "";
   if (sessionId) {
     const found = await findChatSession(reportId, sessionId);
-    if (!found) sessionId = "";
+    if (!found) {
+      sessionId = "";
+    } else {
+      existingPlan = parseChatPendingPlan(found.pendingPlan);
+    }
   }
   if (!sessionId) {
     sessionId = (await createChatSession(reportId, "report")).id;
@@ -263,6 +279,7 @@ async function handleChatPost(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const autoContinue = chatUserTurnIsAutoContinue(userMsg?.metadata);
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -270,7 +287,7 @@ async function handleChatPost(
         sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
-        metadata: chatUserTurnMetadata("report"),
+        metadata: chatUserTurnMetadata("report", { autoContinue }),
         authorId: user.id,
       });
       await touchChatSession(sessionId, userText || null);
@@ -338,7 +355,7 @@ async function handleChatPost(
     documentType: report.documentType,
     sections: mergedSections,
   });
-  const userIntent = await resolveChatUserIntent({
+  let userIntent = await resolveChatUserIntent({
     userText,
     recentAssistantTexts: recentAssistantMessageTexts(messages),
     hasChatImages: messageHasChatImage(userMsg?.parts),
@@ -351,6 +368,37 @@ async function handleChatPost(
     userId: user.id,
   });
   const switchToAnalytics = userIntent.switchToAnalytics === true;
+  let pendingPlan: ChatPendingPlan | null = existingPlan;
+  if (mode === "agent") {
+    pendingPlan = resolvePlanAtTurnStart({
+      existing: existingPlan,
+      userText,
+      autoContinue,
+      writeIntent: userIntent.kind === "write",
+      documentType: report.documentType,
+      sections: mergedSections,
+      promptVersion: CHAT_PROMPT_VERSION,
+      report: {
+        documentNo: report.documentNo,
+        date: report.date,
+        metadata:
+          report.metadata && typeof report.metadata === "object"
+            ? (report.metadata as Record<string, unknown>)
+            : null,
+      },
+    });
+    const toSave = persistablePendingPlan(pendingPlan);
+    if (JSON.stringify(toSave) !== JSON.stringify(existingPlan)) {
+      try {
+        await saveChatPendingPlan(sessionId, toSave);
+      } catch (err) {
+        console.error("chat: failed to save pending plan", err);
+      }
+    }
+    if (pendingPlan && !pendingPlan.paused && userIntent.kind !== "write") {
+      userIntent = { ...userIntent, kind: "write", reason: "pending_section_plan" };
+    }
+  }
 
   // Detect course correction — user contradicting or overriding prior LLM output.
   const recentTexts = recentAssistantMessageTexts(messages);
@@ -374,17 +422,27 @@ async function handleChatPost(
     });
   }
 
-  const retrievalDecision = classifyRetrievalPolicy({
+  const turnPlan = assembleChatTurnPlan({
     userText,
-    recentUserTexts: recentUserMessageTexts(messages),
+    userIntent,
     sectionScope,
     documentType: report.documentType,
+    recentUserTexts: recentUserMessageTexts(messages),
     mentionedPageCount,
     totalReadyPages,
     hasDocuments: documents.length > 0,
+    sections: mergedSections,
   });
+  const retrievalDecision = {
+    policy: turnPlan.retrievalPolicy,
+    reason: turnPlan.retrievalReason,
+  };
   const documentReview = new DocumentReviewSession();
   const pushback = isRetrievalPushback(userText);
+  const coverageObjective = planCoverageObjective(pendingPlan, userText, {
+    sectionScope,
+    documentType: report.documentType,
+  });
   const coverageRehydrate = rehydrateDocumentReviewIfCoverageUnchanged({
     session: documentReview,
     messages,
@@ -394,25 +452,43 @@ async function handleChatPost(
       ingestRunId: doc.ingestRunId,
     })),
     skipRestore: pushback,
+    coverageObjective,
+  });
+  const inventoryTurnSections =
+    pendingPlan && !pendingPlan.paused
+      ? currentPlanTurnSections(pendingPlan, report.documentType).map(
+          (item) => item.sectionKey as SectionType
+        )
+      : sectionScope && sectionScope !== "all"
+        ? [sectionScope]
+        : turnPlan.sectionIntent
+          ? [turnPlan.sectionIntent]
+          : [];
+  const needsInventoryReview = inScopeEmptyInventoryNeedsReview({
+    documentType: report.documentType,
+    sections: mergedSections,
+    sectionKeys: inventoryTurnSections,
+    finishedCoverageKey: documentReview.finishedCoverageKey(),
+    inventoryFinishSatisfiesDraft: documentReview.inventoryFinishSatisfiesDraft(),
   });
   // Coverage growth or explicit pushback can start a fresh comprehensive walk.
-  const retrievalPolicy = retrievalPolicyAfterCoverageDelta({
+  // Queued ELR inventory and empty inventory fills keep comprehensive so a
+  // finished qualification walk cannot downgrade the next calibration turn.
+  let retrievalPolicy = retrievalPolicyAfterCoverageDelta({
     policy: retrievalDecision.policy,
     coverageUnchanged: coverageRehydrate.restored,
-    keepComprehensive: pushback,
+    keepComprehensive:
+      pushback || planKeepsComprehensive(pendingPlan, report.documentType),
   });
+  if (needsInventoryReview && retrievalPolicy !== "comprehensive") {
+    retrievalPolicy = "comprehensive";
+  }
   const retrieval = {
     ...retrievalDecision,
     policy: retrievalPolicy,
   };
 
-  const alreadyDrafted = detectAlreadyDraftedSection({
-    userText,
-    userIntentKind: userIntent.kind,
-    sectionScope,
-    documentType: report.documentType,
-    sections: mergedSections,
-  });
+  const alreadyDrafted = turnPlan.alreadyDrafted;
   const alreadyDraftedGapHintsForPrompt = alreadyDrafted
     ? alreadyDraftedGapHints(alreadyDrafted.section, evaluations)
     : undefined;
@@ -436,10 +512,27 @@ async function handleChatPost(
     })),
     documents,
     documentType: report.documentType,
+    metadata:
+      report.metadata &&
+      typeof report.metadata === "object" &&
+      !Array.isArray(report.metadata)
+        ? (report.metadata as Record<string, unknown>)
+        : undefined,
     analyticsPlots: analytics?.analyses ?? [],
   });
 
-  const autoEvidenceBlock =
+  const placeholderFill =
+    retrieval.policy === "adaptive" &&
+    retrieval.reason === "placeholder_fill" &&
+    documents.length > 0
+      ? await searchPlaceholderFill({
+          reportId,
+          sections: mergedSections,
+          attachmentIds:
+            pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
+        })
+      : { queries: [], hits: [] };
+  const focusedEvidence =
     retrieval.policy === "focused" && userIntent.kind !== "social"
       ? await buildAutoEvidence({
     reportId,
@@ -459,6 +552,12 @@ async function handleChatPost(
     hasDocuments: documents.length > 0,
   })
     : "";
+  const autoEvidenceBlock = [
+    focusedEvidence,
+    renderPlaceholderFillEvidence(placeholderFill.hits),
+  ]
+    .filter((block) => block.trim().length > 0)
+    .join("\n\n");
 
   const system = buildChatSystemPrompt({
     contextMap,
@@ -471,11 +570,12 @@ async function handleChatPost(
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
-    editPolicy,
     intent: userIntent.kind,
     switchToAnalytics,
+    pendingPlan,
   });
 
+  const searchGate = createSearchGate();
   const allTools = buildChatTools({
     reportId,
     canEdit,
@@ -487,17 +587,47 @@ async function handleChatPost(
     retrievalPolicy: retrieval.policy,
     documentReview,
     messages,
-    editPolicy,
-    turnEdits,
+    reviewCoverageObjective: coverageObjective,
+    searchGate,
+    reviewContinueBudgetMs: reviewContinueBudgetMs(
+      remainingChatAbortMs(turnStartedAtMs)
+    ),
+    seedCitationHits: placeholderFill.hits.map((hit) => ({
+      filename: hit.filename,
+      pageNumber: hit.pageNumber,
+      attachmentId: hit.attachmentId,
+      quote: hit.quote || hit.text,
+      citationId: hit.citationId,
+      sourceSha256: hit.sourceSha256,
+    })),
+    reportMetadata:
+      report.metadata &&
+      typeof report.metadata === "object" &&
+      !Array.isArray(report.metadata)
+        ? (report.metadata as Record<string, unknown>)
+        : null,
+    reportSections: mergedSections,
+    userIntentKind: userIntent.kind,
   });
   const scopedTools: ToolSet =
     mode === "plan"
       ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
+  // Agent keeps write tools registered on a read turn so a remapped
+  // unsupported_tool can unlock them mid-turn. Ask still strips them.
   const tools: ToolSet = withUnsupportedChatToolFallback(
-    restrictToolsForIntent(scopedTools, userIntent.kind, "document")
+    userIntent.kind === "social"
+      ? restrictToolsForIntent(scopedTools, "social", "document")
+      : mode === "agent"
+        ? scopedTools
+        : restrictToolsForIntent(scopedTools, userIntent.kind, "document")
   );
-  const advertisedTools = advertisedChatToolNames(tools);
+  const advertisedTools = advertisedChatToolNames(
+    restrictToolsForIntent(tools, userIntent.kind, "document")
+  );
+  const registeredWriteTools = DOCUMENT_WRITE_TOOLS.filter(
+    (name) => name in tools
+  );
 
   const stubSection =
     sectionScope === "all"
@@ -534,7 +664,12 @@ async function handleChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = geminiSafeModelMessages(
+      messagesWithComposerModeReminder(
+        await convertToModelMessages(messages),
+        mode
+      )
+    );
     setRouteObservationIO({
       input: {
         reportId,
@@ -568,6 +703,9 @@ async function handleChatPost(
         streamText({
       model,
       system,
+      // Gemini rejects system-role messages after the first turn. Instructions
+      // stay on `system`; allowSystemInMessages throws if any slip back in.
+      allowSystemInMessages: false,
       messages: modelMessages,
       tools,
       activeTools: advertisedTools,
@@ -578,66 +716,45 @@ async function handleChatPost(
         if (isChatTurnDeadlineReached(turnStartedAtMs)) return true;
         return isAssistantTurnCancelRequested(sessionId);
       },
-      prepareStep: ({ steps }) => {
-        if (userIntent.kind === "social") {
-          return { activeTools: [] };
-        }
-        const tableEditDirective = tableEditLoopDirective(steps);
-        if (tableEditDirective === "finish") {
-          // Force a plain-language explanation after the second failed table
-          // edit instead of allowing a costly retry loop.
-          return { activeTools: [] };
-        }
-        if (tableEditDirective === "reread" && tools.read_section) {
-          return {
-            activeTools: ["read_section"],
-            toolChoice: { type: "tool", toolName: "read_section" },
-          };
-        }
-
-        const alreadyDraftedActive = alreadyDrafted != null;
-        const alreadyDraftedStep = alreadyDraftedReadStep({
-          stepsTaken: steps.length,
-          alreadyDrafted: alreadyDraftedActive,
-          hasReadSectionTool: Boolean(tools.read_section),
-        });
-        if (alreadyDraftedStep) return alreadyDraftedStep;
-
-        const schemaStep = tableSchemaReadStep({
-          stepsTaken: steps.length,
-          isWrite: userIntent.kind === "write",
+      prepareStep: ({ steps, messages }) => {
+        const inventoryReviewInput = {
+          documentType: report.documentType,
+          sections: mergedSections,
+          sectionKeys: inventoryTurnSections,
+          finishedCoverageKey: documentReview.finishedCoverageKey(),
+        };
+        const decision = prepareReportChatStep({
+          advertisedTools,
+          steps,
+          userIntentKind: userIntent.kind,
+          alreadyDrafted: alreadyDrafted != null,
           hasReadSectionTool: Boolean(tools.read_section),
           inScopeHasTable: chatSectionsInScope(
             sectionScope ?? "all",
             report.documentType
           ).some((section) => sectionHasTable(mergedSections[section], section)),
+          retrievalPolicy: retrieval.policy,
+          reviewPhase: documentReview.phase(),
+          requireInventoryReview: inScopeEmptyInventoryNeedsReview({
+            ...inventoryReviewInput,
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
+          }),
+          restartInventoryReview: inScopeEmptyInventoryNeedsReview(
+            inventoryReviewInput
+          ),
+          searchGate,
+          forceListAttachments: shouldForceListAttachments(steps),
+          forceFinishReview:
+            reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
+          registeredWriteTools,
+          explicitDocumentEdit: isExplicitDocumentEdit(userText),
         });
-        if (schemaStep) return schemaStep;
-
-        const prepared = prepareDocumentReviewStep({
-          policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
-          phase: documentReview.phase(),
-          availableTools: advertisedTools,
-        });
-        if (!prepared) return undefined;
-        let activeTools = alreadyDraftedActive
-          ? withoutDraftFieldTools(prepared.activeTools)
-          : prepared.activeTools;
-        // Hide search after a cited page / locate / two empty greps — same
-        // latch as Analytics. Skip while a document review is actively
-        // walking pages (prepareDocumentReviewStep already scopes tools).
-        const reviewPhase = documentReview.phase();
-        const reviewActive =
-          reviewPhase === "in_progress" || reviewPhase === "ready_to_finish";
-        if (
-          !reviewActive &&
-          searchLoopDirective(steps) === "read"
-        ) {
-          activeTools = withoutSearchTool(activeTools);
-        }
         return {
-          activeTools,
-          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+          ...decision,
+          messages: geminiSafeModelMessages(
+            compactInTurnModelMessages(messages)
+          ),
         };
       },
       abortSignal: turnAbort.signal,
@@ -796,11 +913,30 @@ async function handleChatPost(
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
       stopTurnGuards();
-      const persisted = partsForPersistedAssistantTurn({
+      const closed = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
         finishReason,
+        planContinuing: true,
       });
+      const live = livePlanProgressFromParts(closed.parts);
+      const advanced =
+        mode === "agent" && pendingPlan && !pendingPlan.paused
+          ? advancePlanAfterTurn({
+              plan: pendingPlan,
+              documentType: report.documentType,
+              draftedSectionKeys: live.draftedSectionKeys,
+              parts: closed.parts,
+            })
+          : null;
+      const planContinuing = shouldAutoContinuePlan(advanced?.continuation);
+      const persisted = planContinuing
+        ? closed
+        : partsForPersistedAssistantTurn({
+            parts: responseMessage.parts,
+            isAborted,
+            finishReason,
+          });
       const deadlineAbort = await captureChatTurnDeadlineAbort({
         startedAtMs: turnStartedAtMs,
         abortReason: turnAbort.signal.reason,
@@ -860,61 +996,33 @@ async function handleChatPost(
         });
       }
       try {
-        const changeItems = turnEdits.map((item) => ({
-          section: item.section,
-          targetField: item.targetField,
-          reasoning: item.reasoning,
-        }));
-        const [inserted] = await db
-          .insert(chatMessages)
-          .values({
-            reportId,
-            sessionId,
-            role: "assistant",
-            parts: persisted.parts,
-            metadata: chatAssistantTurnMetadata({
-              pace,
-              mode,
-              promptVersion: CHAT_PROMPT_VERSION,
-              chatTarget: "report",
-              switchToAnalytics,
-              changeSummary:
-                changeItems.length > 0 ? { items: changeItems } : undefined,
-            }),
-            authorId: null,
-          })
-          .returning({ id: chatMessages.id });
-
-        if (changeItems.length > 0 && inserted) {
+        if (advanced) {
           try {
-            const revision = await snapshotDocumentRevision({
-              reportId,
-              documentType: report.documentType,
-              summary: engineerFacingHistorySummary(changeItems),
-              createdBy: user.id,
-              chatSessionId: sessionId,
-              chatMessageId: inserted.id,
-            });
-            await db
-              .update(chatMessages)
-              .set({
-                metadata: chatAssistantTurnMetadata({
-                  pace,
-                  mode,
-                  promptVersion: CHAT_PROMPT_VERSION,
-                  chatTarget: "report",
-                  switchToAnalytics,
-                  changeSummary: {
-                    items: changeItems,
-                    revisionNo: revision.revisionNo,
-                  },
-                }),
-              })
-              .where(eq(chatMessages.id, inserted.id));
+            await saveChatPendingPlan(
+              sessionId,
+              persistablePendingPlan(advanced.plan)
+            );
           } catch (err) {
-            console.error("chat: failed to snapshot document revision", err);
+            console.error("chat: failed to save pending plan", err);
           }
         }
+        const assistantMetadata = () =>
+          chatAssistantTurnMetadata({
+            pace,
+            mode,
+            promptVersion: CHAT_PROMPT_VERSION,
+            chatTarget: "report",
+            switchToAnalytics,
+            continuation: advanced?.continuation ?? undefined,
+          });
+        await db.insert(chatMessages).values({
+          reportId,
+          sessionId,
+          role: "assistant",
+          parts: persisted.parts,
+          metadata: assistantMetadata(),
+          authorId: null,
+        });
         await touchChatSession(sessionId, null);
       } catch (err) {
         // The reply already streamed to the client, so we can only log here —

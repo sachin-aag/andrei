@@ -5,6 +5,7 @@ import {
   type SuggestionStatus,
   type SuggestionKind,
 } from "@/lib/tiptap/suggestion-marks";
+import { isTableRefNode } from "@/lib/tiptap/table-ref-markdown";
 
 export type RedraftPreviewAttrs = {
   id: string;
@@ -15,7 +16,7 @@ export type RedraftPreviewAttrs = {
 };
 
 function markAllText(node: JSONContent, markName: string, attrs: RedraftPreviewAttrs): void {
-  if (node.type === "text") {
+  if (node.type === "text" || isTableRefNode(node)) {
     node.marks = [...(node.marks ?? []), { type: markName, attrs: { ...attrs } }];
     return;
   }
@@ -24,6 +25,7 @@ function markAllText(node: JSONContent, markName: string, attrs: RedraftPreviewA
 
 function docHasText(doc: JSONContent): boolean {
   if (doc.type === "text") return (doc.text ?? "").trim().length > 0;
+  if (isTableRefNode(doc)) return true;
   return (doc.content ?? []).some(docHasText);
 }
 

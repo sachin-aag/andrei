@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 import { requireAnalyticsAccess } from "@/lib/statistical-analysis/access";
 import { getOrCreateReportAnalytics } from "@/lib/statistical-analysis/store";
+import { renderAnalyticsInsertImage } from "@/lib/statistical-analysis/render-analysis-plots";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 
 vi.mock("@/db", () => ({ db: {} }));
@@ -12,6 +13,16 @@ vi.mock("@/lib/statistical-analysis/access", () => ({
 
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getOrCreateReportAnalytics: vi.fn(),
+}));
+
+// The route owns the fallback branching; the pixels belong to the renderer,
+// which the DOCX export path already covers.
+vi.mock("@/lib/statistical-analysis/render-analysis-plots", () => ({
+  renderAnalyticsInsertImage: vi.fn(async () => ({
+    dataUrl: "data:image/png;base64,RENDERED",
+    widthPx: 640,
+    heightPx: 420,
+  })),
 }));
 
 const params = {
@@ -100,7 +111,7 @@ describe("GET /api/reports/[reportId]/analytics/analyses/[analysisId]/image", ()
     expect(body.image).toEqual(previewImage);
   });
 
-  it("returns 404 when no preview was stored", async () => {
+  it("renders on demand when nobody opened the plot", async () => {
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue({
       id: "ws-1",
       reportId: "report-1",
@@ -150,7 +161,45 @@ describe("GET /api/reports/[reportId]/analytics/analyses/[analysisId]/image", ()
       new Request("http://localhost/api"),
       params
     );
+    // previewImage is captured from the rendered DOM, so a plot created
+    // headlessly by chat has none. Returning 404 here is what put "open it in
+    // Analytics first" in front of the engineer.
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      image: { dataUrl: string; alt: string; widthPx: number };
+    };
+    expect(body.image.dataUrl).toMatch(/^data:image\//);
+    expect(body.image.alt).toBe("Torque");
+    expect(body.image.widthPx).toBeGreaterThan(0);
+  });
+
+  it("404s only when the analysis cannot be rendered at all", async () => {
+    vi.mocked(renderAnalyticsInsertImage).mockResolvedValueOnce(null);
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue({
+      id: "ws-1",
+      reportId: "report-1",
+      worksheet: { columns: [], sheets: [], specs: [], activeSheetId: "data-1" },
+      analyses: [
+        {
+          id: "analysis-1",
+          workspaceId: "ws-1",
+          title: "Assay by lot",
+          kind: "one_way_anova",
+          sourceHash: "hash",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: { responseColumnId: "c1", factorColumnId: "c2", title: "Assay by lot" },
+          results: {},
+        },
+      ],
+      version: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as never);
+
+    const response = await GET(new Request("http://localhost/api"), params);
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "no_preview" });
+    expect(await response.json()).toEqual({ error: "not_renderable" });
   });
 });

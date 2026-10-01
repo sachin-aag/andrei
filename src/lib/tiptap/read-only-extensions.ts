@@ -7,6 +7,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
 import { ImageInline } from "@/lib/tiptap/image-inline";
 import { MathBlock, MathInline } from "@/lib/tiptap/math-nodes";
+import { TableRef } from "@/lib/tiptap/table-ref";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
 
@@ -25,6 +26,7 @@ export function createReadOnlyRichTextExtensions() {
     ImageInline,
     MathInline,
     MathBlock,
+    TableRef,
     TableWithColumnWidths.configure({ resizable: false }),
     TableRow,
     TableCellWithVerticalAlign,

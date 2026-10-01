@@ -120,11 +120,18 @@ export function stepsForRole(
         },
         {
           id: "create-report",
-          title: "Start here: create a report",
-          body: `New Report opens a draft. Give it a document number and optionally assign reviewers. You can also import an existing Word file when that is enabled. The next cards appear once you open the report.`,
+          title: copy.documentTemplatesEnabled
+            ? "Start here: pick a template"
+            : "Start here: create a report",
+          body: copy.documentTemplatesEnabled
+            ? "New Report opens the template gallery. Choose Supply Chain, Design, Operations, or Quality, then pick a document tile to start a draft. Give it a document number and optionally assign reviewers."
+            : `New Report opens a draft. Give it a document number and optionally assign reviewers. You can also import an existing Word file when that is enabled. The next cards appear once you open the report.`,
           startHere: true,
-          href: "/",
-          match: (pathname) => pathname === "/",
+          href: copy.documentTemplatesEnabled ? "/templates" : "/",
+          match: (pathname) =>
+            copy.documentTemplatesEnabled
+              ? pathname === "/" || pathname.startsWith("/templates")
+              : pathname === "/",
           target: "create-report",
         },
         {

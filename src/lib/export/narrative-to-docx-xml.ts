@@ -11,8 +11,11 @@ import {
 } from "@/lib/export/docx-page-setup";
 import { allocateListNumId } from "@/lib/export/docx-numbering";
 import { resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
+import { quantityLatexToPlainText } from "@/lib/math/quantity-math";
+import { simpleLatexToPlainText } from "@/lib/math/simple-latex";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
+import { tableRefDisplayText } from "@/lib/tiptap/table-ref-markdown";
 import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
@@ -61,6 +64,83 @@ function sanitizeDocTextNodes(doc: JSONContent): JSONContent {
   return visit(doc);
 }
 
+function nodePlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map(nodePlainText).join("");
+}
+
+/** `Table 1.` / `Table 1: Title` / `Table 1. Title` immediately above a grid. */
+const TABLE_NAME_RE = /^Table\s+\d+\s*[.:]/i;
+const TABLE_NAME_ONLY_RE = /^Table\s+\d+\.?\s*$/i;
+
+function isTableNameNode(node: JSONContent): boolean {
+  if (node.type !== "paragraph" && node.type !== "heading") return false;
+  const text = nodePlainText(node).trim();
+  return TABLE_NAME_RE.test(text) || TABLE_NAME_ONLY_RE.test(text);
+}
+
+function isEmptyExportNode(node: JSONContent | undefined): boolean {
+  if (!node) return true;
+  if (node.type === "table") return false;
+  if (node.type === "bulletList" || node.type === "orderedList") {
+    return !(node.content ?? []).some((child) => !isEmptyExportNode(child));
+  }
+  return !nodePlainText(node).trim();
+}
+
+function isTableTitleNode(node: JSONContent): boolean {
+  if (node.type !== "paragraph" && node.type !== "heading") return false;
+  const text = nodePlainText(node).trim();
+  if (!text || isTableNameNode(node)) return false;
+  // Numbered section headings (3.4 QUALIFICATION) are not table titles.
+  return !/^\d+(\.\d+)*(\s|$)/.test(text);
+}
+
+/**
+ * Index of the table name (and optional title) that must stay on the same
+ * page as `tableIndex`. Word's section break describes the section that just
+ * ended, so the break has to sit *before* those captions — not between them
+ * and `<w:tbl>`.
+ */
+function tableHeaderStartIndex(
+  nodes: JSONContent[],
+  tableIndex: number
+): number {
+  let i = tableIndex;
+  const skipEmpty = () => {
+    while (i > 0 && isEmptyExportNode(nodes[i - 1])) i -= 1;
+  };
+  skipEmpty();
+  if (
+    i > 0 &&
+    isTableTitleNode(nodes[i - 1]!) &&
+    !isTableNameNode(nodes[i - 1]!)
+  ) {
+    const afterTitle = i;
+    i -= 1;
+    skipEmpty();
+    if (!(i > 0 && isTableNameNode(nodes[i - 1]!))) {
+      i = afterTitle;
+    }
+  }
+  while (i > 0 && isTableNameNode(nodes[i - 1]!)) {
+    i -= 1;
+    skipEmpty();
+  }
+  return i;
+}
+
+function tableUsesLandscape(
+  node: JSONContent,
+  portraitMax: number,
+  forceLandscapeTables: boolean
+): boolean {
+  const colCount = Math.max(1, getLogicalColumnCount(node.content ?? []));
+  return (
+    forceLandscapeTables || tableNeedsLandscapePage(colCount, portraitMax)
+  );
+}
+
 export function narrativeToDocxXmlWithContext(
   doc: JSONContent | undefined | null,
   ctx: DocxExportContext = createDocxExportContext(),
@@ -75,6 +155,18 @@ export function narrativeToDocxXmlWithContext(
   const parts: string[] = [];
   const portraitMax = portraitTableGridMax(ctx);
   const landscapeMax = ctx.pageSetup.landscapeContentWidthDxa;
+  const forceLandscape = options?.forceLandscapeTables === true;
+  const nodes = sanitized.content ?? [];
+  const landscapeWithTable = new Set<number>();
+  const keepWithTable = new Set<number>();
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i]?.type !== "table") continue;
+    const headerStart = tableHeaderStartIndex(nodes, i);
+    for (let j = headerStart; j < i; j++) keepWithTable.add(j);
+    if (tableUsesLandscape(nodes[i]!, portraitMax, forceLandscape)) {
+      for (let j = headerStart; j <= i; j++) landscapeWithTable.add(j);
+    }
+  }
   let landscapeOpen = false;
 
   const closeLandscape = () => {
@@ -88,38 +180,39 @@ export function narrativeToDocxXmlWithContext(
     landscapeOpen = true;
   };
 
-  for (const node of sanitized.content ?? []) {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
     if (node.type === "table") {
-      const colCount = Math.max(1, getLogicalColumnCount(node.content ?? []));
-      const useLandscape =
-        options?.forceLandscapeTables === true ||
-        tableNeedsLandscapePage(colCount, portraitMax);
-      if (useLandscape) {
+      if (landscapeWithTable.has(i)) {
         openLandscape();
         parts.push(tableToXml(node, ctx, landscapeMax));
       } else {
         closeLandscape();
         parts.push(tableToXml(node, ctx, portraitMax));
       }
+      continue;
+    }
+    // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
+    // the same landscape section. Word's sectPr describes the section that
+    // just ended, so the footnote must sit *before* the landscape break.
+    // Table name/title captions of a landscape table also stay in that
+    // section — open the break before the caption, not before `<w:tbl>`.
+    if (landscapeWithTable.has(i)) {
+      openLandscape();
+    } else if (!(forceLandscape && landscapeOpen)) {
+      closeLandscape();
+    }
+    const keepNext = keepWithTable.has(i);
+    if (node.type === "paragraph") {
+      parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
+    } else if (node.type === "bulletList" || node.type === "orderedList") {
+      parts.push(listToXml(node, ctx));
+    } else if (node.type === "heading") {
+      parts.push(headingToXml(node, ctx, keepNext));
+    } else if (node.type === "mathBlock") {
+      parts.push(mathBlockToXml(node));
     } else {
-      // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
-      // the same landscape section. Word's sectPr describes the section that
-      // just ended, so the footnote must sit *before* the landscape break.
-      // Default still returns to portrait after a wide table.
-      if (!(options?.forceLandscapeTables === true && landscapeOpen)) {
-        closeLandscape();
-      }
-      if (node.type === "paragraph") {
-        parts.push(paragraphToXml(node, false, null, null, false, ctx));
-      } else if (node.type === "bulletList" || node.type === "orderedList") {
-        parts.push(listToXml(node, ctx));
-      } else if (node.type === "heading") {
-        parts.push(headingToXml(node, ctx));
-      } else if (node.type === "mathBlock") {
-        parts.push(mathBlockToXml(node));
-      } else {
-        parts.push(paragraphToXml(node, false, null, null, false, ctx));
-      }
+      parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
     }
   }
   closeLandscape();
@@ -229,6 +322,42 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * Word Online collapses a space that sits at the edge of a formatted run
+ * (`w:b` / `w:i` / underline) even when `xml:space="preserve"` is set.
+ * Put those spaces in their own unformatted run so "associated **Tray Loader**"
+ * does not export as "associatedTray Loader".
+ */
+function splitEdgeWhitespace(text: string): {
+  lead: string;
+  middle: string;
+  trail: string;
+} {
+  if (!text) return { lead: "", middle: "", trail: "" };
+  if (/^\s+$/.test(text)) return { lead: "", middle: "", trail: text };
+  const lead = text.match(/^\s+/)?.[0] ?? "";
+  const rest = text.slice(lead.length);
+  const trail = rest.match(/\s+$/)?.[0] ?? "";
+  return { lead, middle: rest.slice(0, rest.length - trail.length), trail };
+}
+
+function visualEmphasisKey(node: JSONContent | undefined, forceBold: boolean): string {
+  if (!node) return "none";
+  if (node.type === "text" || node.type === "tableRef") {
+    const marks = node.marks ?? [];
+    const bold = forceBold || marks.some((m) => m.type === "bold");
+    const italic = marks.some((m) => m.type === "italic");
+    const underline = marks.some((m) => m.type === "underline");
+    const subscript = marks.some((m) => m.type === "subscript");
+    const superscript = marks.some((m) => m.type === "superscript");
+    const color = colorFromTextMarks(marks) ?? "";
+    return `b${bold}|i${italic}|u${underline}|sub${subscript}|sup${superscript}|c${color}`;
+  }
+  if (node.type === "mathInline") return "math";
+  if (node.type === "imageInline") return "image";
+  return "none";
+}
+
 function textLineToCitationAwareRuns(
   line: string,
   rPr: string,
@@ -326,13 +455,18 @@ function headingStyleName(level: unknown): "Heading1" | "Heading2" | "Heading3" 
   return "Heading2";
 }
 
-function headingToXml(node: JSONContent, ctx: DocxExportContext): string {
+function headingToXml(
+  node: JSONContent,
+  ctx: DocxExportContext,
+  keepNext = false
+): string {
   if (!ctx.useHeadingStyles) {
-    return paragraphToXml(node, true, null, null, false, ctx);
+    return paragraphToXml(node, true, null, null, keepNext, ctx);
   }
   const style = headingStyleName(node.attrs?.level);
   const runs = inlineNodesToRuns(node.content ?? [], false, ctx);
-  const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${paragraphJustification(null, ctx)}</w:pPr>`;
+  const keep = keepNext ? "<w:keepNext/>" : "";
+  const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${keep}${paragraphJustification(null, ctx)}</w:pPr>`;
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
@@ -352,6 +486,17 @@ function paragraphToXml(
   return `<w:p>${pPr}${runs}</w:p>`;
 }
 
+function boundarySpaceRun(
+  whitespace: string,
+  textTag: "w:t" | "w:delText",
+  ctx: DocxExportContext | undefined,
+  runSizeOverride?: string
+): string {
+  if (!whitespace) return "";
+  const rPr = runProperties({ sizeHalfPoints: runSizeOverride, noProof: true }, ctx);
+  return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(whitespace)}</${textTag}></w:r>`;
+}
+
 function inlineNodesToRuns(
   nodes: JSONContent[],
   forceBold = false,
@@ -359,8 +504,10 @@ function inlineNodesToRuns(
   runSizeOverride?: string
 ): string {
   const parts: string[] = [];
+  let emittedBoundarySpace = false;
 
-  for (const child of nodes) {
+  for (let index = 0; index < nodes.length; index++) {
+    const child = nodes[index]!;
     if (child.type === "text") {
       const text = child.text ?? "";
       if (!text) continue;
@@ -372,6 +519,13 @@ function inlineNodesToRuns(
       const isSubscript = marks.some((m) => m.type === "subscript");
       const isSuperscript = marks.some((m) => m.type === "superscript");
       const revision = suggestionRevisionFromMarks(marks);
+      const textTag: "w:t" | "w:delText" =
+        revision?.type === suggestionDeleteMarkName ? "w:delText" : "w:t";
+      const thisKey = visualEmphasisKey(child, forceBold);
+      const prevKey = visualEmphasisKey(nodes[index - 1], forceBold);
+      const nextKey = visualEmphasisKey(nodes[index + 1], forceBold);
+      const isolateLead = thisKey !== prevKey;
+      const isolateTrail = thisKey !== nextKey;
 
       const rPr = runProperties({
         bold: isBold,
@@ -397,19 +551,55 @@ function inlineNodesToRuns(
       for (let i = 0; i < lines.length; i++) {
         if (i > 0) {
           runParts.push(`<w:r>${rPr}<w:br/></w:r>`);
+          emittedBoundarySpace = false;
         }
-        if (lines[i]) {
-          const textTag =
-            revision?.type === suggestionDeleteMarkName ? "w:delText" : "w:t";
+        const line = lines[i]!;
+        if (!line) continue;
+        const { lead, middle, trail } = splitEdgeWhitespace(line);
+        if (!middle) {
+          const ws = lead + trail;
+          const isolate = thisKey !== prevKey || thisKey !== nextKey;
+          if (isolate) {
+            if (!emittedBoundarySpace) {
+              runParts.push(boundarySpaceRun(ws, textTag, ctx, runSizeOverride));
+            }
+            emittedBoundarySpace = true;
+          } else if (ws) {
+            runParts.push(
+              textLineToCitationAwareRuns(
+                ws,
+                rPr,
+                textTag,
+                superscriptRPr,
+                ctx?.citationNumbers
+              )
+            );
+            emittedBoundarySpace = false;
+          }
+          continue;
+        }
+        let core = middle;
+        if (lead && !isolateLead) core = lead + core;
+        if (trail && !isolateTrail) core = core + trail;
+        if (lead && isolateLead && !emittedBoundarySpace) {
+          runParts.push(boundarySpaceRun(lead, textTag, ctx, runSizeOverride));
+          emittedBoundarySpace = true;
+        }
+        if (core) {
           runParts.push(
             textLineToCitationAwareRuns(
-              lines[i]!,
+              core,
               rPr,
               textTag,
               superscriptRPr,
               ctx?.citationNumbers
             )
           );
+          emittedBoundarySpace = false;
+        }
+        if (trail && isolateTrail) {
+          runParts.push(boundarySpaceRun(trail, textTag, ctx, runSizeOverride));
+          emittedBoundarySpace = true;
         }
       }
       const runXml = runParts.join("");
@@ -418,14 +608,35 @@ function inlineNodesToRuns(
       );
     } else if (child.type === "hardBreak") {
       parts.push(`<w:r>${runProperties({ sizeHalfPoints: runSizeOverride }, ctx)}<w:br/></w:r>`);
+      emittedBoundarySpace = false;
     } else if (child.type === "imageInline" && ctx) {
       const src = child.attrs?.src as string | undefined;
       if (src) {
         const width = child.attrs?.width as number | undefined;
         parts.push(registerInlineImage(ctx, src, width));
       }
+      emittedBoundarySpace = false;
     } else if (child.type === "mathInline") {
       parts.push(mathInlineToRun(child, ctx));
+      emittedBoundarySpace = false;
+    } else if (child.type === "tableRef") {
+      const label = tableRefDisplayText({
+        n: typeof child.attrs?.n === "number" ? child.attrs.n : null,
+      });
+      const marks = child.marks ?? [];
+      const revision = suggestionRevisionFromMarks(marks);
+      const rPr = runProperties(
+        {
+          bold: forceBold || marks.some((m) => m.type === "bold"),
+          italic: marks.some((m) => m.type === "italic"),
+          underline: marks.some((m) => m.type === "underline"),
+          sizeHalfPoints: runSizeOverride,
+        },
+        ctx
+      );
+      const runXml = `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(label)}</w:t></w:r>`;
+      parts.push(revision && runXml ? revisionWrapper(revision, runXml) : runXml);
+      emittedBoundarySpace = false;
     }
   }
 
@@ -441,16 +652,44 @@ function mathOmmlFromNode(node: JSONContent): string {
   });
 }
 
+function mathPlainFromNode(node: JSONContent): string | null {
+  const latex = typeof node.attrs?.latex === "string" ? node.attrs.latex : "";
+  return quantityLatexToPlainText(latex) ?? simpleLatexToPlainText(latex);
+}
+
+function mathTextRun(text: string, ctx?: DocxExportContext): string {
+  return `<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
+    text
+  )}</w:t></w:r>`;
+}
+
+/**
+ * Quantity TeX (`$<1$`, `$\pm 0.5\%$`) becomes Unicode `w:t` so Word never
+ * sees an unescaped `<` in OMML. Remaining equations stay OMML (already
+ * XML-escaped). Never return empty — stripped math was leaving holes in
+ * §5.3 / §6.0 prose.
+ */
 function mathInlineToRun(node: JSONContent, ctx?: DocxExportContext): string {
+  const plain = mathPlainFromNode(node);
+  if (plain) return mathTextRun(plain, ctx);
   const omml = mathOmmlFromNode(node);
-  if (!omml) return "";
-  const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
-  return `<w:r>${runProperties({}, ctx)}${inner}</w:r>`;
+  if (omml) {
+    const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
+    return `<w:r>${runProperties({}, ctx)}${inner}</w:r>`;
+  }
+  const latex = typeof node.attrs?.latex === "string" ? node.attrs.latex.trim() : "";
+  return mathTextRun(latex || "[equation]", ctx);
 }
 
 function mathBlockToXml(node: JSONContent): string {
+  const plain = mathPlainFromNode(node);
+  if (plain) return wrapParagraph(plain);
   const omml = mathOmmlFromNode(node);
-  if (!omml) return wrapParagraph("[equation]");
+  if (!omml) {
+    const latex =
+      typeof node.attrs?.latex === "string" ? node.attrs.latex.trim() : "";
+    return wrapParagraph(latex || "[equation]");
+  }
   const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
   return `<w:p>${paragraphProperties()}<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${inner}</m:oMathPara></w:p>`;
 }
@@ -464,6 +703,7 @@ function runProperties(
     subscript?: boolean;
     superscript?: boolean;
     sizeHalfPoints?: string;
+    noProof?: boolean;
   } = {},
   ctx?: DocxExportContext
 ): string {
@@ -486,6 +726,7 @@ function runProperties(
   if (wordColor) rPr += `<w:color w:val="${wordColor}"/>`;
   if (options.subscript) rPr += '<w:vertAlign w:val="subscript"/>';
   if (options.superscript) rPr += '<w:vertAlign w:val="superscript"/>';
+  if (options.noProof) rPr += "<w:noProof/>";
   rPr += "</w:rPr>";
   return rPr;
 }

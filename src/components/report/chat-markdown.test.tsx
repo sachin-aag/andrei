@@ -64,6 +64,19 @@ describe("ChatMarkdown", () => {
     });
   });
 
+  it("renders $N_2$ instead of dollar latex", async () => {
+    const { container } = render(
+      <ChatMarkdown>{"high-purity process Nitrogen ($N_2$),"}</ChatMarkdown>
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("math")).not.toBeNull();
+    });
+    expect(container.textContent).not.toContain("$");
+    expect(container.textContent).toMatch(/N/);
+    expect(container.textContent).toMatch(/2/);
+  });
+
   it("still renders GFM lists", () => {
     render(<ChatMarkdown>{"- one\n- two"}</ChatMarkdown>);
     expect(screen.getByText("one")).toBeInTheDocument();
@@ -121,5 +134,109 @@ describe("ChatMarkdown", () => {
     expect(links).toHaveLength(2);
     await userEvent.click(links[1]!);
     expect(onOpenCitation).toHaveBeenCalledWith("[CSV-RTM-PR-053.pdf, p. 5]");
+  });
+
+  it("turns <br> in a GFM table cell into a line break", () => {
+    const markdown = [
+      "| Section | IDs | Detail |",
+      "| --- | --- | --- |",
+      "| Core Process (URS-1 to URS-29)<br>• Capacity, MOC | `URS-1`, `URS-7`<br>`URS-58` | • URS-3 (Shell Op Temp)<br>• URS-4 (Shell Op Press) [User Requirement Specification.PDF, p. 6-7] |",
+    ].join("\n");
+    const { container } = render(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    expect(container.querySelectorAll("td br").length).toBe(3);
+    expect(container.textContent).not.toMatch(/<br/i);
+    expect(container.textContent).toContain("Capacity, MOC");
+    expect(container.textContent).toContain("URS-58");
+    expect(container.textContent).toContain("URS-4 (Shell Op Press)");
+  });
+
+  it("turns paragraph <br/> tags into line breaks", () => {
+    const { container } = render(
+      <ChatMarkdown>{"Line one<br/>Line two<br />Line three"}</ChatMarkdown>
+    );
+    expect(container.querySelectorAll("br")).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/<br/i);
+    expect(container.textContent).toContain("Line one");
+    expect(container.textContent).toContain("Line three");
+  });
+
+  it("leaves <br> inside inline code literal", () => {
+    render(<ChatMarkdown>{"Use `<br>` in table cells"}</ChatMarkdown>);
+    expect(screen.getByText("<br>")).toBeInTheDocument();
+  });
+
+  it("linkifies a citation after a <br> in a table cell", async () => {
+    const onOpenCitation = vi.fn();
+    render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {[
+          "| A | B |",
+          "| --- | --- |",
+          "| see<br>[urs.pdf, p. 6] | y |",
+        ].join("\n")}
+      </ChatMarkdown>
+    );
+    await userEvent.click(screen.getByTestId("citation-link"));
+    expect(onOpenCitation).toHaveBeenCalledWith("[urs.pdf, p. 6]");
+  });
+
+  it("splits a compact and-cite only when both attached filenames are known", async () => {
+    const onOpenCitation = vi.fn();
+    const { rerender } = render(
+      <ChatMarkdown onOpenCitation={onOpenCitation}>
+        {String.raw`See [E-PR-068 and E-PR-071.pdf, p. 1].`}
+      </ChatMarkdown>
+    );
+    expect(screen.getAllByTestId("citation-link")).toHaveLength(1);
+
+    rerender(
+      <ChatMarkdown
+        onOpenCitation={onOpenCitation}
+        knownFilenames={["E-PR-068.pdf", "E-PR-071.pdf"]}
+      >
+        {String.raw`See [E-PR-068 and E-PR-071.pdf, p. 1].`}
+      </ChatMarkdown>
+    );
+    const links = screen.getAllByTestId("citation-link");
+    expect(links).toHaveLength(2);
+    await userEvent.click(links[0]!);
+    expect(onOpenCitation).toHaveBeenCalledWith("[E-PR-068]");
+  });
+
+  it("rewrites attachment and plot ids into filenames and titles", () => {
+    const attachmentId = "me1q4zzhb1me0wwskpmqfw7i";
+    const analysisId = "zbud2fet70yu88pvfpccjtko";
+    const { container } = render(
+      <ChatMarkdown
+        filenameByAttachmentId={
+          new Map([[attachmentId, "Lab Results_20250320092518.pdf"]])
+        }
+        labelByInternalId={new Map([[analysisId, "Assay scatter"]])}
+      >
+        {`See id=${attachmentId} and [${analysisId}]. Output met spec [${attachmentId}, p. 3].`}
+      </ChatMarkdown>
+    );
+    const text = container.textContent ?? "";
+    expect(text).not.toContain(attachmentId);
+    expect(text).not.toContain(analysisId);
+    expect(text).toContain("Lab Results.pdf");
+    expect(text).toContain("Assay scatter");
+  });
+
+  it("linkifies a rewritten attachment-id citation", async () => {
+    const onOpenCitation = vi.fn();
+    const attachmentId = "me1q4zzhb1me0wwskpmqfw7i";
+    render(
+      <ChatMarkdown
+        onOpenCitation={onOpenCitation}
+        filenameByAttachmentId={
+          new Map([[attachmentId, "protocol.pdf"]])
+        }
+      >
+        {`Output met spec [${attachmentId}, p. 3] today.`}
+      </ChatMarkdown>
+    );
+    await userEvent.click(screen.getByTestId("citation-link"));
+    expect(onOpenCitation).toHaveBeenCalledWith("[protocol.pdf, p. 3]");
   });
 });

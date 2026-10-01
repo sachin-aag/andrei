@@ -35,6 +35,18 @@ function markInserted(node: JSONContent, attrs: InsertMarkAttrs): void {
     ];
     return;
   }
+  if (node.type === "tableRef") {
+    const already = (node.marks ?? []).some(
+      (mark) => mark.type === suggestionInsertMarkName
+    );
+    if (!already) {
+      node.marks = [
+        ...(node.marks ?? []),
+        { type: suggestionInsertMarkName, attrs: { ...attrs } },
+      ];
+    }
+    return;
+  }
   node.content?.forEach((child) => markInserted(child, attrs));
 }
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
+import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import { ELR_RESPONSIBILITIES_HEADERS } from "@/lib/document-types/elr/sections";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   acceptAllSuggestions,
   acceptAllSuggestionsInReport,
@@ -68,6 +72,37 @@ const sectionContent = {
   },
 };
 
+function tableDoc(headers: string[], rows: string[][]) {
+  const cell = (type: "tableHeader" | "tableCell", text: string) => ({
+    type,
+    attrs: { colspan: 1, rowspan: 1, colwidth: null },
+    content: [
+      {
+        type: "paragraph",
+        content: text ? [{ type: "text", text }] : undefined,
+      },
+    ],
+  });
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: headers.map((h) => cell("tableHeader", h)),
+          },
+          ...rows.map((row) => ({
+            type: "tableRow",
+            content: row.map((c) => cell("tableCell", c)),
+          })),
+        ],
+      },
+    ],
+  };
+}
+
 describe("shouldShowSuggestionBulkActions", () => {
   it("hides the bulk row when nothing is open", () => {
     expect(shouldShowSuggestionBulkActions(0)).toBe(false);
@@ -93,6 +128,15 @@ describe("formatBulkApplyToast", () => {
     );
     expect(formatBulkApplyToast(0, 2)).toBe(
       "None of these suggestions could be applied. Dismiss them or run Suggest fixes again."
+    );
+  });
+
+  it("reports same-table leftovers dismissed as replaced", () => {
+    expect(formatBulkApplyToast(1, 0, 1)).toBe(
+      "Applied 1 suggestion. 1 replaced by it was dismissed."
+    );
+    expect(formatBulkApplyToast(2, 1, 2)).toBe(
+      "Applied 2 suggestions. 2 replaced by them were dismissed. 1 no longer fits and was left open."
     );
   });
 });
@@ -310,6 +354,325 @@ describe("acceptAllSuggestions", () => {
     expect(JSON.stringify(previews[0])).toContain("on line FL-02");
     expect(previews[1]).toBe(original);
   });
+
+  it("applies complementary edit_cells, insert_rows, and a paragraph together", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const rowFill = comment("t1", "", "Fill row 1", "elr_responsibilities");
+    rowFill.contentPath = "table";
+    rowFill.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "row-1",
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, expectedText: "", insertText: "1" },
+          { row: 1, col: 1, expectedText: "", insertText: "QA" },
+          { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+        ],
+      },
+    });
+
+    const extraRows = comment("t2", "", "Insert rows 2–3", "elr_responsibilities");
+    extraRows.contentPath = "table";
+    extraRows.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "rows-2-3",
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [
+          ["2", "Engineering", "Maintain the line"],
+          ["3", "Production", "Operate the filling line"],
+        ],
+        expectedRowAtAfter: ["", "", ""],
+      },
+    });
+
+    const assessment = comment(
+      "t3",
+      " Two further departments share line ownership.",
+      "QA owns the report.",
+      "elr_responsibilities"
+    );
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [rowFill, extraRows, assessment],
+      sectionContent: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "QA owns the report." }],
+            },
+          ],
+        },
+        table: seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1", "t2", "t3"]);
+    expect(result.skippedIds).toEqual([]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("QA");
+    expect(text).toContain("Engineering");
+    expect(text).toContain("Production");
+    expect(text).toContain("Two further departments share line ownership.");
+  });
+
+  it("applies a painted edit_cells preview together with insert_rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const rowFill = comment("t1", "", "Fill row 1", "elr_responsibilities");
+    rowFill.contentPath = "table";
+    const fillOperation = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 0, expectedText: "", insertText: "1" },
+        { row: 1, col: 1, expectedText: "", insertText: "QA" },
+        { row: 1, col: 2, expectedText: "", insertText: "Approve the report" },
+      ],
+    };
+    rowFill.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "row-1",
+      tableOperation: fillOperation,
+    });
+
+    const extraRows = comment("t2", "", "Insert rows 2–3", "elr_responsibilities");
+    extraRows.contentPath = "table";
+    extraRows.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "rows-2-3",
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        rows: [
+          ["2", "Engineering", "Maintain the line"],
+          ["3", "Production", "Operate the filling line"],
+        ],
+        expectedRowAtAfter: ["", "", ""],
+      },
+    });
+
+    const seeded = seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]);
+    const preview = buildTableOperationPreviewDoc(seeded, fillOperation, {
+      id: "t1",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-09-16T15:30:20.584Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [rowFill, extraRows],
+      sectionContent: { table: preview.doc },
+    });
+
+    expect(result.appliedIds).toEqual(["t1", "t2"]);
+    expect(result.skippedIds).toEqual([]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("QA");
+    expect(text).toContain("Engineering");
+    expect(text).toContain("Production");
+    expect(text).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("dismisses identity edit_cells as already_present instead of applying a no-op", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const identity = comment("t1", "", "URS-13 Stage", "elr_responsibilities");
+    identity.contentPath = "table";
+    identity.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "already empty",
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 0,
+            rowKey: "",
+            expectedText: "",
+            insertText: "",
+          },
+        ],
+      },
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [identity],
+      sectionContent: { table: seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]) },
+    });
+
+    expect(result.appliedIds).toEqual([]);
+    expect(result.skippedIds).toEqual([]);
+    expect(result.dismissedIds).toEqual(["t1"]);
+    expect(result.dismissedContent.t1).toContain("already_present");
+  });
+
+  it("dismisses a same-table leftover invalidated by an earlier apply", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const firstDelete = comment(
+      "t1",
+      "",
+      "delete report rows",
+      "elr_responsibilities"
+    );
+    firstDelete.contentPath = "table";
+    firstDelete.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "delete-low",
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [
+          { row: 2, expectedCells: ["2", "QA", "Review"] },
+          { row: 4, expectedCells: ["4", "QC", "Test"] },
+        ],
+      },
+    });
+    const leftoverDelete = comment(
+      "t2",
+      "",
+      "delete later rows",
+      "elr_responsibilities"
+    );
+    leftoverDelete.contentPath = "table";
+    leftoverDelete.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "delete-high",
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [{ row: 5, expectedCells: ["5", "Stores", "Issue"] }],
+      },
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [firstDelete, leftoverDelete],
+      sectionContent: {
+        table: tableDoc(
+          [...ELR_RESPONSIBILITIES_HEADERS],
+          [
+            ["1", "Engineering", "Maintain"],
+            ["2", "QA", "Review"],
+            ["3", "Production", "Operate"],
+            ["4", "QC", "Test"],
+            ["5", "Stores", "Issue"],
+          ]
+        ),
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1"]);
+    expect(result.dismissedIds).toEqual(["t2"]);
+    expect(result.skippedIds).toEqual([]);
+    expect(JSON.parse(result.dismissedContent.t2).resolutionReason).toBe(
+      "superseded_by:t1"
+    );
+    expect(urls.some((url) => url.includes("/comments/t2"))).toBe(true);
+  });
+
+  it("still skips an unrelated locate failure next to a table apply", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const firstDelete = comment(
+      "t1",
+      "",
+      "delete report rows",
+      "elr_responsibilities"
+    );
+    firstDelete.contentPath = "table";
+    firstDelete.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "delete-low",
+      tableOperation: {
+        kind: "delete_rows",
+        tableIndex: 0,
+        rows: [{ row: 2, expectedCells: ["2", "QA", "Review"] }],
+      },
+    });
+    const leftover = comment(
+      "c3",
+      " missing",
+      "this text is not in the document",
+      "elr_responsibilities"
+    );
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [firstDelete, leftover],
+      sectionContent: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "QA owns the report." }],
+            },
+          ],
+        },
+        table: tableDoc(
+          [...ELR_RESPONSIBILITIES_HEADERS],
+          [
+            ["1", "Engineering", "Maintain"],
+            ["2", "QA", "Review"],
+            ["3", "Production", "Operate"],
+          ]
+        ),
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1"]);
+    expect(result.skippedIds).toEqual(["c3"]);
+    expect(result.dismissedIds).toEqual([]);
+  });
 });
 
 const measureFirst = comment(
@@ -349,6 +712,23 @@ describe("reportSuggestionQueues", () => {
     expect(queues.map((q) => q.section)).toEqual(["define", "measure"]);
     expect(queues[0].comments.map((c) => c.id)).toEqual(["c1", "c2"]);
     expect(queues[1].comments.map((c) => c.id)).toEqual(["m1"]);
+  });
+
+  it("includes open suggestions on sections omitted from the card order", () => {
+    const leftover = comment(
+      "acro",
+      " User Requirement Specification",
+      "URS",
+      "qsr_acronyms"
+    );
+    leftover.contentPath = "table";
+    const queues = reportSuggestionQueues(
+      ["qsr_objective"],
+      [leftover],
+      []
+    );
+    expect(queues.map((q) => q.section)).toEqual(["qsr_acronyms"]);
+    expect(queues[0].comments.map((c) => c.id)).toEqual(["acro"]);
   });
 });
 
@@ -460,6 +840,48 @@ describe("acceptAllSuggestionsInReport", () => {
 
     expect(result.skippedIds).toContain("c1");
     expect(result.appliedIds).toEqual(["m1"]);
+  });
+
+  it("skips an identity card when Apply hits a duplicate document number", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith("/api/reports/report-1")) {
+          return { ok: false, status: 409, json: async () => ({}) } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+    const identity = comment("ident-1", "QSR/GLR-1301", "", "identity" as SectionType);
+    identity.sectionId = null;
+    identity.contentPath = "documentNo";
+    identity.content = JSON.stringify({
+      deleteText: "",
+      insertText: "Report No.: QSR/GLR-1301",
+      reasoning: "cover",
+      identityOperation: {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+      },
+      suggestionBase: { documentNo: "" },
+      suggestionIntent: { documentNo: "QSR/GLR-1301" },
+    });
+
+    const result = await acceptAllSuggestionsInReport({
+      reportId: "report-1",
+      sectionOrder: ["identity" as SectionType],
+      comments: [identity],
+      evaluations: [],
+      sectionContentFor: () => undefined,
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.skippedIds).toEqual(["ident-1"]);
+    expect(result.appliedIds).toEqual([]);
   });
 });
 

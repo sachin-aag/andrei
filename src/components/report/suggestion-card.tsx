@@ -31,9 +31,11 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
+  sectionOrderWithOpenSuggestions,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
+import type { ClaimProvenance } from "@/lib/ai/chat/claim-facts";
 import {
   getDocumentType,
   resolveSection,
@@ -52,11 +54,18 @@ import {
 } from "@/lib/suggestions/apply-transition";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
+  IdentityDuplicateError,
   PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  applyIdentityPatchToReport,
+  identityCurrentFromReport,
+  isIdentitySuggestion,
+} from "@/lib/suggestions/identity-suggestion";
 import {
   formatSupersedesBadge,
   supersededSuggestionIdsFromContent,
@@ -67,6 +76,8 @@ import {
   measureSuggestionGutterParkCenterY,
   scrollToSuggestionComment,
 } from "@/lib/suggestions/navigate-suggestion";
+import { useReviewGutterColumnPainted } from "./review-gutter-painted";
+import { showDocumentSuggestionCard } from "./show-document-suggestion-card";
 import {
   countStaleOpenSuggestions,
   preferredOpenSuggestion,
@@ -137,6 +148,45 @@ function buildFrozenCard(
   };
 }
 
+function SuggestionTraceability({
+  provenance,
+}: {
+  provenance: ClaimProvenance;
+}) {
+  const verified = provenance.claims.filter((c) => c.status === "verified").length;
+  const unsourced = provenance.claims.filter((c) => c.status === "unsourced").length;
+  const moved = provenance.claims.filter((c) => c.status === "citation_moved").length;
+  // A value a saved analysis computed is verified, but not off a page — name
+  // the analysis so the reader can check the derivation, not just the paper.
+  const computedTitles = [
+    ...new Set(
+      provenance.claims
+        .map((claim) => claim.analysis?.title?.trim())
+        .filter((title): title is string => Boolean(title))
+    ),
+  ];
+  return (
+    <div
+      className="text-[10px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2 space-y-0.5"
+      data-testid="suggestion-traceability"
+    >
+      <p className="font-medium text-[var(--foreground)]">Traceability</p>
+      <p>
+        {verified > 0 ? `Verified ${verified}` : null}
+        {verified > 0 && (unsourced > 0 || moved > 0) ? " · " : null}
+        {unsourced > 0 ? `Unsourced ${unsourced}` : null}
+        {unsourced > 0 && moved > 0 ? " · " : null}
+        {moved > 0 ? `Citation moved ${moved}` : null}
+      </p>
+      {computedTitles.length > 0 ? (
+        <p data-testid="suggestion-traceability-computed">
+          Computed by {computedTitles.join(", ")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function figureChangeSummary(payload: ParsedAiFixPayload): string | null {
   const insert = payload.insertImage;
   const remove = payload.removeImage;
@@ -186,6 +236,10 @@ export function SuggestionCardFace({
   const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
   const evidenceSources =
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
+  const claimProvenance =
+    card.kind === "fix"
+      ? card.payload.claimProvenance
+      : card.redraft.claimProvenance;
   const figureSummary =
     card.kind === "fix" ? figureChangeSummary(card.payload) : null;
 
@@ -325,6 +379,10 @@ export function SuggestionCardFace({
             >
               {reasoning}
             </p>
+          ) : null}
+
+          {claimProvenance && claimProvenance.claims.length > 0 ? (
+            <SuggestionTraceability provenance={claimProvenance} />
           ) : null}
 
           {evidenceSources.length > 0 ? (
@@ -575,8 +633,16 @@ function EnteringSuggestionLayer({
   );
 }
 
-export function SectionSuggestionCard({ section }: { section: SectionType }) {
-  const { report, readOnly, currentUserId, refresh } = useReportData();
+export function SectionSuggestionCard({
+  section,
+  hideWhenEmpty = false,
+}: {
+  section: SectionType;
+  /** In-section slot. Hidden while the review margin already shows this card. */
+  hideWhenEmpty?: boolean;
+}) {
+  const gutterColumnPainted = useReviewGutterColumnPainted();
+  const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
     !readOnly &&
@@ -588,6 +654,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     enterSuggestionQueueBridge,
     endSuggestionApplyTransition,
     suggestionApplyTransition,
+    gutterSuggestionCommentForSection,
   } = useReportEvaluations();
   const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -600,8 +667,12 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const enterRef = useRef<HTMLDivElement>(null);
 
   const sectionOrder = useMemo(
-    () => suggestionCardSectionKeys(report.documentType),
-    [report.documentType]
+    () =>
+      sectionOrderWithOpenSuggestions(
+        suggestionCardSectionKeys(report.documentType),
+        comments
+      ),
+    [report.documentType, comments]
   );
 
   const queue = useMemo(
@@ -819,9 +890,12 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         reportId: report.id,
         section,
         comment: snapshot.comment,
-        sectionContent: sections[section] as Record<string, unknown>,
+        sectionContent: (sections[section] as Record<string, unknown>) ?? {},
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
         openComments: comments.filter((c) => c.status === "open" && !c.parentId),
+        documentType: report.documentType,
+        reportSections: sections,
+        identityCurrent: identityCurrentFromReport(report),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -841,16 +915,29 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         if (result.reason === "placeholder_conflict") {
           throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
         }
+        if (result.reason === "duplicate_document_no") {
+          throw (
+            result.error instanceof IdentityDuplicateError
+              ? result.error
+              : new IdentityDuplicateError()
+          );
+        }
         throw new Error("Suggestion could not be located");
       }
-      replaceSection(section, result.nextSection as unknown);
+      if (result.nextIdentity) {
+        setReport((prev) => applyIdentityPatchToReport(prev, result.nextIdentity!));
+      } else if (!isIdentitySuggestion(snapshot.comment)) {
+        replaceSection(section, result.nextSection as unknown);
+        applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
+      }
 
       setComments((prev) =>
         prev
           .map((c) => {
-            if (c.id === commentId) return { ...c, status: "resolved" as const };
             const dismissed = result.dismissed.find((row) => row.id === c.id);
-            return dismissed ?? c;
+            if (dismissed) return dismissed;
+            if (c.id === commentId) return { ...c, status: "resolved" as const };
+            return c;
           })
           .filter((c) => c.status !== "dismissed")
       );
@@ -870,13 +957,15 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof SectionPersistError
+        err instanceof IdentityDuplicateError
           ? err.message
-          : err instanceof CommentPersistError
-            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
-              ? err.message
-              : "Could not apply suggestion"
+          : err instanceof SectionPersistError
+            ? err.message
+            : err instanceof CommentPersistError
+              ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+              : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
+                ? err.message
+                : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -900,6 +989,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     sectionOrder,
     report.id,
     report.documentType,
+    report,
+    setReport,
     replaceSection,
     animateQueueTransition,
     setComments,
@@ -938,7 +1029,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         reportId: report.id,
         section,
         comment: snapshot.comment,
-        sectionContent: sections[section] as Record<string, unknown>,
+        sectionContent: (sections[section] as Record<string, unknown>) ?? {},
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -1014,6 +1105,15 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
   ]);
 
+  const hideBecauseGutterShowsThisCard =
+    hideWhenEmpty &&
+    !showDocumentSuggestionCard({
+      documentSlot: true,
+      gutterColumnPainted,
+      sectionHasGutterCard: Boolean(gutterSuggestionCommentForSection(section)),
+    });
+  if (hideBecauseGutterShowsThisCard) return null;
+
   if (showBridge && bridgeNext) {
     const nextSection =
       typeof bridgeNext.section === "string" ? bridgeNext.section : null;
@@ -1040,6 +1140,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }
 
   if (!liveCard && !exitingCard && !frozenCard) {
+    if (hideWhenEmpty) return null;
     return (
       <p className="text-[11px] text-[var(--muted-foreground)] px-1 py-2">
         No pending suggestions for this section. Run criteria, then use Suggest fixes

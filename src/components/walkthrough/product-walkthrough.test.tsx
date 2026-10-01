@@ -23,6 +23,7 @@ vi.mock("@/lib/customers/packs", () => ({
     branding: { productNameShort: "Andrei" },
     insightsEnabled: true,
     statisticalAnalysisEnabled: true,
+    documentTemplatesEnabled: true,
   }),
 }));
 
@@ -103,7 +104,7 @@ describe("ProductWalkthroughProvider", () => {
     render(wrapper(<div>dashboard</div>));
 
     expect(
-      await screen.findByRole("heading", { name: /start here: create a report/i })
+      await screen.findByRole("heading", { name: /start here: pick a template/i })
     ).toBeInTheDocument();
   });
 
@@ -267,7 +268,7 @@ describe("ProductWalkthroughProvider", () => {
 
     const { rerender } = render(wrapper(<div>dashboard</div>));
     expect(
-      await screen.findByRole("heading", { name: /start here: create a report/i })
+      await screen.findByRole("heading", { name: /start here: pick a template/i })
     ).toBeInTheDocument();
 
     pathname = "/reports/abc/edit";

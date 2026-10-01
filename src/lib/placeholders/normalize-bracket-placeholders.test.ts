@@ -103,6 +103,24 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     expect(
       normalizeBracketPlaceholdersInPlainText("see [batch-coa.pdf, p. 3]")
     ).toBe("see [batch-coa.pdf, p. 3]");
+    expect(
+      normalizeBracketPlaceholdersInPlainText("see [batch-coa.pdf, p. 1-3]")
+    ).toBe("see [batch-coa.pdf, p. 1-3]");
+  });
+
+  it("does not compact a semicolon-combined filename cite into a placeholder", () => {
+    const combined =
+      "[Alarm trend 01 April to 30 June 25 (2).pdf, p. 1; AAP-E-PR-070-036-R00 List of alarm and their action plan Filling.pdf, p. 1-3]";
+    expect(normalizeBracketPlaceholdersInPlainText(combined)).toBe(combined);
+  });
+
+  it("does not turn a hyphenated-and filename cite into a leftover placeholder", () => {
+    const cite = "[QDF-Filling and capping machine.pdf, p. 2]";
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        `SOP/DP/QA/014/F14-R00 ${cite}`
+      )
+    ).toBe(`SOP/DP/QA/014/F14-R00 ${cite}`);
   });
 
   it("leaves extension-less Attachment exhibit citations unchanged", () => {
@@ -190,6 +208,15 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     expect(normalizeBracketPlaceholdersInPlainText("see <batch number>")).toBe(
       "see <batch number>"
     );
+  });
+
+  it("does not turn comparison inequalities into placeholders", () => {
+    expect(
+      normalizeBracketPlaceholdersInPlainText("Grade A (< 1 CFU/plate>)")
+    ).toBe("Grade A (< 1 CFU/plate>)");
+    expect(
+      normalizeBracketPlaceholdersInPlainText("particles < 0.5 µm> remain")
+    ).toBe("particles < 0.5 µm> remain");
   });
 
   it("keeps angle placeholders that include a colon hint", () => {

@@ -17,12 +17,22 @@ type HastElement = {
  * Normalize LaTeX in assistant markdown so remark-math can parse it:
  * - `$<60$` is tokenized as HTML (`<60$`); `\lt` / `\gt` keep the dollars.
  * - One-line `$$...$$` is treated as display math (LLM output often omits newlines).
+ * - `$N_2$` braces the subscript (`$N_{2}$`) so GFM underscores cannot split the span.
  */
 export function rewriteChatMathHtmlConflicts(markdown: string): string {
   return markdown
     .replace(/\$\$([^$\n]+?)\$\$/g, (_match, inner: string) => `\n$$\n${inner}\n$$\n`)
     .replace(/\$</g, "$\\lt ")
-    .replace(/\$>/g, "$\\gt ");
+    .replace(/\$>/g, "$\\gt ")
+    .replace(
+      /(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g,
+      (_match, inner: string) => `$${braceUnbracedTexScripts(inner)}$`
+    );
+}
+
+/** `_2` / `^2` → `_{2}` / `^{2}` so remark-math keeps the whole `$...$` span. */
+export function braceUnbracedTexScripts(latex: string): string {
+  return latex.replace(/([_^])([^{])/g, "$1{$2}");
 }
 
 function mathHastHandler(

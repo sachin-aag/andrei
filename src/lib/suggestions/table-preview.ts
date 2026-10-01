@@ -3,7 +3,10 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import {
   applyTableOperation,
   cellPlainText,
+  ensureCaptionOnFilledTable,
   normalizeTableCellText,
+  resolveEditCells,
+  resolveInsertAfterRow,
   type TableCellEdit,
   type TableOperation,
   type TableOperationContext,
@@ -328,14 +331,27 @@ export function buildTableOperationPreviewDoc(
       const originalTable = collectTables(preview)[operation.tableIndex];
       if (!originalTable) return applied;
       const originalRows = tableRows(originalTable);
-      for (const cell of operation.cells) {
+      const resolved = resolveEditCells(originalRows, operation.cells);
+      if (!resolved.ok) return applied;
+      for (const cell of resolved.cells) {
         const node = rowCells(originalRows[cell.row] ?? {})[cell.col];
         if (node) paintCellEditPreview(node, cell, attrs);
       }
-      return { ok: true, status: "ok", doc: preview };
+      const captioned = ensureCaptionOnFilledTable(
+        preview,
+        operation.tableIndex,
+        context
+      );
+      return { ok: true, status: "ok", doc: captioned.doc };
     }
     case "insert_rows": {
-      const afterRow = operation.afterRow ?? 0;
+      const originalTable = collectTables(doc)[operation.tableIndex];
+      const resolved = originalTable
+        ? resolveInsertAfterRow(tableRows(originalTable), operation)
+        : null;
+      const afterRow = resolved?.ok
+        ? resolved.afterRow
+        : (operation.afterRow ?? 0);
       const inserted = operation.rows.map((_, i) => afterRow + 1 + i);
       markRows(rows, inserted, suggestionInsertMarkName, attrs);
       return applied;

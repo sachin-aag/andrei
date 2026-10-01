@@ -106,6 +106,45 @@ export function formatAxisTick(value: number): string {
   return String(Number(rounded.toPrecision(6)));
 }
 
+/**
+ * Epoch milliseconds as a tick label. The span decides the resolution: a
+ * lyophilizer cycle wants `HH:MM`, a stability study wants `dd MMM`, and a
+ * multi-day cycle wants both. Everything is read in UTC because the source
+ * stamps are wall-clock readings from the instrument, not zoned instants —
+ * shifting them to the viewer's timezone would move an excursion.
+ */
+export function formatTimeAxisTick(
+  value: number,
+  spanMs: number
+): string {
+  if (!Number.isFinite(value)) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const clock = `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+  const day = `${pad(date.getUTCDate())} ${MONTHS[date.getUTCMonth()]}`;
+  if (spanMs <= DAY_MS) return clock;
+  if (spanMs <= 7 * DAY_MS) return `${day} ${clock}`;
+  if (spanMs <= 400 * DAY_MS) return day;
+  return `${day} ${date.getUTCFullYear()}`;
+}
+
+const DAY_MS = 86_400_000;
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
 export function xTickAnchor(
   index: number,
   count: number

@@ -1,4 +1,4 @@
-/** Empty greps before search is hidden for the rest of the turn. */
+import { shouldKeepRtmProtocolSearchOpen } from "@/lib/ai/chat/qsr-row-grounding";
 export const SEARCH_LOOP_EMPTY_LIMIT = 2;
 
 export const DEFAULT_SEARCH_TOOL = "search_documents";
@@ -18,12 +18,16 @@ export type ToolCallLike = {
   toolName?: string;
   type?: string;
   tool?: string;
+  toolCallId?: string;
+  input?: unknown;
+  args?: unknown;
 };
 
 export type ToolResultLike = {
   toolName?: string;
   type?: string;
   tool?: string;
+  toolCallId?: string;
   output?: unknown;
   result?: unknown;
 };
@@ -36,6 +40,14 @@ export type SearchLoopStep = {
 };
 
 export type SearchLoopDirective = "continue" | "read";
+
+export type SearchGate = {
+  closed: boolean;
+};
+
+export function createSearchGate(): SearchGate {
+  return { closed: false };
+}
 
 export type SearchLoopOptions = {
   searchTool?: string;
@@ -104,10 +116,19 @@ function searchHitCount(output: unknown): number {
     typeof record.requirementIndexHits === "number"
       ? record.requirementIndexHits
       : 0;
+  const dividerHits =
+    typeof record.dividerHits === "number" ? record.dividerHits : 0;
+  const identityIncompleteHits =
+    typeof record.identityIncompleteHits === "number"
+      ? record.identityIncompleteHits
+      : 0;
   if (typeof record.returnedCount === "number" && record.returnedCount > 0) {
-    // TOC / running-header laundry lists are not a data sheet. Keep search
-    // open so the model can grep again (or scan) instead of asking for a page.
+    // TOC / running-header laundry lists, attachment cover sheets, and
+    // title lists without identifier values are not a data page. Keep
+    // search open so the model can grep again or read the following page.
     if (indexHits >= record.returnedCount) return 0;
+    if (dividerHits >= record.returnedCount) return 0;
+    if (identityIncompleteHits >= record.returnedCount) return 0;
     return record.returnedCount;
   }
   if (Array.isArray(record.seenPages) && record.seenPages.length > 0) {
@@ -159,6 +180,93 @@ function stepLocatedAttachment(
  * `emptyLimit` empty greps have already run. Shared by Document and Analytics
  * chat. `read_section` / `read_worksheet` are not progress.
  */
+function searchQueriesFromInput(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const record = value as Record<string, unknown>;
+  const queries: string[] = [];
+  if (typeof record.query === "string" && record.query.trim()) {
+    queries.push(record.query);
+  }
+  if (Array.isArray(record.queries)) {
+    for (const query of record.queries) {
+      if (typeof query === "string" && query.trim()) queries.push(query);
+    }
+  }
+  return queries;
+}
+
+function filenamesFromPayload(output: unknown): string[] {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return [];
+  }
+  const record = payload as Record<string, unknown>;
+  const names: string[] = [];
+  if (typeof record.filename === "string" && record.filename.trim()) {
+    names.push(record.filename);
+  }
+  for (const key of ["seenPages", "results"] as const) {
+    const rows = record[key];
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const filename = (row as { filename?: unknown }).filename;
+      if (typeof filename === "string" && filename.trim()) names.push(filename);
+    }
+  }
+  return names;
+}
+
+function collectRtmProtocolSearchEvidence(
+  steps: readonly SearchLoopStep[],
+  searchTool: string
+): { queries: string[]; filenames: string[] } {
+  const queries: string[] = [];
+  const filenames: string[] = [];
+  for (const step of steps) {
+    for (const call of collectToolCalls(step)) {
+      if (callToolName(call) !== searchTool) continue;
+      queries.push(...searchQueriesFromInput(call.input ?? call.args));
+    }
+    for (const result of step.toolResults ?? []) {
+      filenames.push(...filenamesFromPayload(toolPayload(result)));
+    }
+    for (const part of step.content ?? []) {
+      if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+      const record = part as Record<string, unknown>;
+      queries.push(...searchQueriesFromInput(record.input ?? record.args));
+      filenames.push(
+        ...filenamesFromPayload(unwrapToolPayload(record.output ?? record.result))
+      );
+    }
+  }
+  return { queries, filenames };
+}
+
+function payloadKeepSearchOpen(output: unknown): boolean {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.keepSearchOpen === true) return true;
+  return record.status === "unsupported_facts";
+}
+
+function stepKeepSearchOpen(step: SearchLoopStep): boolean {
+  for (const result of step.toolResults ?? []) {
+    if (payloadKeepSearchOpen(toolPayload(result))) return true;
+  }
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const record = part as Record<string, unknown>;
+    if (payloadKeepSearchOpen(unwrapToolPayload(record.output ?? record.result))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function searchLoopDirective(
   steps: readonly SearchLoopStep[],
   options: SearchLoopOptions = {}
@@ -166,6 +274,17 @@ export function searchLoopDirective(
   const searchTool = options.searchTool ?? DEFAULT_SEARCH_TOOL;
   const locateTools = options.locateTools ?? DEFAULT_ATTACHMENT_LOCATE_TOOLS;
   const emptyLimit = options.emptyLimit ?? SEARCH_LOOP_EMPTY_LIMIT;
+
+  if (steps.some((step) => stepKeepSearchOpen(step))) {
+    return "continue";
+  }
+
+  const rtmEvidence = collectRtmProtocolSearchEvidence(steps, searchTool);
+  if (
+    shouldKeepRtmProtocolSearchOpen(rtmEvidence.queries, rtmEvidence.filenames)
+  ) {
+    return "continue";
+  }
 
   let emptySearches = 0;
   for (const step of steps) {
@@ -182,11 +301,37 @@ export function searchLoopDirective(
   return emptySearches >= emptyLimit ? "read" : "continue";
 }
 
+function stepReadDocumentPage(step: SearchLoopStep): boolean {
+  return collectToolCalls(step).some(
+    (call) => callToolName(call) === "read_document_page"
+  );
+}
+
+/**
+ * After any grep this turn, hide ask_user until a page is actually read.
+ * Outline locates; it does not unlock a quiz.
+ */
+export function documentAskUserDirective(
+  steps: readonly SearchLoopStep[]
+): "continue" | "hide" {
+  let searched = false;
+  let readPage = false;
+  for (const step of steps) {
+    if (stepCalledSearch(step, DEFAULT_SEARCH_TOOL)) searched = true;
+    if (stepReadDocumentPage(step)) readPage = true;
+  }
+  return searched && !readPage ? "hide" : "continue";
+}
+
 /** Drop search from an activeTools list when the loop directive says read. */
 export function withoutSearchTool(
   activeTools: readonly string[],
   searchTool: string = DEFAULT_SEARCH_TOOL
 ): string[] {
   return activeTools.filter((name) => name !== searchTool);
+}
+
+export function withoutAskUserTool(activeTools: readonly string[]): string[] {
+  return activeTools.filter((name) => name !== "ask_user");
 }
 

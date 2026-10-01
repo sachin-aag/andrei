@@ -18,6 +18,8 @@ import {
   designVerificationMetadata,
   investigationOtherTools,
   investigationToolsUsed,
+  type ReportAttachmentFolderRecord,
+  type ReportAttachmentRecord,
   type ReportRecord,
   type ReportSectionRecord,
 } from "@/types/report";
@@ -34,10 +36,15 @@ import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbo
 import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
+  MJ_FIR_DOCX_RUN_STYLE,
+  QSR_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
-import { loadDocxPageSetupFromZip } from "@/lib/export/docx-page-setup";
+import {
+  applyTableCaptionSectionBreaksToDocxZip,
+  loadDocxPageSetupFromZip,
+} from "@/lib/export/docx-page-setup";
 import {
   applyNumberingToDocxZip,
   loadListNumberingBasesFromZip,
@@ -78,7 +85,21 @@ import {
   applyTocHeadingStylesToDocxZip,
   tocHeadingSpecsForDocumentType,
 } from "@/lib/export/docx-toc-headings";
+import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
+import {
+  threeXperCitationIdentityKey,
+  threeXperCitationsAppendixXml,
+} from "@/lib/export/3xper-citations-table";
+import {
+  elrCitationsAppendixXml,
+  insertXmlBeforeLastSectPr,
+  unifyElrCitationsForExport,
+  unifyReportCitationsForExport,
+} from "@/lib/export/elr-unified-citations";
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
+import { applyQsrSlotsToDocxZip } from "@/lib/export/qsr/render";
+import { QSR_SECTION_KEYS, qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
+import { VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -105,6 +126,9 @@ const MECHANICAL_DV_RESULTS_TABLE_KEYS = new Set([
 /** MJ ELR observation grids are too wide for A4 portrait even at 7–10 columns. */
 const ELR_LANDSCAPE_TABLE_KEYS = new Set([
   "qualificationTableXml",
+  "processValidationTableXml",
+  "cleaningValidationTableXml",
+  "qraReviewTableXml",
   "mediaFillTableXml",
   "monitoringTableXml",
   "calibrationTableXml",
@@ -117,6 +141,8 @@ const ELR_LANDSCAPE_TABLE_KEYS = new Set([
   "accessControlTableXml",
   "auditTrailTableXml",
   "csvStatusTableXml",
+  "systemTrendsTableXml",
+  "riskActionsTableXml",
 ]);
 
 function stringifyDvTemplateValue(
@@ -228,8 +254,12 @@ function escapeXmlText(text: string): string {
 function boldLabelParagraph(label: string, value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
+  const gapMatch = label.match(/\s+$/);
+  const gap = gapMatch?.[0] ?? " ";
+  const labelText = gapMatch ? label.slice(0, -gap.length) : label;
   return (
-    `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(label)}</w:t></w:r>` +
+    `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(labelText)}</w:t></w:r>` +
+    `<w:r><w:rPr><w:noProof/></w:rPr><w:t xml:space="preserve">${escapeXmlText(gap)}</w:t></w:r>` +
     `<w:r><w:t xml:space="preserve">${escapeXmlText(trimmed)}</w:t></w:r></w:p>`
   );
 }
@@ -250,7 +280,10 @@ function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
     richFieldParagraph("Experiment Conclusion: ", m.conclusion, ctx);
   const narrativeXml = narrativeToDocxXmlWithContext(m.narrative, ctx).xml;
   if (m.regulatoryNotification?.trim()) {
-    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${escapeXmlText(m.regulatoryNotification.trim())}</w:t></w:r></w:p>`;
+    const regXml = boldLabelParagraph(
+      "Regulatory Notification: ",
+      m.regulatoryNotification
+    );
     return prefix + narrativeXml + regXml;
   }
   return prefix + narrativeXml;
@@ -502,14 +535,54 @@ export async function generateReportDocx({
   comments = [],
   electronicSignatures = [],
   omitCitations = false,
+  attachments,
+  attachmentFolders,
 }: {
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];
   omitCitations?: boolean;
+  /** When set (including `[]`), ELR 7.0 Attachments is rebuilt from live files. */
+  attachments?: ReportAttachmentRecord[];
+  attachmentFolders?: ReportAttachmentFolderRecord[];
 }): Promise<Buffer> {
-  const exportSections = sectionsForDocxExport(sections, omitCitations);
+  let exportSections = sectionsForDocxExport(sections, omitCitations);
+  let citationsAppendixXml = "";
+  if (report.documentType === "equipment_lifecycle_report") {
+    if (attachments !== undefined) {
+      exportSections = applyElrLiveAttachmentsTable(
+        exportSections,
+        attachments,
+        attachmentFolders ?? []
+      );
+    }
+    if (!omitCitations) {
+      const unified = unifyElrCitationsForExport(exportSections);
+      exportSections = unified.sections;
+      citationsAppendixXml = elrCitationsAppendixXml(unified.bibliography);
+    }
+  }
+  if (
+    !omitCitations &&
+    (report.documentType === "vendor_qualification" ||
+      report.documentType === "qualification_summary_report")
+  ) {
+    const sectionKeys =
+      report.documentType === "vendor_qualification"
+        ? VQ_SECTION_KEYS
+        : QSR_SECTION_KEYS;
+    const unified = unifyReportCitationsForExport(exportSections, sectionKeys, {
+      sourceIdentity: (source) =>
+        threeXperCitationIdentityKey(source, exportSections),
+    });
+    exportSections = unified.sections;
+    citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
+      sections: exportSections,
+      variant:
+        report.documentType === "vendor_qualification" ? "vq" : "qsr",
+    });
+  }
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
       report,
@@ -522,13 +595,17 @@ export async function generateReportDocx({
     report.documentType === "design_verification" ||
     report.documentType === "mechanical_design_verification" ||
     report.documentType === "quality_risk_assessment" ||
-    report.documentType === "equipment_lifecycle_report"
+    report.documentType === "equipment_lifecycle_report" ||
+    report.documentType === "vendor_qualification" ||
+    report.documentType === "failure_investigation_report" ||
+    report.documentType === "qualification_summary_report"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,
       report,
       sections: exportSections,
       electronicSignatures,
+      citationsAppendixXml,
     });
   }
 
@@ -552,6 +629,7 @@ export async function generateReportDocx({
   );
   delete data._signatureApprovals;
   doc.render(data);
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
   applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyInvestigationToolCheckboxes(doc.getZip(), investigationToolsUsed(report));
@@ -632,6 +710,7 @@ async function generateGenericDocumentDocx({
     documentNo: report.documentNo,
     bodyXml,
   });
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
@@ -650,11 +729,13 @@ async function generateDesignVerificationDocx({
   report,
   sections,
   electronicSignatures,
+  citationsAppendixXml = "",
 }: {
   documentType: DocumentType;
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   electronicSignatures: DocxAuditSignature[];
+  citationsAppendixXml?: string;
 }): Promise<Buffer> {
   const templateContent = fs.readFileSync(
     getDocumentType(documentType).export.templatePath
@@ -672,7 +753,13 @@ async function generateDesignVerificationDocx({
   const pageSetup = loadDocxPageSetupFromZip(zip);
   const ctx = createDocxExportContext(
     numberingBases,
-    pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined,
+    documentType === "failure_investigation_report"
+      ? MJ_FIR_DOCX_RUN_STYLE
+      : documentType === "qualification_summary_report"
+        ? QSR_DOCX_RUN_STYLE
+        : pack.id === "convergent"
+        ? CONVERGENT_DOCX_RUN_STYLE
+        : undefined,
     { pageSetup }
   );
   const def = getDocumentType(documentType);
@@ -721,6 +808,24 @@ async function generateDesignVerificationDocx({
   }
 
   doc.render(data);
+  if (documentType === "qualification_summary_report") {
+    applyQsrSlotsToDocxZip(doc.getZip(), {
+      sections: mergedSections,
+      metadata: qsrMetadataFrom(report.metadata),
+      ctx,
+    });
+  }
+  if (citationsAppendixXml) {
+    const zip = doc.getZip();
+    const document = zip.file("word/document.xml");
+    if (document) {
+      zip.file(
+        "word/document.xml",
+        insertXmlBeforeLastSectPr(document.asText(), citationsAppendixXml)
+      );
+    }
+  }
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
   const headingSpecs = tocHeadingSpecsForDocumentType(documentType);
   if (headingSpecs) {
     applyTocHeadingStylesToDocxZip(doc.getZip(), headingSpecs);

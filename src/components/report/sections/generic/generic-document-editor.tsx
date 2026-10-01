@@ -53,8 +53,8 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
-      <div className="lg:hidden">
-        <SectionSuggestionCard section={GENERIC_DOCUMENT_SECTION} />
+      <div className="section-suggestion-slot">
+        <SectionSuggestionCard section={GENERIC_DOCUMENT_SECTION} hideWhenEmpty />
       </div>
       <div className="flex items-start justify-center overflow-x-auto pl-16">
         <PagedDocumentSurface>

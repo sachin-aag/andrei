@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Content, JSONContent, Editor } from "@tiptap/core";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, useEditorState, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Subscript from "@tiptap/extension-subscript";
@@ -13,6 +13,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
 import { ImageInline } from "@/lib/tiptap/image-inline";
 import { MathBlock, MathInline } from "@/lib/tiptap/math-nodes";
+import { TableRef } from "@/lib/tiptap/table-ref";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
@@ -32,6 +33,8 @@ import {
   ArrowUpToLine,
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
+  Combine,
+  Split,
 } from "lucide-react";
 import { isBulkSuggestionApply } from "@/lib/suggestions/apply-transition";
 import {
@@ -50,11 +53,13 @@ import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
+  citationRefreshMeta,
   createCitationHighlightExtension,
   type CitationOpenHandlers,
 } from "@/lib/tiptap/citation-highlights";
 import { openCitedDocumentOrToast } from "@/lib/citations/open-cited-document";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
+import { TableRefFieldContext } from "@/providers/table-ref-numbers";
 import {
   createPlaceholderHighlightExtension,
   isSelectionOverPlaceholder,
@@ -77,6 +82,7 @@ import {
   injectSuggestionMarks,
   resolveSuggestionPreviewSyncDoc,
   richDocsMatchIgnoringAiPreview,
+  richFieldHasLocalTextEdits,
   shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
@@ -107,6 +113,7 @@ import {
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
+  applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
   PLACEHOLDER_CONFLICT_MESSAGE,
@@ -116,6 +123,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
@@ -125,18 +133,38 @@ import { TiptapEditorContextMenu } from "@/components/report/tiptap-editor-conte
 const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
 const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
 
-function TableEditToolbar({
-  editor,
-  tableHAlign,
-  tableVAlign,
-}: {
-  editor: Editor;
-  tableHAlign: string | null;
-  tableVAlign: string | null;
-}) {
+function tableToolbarUi(editor: Editor) {
+  const inTable = editor.isActive("table");
+  const attrs = inTable
+    ? editor.isActive("tableHeader")
+      ? editor.getAttributes("tableHeader")
+      : editor.getAttributes("tableCell")
+    : null;
+  return {
+    canMerge: editor.can().mergeCells(),
+    canSplit: editor.can().splitCell(),
+    tableHAlign: (attrs?.align as string | undefined) ?? null,
+    tableVAlign: (attrs?.verticalAlign as string | undefined) ?? null,
+  };
+}
+
+export function TableEditToolbar({ editor }: { editor: Editor }) {
+  // TipTap v3 does not re-render the parent on selection. Subscribe here so
+  // Merge / Split enable as soon as a CellSelection covers more than one cell.
+  const {
+    canMerge,
+    canSplit,
+    tableHAlign,
+    tableVAlign,
+  } = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => tableToolbarUi(ed),
+  });
+
   return (
     <div
-      className="flex max-w-[min(100vw-1.5rem,36rem)] flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-1.5 py-1 shadow-md"
+      data-testid="table-edit-toolbar"
+      className="z-50 flex max-w-[min(100vw-1.5rem,36rem)] flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-1.5 py-1 shadow-md"
       onMouseDown={(e) => e.preventDefault()}
     >
       <span className="w-full px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)] sm:w-auto sm:pr-1">
@@ -208,6 +236,33 @@ function TableEditToolbar({
       >
         <Rows3 className="size-3" />
         <Minus className="size-2.5" />
+      </Button>
+      <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        data-testid="table-merge-cells"
+        disabled={!canMerge}
+        onClick={() => editor.chain().focus().mergeCells().run()}
+        title="Merge selected cells"
+      >
+        <Combine className="size-3" />
+        Merge
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        data-testid="table-split-cell"
+        disabled={!canSplit}
+        onClick={() => editor.chain().focus().splitCell().run()}
+        title="Split merged cell"
+      >
+        <Split className="size-3" />
+        Split
       </Button>
       <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
       <Button
@@ -358,7 +413,8 @@ export function TiptapSectionField({
   useEffect(() => {
     focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
   }, [focusedPanelPlaceholderId]);
-  const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
+  const { registerEditor, registerLiveEditorSync, setActiveEditor, activeEditorKey } =
+    useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
   const {
@@ -392,17 +448,35 @@ export function TiptapSectionField({
   const citationHandlersRef = useRef<CitationOpenHandlers>({
     onOpenCitation: () => {},
   });
+  const knownCitationFilenamesRef = useRef<string[]>([]);
+  const knownAttachmentIdsRef = useRef<string[]>([]);
   useLayoutEffect(() => {
     citationHandlersRef.current = {
       onOpenCitation: (raw) =>
         openCitedDocumentOrToast({ raw, attachments, openDocument }),
     };
+    knownCitationFilenamesRef.current = attachments.map(
+      (attachment) => attachment.filename
+    );
+    // An analysis id is the same 24-char shape as an attachment id; without
+    // the real list one rendered as a live citation link.
+    knownAttachmentIdsRef.current = attachments.map(
+      (attachment) => attachment.id
+    );
   }, [attachments, openDocument]);
 
   const getRanges = useCallback(() => rangesRef.current, []);
   const getHandlers = useCallback(() => handlersRef.current, []);
   const getCitationHandlers = useCallback(
     () => citationHandlersRef.current,
+    []
+  );
+  const getKnownCitationFilenames = useCallback(
+    () => knownCitationFilenamesRef.current,
+    []
+  );
+  const getKnownAttachmentIds = useCallback(
+    () => knownAttachmentIdsRef.current,
     []
   );
 
@@ -434,12 +508,15 @@ export function TiptapSectionField({
     [section, contentPath]
   );
 
-  const citationHighlightExtension = useMemo(
-    () =>
-      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on click, not during render
-      createCitationHighlightExtension(getCitationHandlers),
-    [getCitationHandlers]
-  );
+  const citationHighlightExtension = useMemo(() => {
+    /* eslint-disable react-hooks/refs -- ProseMirror calls these getters on click, not during render */
+    return createCitationHighlightExtension(
+      getCitationHandlers,
+      getKnownCitationFilenames,
+      getKnownAttachmentIds
+    );
+    /* eslint-enable react-hooks/refs */
+  }, [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]);
 
   const filteredRanges = useMemo(() => {
     return comments
@@ -520,6 +597,7 @@ export function TiptapSectionField({
         ImageInline,
         MathInline,
         MathBlock,
+        TableRef,
         Placeholder.configure({ placeholder }),
         TableWithColumnWidths.configure({ resizable: false }),
         TableRow,
@@ -635,6 +713,33 @@ export function TiptapSectionField({
     return unregister;
   }, [editor, registerEditor, section, contentPath]);
 
+  const liveDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (!editor) return;
+    const markDirty = () => {
+      liveDirtyRef.current = true;
+    };
+    editor.on("update", markDirty);
+    return () => {
+      editor.off("update", markDirty);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    return registerLiveEditorSync(
+      section,
+      contentPath,
+      () => {
+        if (editor.isDestroyed) return;
+        liveDirtyRef.current = false;
+        onChangeRef.current(editor.getJSON() as JSONContent);
+      },
+      () => liveDirtyRef.current
+    );
+  }, [editor, registerLiveEditorSync, section, contentPath]);
+
   useEffect(() => {
     if (!editor || !editable) return;
     const onFocus = () => setActiveEditor(section, contentPath);
@@ -674,6 +779,8 @@ export function TiptapSectionField({
                 openComments: comments.filter(
                   (c) => c.status === "open" && !c.parentId
                 ),
+                documentType: report.documentType,
+                reportSections: sections,
               })
             : await dismissSuggestion({
                 reportId: report.id,
@@ -704,15 +811,14 @@ export function TiptapSectionField({
           throw new Error("Suggestion could not be located");
         }
 
-        const dismissedSiblings =
+        const accepted =
           mode === "accept"
-            ? (
-                result as Extract<
-                  Awaited<ReturnType<typeof acceptSuggestion>>,
-                  { ok: true }
-                >
-              ).dismissed
-            : [];
+            ? (result as Extract<
+                Awaited<ReturnType<typeof acceptSuggestion>>,
+                { ok: true }
+              >)
+            : null;
+        const dismissedSiblings = accepted?.dismissed ?? [];
 
         // Paint the applied result immediately. Preview marks live in the
         // editor, not provider state, so dismiss often has no nextSection.
@@ -722,6 +828,12 @@ export function TiptapSectionField({
         // disappeared.
         if (result.nextSection) {
           replaceSection(section, result.nextSection as unknown);
+          if (accepted) {
+            applyRelatedSectionUpdates(
+              replaceSection,
+              accepted.nextRelatedSections
+            );
+          }
         }
         if (editor && !editor.isDestroyed && isRichField) {
           const pin: {
@@ -786,6 +898,7 @@ export function TiptapSectionField({
     [
       comments,
       report.id,
+      report.documentType,
       section,
       contentPath,
       sections,
@@ -958,7 +1071,7 @@ export function TiptapSectionField({
           activeSuggestionId &&
             !narrativeHasSuggestionMarks(json, activeSuggestionId)
         ),
-        hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+        hasLocalEdits: richFieldHasLocalTextEdits(json, canonicalJson),
         needsStrip,
       })
     ) {
@@ -1081,6 +1194,17 @@ export function TiptapSectionField({
               {
                 section,
                 targetField: contentPath,
+                documentContents: documentContentsFromReportState({
+                  documentType: report.documentType,
+                  sections: {
+                    ...sections,
+                    [section]: sectionContent as Record<string, unknown>,
+                  },
+                  comments: comments.filter(
+                    (c) => c.status === "open" && !c.parentId
+                  ),
+                  exceptCommentId: activeSuggestionId,
+                }),
               }
             );
             if (preview.ok) {
@@ -1178,6 +1302,8 @@ export function TiptapSectionField({
     previewHeld,
     section,
     sectionContent,
+    sections,
+    report.documentType,
     suggestionApplyTransition,
     value,
     richFieldOptions,
@@ -1213,6 +1339,15 @@ export function TiptapSectionField({
         .setMeta("addToHistory", false)
     );
   }, [editor, focusedPanelPlaceholderId, section, contentPath]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(citationRefreshMeta, true)
+        .setMeta("addToHistory", false)
+    );
+  }, [editor, attachments]);
 
   const cancelCommentCompose = useCallback(() => {
     setCommentComposing(false);
@@ -1255,15 +1390,6 @@ export function TiptapSectionField({
     }
   };
 
-  const activeTableCellAttrs =
-    editor && editable && editor.isActive("table")
-      ? editor.isActive("tableHeader")
-        ? editor.getAttributes("tableHeader")
-        : editor.getAttributes("tableCell")
-      : null;
-  const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
-  const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
-
   const inactiveSuggestionCss = isRichField
     ? buildInactiveSuggestionCss(activeSuggestionId)
     : "";
@@ -1285,11 +1411,21 @@ export function TiptapSectionField({
           pluginKey={`tableEditFloatingMenu:${thisEditorKey}`}
           updateDelay={50}
           appendTo={() => document.body}
+          // Canvas panes are z-10. TipTap portals this node onto document.body
+          // with position:absolute and no default z-index, so it otherwise
+          // paints under the editor. ELR table-only fields make that obvious:
+          // there is no prose above the matrix, flip overlays the table, and
+          // the toolbar looks missing.
+          className="z-50"
           options={{
+            strategy: "fixed",
             placement: "top-start",
             offset: 10,
             flip: true,
             shift: { padding: 8 },
+            scrollTarget:
+              editor.view.dom.closest<HTMLElement>("[data-canvas-pane]") ??
+              window,
           }}
           shouldShow={({ editor: ed }) =>
             ed.isEditable &&
@@ -1298,11 +1434,7 @@ export function TiptapSectionField({
             !commentComposing
           }
         >
-          <TableEditToolbar
-            editor={editor}
-            tableHAlign={tableHAlign}
-            tableVAlign={tableVAlign}
-          />
+          <TableEditToolbar editor={editor} />
         </FloatingMenu>
       )}
 
@@ -1310,6 +1442,7 @@ export function TiptapSectionField({
         <BubbleMenu
           editor={editor}
           appendTo={() => document.body}
+          className="z-50"
           options={{
             placement: "right-end",
             offset: 10,
@@ -1427,7 +1560,11 @@ export function TiptapSectionField({
           data-suggestion-preview-held={previewHeldMode}
           {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
         >
-          {editor ? <EditorContent editor={editor} /> : null}
+          {editor ? (
+            <TableRefFieldContext value={{ section, targetField: contentPath }}>
+              <EditorContent editor={editor} />
+            </TableRefFieldContext>
+          ) : null}
         </div>
       </TiptapEditorContextMenu>
 

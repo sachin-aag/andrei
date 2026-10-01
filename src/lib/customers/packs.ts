@@ -13,6 +13,13 @@ import { resolveCustomerId, type CustomerId } from "./resolve";
 
 export type LogoLayout = "icon" | "wordmark";
 
+/**
+ * What chat does when a draft states a hard fact that was not on any
+ * retrieved page. Every live pack blocks (placeholders + tool failure).
+ * `flag` remains so older suggestion cards can still record an unsourced claim.
+ */
+export type UnsupportedFactPolicy = "block" | "flag";
+
 export type CustomerBranding = {
   productName: string;
   productNameShort: string;
@@ -64,14 +71,20 @@ export type CustomerPack = {
   expertReviewEnabled: boolean;
   /**
    * Report Analytics tab (worksheet, sixpack, measurement scatter).
-   * On for demo, MJ, and Convergent.
+   * On for demo, MJ, Convergent, and 3xper.
    */
   statisticalAnalysisEnabled: boolean;
   /**
    * Primary-nav Insights dashboards (`/insights`). Demo only for now;
-   * MJ and Convergent hide the link and redirect the routes home.
+   * MJ, Convergent, and 3xper hide the link and redirect the routes home.
    */
   insightsEnabled: boolean;
+  /**
+   * Demo-only template gallery (`/templates`) grouped into Supply Chain,
+   * Design, Operations, and Quality. Other packs keep the create-dialog
+   * document-type dropdown.
+   */
+  documentTemplatesEnabled: boolean;
   /**
    * Spoken locales for composer voice dictation (Vertex Gemini, same
    * resolver as chat). MJ includes Hindi and Marathi; other packs are
@@ -79,6 +92,11 @@ export type CustomerPack = {
    * fine). The assistant still replies in English.
    */
   voiceInputLanguageCodes: readonly string[];
+  /**
+   * Chat apply-boundary policy for hard facts that retrieval did not
+   * serve. Not a feature flag — pack identity.
+   */
+  unsupportedFactPolicy: UnsupportedFactPolicy;
   branding: CustomerBranding;
 };
 
@@ -176,14 +194,19 @@ export const DEMO_PACK: CustomerPack = {
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: true,
+  documentTemplatesEnabled: true,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
+  unsupportedFactPolicy: "block",
   branding: ANDREI_BRANDING,
 };
 
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
 export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v2";
 export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
-export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v1";
+export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v20";
+export const VQ_PROMPT_VERSION = "3xper-vq-f04-v1";
+export const QSR_PROMPT_VERSION = "3xper-qsr-f06-v3";
+export const FIR_PROMPT_VERSION = "mj-fir-sop-017-f01-r01-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
@@ -199,7 +222,9 @@ export const CONVERGENT_PACK: CustomerPack = {
   expertReviewEnabled: true,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
+  documentTemplatesEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
+  unsupportedFactPolicy: "block",
   branding: CONVERGENT_BRANDING,
 };
 
@@ -207,6 +232,7 @@ export const MJ_PACK: CustomerPack = {
   id: "mj",
   enabledDocumentTypes: [
     "investigation_report",
+    "failure_investigation_report",
     "quality_risk_assessment",
     "equipment_lifecycle_report",
   ],
@@ -221,8 +247,54 @@ export const MJ_PACK: CustomerPack = {
   expertReviewEnabled: false,
   statisticalAnalysisEnabled: true,
   insightsEnabled: false,
+  documentTemplatesEnabled: false,
   voiceInputLanguageCodes: VOICE_INPUT_MJ_CODES,
+  unsupportedFactPolicy: "block",
   branding: MJ_BRANDING,
+};
+
+const XPER_BRANDING: CustomerBranding = {
+  productName: "3xper Innoventure Limited",
+  productNameShort: "3xper",
+  documentReviewTitle: "3xper — Quality Documents",
+  documentReviewDescription:
+    "AI document review and drafting for 3xper Innoventure vendor qualification and equipment qualification summary reports",
+  tagline: "Empowering Innovation",
+  shellTagline: "Quality Documents",
+  logoSrc: "/logo-3xper.png",
+  logoWhiteSrc: "/logo-3xper-white.png",
+  logoMarkSrc: "/logo-3xper-mark.png",
+  logoAlt: "3xper logo",
+  logoLayout: "wordmark",
+  heroLogoSrc: "/logo-3xper.png",
+  heroLogoOnWhite: true,
+  auditExportTitle: "3xper Innoventure Ltd — Audit Trail Export",
+  passwordResetSubject: "Reset your password — 3xper",
+  loginHeadline: "Qualification,\naccelerated.",
+  loginSubhead:
+    "Draft vendor qualifications and equipment qualification summary reports with AI-assisted review and one-click DOCX export matching the 3xper forms.",
+  loginFooter: "3xper Innoventure Limited",
+  aiAttribution: "by Andrei",
+};
+
+export const XPER_PACK: CustomerPack = {
+  id: "3xper",
+  enabledDocumentTypes: ["vendor_qualification", "qualification_summary_report"],
+  hiddenInvestigationSections: [],
+  investigationTemplateFile: "investigation-report-template.docx",
+  promptVersion: VQ_PROMPT_VERSION,
+  evaluationSystemPrompt: COMMON_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: {},
+  criterionDescriptionOverrides: {},
+  wordImportEnabled: false,
+  citationsAtEndOfSection: true,
+  expertReviewEnabled: false,
+  statisticalAnalysisEnabled: true,
+  insightsEnabled: false,
+  documentTemplatesEnabled: false,
+  voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
+  unsupportedFactPolicy: "block",
+  branding: XPER_BRANDING,
 };
 
 export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerPack {
@@ -233,6 +305,8 @@ export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerP
       return MJ_PACK;
     case "convergent":
       return CONVERGENT_PACK;
+    case "3xper":
+      return XPER_PACK;
     default: {
       const exhaustive: never = id;
       return exhaustive;
@@ -257,6 +331,12 @@ export function isInsightsEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.insightsEnabled;
+}
+
+export function isDocumentTemplatesEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.documentTemplatesEnabled;
 }
 
 export function voiceInputLanguageCodes(

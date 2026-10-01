@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { Schema, type Mark, type Node as PMNode } from "@tiptap/pm/model";
 import { collectSuggestionActionWidgetPositions } from "@/lib/tiptap/suggestion-action-widgets";
+import { TABLE_REF_ALLOWED_MARKS } from "@/lib/tiptap/table-ref-markdown";
 import { extendPosPastOpenBracketClose } from "@/lib/text/bracket-span";
 
 const markAttrs = {
+  bold: {
+    toDOM: () => ["strong", 0] as const,
+  },
+  italic: {
+    toDOM: () => ["em", 0] as const,
+  },
+  underline: {
+    toDOM: () => ["u", 0] as const,
+  },
   suggestionInsert: {
     attrs: {
       id: { default: null },
@@ -132,5 +142,37 @@ describe("collectSuggestionActionWidgetPositions", () => {
     const positions = positionsFor(doc, "eval-list");
     expect(positions).toHaveLength(1);
     expect(doc.textBetween(positions[0]! - second.length, positions[0]!)).toBe(second);
+  });
+
+  it("anchors widgets after an insert-marked tableRef atom", () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "paragraph" },
+        paragraph: { content: "inline*", group: "block" },
+        text: { group: "inline" },
+        tableRef: {
+          inline: true,
+          group: "inline",
+          atom: true,
+          selectable: true,
+          marks: TABLE_REF_ALLOWED_MARKS,
+          toDOM: () => ["span", { "data-table-ref": "true" }],
+          parseDOM: [{ tag: "span[data-table-ref]" }],
+        },
+      },
+      marks: markAttrs,
+    });
+    const { insert } = aiMarks(schema, "eval-ref");
+    const ref = schema.node("tableRef", { n: 8 }, undefined, [insert]);
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("See "),
+        ref,
+        schema.text("."),
+      ]),
+    ]);
+    const positions = positionsFor(doc, "eval-ref");
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toBe(1 + "See ".length + ref.nodeSize);
   });
 });

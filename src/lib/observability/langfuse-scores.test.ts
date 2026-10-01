@@ -108,7 +108,6 @@ describe("Langfuse suggestion quality scores", () => {
     expect(createScore).toHaveBeenCalledWith(
       expect.objectContaining({
         traceId: "trace-abc",
-        sessionId: "chat-1",
         name: "user_course_corrected",
         value: 1,
         dataType: "BOOLEAN",
@@ -118,6 +117,7 @@ describe("Langfuse suggestion quality scores", () => {
         },
       })
     );
+    expect(createScore.mock.calls[0]?.[0]).not.toHaveProperty("sessionId");
   });
 
   it("falls back to a session score when no chat trace is active", async () => {

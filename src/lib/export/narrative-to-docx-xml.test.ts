@@ -227,6 +227,87 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("Underline");
   });
 
+  it("puts spaces beside bold in a separate run so Word Online cannot collapse them", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "associated " },
+            { type: "text", text: "Tray Loader", marks: [{ type: "bold" }] },
+            { type: "text", text: " (Make:" },
+            { type: "text", text: "Steriline", marks: [{ type: "bold" }] },
+            { type: "text", text: ")" },
+          ],
+        },
+      ],
+    });
+
+    expect(xml).toContain('<w:t xml:space="preserve">associated</w:t>');
+    expect(xml).toContain("<w:noProof/>");
+    expect(xml).toContain('<w:t xml:space="preserve"> </w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">Tray Loader</w:t>');
+    expect(xml).toContain("<w:b/>");
+    expect(xml).not.toContain("associatedTray");
+    expect(xml).not.toContain('preserve">associated </w:t>');
+  });
+
+  it("peels a leading space off a bold run after a colon label", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Make:", marks: [{ type: "bold" }] },
+            { type: "text", text: " Steriline S.R.L." },
+          ],
+        },
+      ],
+    });
+
+    expect(xml).toContain('<w:t xml:space="preserve">Make:</w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve"> </w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">Steriline S.R.L.</w:t>');
+    expect(xml).not.toContain("Make:Steriline");
+    expect(xml).not.toContain('preserve"> Steriline');
+  });
+
+  it("does not emit two spaces when both nodes already carry the gap", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "associated " },
+            { type: "text", text: " Tray Loader", marks: [{ type: "bold" }] },
+          ],
+        },
+      ],
+    });
+
+    expect(xml.match(/<w:t xml:space="preserve"> <\/w:t>/g)).toHaveLength(1);
+    expect(xml).toContain('<w:t xml:space="preserve">associated</w:t>');
+    expect(xml).toContain('<w:t xml:space="preserve">Tray Loader</w:t>');
+  });
+
+  it("does not insert noProof runs in an all-plain paragraph", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "hello world" }],
+        },
+      ],
+    });
+
+    expect(xml).toContain('<w:t xml:space="preserve">hello world</w:t>');
+    expect(xml).not.toContain("<w:noProof/>");
+  });
+
   it("exports textStyle color marks to OOXML", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -790,6 +871,108 @@ describe("narrativeToDocxXml tables", () => {
     expect(afterAt).toBeGreaterThan(landscapeAt);
   });
 
+  it("opens the landscape section before the table name so the caption stays with the table", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Assessment stays portrait." }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Table 3. Qualification and periodic re-qualification history",
+            },
+          ],
+        },
+        nColTable(15),
+      ],
+    });
+    const assessmentAt = xml.indexOf("Assessment stays portrait");
+    const breakAt = xml.indexOf("<w:sectPr>");
+    const captionAt = xml.indexOf("Table 3. Qualification");
+    const tableAt = xml.indexOf("<w:tbl>");
+    const landscapeAt = xml.indexOf('w:orient="landscape"');
+    expect(assessmentAt).toBeGreaterThan(-1);
+    expect(breakAt).toBeGreaterThan(assessmentAt);
+    expect(captionAt).toBeGreaterThan(breakAt);
+    expect(tableAt).toBeGreaterThan(captionAt);
+    expect(landscapeAt).toBeGreaterThan(tableAt);
+    const captionPara = xml.slice(
+      xml.lastIndexOf("<w:p>", captionAt),
+      xml.indexOf("</w:p>", captionAt)
+    );
+    expect(captionPara).toContain("<w:keepNext/>");
+  });
+
+  it("keeps a split table name and table title on the landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Table 1." }] },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Associated instruments" }],
+        },
+        nColTable(16),
+      ],
+    });
+    const breakAt = xml.indexOf("<w:sectPr>");
+    const nameAt = xml.indexOf("Table 1.");
+    const titleAt = xml.indexOf("Associated instruments");
+    const tableAt = xml.indexOf("<w:tbl>");
+    expect(nameAt).toBeGreaterThan(breakAt);
+    expect(titleAt).toBeGreaterThan(nameAt);
+    expect(tableAt).toBeGreaterThan(titleAt);
+  });
+
+  it("does not pull a preceding assessment paragraph onto the landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Nine qualification stages were reviewed this period.",
+            },
+          ],
+        },
+        nColTable(15),
+      ],
+    });
+    const assessmentAt = xml.indexOf("Nine qualification stages");
+    const breakAt = xml.indexOf("<w:sectPr>");
+    const tableAt = xml.indexOf("<w:tbl>");
+    expect(assessmentAt).toBeGreaterThan(-1);
+    expect(breakAt).toBeGreaterThan(assessmentAt);
+    expect(tableAt).toBeGreaterThan(breakAt);
+  });
+
+  it("keeps a portrait table caption on the same page with keepNext", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Abbreviations" }],
+        },
+        nColTable(4),
+      ],
+    });
+    expect(xml).not.toContain('w:orient="landscape"');
+    const captionAt = xml.indexOf("Table 1. Abbreviations");
+    const captionPara = xml.slice(
+      xml.lastIndexOf("<w:p>", captionAt),
+      xml.indexOf("</w:p>", captionAt)
+    );
+    expect(captionPara).toContain("<w:keepNext/>");
+  });
+
   it("emits Word gridSpan for colspans", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -995,6 +1178,59 @@ describe("narrativeToDocxXml advanced formatting", () => {
     expect(ctx.media).toHaveLength(1);
   });
 
+  it("exports tableRef as the live Table N label", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 2,
+              },
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    });
+    expect(xml).toContain("Table 2");
+    expect(xml).not.toContain("tableRef");
+  });
+
+  it("exports a bold tableRef as a bold Table N run", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "tableRef",
+              attrs: {
+                section: "elr_monitoring",
+                targetField: "table",
+                tableIndex: 0,
+                n: 9,
+              },
+              marks: [{ type: "bold" }],
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    });
+    expect(xml).toContain("<w:b/>");
+    expect(xml).toContain("Table 9");
+  });
+
   it("exports inline math as OMML", () => {
     const mathml =
       '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mn>2</mn><mo>+</mo><mn>2</mn></mrow></math>';
@@ -1041,6 +1277,63 @@ describe("narrativeToDocxXml advanced formatting", () => {
 
     const xml = narrativeToDocxXml(doc);
     expect(xml).toContain("<m:oMath");
+  });
+
+  it("flattens quantity mathInline to escaped Unicode so Word can open <1 CFU/plate", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "settle plates " },
+            {
+              type: "mathInline",
+              attrs: {
+                mathml: "",
+                latex: String.raw`<1\text{ CFU/plate}`,
+                omml: '<m:oMath><m:r><m:t xml:space="preserve"><1 CFU/plate</m:t></m:r></m:oMath>',
+                ommlDirty: false,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("&lt;1 CFU/plate");
+    expect(xml).not.toContain("<m:oMath");
+    expect(xml).not.toMatch(/<m:t[^>]*><1/);
+  });
+
+  it("never drops leftover math that cannot convert to OMML", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "March 2027 (" },
+            {
+              type: "mathInline",
+              attrs: {
+                mathml: "",
+                latex: String.raw`\pm 30`,
+                omml: null,
+                ommlDirty: true,
+              },
+            },
+            { type: "text", text: " days)" },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("± 30");
+    expect(xml).toContain("March 2027");
+    expect(xml).toContain("days)");
   });
 });
 

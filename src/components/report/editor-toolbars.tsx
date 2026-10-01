@@ -1,16 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import {
   ImageIcon,
+  Link2,
   List,
   ListOrdered,
   Palette,
   TableIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { tableRefMapKey } from "@/lib/suggestions/table-ref";
+import { insertTableRefFromPicker } from "@/lib/tiptap/table-ref";
 import {
   FONT_COLOR_PRESETS,
   normalizeColorInputValue,
@@ -21,6 +30,8 @@ import {
   countImagesInDoc,
 } from "@/lib/images/compress-image";
 import { toast } from "sonner";
+import { TableRefNumbersContext } from "@/providers/table-ref-numbers";
+import { cn } from "@/lib/utils";
 
 /** Re-render toolbar when selection or doc changes so active states stay in sync. */
 export function useEditorToolbarState(editor: Editor | null) {
@@ -299,6 +310,61 @@ export function InsertTableButton({ editor }: { editor: Editor }) {
       <TableIcon className="size-3" />
       Insert Table
     </Button>
+  );
+}
+
+const INSERT_TABLE_REF_EMPTY_COPY =
+  "No tables to reference yet. Insert a table and fill a row — then pick it here, or type [[table]].";
+
+/** Word Insert → Cross-reference: pick a numbered table from this document. */
+export function InsertTableRefButton({ editor }: { editor: Editor }) {
+  const { insertable } = use(TableRefNumbersContext);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5 text-xs gap-1 text-[var(--muted-foreground)]"
+          title="Insert a live table reference"
+          aria-label="Insert table reference"
+          data-testid="insert-table-ref-button"
+        >
+          <Link2 className="size-3" aria-hidden="true" />
+          Table ref
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-72 overflow-y-auto"
+        data-testid="insert-table-ref-menu"
+      >
+        {insertable.length === 0 ? (
+          <DropdownMenuLabel className="max-w-[18rem] whitespace-normal font-normal normal-case tracking-normal text-[var(--muted-foreground)]">
+            {INSERT_TABLE_REF_EMPTY_COPY}
+          </DropdownMenuLabel>
+        ) : (
+          insertable.map((item) => (
+            <DropdownMenuItem
+              key={tableRefMapKey(item)}
+              data-testid={`insert-table-ref-${item.section}-${item.tableIndex}`}
+              onSelect={() => insertTableRefFromPicker(editor, item)}
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate font-medium">
+                  Table {item.n}. {item.title}
+                </span>
+                <span className="truncate text-xs text-[var(--muted-foreground)]">
+                  {item.sectionLabel}
+                </span>
+              </span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

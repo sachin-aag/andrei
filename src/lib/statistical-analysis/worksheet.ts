@@ -91,7 +91,35 @@ function asSpecRow(value: unknown): WorksheetSpecRow | null {
     lsl: typeof raw.lsl === "string" ? raw.lsl : "",
     usl: typeof raw.usl === "string" ? raw.usl : "",
     target: typeof raw.target === "string" ? raw.target : "",
+    ...asConditionalBands(raw),
   };
+}
+
+/** Conditional bands survive a round-trip only if they parse cleanly. */
+function asConditionalBands(
+  raw: Partial<WorksheetSpecRow>
+): Pick<WorksheetSpecRow, "conditionColumnName" | "bands"> {
+  const conditionColumnName =
+    typeof raw.conditionColumnName === "string" && raw.conditionColumnName.trim()
+      ? raw.conditionColumnName.trim().slice(0, MAX_COLUMN_NAME_LENGTH)
+      : undefined;
+  if (!conditionColumnName || !Array.isArray(raw.bands)) return {};
+  const bands = raw.bands
+    .filter(
+      (band): band is NonNullable<WorksheetSpecRow["bands"]>[number] =>
+        Boolean(band) &&
+        typeof band === "object" &&
+        typeof (band as { when?: unknown }).when === "string" &&
+        (band as { when: string }).when.trim().length > 0
+    )
+    .map((band) => ({
+      when: band.when.trim().slice(0, 64),
+      lsl: typeof band.lsl === "number" && Number.isFinite(band.lsl) ? band.lsl : null,
+      usl: typeof band.usl === "number" && Number.isFinite(band.usl) ? band.usl : null,
+    }))
+    .filter((band) => band.lsl !== null || band.usl !== null);
+  if (bands.length === 0) return {};
+  return { conditionColumnName, bands };
 }
 
 /**
@@ -346,6 +374,7 @@ export function upsertSpecRow(
     lsl: row.lsl.trim(),
     usl: row.usl.trim(),
     target: row.target.trim(),
+    ...asConditionalBands(row),
   };
   const index = workbook.specs.findIndex(
     (item) => item.columnName.trim().toLowerCase() === columnName.toLowerCase()

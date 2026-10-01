@@ -54,12 +54,17 @@ describe("buildReportContextMap", () => {
     // one met + one partial; the not_met is bypassed so excluded
     expect(map).toContain("1 met / 1 partial / 0 not-met");
     expect(map).toContain("1 open suggestion(s)");
+    expect(map).toContain(
+      "Suggestions (AI cards): 1 open, 0 approved, 0 dismissed"
+    );
     // analyze root cause is empty
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
     expect(map).toContain("Documents (ready evidence attachments");
     expect(map).toContain("list_attachments");
     expect(map).toContain("an index only");
+    expect(map).toContain("id= is an internal handle");
+    expect(map).toContain("never show the id");
     expect(map).toContain("UNTRUSTED");
     expect(map).toContain('filename="Lab Results.pdf"');
     expect(map).toContain("id=att_123");
@@ -115,6 +120,26 @@ describe("buildReportContextMap", () => {
     expect(injected).toContain("topics=");
     expect(injected).not.toMatch(/topics="# System/);
     expect(injected.toLowerCase()).not.toMatch(/topics="system:/);
+  });
+
+  it("summarizes approved and dismissed AI cards at document level", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: { define: { narrative: docWith("Filled define narrative.") } },
+      evaluations: [],
+      comments: [
+        { section: "define", kind: "ai_fix", status: "open" },
+        { section: "define", kind: "ai_fix", status: "resolved" },
+        { section: "define", kind: "ai_redraft", status: "dismissed" },
+        { section: "define", kind: "manager", status: "open" },
+      ],
+      documents: [],
+    });
+    expect(map).toContain("1 open / 1 approved / 1 dismissed suggestion(s)");
+    expect(map).toContain(
+      "Suggestions (AI cards): 1 open, 1 approved, 1 dismissed"
+    );
+    expect(map).toContain("Call list_suggestions to inspect");
   });
 
   it("points file-set questions at list_attachments instead of a buried count", () => {
@@ -219,13 +244,73 @@ describe("buildReportContextMap", () => {
       evaluations: [],
       comments: [],
     });
-    expect(demo).toContain("Live table N headers are this report's schema");
+    expect(demo).toContain("Live table headers are this report's schema");
+    expect(demo).toContain("no printed Table N yet");
     expect(demo).toContain(
       `table 0 headers: ${DV_TRACEABILITY_HEADERS.join(" | ")} (1 data row)`
     );
     expect(demo).toContain("Traceability [traceability] — empty");
     expect(demo).toContain("table: empty");
     expect(demo).not.toContain(CONVERGENT_RESULTS_HEADERS.join(" | "));
+  });
+
+  it("uses ELR contents numbers and a printed table number when the grid has data", () => {
+    const map = buildReportContextMap({
+      documentType: "equipment_lifecycle_report",
+      report: { documentNo: "ELR-1", date: "2026-04-01", status: "draft" },
+      sections: {
+        elr_monitoring: {
+          narrative: docWith("Non-viable particle monitoring stayed within limits."),
+          table: {
+            type: "doc",
+            content: [
+              {
+                type: "table",
+                content: [
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableCell",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Sr. No." }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableCell",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "1" }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      evaluations: [],
+      comments: [],
+    });
+    expect(map).toContain("3.10 Monitoring [elr_monitoring]");
+    expect(map).toContain(
+      "3.12 Preventive Maintenance [elr_preventive_maintenance]"
+    );
+    expect(map).toContain("3.15 Access Control [elr_access_control]");
+    expect(map).toContain("printed Table 1");
+    expect(map).not.toContain("3.12 Monitoring");
   });
 
   it("notes inline images so the model knows to call read_section for vision", () => {
@@ -345,11 +430,58 @@ describe("buildReportContextMap", () => {
     });
 
     expect(map).toContain("insert_image source=analytics");
+    expect(map).toContain("never show the id");
     expect(map).toContain("create additional ones in Analytics");
     expect(map).toContain('"Torque scatter" [anl_1] kind=measurement_scatter');
+    // A plot nobody has opened is still insertable: insert_image renders it
+    // server-side rather than sending the engineer off to click it.
     expect(map).toContain(
-      '"Assay sixpack" [anl_2] kind=capability_sixpack_normal — no preview yet'
+      '"Assay sixpack" [anl_2] kind=capability_sixpack_normal'
     );
+    expect(map).not.toContain("no preview yet");
     expect(map).not.toContain("anl_3");
+  });
+
+  it("does not invent a title-page identity block for investigation reports", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-123", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+    });
+    expect(map).not.toContain("Title-page identity");
+    expect(map).not.toContain("container format");
+  });
+
+  it("surfaces unset ELR container format so chat asks before drafting", () => {
+    const map = buildReportContextMap({
+      documentType: "equipment_lifecycle_report",
+      report: { documentNo: "ELR-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      metadata: { equipmentId: "E/PR/070" },
+    });
+    expect(map).toContain("Title-page identity");
+    expect(map).toContain("equipment ID: E/PR/070");
+    expect(map).toContain("container format: (unset)");
+    expect(map).toContain("both Vial and Cartridge");
+    expect(map).toContain("ask_user");
+    expect(map).toContain("draft_identity");
+    expect(map).toContain("never citations");
+    expect(map).toContain("Purpose [elr_objective]");
+  });
+
+  it("uses a set ELR format and does not tell chat to ask", () => {
+    const map = buildReportContextMap({
+      documentType: "equipment_lifecycle_report",
+      report: { documentNo: "ELR-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [],
+      metadata: { formatScope: "Cartridge" },
+    });
+    expect(map).toContain("container format: Cartridge — use this");
+    expect(map).not.toContain("ask_user");
   });
 });

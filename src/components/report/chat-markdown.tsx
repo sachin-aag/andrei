@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { ChatMath } from "@/components/report/chat-math";
+import { remarkHtmlBreaks } from "@/components/report/chat-markdown-breaks";
 import {
   CHAT_MATH_HAST_HANDLERS,
   chatMathDisplayFromClassName,
@@ -13,6 +14,7 @@ import {
   rewriteChatMathHtmlConflicts,
 } from "@/components/report/chat-markdown-math";
 import { linkifyCitationChildren } from "@/lib/citations/linkify-citation-text";
+import { rewriteInternalIdsForDisplay } from "@/lib/citations/rewrite-internal-ids";
 import { sourceCitationsByNumber } from "@/lib/suggestions/citations-at-end";
 
 function ChatMathFromMarkdown({
@@ -90,63 +92,142 @@ const COMPONENTS: Components = {
     ) : (
       <div className={className}>{children}</div>
     ),
+  br: () => <br />,
 };
 
 function wrapCitationChildren(
   children: ReactNode,
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): ReactNode {
-  return linkifyCitationChildren(children, onOpen, numbered);
+  return linkifyCitationChildren(
+    children,
+    onOpen,
+    numbered,
+    knownFilenames,
+    knownAttachmentIds
+  );
 }
 
 function createCitationMarkdownComponents(
   onOpen: (raw: string) => void,
-  numbered: ReadonlyMap<number, string>
+  numbered: ReadonlyMap<number, string>,
+  knownFilenames?: readonly string[],
+  knownAttachmentIds?: readonly string[]
 ): Components {
   return {
     ...COMPONENTS,
     p: ({ children }) => (
       <p className="leading-relaxed">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
       </p>
     ),
     li: ({ children }) => (
-      <li className="pl-0.5">{wrapCitationChildren(children, onOpen, numbered)}</li>
+      <li className="pl-0.5">
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
+      </li>
     ),
     strong: ({ children }) => (
       <strong className="font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
       </strong>
     ),
     em: ({ children }) => (
-      <em className="italic">{wrapCitationChildren(children, onOpen, numbered)}</em>
+      <em className="italic">
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
+      </em>
     ),
     h1: ({ children }) => (
       <h1 className="text-sm font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
       </h1>
     ),
     h2: ({ children }) => (
       <h2 className="text-sm font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
       </h2>
     ),
     h3: ({ children }) => (
       <h3 className="text-[13px] font-semibold text-[var(--foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
       </h3>
     ),
     blockquote: ({ children }) => (
       <blockquote className="border-l-2 border-[var(--border)] pl-3 text-[var(--muted-foreground)]">
-        {wrapCitationChildren(children, onOpen, numbered)}
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
       </blockquote>
     ),
     td: ({ children }) => (
-      <td>{wrapCitationChildren(children, onOpen, numbered)}</td>
+      <td>
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
+      </td>
     ),
     th: ({ children }) => (
-      <th>{wrapCitationChildren(children, onOpen, numbered)}</th>
+      <th>
+        {wrapCitationChildren(
+          children,
+          onOpen,
+          numbered,
+          knownFilenames,
+          knownAttachmentIds
+        )}
+      </th>
     ),
   };
 }
@@ -155,26 +236,56 @@ function createCitationMarkdownComponents(
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   onOpenCitation,
+  knownFilenames,
+  filenameByAttachmentId,
+  labelByInternalId,
 }: {
   children: string;
   onOpenCitation?: (raw: string) => void;
+  knownFilenames?: readonly string[];
+  filenameByAttachmentId?: ReadonlyMap<string, string>;
+  labelByInternalId?: ReadonlyMap<string, string>;
 }) {
-  const markdown = rewriteChatMathHtmlConflicts(children);
+  const displayText = useMemo(
+    () =>
+      rewriteInternalIdsForDisplay(children, {
+        filenameByAttachmentId,
+        labelById: labelByInternalId,
+      }),
+    [children, filenameByAttachmentId, labelByInternalId]
+  );
+  const markdown = rewriteChatMathHtmlConflicts(displayText);
+  const filenames = useMemo(
+    () =>
+      knownFilenames ??
+      (filenameByAttachmentId ? [...filenameByAttachmentId.values()] : undefined),
+    [knownFilenames, filenameByAttachmentId]
+  );
+  const attachmentIds = useMemo(
+    () =>
+      filenameByAttachmentId ? [...filenameByAttachmentId.keys()] : undefined,
+    [filenameByAttachmentId]
+  );
   const numberedSources = useMemo(
-    () => sourceCitationsByNumber(children),
-    [children]
+    () => sourceCitationsByNumber(displayText),
+    [displayText]
   );
   const components = useMemo(
     () =>
       onOpenCitation
-        ? createCitationMarkdownComponents(onOpenCitation, numberedSources)
+        ? createCitationMarkdownComponents(
+            onOpenCitation,
+            numberedSources,
+            filenames,
+            attachmentIds
+          )
         : COMPONENTS,
-    [onOpenCitation, numberedSources]
+    [onOpenCitation, numberedSources, filenames, attachmentIds]
   );
   return (
     <div className="chat-markdown min-w-0 wrap-anywhere space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkMath, remarkGfm, remarkHtmlBreaks]}
         remarkRehypeOptions={{ handlers: CHAT_MATH_HAST_HANDLERS }}
         components={components}
       >

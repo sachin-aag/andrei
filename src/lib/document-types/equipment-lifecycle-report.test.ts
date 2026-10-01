@@ -6,29 +6,79 @@ import { DEMO_PACK, MJ_PACK, isDocumentTypeEnabled } from "@/lib/customers/packs
 import { getCriteria, getDocumentType, getWorkspaceSections } from ".";
 import type { EvaluationContext } from "./types";
 import {
+  checkAccessControlPeriodCompleteness,
+  checkAccessControlRoleMarks,
+  checkAccessControlRows,
   checkAlarmDirectImpactAction,
+  checkAssessmentInterpretsTable,
   checkBreakdownRepeatCapa,
+  checkBreakdownRepeatNotIsolated,
   checkCalibrationStatus,
+  checkCalibrationValidityNotContradicted,
+  checkCleaningValidation,
+  checkCleaningValidationFormatScope,
+  checkCsvStatus,
   checkMonitoringExcursionsLinked,
   checkPreventiveMaintenanceJustified,
   checkPrqScheduleCurrent,
+  checkProcessValidation,
+  checkProcessValidationFormatScope,
+  checkQuantityMathAsProse,
   checkQmsQualificationFollowUp,
   checkQmsRecords,
+  checkQraReview,
   checkQualificationFormatScope,
   checkRecommendationSelected,
+  checkRecommendationNamesSchedule,
+  checkConclusionRecapsSections,
+  checkRecordTypeMatchesReference,
+  checkMediaFillTable,
+  checkResponsibilitiesTable,
+  checkRiskActionRows,
+  checkRiskActionsNotBloated,
+  checkRiskGradeConsistent,
+  checkSystemDescriptionStationsListed,
+  checkSystemTrendRows,
+  checkSystemTrendsCoverFlaggedFindings,
 } from "./elr/deterministic-checks";
+import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
 import {
+  ACCESS_CONTROL_COLUMN_SCHEMA,
+  ATTACHMENTS_COLUMN_SCHEMA,
+  CLEANING_VALIDATION_COLUMN_SCHEMA,
+  CSV_STATUS_COLUMN_SCHEMA,
+  PROCESS_VALIDATION_COLUMN_SCHEMA,
+  QRA_REVIEW_COLUMN_SCHEMA,
+  RISK_ACTION_COLUMN_SCHEMA,
+  SYSTEM_TRENDS_COLUMN_SCHEMA,
+} from "./elr/matrix-columns";
+import {
+  ELR_ACCESS_CONTROL_HEADERS,
   ELR_ALARM_HEADERS,
+  ELR_ATTACHMENTS_HEADERS,
   ELR_BREAKDOWN_HEADERS,
   ELR_CALIBRATION_HEADERS,
+  ELR_CLEANING_VALIDATION_HEADERS,
+  ELR_CSV_STATUS_HEADERS,
+  ELR_MEDIA_FILL_HEADERS,
+  ELR_PROCESS_VALIDATION_HEADERS,
+  ELR_QRA_REVIEW_HEADERS,
   ELR_MONITORING_HEADERS,
   ELR_PREVENTIVE_MAINTENANCE_HEADERS,
   ELR_QMS_HEADERS,
   ELR_QUALIFICATION_HEADERS,
+  ELR_RESPONSIBILITIES_HEADERS,
+  ELR_RISK_ACTION_HEADERS,
+  ELR_RISK_ACTION_MAX_ROWS,
   ELR_SECTION_KEYS,
   ELR_SECTION_LABELS,
+  ELR_CONCLUSION_RECAP_SOURCES,
+  ELR_SYSTEM_TRENDS_HEADERS,
+  ELR_TREND_RECAP_SOURCES,
   EMPTY_ELR_CONTENT,
+  recapSourceMatchesText,
 } from "./elr/sections";
+import { parseSystemTrendsMatrix } from "./elr/matrix-parser";
 
 const TYPE = "equipment_lifecycle_report";
 
@@ -55,12 +105,98 @@ function tableDoc(rows: readonly (readonly string[])[]): JSONContent {
   };
 }
 
+function captionedTableDoc(
+  rows: readonly (readonly string[])[],
+  title = "Monitoring records"
+): JSONContent {
+  const doc = tableDoc(rows);
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: `Table 1. ${title}` }],
+      },
+      ...(doc.content ?? []),
+    ],
+  };
+}
+
 /** Build a data row positionally against a header tuple. */
 function row(
   headers: readonly string[],
   values: Record<string, string>
 ): string[] {
   return [...headers].map((header) => values[header] ?? "");
+}
+
+function recapRow(
+  source: (typeof ELR_TREND_RECAP_SOURCES)[number],
+  index: number,
+  extra: {
+    summary?: string;
+    trend?: string;
+    impact?: string;
+    risk?: string;
+  } = {}
+): string[] {
+  return row(ELR_SYSTEM_TRENDS_HEADERS, {
+    "Sr. No.": String(index + 1),
+    Section: `${source.number} ${source.label}`,
+    Summary: extra.summary ?? "None this period.",
+    "Trend (increasing / stable / decreasing / none)": extra.trend ?? "none",
+    "Product or runtime impact": extra.impact ?? "None this period.",
+    "Carried to risk (Risk ID)": extra.risk ?? "",
+  });
+}
+
+function completeRecapTable(
+  overrides: Partial<
+    Record<string, { summary?: string; trend?: string; impact?: string; risk?: string }>
+  > = {}
+): JSONContent {
+  return tableDoc([
+    [...ELR_SYSTEM_TRENDS_HEADERS],
+    ...ELR_TREND_RECAP_SOURCES.map((source, index) =>
+      recapRow(source, index, overrides[source.number] ?? {})
+    ),
+  ]);
+}
+
+function listItems(items: string[]): JSONContent[] {
+  return items.map((text) => ({
+    type: "listItem",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text }],
+      },
+    ],
+  }));
+}
+
+function listDoc(
+  type: "bulletList" | "orderedList",
+  items: string[]
+): JSONContent {
+  return {
+    type: "doc",
+    content: [{ type, content: listItems(items) }],
+  };
+}
+
+function bulletDoc(items: string[]): JSONContent {
+  return listDoc("bulletList", items);
+}
+
+function completeConclusionRecap(
+  omit?: string
+): JSONContent {
+  return bulletDoc(
+    ELR_CONCLUSION_RECAP_SOURCES.filter((source) => source.number !== omit).map(
+      (source) => `${source.number} ${source.label} — none this period.`
+    )
+  );
 }
 
 function ctx(
@@ -114,17 +250,77 @@ describe("equipment lifecycle report definition", () => {
     expect(ELR_SECTION_LABELS.elr_objective).toBe("Purpose");
     expect(sections).toContain("elr_abbreviations");
     expect(sections).toContain("elr_discrepancies");
-    // Discrepancy sits after the evidence sections and before the conclusion.
+    // Discrepancy sits after the evidence sections; system trends and risk
+    // actions sit between discrepancy and the conclusion.
     expect(sections.indexOf("elr_discrepancies")).toBeGreaterThan(
       sections.indexOf("elr_csv_status")
     );
     expect(sections.indexOf("elr_discrepancies")).toBeLessThan(
+      sections.indexOf("elr_system_trends")
+    );
+    expect(sections.indexOf("elr_system_trends")).toBeLessThan(
+      sections.indexOf("elr_risk_actions")
+    );
+    expect(sections.indexOf("elr_risk_actions")).toBeLessThan(
       sections.indexOf("elr_conclusion")
+    );
+    expect(sections.indexOf("elr_qualification")).toBeLessThan(
+      sections.indexOf("elr_process_validation")
+    );
+    expect(sections.indexOf("elr_process_validation")).toBeLessThan(
+      sections.indexOf("elr_cleaning_validation")
+    );
+    expect(sections.indexOf("elr_cleaning_validation")).toBeLessThan(
+      sections.indexOf("elr_qra_review")
+    );
+    expect(sections.indexOf("elr_qra_review")).toBeLessThan(
+      sections.indexOf("elr_media_fill")
+    );
+    expect(sections.indexOf("elr_alarms")).toBeLessThan(
+      sections.indexOf("elr_monitoring")
+    );
+    expect(sections.indexOf("elr_monitoring")).toBeLessThan(
+      sections.indexOf("elr_calibration")
+    );
+    expect(sections.indexOf("elr_calibration")).toBeLessThan(
+      sections.indexOf("elr_preventive_maintenance")
+    );
+    expect(sections.indexOf("elr_preventive_maintenance")).toBeLessThan(
+      sections.indexOf("elr_breakdowns")
+    );
+    expect(sections.indexOf("elr_breakdowns")).toBeLessThan(
+      sections.indexOf("elr_qms")
+    );
+    const def = getDocumentType(TYPE);
+    const draft = def.chat.draftOrder;
+    expect(draft.indexOf("elr_qualification")).toBeLessThan(
+      draft.indexOf("elr_process_validation")
+    );
+    expect(draft.indexOf("elr_process_validation")).toBeLessThan(
+      draft.indexOf("elr_cleaning_validation")
+    );
+    expect(draft.indexOf("elr_qra_review")).toBeLessThan(
+      draft.indexOf("elr_media_fill")
+    );
+    expect(draft.indexOf("elr_alarms")).toBeLessThan(draft.indexOf("elr_monitoring"));
+    expect(draft.indexOf("elr_monitoring")).toBeLessThan(
+      draft.indexOf("elr_breakdowns")
+    );
+    expect(draft).not.toContain("elr_attachments");
+    expect(def.sections.find((s) => s.key === "elr_attachments")?.editable).toBe(
+      false
     );
   });
 
   it("seeds a starter glossary that no criterion enforces", () => {
-    const rows = EMPTY_ELR_CONTENT.elr_abbreviations.table.content?.[0]?.content ?? [];
+    const nodes = EMPTY_ELR_CONTENT.elr_abbreviations.table.content ?? [];
+    const table = nodes.find((node) => node.type === "table");
+    const caption = nodes.find((node) => node.type === "paragraph");
+    const rows = table?.content ?? [];
+    expect(caption?.content?.[0]).toMatchObject({
+      type: "text",
+      text: "Table 1. Abbreviations",
+    });
     expect(rows.length).toBeGreaterThan(1);
     expect(getCriteria(TYPE, "elr_abbreviations")).toHaveLength(0);
   });
@@ -138,10 +334,106 @@ describe("equipment lifecycle report definition", () => {
   it("treats the evidence tables as open-set inventories for chat", () => {
     const def = getDocumentType(TYPE);
     expect(def.chat.inventorySections).toContain("elr_qualification");
+    expect(def.chat.inventorySections).toContain("elr_process_validation");
+    expect(def.chat.inventorySections).toContain("elr_cleaning_validation");
+    expect(def.chat.inventorySections).toContain("elr_qra_review");
     expect(def.chat.inventorySections).toContain("elr_qms");
+    expect(def.chat.inventorySections).toContain("elr_access_control");
+    expect(def.chat.inventorySections).toContain("elr_audit_trail");
     expect(def.chat.inventorySections).not.toContain("elr_objective");
     expect(def.chat.inventorySections).not.toContain("elr_scope");
-    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v1");
+    expect(def.chat.inventorySections).not.toContain("elr_system_trends");
+    expect(def.chat.inventorySections).not.toContain("elr_risk_actions");
+    expect(def.chat.inventorySections).not.toContain("elr_media_fill");
+    expect(def.prompts.promptVersion).toBe("mj-elr-sop-014-r04-v20");
+  });
+
+  it("requires MOC only for product-contact equipment, not secondary or tertiary", () => {
+    const def = getDocumentType(TYPE);
+    const criterion = getCriteria(TYPE, "elr_system_description").find(
+      (item) => item.key === "system_description.boundary"
+    );
+    expect(criterion?.description).toContain("product-contact");
+    expect(criterion?.description).toContain("secondary");
+    expect(criterion?.description).toContain("tertiary");
+    expect(criterion?.description).toContain("invented SS 316L");
+    expect(def.prompts.base).toContain(
+      "Secondary (cartoning, labelling) and tertiary (palletizing, wrapping)"
+    );
+    expect(def.prompts.perSection.elr_system_description).toContain(
+      "omit MOC (and omit that heading) are met on that point"
+    );
+    expect(def.prompts.perSection.elr_system_description).toContain(
+      "numbered or bulleted list"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "stations as a list"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Core Functional Stations and Sub-Assemblies"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Do not** add a **Materials of Construction (MOC)** heading"
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(
+      /5\. \*\*Materials of Construction/
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(
+      /Packed paragraph: Equipment description/
+    );
+    const listed = getCriteria(TYPE, "elr_system_description").find(
+      (item) => item.key === "system_description.stations_listed"
+    );
+    expect(listed?.kind).toBe("deterministic");
+    expect(listed?.description).toContain("packed paragraph");
+  });
+
+  it("requires CSV revalidation due dates in the table, assessment, and eval prompt", () => {
+    const def = getDocumentType(TYPE);
+    expect(def.prompts.perSection.elr_csv_status).toContain("revalidation due date");
+    const records = getCriteria(TYPE, "elr_csv_status").find(
+      (item) => item.key === "csv_status.records"
+    );
+    const periodic = getCriteria(TYPE, "elr_csv_status").find(
+      (item) => item.key === "csv_status.periodic_review"
+    );
+    expect(records?.description).toContain("revalidation due date");
+    expect(periodic?.description).toContain("revalidation due date");
+  });
+
+  it("asks which container format when attachments name both and the title page is unset", () => {
+    const def = getDocumentType(TYPE);
+    expect(def.chat.persona).toContain("both Vial and Cartridge");
+    expect(def.chat.persona).toContain("ask_user");
+    expect(def.chat.persona).toContain("do not infer it from the first PRQR");
+    expect(def.chat.draftingGuidance).toContain("1 April to 31 March");
+    expect(def.chat.draftingGuidance).not.toMatch(/Indian Financial Year/i);
+    expect(def.chat.draftingGuidance).not.toMatch(/Indian FY\b/i);
+    expect(def.chat.contextIdentity?.({})).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("container format: (unset)"),
+      ])
+    );
+  });
+
+  it("requires Scope to name 1 April and 31 March of the following year", () => {
+    const def = getDocumentType(TYPE);
+    const scope = getCriteria(TYPE, "elr_scope").find(
+      (item) => item.key === "scope.equipment_and_format"
+    );
+    expect(scope?.description).toContain("start date (1 April)");
+    expect(scope?.description).toContain(
+      "end date (31 March of the following year)"
+    );
+    expect(scope?.description).not.toMatch(/Indian Financial Year/i);
+    expect(def.prompts.perSection.elr_scope).toContain("start 1 April");
+    expect(def.prompts.perSection.elr_scope).toContain(
+      "end 31 March of the following year"
+    );
+    expect(def.prompts.base).toContain("starts 1 April and ends 31 March");
+    expect(def.prompts.base).not.toMatch(/Indian Financial Year/i);
+    expect(def.prompts.base).not.toMatch(/Indian FY\b/i);
+    expect(def.prompts.perSection.elr_monitoring).not.toMatch(/Indian FY\b/i);
   });
 
   it("maps every section into the export template data", () => {
@@ -179,6 +471,42 @@ describe("ELR cross-reference checks", () => {
     const result = checkMonitoringExcursionsLinked(ctx({ table }));
     expect(result.status).toBe("not_met");
     expect(result.reasoning).toMatch(/excursion with no linked deviation/i);
+  });
+
+  it("requires a source citation on filled media-fill identity cells", () => {
+    const table = tableDoc([
+      [...ELR_MEDIA_FILL_HEADERS],
+      row(ELR_MEDIA_FILL_HEADERS, {
+        "Sr. No.": "1",
+        "Media Fill No.": "MF-25-VIAL-01",
+        "Date": "12 Jan 2024",
+        "Units Filled": "10,000",
+        "Contaminated Units": "0",
+        "Result": "Pass",
+      }),
+    ]);
+    const result = checkMediaFillTable(
+      ctx({ table }, { section: "elr_media_fill" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/no source citation/i);
+  });
+
+  it("passes a media-fill row whose sourced cells carry citations", () => {
+    const table = tableDoc([
+      [...ELR_MEDIA_FILL_HEADERS],
+      row(ELR_MEDIA_FILL_HEADERS, {
+        "Sr. No.": "1",
+        "Media Fill No.": "MF-24-001 [PQR-24-PR-102.pdf, p. 8]",
+        "Date": "12 Jan 2024 [PQR-24-PR-102.pdf, p. 8]",
+        "Units Filled": "10,000 [1]",
+        "Contaminated Units": "0 [1]",
+        "Result": "Pass",
+      }),
+    ]);
+    expect(
+      checkMediaFillTable(ctx({ table }, { section: "elr_media_fill" })).status
+    ).toBe("met");
   });
 
   it("passes a monitoring excursion that carries a deviation", () => {
@@ -235,6 +563,38 @@ describe("ELR cross-reference checks", () => {
     );
     expect(result.status).toBe("not_met");
     expect(result.reasoning).toMatch(/justification/i);
+  });
+
+  it("requires a revalidation due date on every computerized system", () => {
+    const missing = tableDoc([
+      [...ELR_CSV_STATUS_HEADERS],
+      row(ELR_CSV_STATUS_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA / E/PR/070",
+        "Validation Status": "Validated",
+        "Change Since Last PRQ (Y/N)": "N",
+      }),
+    ]);
+    const missingResult = checkCsvStatus(
+      ctx({ table: missing }, { section: "elr_csv_status" })
+    );
+    expect(missingResult.status).toBe("not_met");
+    expect(missingResult.reasoning).toMatch(/revalidation due date/i);
+
+    const complete = tableDoc([
+      [...ELR_CSV_STATUS_HEADERS],
+      row(ELR_CSV_STATUS_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA / E/PR/070",
+        "Validation Status": "Validated",
+        "Last Validation / Revalidation Date": "15 Mar 2025",
+        "Revalidation Due Date": "15 Mar 2027",
+        "Change Since Last PRQ (Y/N)": "N",
+      }),
+    ]);
+    expect(
+      checkCsvStatus(ctx({ table: complete }, { section: "elr_csv_status" })).status
+    ).toBe("met");
   });
 
   it("requires a CAPA for a repeat breakdown", () => {
@@ -378,6 +738,133 @@ describe("ELR container-format scoping", () => {
     expect(result.status).toBe("not_met");
     expect(result.reasoning).toMatch(/not this ELR's format/i);
   });
+
+  it("rejects a process-validation row belonging to the counterpart format", () => {
+    const table = tableDoc([
+      [...ELR_PROCESS_VALIDATION_HEADERS],
+      row(ELR_PROCESS_VALIDATION_HEADERS, {
+        "Sr. No.": "1",
+        "Validation Stage": "PPQ",
+        "Protocol / Report No.": "PPQ-24-PR-011",
+        "Format Applicability": "Cartridge",
+        Outcome: "Pass",
+      }),
+    ]);
+    const result = checkProcessValidationFormatScope(
+      ctx(
+        { table },
+        { section: "elr_process_validation", formatScope: "Vial" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/another format/i);
+  });
+
+  it("flags a cleaning-validation row with no applicability as partially met", () => {
+    const table = tableDoc([
+      [...ELR_CLEANING_VALIDATION_HEADERS],
+      row(ELR_CLEANING_VALIDATION_HEADERS, {
+        "Sr. No.": "1",
+        "Validation Stage": "CV",
+        "Protocol / Report No.": "CVP-24-PR-003",
+        Outcome: "Pass",
+      }),
+    ]);
+    expect(
+      checkCleaningValidationFormatScope(
+        ctx(
+          { table },
+          { section: "elr_cleaning_validation", formatScope: "Vial" }
+        )
+      ).status
+    ).toBe("partially_met");
+  });
+});
+
+describe("ELR process, cleaning and QRA review checks", () => {
+  it("refuses an empty process-validation table instead of treating it as N/A", () => {
+    const result = checkProcessValidation(
+      ctx(
+        { table: tableDoc([[...ELR_PROCESS_VALIDATION_HEADERS]]) },
+        { section: "elr_process_validation" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Not Applicable/i);
+  });
+
+  it("accepts a filled process-validation row", () => {
+    const table = tableDoc([
+      [...ELR_PROCESS_VALIDATION_HEADERS],
+      row(ELR_PROCESS_VALIDATION_HEADERS, {
+        "Sr. No.": "1",
+        "Validation Stage": "PPQ",
+        "Protocol / Report No.": "PPQ-24-PR-011",
+        "Product / Process": "Insulin vial fill",
+        "Format Applicability": "Vial",
+        Outcome: "Pass",
+      }),
+    ]);
+    expect(
+      checkProcessValidation(
+        ctx({ table }, { section: "elr_process_validation" })
+      ).status
+    ).toBe("met");
+  });
+
+  it("refuses an empty cleaning-validation table instead of treating it as N/A", () => {
+    const result = checkCleaningValidation(
+      ctx(
+        { table: tableDoc([[...ELR_CLEANING_VALIDATION_HEADERS]]) },
+        { section: "elr_cleaning_validation" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Not Applicable/i);
+  });
+
+  it("requires a change-control reference when a QRA changed since last PRQ", () => {
+    const missing = tableDoc([
+      [...ELR_QRA_REVIEW_HEADERS],
+      row(ELR_QRA_REVIEW_HEADERS, {
+        "Sr. No.": "1",
+        "QRA / Document No.": "QRA-ELR-070",
+        "Date Approved": "12 Mar 2025",
+        "Change since last PRQ (Y/N)": "Y",
+      }),
+    ]);
+    const result = checkQraReview(
+      ctx({ table: missing }, { section: "elr_qra_review" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/change control/i);
+
+    const complete = tableDoc([
+      [...ELR_QRA_REVIEW_HEADERS],
+      row(ELR_QRA_REVIEW_HEADERS, {
+        "Sr. No.": "1",
+        "QRA / Document No.": "QRA-ELR-070",
+        "Date Approved": "12 Mar 2025",
+        "Change since last PRQ (Y/N)": "Y",
+        "Change Control Ref.": "CCF/EU/26/007",
+      }),
+    ]);
+    expect(
+      checkQraReview(ctx({ table: complete }, { section: "elr_qra_review" }))
+        .status
+    ).toBe("met");
+  });
+
+  it("refuses an empty QRA table instead of treating it as N/A", () => {
+    const result = checkQraReview(
+      ctx(
+        { table: tableDoc([[...ELR_QRA_REVIEW_HEADERS]]) },
+        { section: "elr_qra_review" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Not Applicable/i);
+  });
 });
 
 describe("ELR criteria wiring", () => {
@@ -400,12 +887,117 @@ describe("ELR criteria wiring", () => {
       }
       expect(criteria.length).toBeGreaterThan(0);
     }
+    expect(
+      getDocumentType(TYPE).sections.find((s) => s.key === "elr_attachments")
+        ?.evaluable
+    ).toBe(false);
   });
 
   it("routes the conclusion through the discrepancy section", () => {
     const criteria = getCriteria(TYPE, "elr_conclusion");
     const decision = criteria.find((c) => c.key === "conclusion.states_decision");
     expect(decision?.dependsOn).toContain("elr_discrepancies");
+    expect(criteria.some((c) => c.key === "conclusion.recaps_sections")).toBe(
+      true
+    );
+    const schedule = criteria.find(
+      (c) => c.key === "conclusion.recommendation_schedule"
+    );
+    expect(schedule?.kind).toBe("deterministic");
+    expect(schedule?.dependsOn).toContain("elr_risk_actions");
+    expect(schedule?.description).toMatch(/calendar date/i);
+    expect(
+      getDocumentType(TYPE).prompts.perSection.elr_conclusion
+    ).toContain("calendar dates");
+  });
+
+  it("wires synthesis criteria onto the evidence sections they read", () => {
+    const trends = getCriteria(TYPE, "elr_system_trends");
+    const cover = trends.find((c) => c.key === "system_trends.covers_flagged_findings");
+    expect(cover?.kind).toBe("deterministic");
+    expect(cover?.dependsOn).toEqual(
+      expect.arrayContaining([
+        "elr_breakdowns",
+        "elr_alarms",
+        "elr_monitoring",
+        "elr_calibration",
+        "elr_preventive_maintenance",
+        "elr_qms",
+      ])
+    );
+
+    const actions = getCriteria(TYPE, "elr_risk_actions");
+    const bloated = actions.find((c) => c.key === "risk.not_bloated");
+    expect(bloated?.kind).toBe("deterministic");
+    expect(bloated?.dependsOn).toEqual(cover?.dependsOn);
+    const grade = actions.find((c) => c.key === "risk.grade_consistent");
+    expect(grade?.dependsOn).toEqual(
+      expect.arrayContaining([...(cover?.dependsOn ?? []), "elr_system_trends"])
+    );
+
+    const monitoring = getCriteria(TYPE, "elr_monitoring");
+    expect(monitoring.some((c) => c.key === "monitoring.assessment_present")).toBe(
+      true
+    );
+    const breakdowns = getCriteria(TYPE, "elr_breakdowns");
+    expect(
+      breakdowns.find((c) => c.key === "breakdowns.assessment_reasons")?.dependsOn
+    ).toContain("elr_alarms");
+    expect(breakdowns.find((c) => c.key === "breakdowns.trend")?.dependsOn).toContain(
+      "elr_alarms"
+    );
+  });
+
+  it("attaches the quantity-math check to every judged section, not the registers", () => {
+    for (const key of ELR_SECTION_KEYS) {
+      const criteria = getCriteria(TYPE, key);
+      if (CRITERIA_FREE_SECTIONS.includes(key)) {
+        expect(criteria.some((c) => c.key === QUANTITY_MATH_CRITERION_KEY)).toBe(
+          false
+        );
+        continue;
+      }
+      const row = criteria.find((c) => c.key === QUANTITY_MATH_CRITERION_KEY);
+      expect(row?.kind).toBe("deterministic");
+    }
+  });
+});
+
+describe("ELR quantity math as prose", () => {
+  it("fails when Monitoring still has the Word-breaking $<1 CFU/plate$ math atom", () => {
+    const result = checkQuantityMathAsProse(
+      ctx({
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "settle plates " },
+                {
+                  type: "mathInline",
+                  attrs: {
+                    latex: String.raw`<1\text{ CFU/plate}`,
+                    mathml: "",
+                    omml: null,
+                    ommlDirty: true,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toContain(String.raw`$<1\text{ CFU/plate}$`);
+  });
+
+  it("passes Unicode prose", () => {
+    const result = checkQuantityMathAsProse(
+      ctx({ narrative: narrative("settle plates <1 CFU/plate on every location") })
+    );
+    expect(result.status).toBe("met");
   });
 });
 
@@ -443,6 +1035,15 @@ describe("ELR periodic re-qualification schedule", () => {
     expect(schedule({ nextPrqDate: "2027-02-15" }).reasoning).toMatch(
       /period end/i
     );
+  });
+
+  it("reads 01-Apr title-page dates the same as ISO", () => {
+    expect(
+      schedule({ nextPrqDate: "01-Apr-2026", periodTo: "31-Mar-2026" }).status
+    ).toBe("met");
+    expect(
+      schedule({ nextPrqDate: "15-Aug-2026", periodTo: "31-Mar-2027" }).status
+    ).toBe("not_met");
   });
 });
 
@@ -520,6 +1121,22 @@ describe("ELR qualification follow-up", () => {
 });
 
 describe("ELR recommendation", () => {
+  const capaActionTable = tableDoc([
+    [...ELR_RISK_ACTION_HEADERS],
+    row(ELR_RISK_ACTION_HEADERS, {
+      "Sr. No.": "1",
+      Risk: "Recurrent peristaltic pump dosing fault",
+      "Source (section / records)": "Breakdowns; alarm 1951",
+      "Occurrence in period": "4",
+      Severity: "High — lost filling runtime",
+      "Priority (High / Medium / Low)": "High",
+      "Recommended action": "Raise a CAPA to replace the pump tubing set",
+      "Action type (CAPA / PM revision / change control / monitoring)": "CAPA",
+      Owner: "Engineering",
+      "Target date": "2026-10-31",
+      Reference: "CAPA-26-014",
+    }),
+  ]);
   it("requires a recommendation to be selected", () => {
     const result = checkRecommendationSelected(
       ctx(
@@ -558,6 +1175,119 @@ describe("ELR recommendation", () => {
           recommendationNarrative: narrative("No action required."),
         },
         { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("fails 6.0 that only says no action required", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative("No action required."),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/calendar date|frequency/i);
+  });
+
+  it("fails 6.0 that is only vague timing", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative("Monitor as required going forward."),
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/soon|as required|periodically|calendar date/i);
+  });
+
+  it("is partial when 6.0 has a date but no frequency", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative(
+            "Next periodic re-qualification is due 15 August 2027."
+          ),
+        },
+        { section: "elr_conclusion", metadata: { nextPrqDate: "2027-08-15" } }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/frequency/i);
+  });
+
+  it("requires the title-page next PRQ date in 6.0", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "continue",
+          recommendationNarrative: narrative(
+            "Next periodic re-qualification is due 31 March 2028 on the yearly VMP cycle."
+          ),
+        },
+        { section: "elr_conclusion", metadata: { nextPrqDate: "2027-08-15" } }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/2027-08-15/);
+  });
+
+  it("requires 5.2 target dates in 6.0", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "capa",
+          recommendationNarrative: narrative(
+            "Next PRQ is due 15 August 2027 on the yearly VMP cycle."
+          ),
+        },
+        {
+          section: "elr_conclusion",
+          metadata: { nextPrqDate: "2027-08-15" },
+          dependencies: {
+            elr_risk_actions: {
+              table: capaActionTable,
+            },
+          },
+        }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/2026-10-31/);
+  });
+
+  it("accepts 6.0 that names next PRQ, frequency, and 5.2 dates", () => {
+    const result = checkRecommendationNamesSchedule(
+      ctx(
+        {
+          narrative: narrative("The equipment remains in its qualified state."),
+          recommendation: "capa",
+          recommendationNarrative: narrative(
+            "Next PRQ is due 15 August 2027 on the yearly VMP cycle. Close the pump-tubing CAPA by 31 October 2026, with monthly effectiveness checks until closed."
+          ),
+        },
+        {
+          section: "elr_conclusion",
+          metadata: { nextPrqDate: "2027-08-15" },
+          dependencies: {
+            elr_risk_actions: {
+              table: capaActionTable,
+            },
+          },
+        }
       )
     );
     expect(result.status).toBe("met");
@@ -614,11 +1344,1028 @@ describe("ELR docx template contract", () => {
     const xml = zip.file("word/document.xml")!.asText();
     expect(xml).not.toContain("TABLE OF CONTENTS");
   });
+
+  it("places Alarm Trends above Monitoring", () => {
+    const def = getDocumentType(TYPE);
+    const zip = new PizZip(fs.readFileSync(def.export.templatePath));
+    const xml = zip.file("word/document.xml")!.asText();
+    const alarmAt = xml.indexOf("3.9 ALARM TRENDS");
+    const monitoringAt = xml.indexOf("3.10 MONITORING");
+    const breakdownAt = xml.indexOf("3.13 BREAKDOWNS AND TRENDS");
+    const qmsAt = xml.indexOf("3.14 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION");
+    expect(xml.indexOf("3.5 PROCESS VALIDATION REVIEW")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.6 CLEANING VALIDATION REVIEW")).toBeGreaterThan(-1);
+    expect(xml.indexOf("3.7 QUALITY RISK ASSESSMENT REVIEW")).toBeGreaterThan(-1);
+    expect(alarmAt).toBeGreaterThan(-1);
+    expect(monitoringAt).toBeGreaterThan(alarmAt);
+    expect(breakdownAt).toBeGreaterThan(monitoringAt);
+    expect(qmsAt).toBeGreaterThan(breakdownAt);
+    expect(xml).not.toContain("3.6 MONITORING");
+    expect(xml).not.toContain("3.6 ALARM");
+    expect(xml).not.toContain("3.5 MEDIA FILL");
+    expect(xml).not.toContain("3.9 BREAKDOWNS");
+    expect(xml).not.toContain("3.11 ALARM");
+  });
 });
 
 describe("ELR pack enablement", () => {
   it("is enabled for MJ and not for demo", () => {
     expect(isDocumentTypeEnabled(TYPE, MJ_PACK)).toBe(true);
     expect(isDocumentTypeEnabled(TYPE, DEMO_PACK)).toBe(false);
+  });
+});
+
+describe("ELR assessment, trends and risk checks", () => {
+  const filledMonitoring = captionedTableDoc([
+    [...ELR_MONITORING_HEADERS],
+    row(ELR_MONITORING_HEADERS, {
+      "Sr. No.": "1",
+      "Monitoring Parameter": "Non-viable particle count",
+      "Excursion (Y/N)": "Y",
+      "Linked Deviation Ref.": "DEV-26-011",
+    }),
+  ]);
+
+  const repeatBreakdown = {
+    table: tableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Repeat (Y/N)": "Y",
+      }),
+    ]),
+  };
+
+  const completeAction = (priority: string, serial = "1") =>
+    row(ELR_RISK_ACTION_HEADERS, {
+      "Sr. No.": serial,
+      Risk: "Recurrent peristaltic pump dosing fault",
+      "Source (section / records)": "Breakdowns; alarm 1951",
+      "Occurrence in period": "4",
+      Severity: "High — lost filling runtime",
+      "Priority (High / Medium / Low)": priority,
+      "Recommended action": "Raise a CAPA to replace the pump tubing set",
+      "Action type (CAPA / PM revision / change control / monitoring)": "CAPA",
+      Owner: "Engineering",
+      "Target date": "2026-10-31",
+      Reference: "CAPA-26-014",
+    });
+
+  it("keeps system-trend, risk-action, access-control and CSV headers identical to the column schemas", () => {
+    expect(SYSTEM_TRENDS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_SYSTEM_TRENDS_HEADERS,
+    ]);
+    expect(RISK_ACTION_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_RISK_ACTION_HEADERS,
+    ]);
+    expect(ACCESS_CONTROL_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_ACCESS_CONTROL_HEADERS,
+    ]);
+    expect(PROCESS_VALIDATION_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_PROCESS_VALIDATION_HEADERS,
+    ]);
+    expect(CLEANING_VALIDATION_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_CLEANING_VALIDATION_HEADERS,
+    ]);
+    expect(QRA_REVIEW_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_QRA_REVIEW_HEADERS,
+    ]);
+    expect(CSV_STATUS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_CSV_STATUS_HEADERS,
+    ]);
+    expect(ATTACHMENTS_COLUMN_SCHEMA.map((col) => col.label)).toEqual([
+      ...ELR_ATTACHMENTS_HEADERS,
+    ]);
+  });
+
+  it("does not require an assessment when the evidence table is empty", () => {
+    expect(
+      checkAssessmentInterpretsTable(
+        ctx(
+          { table: tableDoc([[...ELR_MONITORING_HEADERS]]), narrative: narrative("") },
+          { section: "elr_monitoring" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("fails a filled evidence table that has no Table N. caption", () => {
+    const result = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: tableDoc([
+            [...ELR_MONITORING_HEADERS],
+            row(ELR_MONITORING_HEADERS, {
+              "Sr. No.": "1",
+              "Monitoring Parameter": "Non-viable particle count",
+              "Excursion (Y/N)": "Y",
+              "Linked Deviation Ref.": "DEV-26-011",
+            }),
+          ]),
+          narrative: narrative(
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact. The qualified state remains."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Table N/i);
+  });
+
+  it("requires a caption and a short summary on a filled responsibilities table", () => {
+    const rows = [
+      [...ELR_RESPONSIBILITIES_HEADERS],
+      row(ELR_RESPONSIBILITIES_HEADERS, {
+        "Sr. No.": "1",
+        Department: "Production",
+        Responsibilities: "Operate the filling line",
+      }),
+    ];
+    const missingBoth = checkResponsibilitiesTable(
+      ctx(
+        { table: tableDoc(rows), narrative: narrative("") },
+        { section: "elr_responsibilities" }
+      )
+    );
+    expect(missingBoth.status).toBe("not_met");
+    expect(missingBoth.reasoning).toMatch(/Table N/i);
+    expect(missingBoth.reasoning).toMatch(/summary/i);
+
+    const complete = checkResponsibilitiesTable(
+      ctx(
+        {
+          table: captionedTableDoc(
+            rows,
+            "Departments and responsibilities"
+          ),
+          narrative: narrative(
+            "Production operates the filling line; see Table 1."
+          ),
+        },
+        { section: "elr_responsibilities" }
+      )
+    );
+    expect(complete.status).toBe("met");
+  });
+
+  it("fails a filled table with a one-line recap and no count", () => {
+    const short = checkAssessmentInterpretsTable(
+      ctx(
+        { table: filledMonitoring, narrative: narrative("Section reviewed.") },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(short.status).toBe("not_met");
+    expect(short.reasoning).toMatch(/one-liner|empty/i);
+
+    const noCount = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: filledMonitoring,
+          narrative: narrative(
+            "Monitoring was reviewed for the period and one excursion was closed with a linked deviation."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(noCount.status).toBe("not_met");
+    expect(noCount.reasoning).toMatch(/count/i);
+  });
+
+  it("passes an assessment that states a count from the table", () => {
+    const result = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: filledMonitoring,
+          narrative: narrative(
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact. The qualified state remains."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(result.status).toBe("met");
+  });
+
+  it("requires downtime, scrap, CAPA and qualified-state language when the table carries them", () => {
+    const downtimeTable = captionedTableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Downtime (Hrs)": "4.5",
+        "Repeat (Y/N)": "N",
+      }),
+    ]);
+    const missingDowntime = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: downtimeTable,
+          narrative: narrative(
+            "1 breakdown occurred on the filling pump and was closed with no product impact this period."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(missingDowntime.status).toBe("not_met");
+    expect(missingDowntime.reasoning).toMatch(/downtime/i);
+
+    expect(
+      checkAssessmentInterpretsTable(
+        ctx(
+          {
+            table: downtimeTable,
+            narrative: narrative(
+              "One breakdown occurred; 4.5 hours of downtime were recovered with no product impact."
+            ),
+          },
+          { section: "elr_breakdowns" }
+        )
+      ).status
+    ).toBe("met");
+
+    const scrapTable = captionedTableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Sealing head scored; batch discarded",
+        "Format Impact": "Vial scrap",
+        "Repeat (Y/N)": "N",
+      }),
+    ]);
+    const missingScrap = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: scrapTable,
+          narrative: narrative(
+            "1 breakdown on the sealing head was closed with no further action this period."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(missingScrap.status).toBe("not_met");
+    expect(missingScrap.reasoning).toMatch(/scrap/i);
+
+    const capaTable = captionedTableDoc([
+      [...ELR_BREAKDOWN_HEADERS],
+      row(ELR_BREAKDOWN_HEADERS, {
+        "Sr. No.": "1",
+        "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+        "Repeat (Y/N)": "N",
+        "Linked CAPA Ref.": "CAPA-26-014",
+      }),
+    ]);
+    const missingCapa = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: capaTable,
+          narrative: narrative(
+            "1 breakdown on the filling pump was closed with no product impact this period."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(missingCapa.status).toBe("not_met");
+    expect(missingCapa.reasoning).toMatch(/capa/i);
+
+    const deviationOnly = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: filledMonitoring,
+          narrative: narrative(
+            "One of three monitoring parameters recorded an excursion; it was closed under DEV-26-011 with no product impact."
+          ),
+        },
+        { section: "elr_monitoring" }
+      )
+    );
+    expect(deviationOnly.status).toBe("not_met");
+    expect(deviationOnly.reasoning).toMatch(/qualified state/i);
+    expect(deviationOnly.reasoning).not.toMatch(/capa/i);
+  });
+
+  it("requires the CSV assessment to name the revalidation due date from the table", () => {
+    const csvTable = captionedTableDoc(
+      [
+        [...ELR_CSV_STATUS_HEADERS],
+        row(ELR_CSV_STATUS_HEADERS, {
+          "Sr. No.": "1",
+          "System Name / ID": "SCADA / E/PR/070",
+          "Validation Status": "Validated",
+          "Last Validation / Revalidation Date": "15 Mar 2025",
+          "Revalidation Due Date": "15 Mar 2027",
+          "Change Since Last PRQ (Y/N)": "N",
+        }),
+      ],
+      "Validation status"
+    );
+    const omitted = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: csvTable,
+          narrative: narrative(
+            "1 computerized system remains validated; no change since last PRQ triggered revalidation and no product impact."
+          ),
+        },
+        { section: "elr_csv_status" }
+      )
+    );
+    expect(omitted.status).toBe("not_met");
+    expect(omitted.reasoning).toMatch(/due date|overdue|next revalidation/i);
+
+    const named = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: csvTable,
+          narrative: narrative(
+            "1 computerized system remains validated. Revalidation is due on 15 Mar 2027 and is not overdue. No change since last PRQ and no product impact."
+          ),
+        },
+        { section: "elr_csv_status" }
+      )
+    );
+    expect(named.status).toBe("met");
+  });
+
+  it("requires the QRA assessment to name the review due date from the table", () => {
+    const qraTable = captionedTableDoc(
+      [
+        [...ELR_QRA_REVIEW_HEADERS],
+        row(ELR_QRA_REVIEW_HEADERS, {
+          "Sr. No.": "1",
+          "QRA / Document No.": "QRA-ELR-070",
+          "Date Approved": "12 Mar 2025",
+          "Highest residual risk": "Medium",
+          "Review / Reassessment Due": "12 Mar 2027",
+          "Change since last PRQ (Y/N)": "N",
+        }),
+      ],
+      "Quality risk assessments"
+    );
+    const omitted = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: qraTable,
+          narrative: narrative(
+            "1 quality risk assessment remains approved for this equipment; residual risk is Medium and no change since last PRQ."
+          ),
+        },
+        { section: "elr_qra_review" }
+      )
+    );
+    expect(omitted.status).toBe("not_met");
+    expect(omitted.reasoning).toMatch(/due date|overdue|reassess/i);
+
+    const named = checkAssessmentInterpretsTable(
+      ctx(
+        {
+          table: qraTable,
+          narrative: narrative(
+            "1 quality risk assessment remains approved. Reassessment is due on 12 Mar 2027 and is not overdue. Highest residual risk is Medium with no change since last PRQ."
+          ),
+        },
+        { section: "elr_qra_review" }
+      )
+    );
+    expect(named.status).toBe("met");
+  });
+
+  it("flags an OOT table contradicted by a within-calibration assessment", () => {
+    const table = tableDoc([
+      [...ELR_CALIBRATION_HEADERS],
+      row(ELR_CALIBRATION_HEADERS, {
+        "Sr. No.": "1",
+        "Instrument ID / Tag": "TI-12",
+        "Result (Pass / OOT)": "OOT",
+      }),
+    ]);
+    const result = checkCalibrationValidityNotContradicted(
+      ctx(
+        {
+          table,
+          narrative: narrative(
+            "All instruments remain within calibration for the period."
+          ),
+        },
+        { section: "elr_calibration" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/within calibration/i);
+  });
+
+  it("flags a repeat breakdown described as isolated", () => {
+    const result = checkBreakdownRepeatNotIsolated(
+      ctx(
+        {
+          ...repeatBreakdown,
+          narrative: narrative(
+            "This was an isolated, one-off pump fault with no recurrence."
+          ),
+        },
+        { section: "elr_breakdowns" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/isolated/i);
+  });
+
+  it("evaluates access control as a privilege matrix, not a grant log", () => {
+    const keys = getCriteria(TYPE, "elr_access_control").map(
+      (criterion) => criterion.key
+    );
+    expect(keys).toContain("access_control.role_marks");
+    expect(keys).not.toContain("access_control.privilege_drift");
+  });
+
+  it("asks for the SOP privilege matrix when access control is empty", () => {
+    const result = checkAccessControlRows(
+      ctx(
+        { table: tableDoc([[...ELR_ACCESS_CONTROL_HEADERS]]) },
+        { section: "elr_access_control" }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/privilege matrix|annexure/i);
+  });
+
+  it("requires system and task on each access-control row", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        Operator: "✓",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
+      }),
+    ]);
+    const result = checkAccessControlRows(
+      ctx({ table }, { section: "elr_access_control" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/system name/i);
+    expect(result.reasoning).toMatch(/task/i);
+  });
+
+  it("flags role cells that are not privilege marks", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA E/PR/077",
+        Task: "Login",
+        Operator: "Granted",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
+      }),
+    ]);
+    const result = checkAccessControlRoleMarks(
+      ctx({ table }, { section: "elr_access_control" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/Operator/i);
+    expect(result.reasoning).toMatch(/privilege mark/i);
+  });
+
+  it("accepts a copied SOP privilege-matrix row", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA E/PR/077",
+        Task: "Login",
+        Operator: "✓",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
+      }),
+    ]);
+    expect(
+      checkAccessControlRows(ctx({ table }, { section: "elr_access_control" }))
+        .status
+    ).toBe("met");
+    expect(
+      checkAccessControlRoleMarks(
+        ctx({ table }, { section: "elr_access_control" })
+      ).status
+    ).toBe("met");
+  });
+
+  it("requires last review, admin recertification and Part 11 on access control", () => {
+    const table = tableDoc([
+      [...ELR_ACCESS_CONTROL_HEADERS],
+      row(ELR_ACCESS_CONTROL_HEADERS, {
+        "Sr. No.": "1",
+        "System Name / ID": "SCADA E/PR/077",
+        Task: "User Management",
+        Operator: "×",
+        Supervisor: "×",
+        Maintenance: "×",
+        Administrator: "✓",
+      }),
+    ]);
+    const incomplete = checkAccessControlPeriodCompleteness(
+      ctx(
+        {
+          table,
+          narrative: narrative(
+            "The SCADA privilege matrix is copied from SOP/DP/PR/040."
+          ),
+        },
+        { section: "elr_access_control" }
+      )
+    );
+    expect(incomplete.status).toBe("not_met");
+    expect(incomplete.reasoning).toMatch(/last reviewed|Part 11|recertif/i);
+
+    expect(
+      checkAccessControlPeriodCompleteness(
+        ctx(
+          {
+            table,
+            narrative: narrative(
+              "Last reviewed 12-Mar-2026. Level 4 admin holders were recertified. 21 CFR Part 11 access, audit-trail and authority checks remain in force."
+            ),
+          },
+          { section: "elr_access_control" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("flags a CAPA-typed QMS row that cites a deviation number", () => {
+    const table = tableDoc([
+      [...ELR_QMS_HEADERS],
+      row(ELR_QMS_HEADERS, {
+        "Sr. No.": "1",
+        "Type (CC / Dev / CAPA / OOS / OOT)": "CAPA",
+        "Document Reference No.": "DEV-26-011",
+        Status: "Closed",
+        "Qualification Impact (Y/N)": "N",
+      }),
+    ]);
+    const result = checkRecordTypeMatchesReference(
+      ctx({ table }, { section: "elr_qms" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/capa/i);
+    expect(result.reasoning).toMatch(/deviation/i);
+  });
+
+  it("requires a recap row with a summary for 3.1–3.17 and 4.0", () => {
+    const missingMonitoring = tableDoc([
+      [...ELR_SYSTEM_TRENDS_HEADERS],
+      ...ELR_TREND_RECAP_SOURCES.filter((source) => source.number !== "3.6").map(
+        (source, index) => recapRow(source, index)
+      ),
+    ]);
+    const missing = checkSystemTrendRows(
+      ctx({ table: missingMonitoring }, { section: "elr_system_trends" })
+    );
+    expect(missing.status).toBe("not_met");
+    expect(missing.reasoning).toMatch(/3\.6/i);
+
+    const emptySummary = completeRecapTable({
+      "3.6": { summary: "N/A" },
+    });
+    const short = checkSystemTrendRows(
+      ctx({ table: emptySummary }, { section: "elr_system_trends" })
+    );
+    expect(short.status).toBe("not_met");
+    expect(short.reasoning).toMatch(/no summary/i);
+
+    expect(
+      checkSystemTrendRows(
+        ctx({ table: completeRecapTable() }, { section: "elr_system_trends" })
+      ).status
+    ).toBe("met");
+  });
+
+  it("does not require Purpose or Scope recap rows in 5.1", () => {
+    const result = checkSystemTrendRows(
+      ctx({ table: completeRecapTable() }, { section: "elr_system_trends" })
+    );
+    expect(result.status).toBe("met");
+    expect(result.reasoning).not.toMatch(/1\.0|2\.0|Purpose|Scope/i);
+  });
+
+  it("fails an empty trends table when a repeat breakdown is flagged", () => {
+    const result = checkSystemTrendsCoverFlaggedFindings(
+      ctx(
+        { table: tableDoc([[...ELR_SYSTEM_TRENDS_HEADERS]]) },
+        {
+          section: "elr_system_trends",
+          dependencies: { elr_breakdowns: repeatBreakdown },
+        }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/repeat breakdown/i);
+  });
+
+  it("fails a 3.13 recap that omits a flagged repeat breakdown", () => {
+    const result = checkSystemTrendsCoverFlaggedFindings(
+      ctx(
+        { table: completeRecapTable() },
+        {
+          section: "elr_system_trends",
+          dependencies: { elr_breakdowns: repeatBreakdown },
+        }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/3\.13/i);
+  });
+
+  it("passes a complete recap table that names the flagged finding", () => {
+    const table = completeRecapTable({
+      "3.13": {
+        summary: "Four repeat peristaltic-pump dosing faults this period.",
+        trend: "increasing",
+        impact: "Lost runtime on the filling line",
+        risk: "R-1",
+      },
+    });
+    expect(
+      checkSystemTrendRows(ctx({ table }, { section: "elr_system_trends" })).status
+    ).toBe("met");
+    expect(
+      checkSystemTrendsCoverFlaggedFindings(
+        ctx(
+          { table },
+          {
+            section: "elr_system_trends",
+            dependencies: { elr_breakdowns: repeatBreakdown },
+          }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("requires 5.3 bullets for 3.1–3.17, 4.0, 5.1 and 5.2", () => {
+    const noList = checkConclusionRecapsSections(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "The equipment remains in its qualified state.",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(noList.status).toBe("not_met");
+    expect(noList.reasoning).toMatch(/bulleted recap/i);
+
+    const missingMonitoring = checkConclusionRecapsSections(
+      ctx(
+        { narrative: completeConclusionRecap("3.6") },
+        { section: "elr_conclusion" }
+      )
+    );
+    expect(missingMonitoring.status).toBe("not_met");
+    expect(missingMonitoring.reasoning).toMatch(/3\.6/i);
+
+    expect(
+      checkConclusionRecapsSections(
+        ctx(
+          { narrative: completeConclusionRecap() },
+          { section: "elr_conclusion" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("fails a packed 3.3 description and ignores a trailing Citations list", () => {
+    const empty = checkSystemDescriptionStationsListed(
+      ctx({ narrative: narrative("") }, { section: "elr_system_description" })
+    );
+    expect(empty.status).toBe("not_met");
+    expect(empty.reasoning).toMatch(/empty/i);
+
+    const packed = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: narrative(
+            "The filling line includes infeed, filling, stoppering, capping and a tray loader in one paragraph."
+          ),
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(packed.status).toBe("partially_met");
+    expect(packed.reasoning).toMatch(/packed/i);
+
+    const citationsOnly = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "The filling line includes infeed, filling, stoppering, capping and a tray loader in one paragraph.",
+                  },
+                ],
+              },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "orderedList",
+                content: listItems(["URS, p. 4", "DQ, p. 2"]),
+              },
+            ],
+          },
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(citationsOnly.status).toBe("partially_met");
+  });
+
+  it("passes 3.3 when stations are a body list before Citations", () => {
+    const bullets = checkSystemDescriptionStationsListed(
+      ctx(
+        { narrative: bulletDoc(["Infeed conveyor", "Filling station"]) },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(bullets.status).toBe("met");
+    expect(bullets.reasoning).toMatch(/2 station/i);
+
+    const numbered = checkSystemDescriptionStationsListed(
+      ctx(
+        {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    marks: [{ type: "bold" }],
+                    text: "Core Functional Stations and Sub-Assemblies",
+                  },
+                ],
+              },
+              {
+                type: "orderedList",
+                content: listItems([
+                  "Infeed conveyor — vial infeed from the washer.",
+                  "Filling station — peristaltic dosing.",
+                ]),
+              },
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Citations:" }],
+              },
+              {
+                type: "orderedList",
+                content: listItems(["URS, p. 4"]),
+              },
+            ],
+          },
+        },
+        { section: "elr_system_description" }
+      )
+    );
+    expect(numbered.status).toBe("met");
+    expect(numbered.reasoning).toMatch(/2 station/i);
+  });
+
+  it("seeds 5.1 with one recap row per Observations subsection and Discrepancy", () => {
+    const parsed = parseSystemTrendsMatrix(EMPTY_ELR_CONTENT.elr_system_trends);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.rows).toHaveLength(ELR_TREND_RECAP_SOURCES.length);
+    for (const source of ELR_TREND_RECAP_SOURCES) {
+      expect(
+        parsed.rows.some((row) =>
+          row.section.includes(source.number)
+        )
+      ).toBe(true);
+    }
+    expect(parsed.rows.some((row) => row.section.includes("1.0"))).toBe(false);
+    expect(parsed.rows.some((row) => row.section.includes("2.0"))).toBe(false);
+  });
+
+  it("matches recap rows by section number so 3.9 cannot steal 3.10", () => {
+    const monitoring = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.10");
+    const alarms = ELR_TREND_RECAP_SOURCES.find((s) => s.number === "3.9");
+    expect(monitoring && recapSourceMatchesText(monitoring, "3.10 Monitoring")).toBe(
+      true
+    );
+    expect(
+      monitoring &&
+        recapSourceMatchesText(
+          monitoring,
+          "3.9 Alarm Trends — monitoring of codes is still appropriate"
+        )
+    ).toBe(false);
+    expect(
+      alarms &&
+        recapSourceMatchesText(
+          alarms,
+          "3.9 Alarm Trends — monitoring of codes is still appropriate"
+        )
+    ).toBe(true);
+  });
+
+  it("rejects a High-priority action with overall grade Low", () => {
+    const result = checkRiskGradeConsistent(
+      ctx(
+        {
+          overallGrade: "low",
+          table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
+        },
+        { section: "elr_risk_actions" }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/cannot be Low/i);
+  });
+
+  it("accepts a High-priority action with overall grade High", () => {
+    expect(
+      checkRiskGradeConsistent(
+        ctx(
+          {
+            overallGrade: "high",
+            table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
+          },
+          { section: "elr_risk_actions" }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("floors overall grade from downtime, scrap and increasing high-impact themes", () => {
+    const eightHours = {
+      table: tableDoc([
+        [...ELR_BREAKDOWN_HEADERS],
+        row(ELR_BREAKDOWN_HEADERS, {
+          "Sr. No.": "1",
+          "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+          "Downtime (Hrs)": "8",
+          "Repeat (Y/N)": "N",
+        }),
+      ]),
+    };
+    const emptyActions = tableDoc([[...ELR_RISK_ACTION_HEADERS]]);
+    const highFloor = checkRiskGradeConsistent(
+      ctx(
+        { overallGrade: "medium", table: emptyActions },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_breakdowns: eightHours },
+        }
+      )
+    );
+    expect(highFloor.status).toBe("not_met");
+    expect(highFloor.reasoning).toMatch(/floor \(high\)/i);
+
+    const twoHours = {
+      table: tableDoc([
+        [...ELR_BREAKDOWN_HEADERS],
+        row(ELR_BREAKDOWN_HEADERS, {
+          "Sr. No.": "1",
+          "Component / Failure Description": "Peristaltic pump 3 dosing fault",
+          "Downtime (Hrs)": "2",
+          "Repeat (Y/N)": "N",
+        }),
+      ]),
+    };
+    const mediumFloor = checkRiskGradeConsistent(
+      ctx(
+        { overallGrade: "low", table: emptyActions },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_breakdowns: twoHours },
+        }
+      )
+    );
+    expect(mediumFloor.status).toBe("not_met");
+    expect(mediumFloor.reasoning).toMatch(/floor \(medium\)/i);
+
+    const increasing = {
+      table: tableDoc([
+        [...ELR_SYSTEM_TRENDS_HEADERS],
+        row(ELR_SYSTEM_TRENDS_HEADERS, {
+          "Sr. No.": "1",
+          Section: "3.13 Breakdowns and Trends",
+          Summary: "Peristaltic pump dosing faults increased this period.",
+          "Trend (increasing / stable / decreasing / none)": "increasing",
+          "Product or runtime impact": "Lost runtime on the filling line",
+        }),
+      ]),
+    };
+    const themeFloor = checkRiskGradeConsistent(
+      ctx(
+        { overallGrade: "low", table: emptyActions },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_system_trends: increasing },
+        }
+      )
+    );
+    expect(themeFloor.status).toBe("not_met");
+    expect(themeFloor.reasoning).toMatch(/floor \(medium\)/i);
+
+    expect(
+      checkRiskGradeConsistent(
+        ctx(
+          { overallGrade: "high", table: emptyActions },
+          {
+            section: "elr_risk_actions",
+            dependencies: { elr_breakdowns: eightHours },
+          }
+        )
+      ).status
+    ).toBe("met");
+  });
+
+  it("requires owner, date and High/Medium/Low on each risk row", () => {
+    const incomplete = tableDoc([
+      [...ELR_RISK_ACTION_HEADERS],
+      row(ELR_RISK_ACTION_HEADERS, {
+        "Sr. No.": "1",
+        Risk: "Recurrent peristaltic pump dosing fault",
+        "Source (section / records)": "Breakdowns",
+        "Occurrence in period": "4",
+        Severity: "High",
+        "Priority (High / Medium / Low)": "urgent",
+        "Recommended action": "Replace the pump",
+      }),
+    ]);
+    const result = checkRiskActionRows(
+      ctx({ table: incomplete }, { section: "elr_risk_actions" })
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/High, Medium or Low/i);
+  });
+
+  it("fails an empty action list when flagged findings exist", () => {
+    const result = checkRiskActionsNotBloated(
+      ctx(
+        { table: tableDoc([[...ELR_RISK_ACTION_HEADERS]]) },
+        {
+          section: "elr_risk_actions",
+          dependencies: { elr_breakdowns: repeatBreakdown },
+        }
+      )
+    );
+    expect(result.status).toBe("not_met");
+    expect(result.reasoning).toMatch(/no recommended actions/i);
+  });
+
+  it("marks more than 15 risk rows as partially met", () => {
+    const rows = Array.from({ length: ELR_RISK_ACTION_MAX_ROWS + 1 }, (_, i) =>
+      completeAction("Medium", String(i + 1))
+    );
+    const result = checkRiskActionsNotBloated(
+      ctx(
+        { table: tableDoc([[...ELR_RISK_ACTION_HEADERS], ...rows]) },
+        { section: "elr_risk_actions" }
+      )
+    );
+    expect(result.status).toBe("partially_met");
+    expect(result.reasoning).toMatch(/consolidate/i);
+  });
+
+  it("hydrates a missing overallGrade on merge without dropping the table", () => {
+    const merged = getDocumentType(TYPE).mergeSection("elr_risk_actions", {
+      narrative: narrative("High because of lost runtime."),
+      table: tableDoc([[...ELR_RISK_ACTION_HEADERS], completeAction("High")]),
+    });
+    expect(merged).toMatchObject({ overallGrade: "" });
+    expect(
+      checkRiskGradeConsistent(
+        ctx(merged, { section: "elr_risk_actions" })
+      ).status
+    ).toBe("not_met");
   });
 });

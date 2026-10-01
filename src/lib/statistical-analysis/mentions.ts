@@ -8,6 +8,7 @@ import {
   isAnovaAnalysis,
   isBoxplotAnalysis,
   isHistogramAnalysis,
+  isTimeSeriesAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   isXyScatterAnalysis,
@@ -130,6 +131,9 @@ function analysisMentionSummary(item: StatisticalAnalysisSummary): string {
   }
   if (isHistogramAnalysis(item)) {
     return `histogram ${item.config.columnName} n=${item.results.n}`;
+  }
+  if (isTimeSeriesAnalysis(item)) {
+    return `time series ${item.config.columnName} n=${item.results.n} excursions=${item.results.excursions.length}`;
   }
   if (isSixpackAnalysis(item)) {
     return `sixpack LSL=${item.config.lsl ?? "—"} USL=${item.config.usl ?? "—"}`;

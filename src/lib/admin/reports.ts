@@ -1,7 +1,11 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { listAdminUsers, type AdminUser } from "@/lib/admin/users";
+import {
+  excludeCreatePreloadReportsFilter,
+  isCreatePreloadDocumentNo,
+} from "@/lib/reports/create-preload";
 import {
   listReportManagerIdsByReportIds,
   withAssignedManagerIds,
@@ -47,9 +51,10 @@ export async function listAdminReportSummaries(options?: {
     ? await query.where(eq(reports.authorId, options.authorId))
     : await query;
 
-  const filtered = options?.includeDeleted
+  const filtered = (options?.includeDeleted
     ? rows
-    : rows.filter((row) => row.deletedAt == null);
+    : rows.filter((row) => row.deletedAt == null)
+  ).filter((row) => !isCreatePreloadDocumentNo(row.documentNo));
 
   const managerIdsByReportId = await listReportManagerIdsByReportIds(
     filtered.map((row) => row.id)
@@ -70,7 +75,9 @@ export async function listAdminReportAuthorOptions(): Promise<
         reportCount: sql<number>`count(*)::int`,
       })
       .from(reports)
-      .where(sql`${reports.deletedAt} is null`)
+      .where(
+        and(isNull(reports.deletedAt), excludeCreatePreloadReportsFilter())
+      )
       .groupBy(reports.authorId),
   ]);
 

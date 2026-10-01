@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hydrateLiteralMarkdownInDoc,
+  inlineMarkdownToTextNodes,
   markdownHasImage,
   markdownHasTable,
   markdownToDoc,
@@ -234,10 +235,204 @@ describe("markdownToDoc", () => {
     expect(flush.content).toEqual(expected);
   });
 
+  it("turns Nitrogen ($N_2$) into N plus a subscript 2", () => {
+    const doc = markdownToDoc(
+      "compressed air (oil-free, 6 bar), high-purity process Nitrogen ($N_2$),"
+    );
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "text",
+        text: "compressed air (oil-free, 6 bar), high-purity process Nitrogen (",
+      },
+      { type: "text", text: "N" },
+      { type: "text", text: "2", marks: [{ type: "subscript" }] },
+      { type: "text", text: ")," },
+    ]);
+    expect(richJsonToPlainText(doc)).not.toContain("$");
+  });
+
+  it("turns $\\pm 20\\%$ into Unicode tolerance prose", () => {
+    const doc = markdownToDoc(String.raw`tolerance $\pm 20\%$`);
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "tolerance " },
+      { type: "text", text: "± 20%" },
+    ]);
+  });
+
+  it("leaves currency-like dollar spans literal", () => {
+    const doc = markdownToDoc("Cost is $100-$200 per lot.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "Cost is $100-$200 per lot." },
+    ]);
+  });
+
+  it("parses quantity TeX inside bold as Unicode, not a math atom", () => {
+    const doc = markdownToDoc(String.raw`**$\pm 20\%$**`);
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "text",
+        text: "± 20%",
+        marks: [{ type: "bold" }],
+      },
+    ]);
+  });
+
+  it("flattens the Langfuse Monitoring $<1 CFU/plate$ dollar span", () => {
+    const doc = markdownToDoc(
+      String.raw`settle plates $<1\text{ CFU/plate}$ on every location`
+    );
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "settle plates " },
+      { type: "text", text: "<1 CFU/plate" },
+      { type: "text", text: " on every location" },
+    ]);
+    expect(richJsonToPlainText(doc)).toContain("<1 CFU/plate");
+    expect(doc.content![0]!.content!.some((n) => n.type === "mathInline")).toBe(
+      false
+    );
+  });
+
   it("keeps unsupported markdown as literal text", () => {
     const doc = markdownToDoc("Some `code` and [link](http://x)");
     expect(doc.content![0]!.content).toEqual([
       { type: "text", text: "Some `code` and [link](http://x)" },
+    ]);
+  });
+
+  it("turns [[table]] into a tableRef atom", () => {
+    const doc = markdownToDoc("See [[table]] for the records.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "See " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: " for the records." },
+    ]);
+  });
+
+  it("stores [[table:Monitoring]] as a label spec until cascade", () => {
+    const doc = markdownToDoc("See [[table:Monitoring]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "Monitoring",
+      targetField: "",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:elr_monitoring]] as a section key", () => {
+    const doc = markdownToDoc("See [[table:elr_monitoring]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:elr_monitoring.table#0]] as a dotted path", () => {
+    const doc = markdownToDoc("See [[table:elr_monitoring.table#0]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "elr_monitoring",
+      targetField: "table",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("stores [[table:table]] as this field's table", () => {
+    const doc = markdownToDoc("See [[table:table]].");
+    const ref = doc.content![0]!.content!.find((node) => node.type === "tableRef");
+    expect(ref?.attrs).toMatchObject({
+      section: "",
+      targetField: "table",
+      tableIndex: 0,
+      n: null,
+    });
+  });
+
+  it("drops typed Table N immediately before [[table]]", () => {
+    const doc = markdownToDoc(
+      "outlined in Table 1 [[table]], which encompasses Quality Assurance."
+    );
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "outlined in " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: ", which encompasses Quality Assurance." },
+    ]);
+  });
+
+  it("drops the table immediately before [[table]]", () => {
+    const doc = markdownToDoc("see the table [[table]] for records.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "see " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: " for records." },
+    ]);
+  });
+
+  it("keeps a Table N that is not adjacent to the token", () => {
+    const doc = markdownToDoc("as Table 8 detailed in Table 8 [[table]].");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "as Table 8 detailed in " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+      },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("keeps bold on the live tableRef when dropping a duplicate Table N", () => {
+    const doc = markdownToDoc("See **Table 1** [[table]].");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "See " },
+      {
+        type: "tableRef",
+        attrs: { section: "", targetField: "", tableIndex: 0, n: null },
+        marks: [{ type: "bold" }],
+      },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("keeps SOP and equipment-id bold on the same line as a table ref", () => {
+    const doc = markdownToDoc(
+      "pursuant to **SOP/DP/QA/007** for **E/PR/070** as detailed in **Table 9** [[table]]."
+    );
+    const inline = doc.content![0]!.content ?? [];
+    expect(inline).toEqual(
+      expect.arrayContaining([
+        { type: "text", text: "SOP/DP/QA/007", marks: [{ type: "bold" }] },
+        { type: "text", text: "E/PR/070", marks: [{ type: "bold" }] },
+      ])
+    );
+    expect(inline.find((node) => node.type === "tableRef")?.marks).toEqual([
+      { type: "bold" },
+    ]);
+  });
+
+  it("keeps SOP bold when a pending suggestion mark is also applied", () => {
+    const nodes = inlineMarkdownToTextNodes(
+      "pursuant to **SOP/DP/QA/007**.",
+      [{ type: "suggestionInsert", attrs: { id: "sug-1" } }]
+    );
+    const sop = nodes.find(
+      (node) => node.type === "text" && node.text === "SOP/DP/QA/007"
+    );
+    expect(sop?.marks?.map((mark) => mark.type)).toEqual([
+      "suggestionInsert",
+      "bold",
     ]);
   });
 });
@@ -254,9 +449,16 @@ describe("markdownHasTable", () => {
 });
 
 describe("markdownToPlainText", () => {
-  it("strips bold markers, italic markers, and heading hashes", () => {
+  it("strips bold markers, italic markers, heading hashes, and $N_2$", () => {
     expect(markdownToPlainText("## Title\n\n**Bold** and *italic* text")).toBe(
       "Title\n\nBold and italic text"
+    );
+    expect(markdownToPlainText("Nitrogen ($N_2$)")).toBe("Nitrogen (N₂)");
+    expect(markdownToPlainText("See [[table]] above.")).toBe(
+      "See the table above."
+    );
+    expect(markdownToPlainText("See Table 1 [[table]] above.")).toBe(
+      "See the table above."
     );
   });
 });
@@ -369,5 +571,28 @@ describe("hydrateLiteralMarkdownInDoc", () => {
     expect(
       hydrateLiteralMarkdownInDoc({ type: "doc", content: [paragraph] })
     ).toEqual({ type: "doc", content: [paragraph] });
+  });
+
+  it("renders a saved Nitrogen ($N_2$) paragraph instead of dollar latex", () => {
+    const doc = hydrateLiteralMarkdownInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "high-purity process Nitrogen ($N_2$),",
+            },
+          ],
+        },
+      ],
+    });
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "high-purity process Nitrogen (" },
+      { type: "text", text: "N" },
+      { type: "text", text: "2", marks: [{ type: "subscript" }] },
+      { type: "text", text: ")," },
+    ]);
   });
 });

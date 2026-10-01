@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   advertisedChatToolNames,
   isUnavailableToolStreamError,
+  stepsRequestedHiddenWriteTool,
   unavailableToolNameFromError,
   unsupportedChatToolHint,
   UNSUPPORTED_CHAT_TOOL_NAME,
+  withUnlockedWriteTools,
   withUnsupportedChatToolFallback,
 } from "./unsupported-tool";
+import { DOCUMENT_WRITE_TOOL_SET } from "./user-intent";
 
 describe("unsupported chat tool fallback", () => {
   it("stays off the advertised tool list", () => {
@@ -23,11 +26,70 @@ describe("unsupported chat tool fallback", () => {
     ]);
   });
 
-  it("steers table edits away from a stripped edit_table", () => {
+  it("steers table edits to retry only when write tools will list again", () => {
     const hint = unsupportedChatToolHint("edit_table");
-    expect(hint).toContain("edit_table is not available this turn");
-    expect(hint).toContain("Table and draft tools");
+    expect(hint).toContain("edit_table is not available this step");
+    expect(hint).toContain("Retry edit_table only if write tools are listed");
+    expect(hint).toContain("If no tools are listed, do not retry edit_table");
     expect(hint).not.toMatch(/The assistant hit an error/i);
+  });
+
+  it("detects a remapped hidden write tool from calls or results", () => {
+    expect(
+      stepsRequestedHiddenWriteTool(
+        [
+          {
+            toolCalls: [
+              {
+                toolName: "unsupported_tool",
+                input: { requestedTool: "edit_table" },
+              },
+            ],
+          },
+        ],
+        DOCUMENT_WRITE_TOOL_SET
+      )
+    ).toBe(true);
+    expect(
+      stepsRequestedHiddenWriteTool(
+        [
+          {
+            toolResults: [
+              {
+                toolName: "unsupported_tool",
+                output: { requestedTool: "write_column" },
+              },
+            ],
+          },
+        ],
+        DOCUMENT_WRITE_TOOL_SET
+      )
+    ).toBe(false);
+    expect(
+      stepsRequestedHiddenWriteTool(
+        [{ toolCalls: [{ toolName: "read_section" }] }],
+        DOCUMENT_WRITE_TOOL_SET
+      )
+    ).toBe(false);
+  });
+
+  it("unions registered write tools onto the advertised list", () => {
+    expect(
+      withUnlockedWriteTools(["read_section", "search_documents"], [
+        "edit_table",
+        "draft_field",
+      ])
+    ).toEqual(
+      expect.arrayContaining([
+        "read_section",
+        "search_documents",
+        "edit_table",
+        "draft_field",
+      ])
+    );
+    expect(withUnlockedWriteTools(["read_section"], [])).toEqual([
+      "read_section",
+    ]);
   });
 
   it("recognizes the production NoSuchToolError message", () => {

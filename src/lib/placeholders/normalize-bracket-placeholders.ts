@@ -2,6 +2,7 @@ import { isCitationShapedBracket, repairedCitationBracket } from "./citation-bra
 import {
   BRACKET_SPAN_REGEX,
   isActionablePlaceholderBracket,
+  isComparisonInequalityAngle,
   isLikelyHtmlTag,
   MAX_PLACEHOLDER_LABEL_LENGTH,
   NUMERIC_ONLY_BRACKET,
@@ -67,6 +68,7 @@ function normalizeAnglePlaceholdersInPlainText(text: string): string {
     }
     const inner = match.slice(1, -1);
     if (isLikelyHtmlTag(inner)) return match;
+    if (isComparisonInequalityAngle(inner)) return match;
 
     const labeled = ANGLE_TO_BE_FILLED_LABEL.exec(inner.trim());
     if (labeled) {
@@ -91,10 +93,12 @@ function normalizeAnglePlaceholdersInPlainText(text: string): string {
  * MAX_PLACEHOLDER_LABEL_LENGTH.
  *
  * - Skips citation-style `[digits]`, `[file.pdf]`, `[name, p. N]`,
+ *   `[name, p. 1-3]`, combined `[A.pdf, p. 1; B.pdf, p. M]`,
  *   `[Appendix B]`, `[PRQR-25-PR-005]`, `[SOP/DP/QA/008]`.
  * - Repairs mistaken `[cite: <to be filled>]` back to `[cite]`.
  * - Skips static bracketed prose (e.g. SOP acceptance criteria on import).
- * - Skips HTML tags in angle brackets (`<div>`, `<span>`).
+ * - Skips HTML tags and comparison inequalities in angle brackets
+ *   (`<div>`, `(< 1 CFU/plate>)`).
  */
 export function normalizeBracketPlaceholdersInPlainText(text: string): string {
   const squaresNormalized = text.replace(

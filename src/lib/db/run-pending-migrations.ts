@@ -2,8 +2,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { normalizeDatabaseUrl } from "@/db/connection";
 import {
@@ -11,6 +9,7 @@ import {
   tagsToStampOnEmptyPushJournal,
 } from "@/lib/db/push-baseline-tags";
 import { isIgnorableSchemaReplayError } from "@/lib/db/schema-replay-errors";
+import { ensureWorkspaceUsersBaseline } from "@/lib/db/workspace-users-baseline";
 
 const migrationsFolder = path.join(process.cwd(), "src/db/migrations");
 const journalPath = path.join(migrationsFolder, "meta/_journal.json");
@@ -479,7 +478,7 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
 /**
  * Apply journal tags whose hashes are not recorded yet, ignoring leftover
  * enums/columns from drizzle-kit push. Runs only when `reports` exists so a
- * fresh database still goes through `migrate()` from 0000.
+ * fresh database still goes through `applyPendingJournalMigrations` from 0000.
  *
  * Drizzle's migrator executes CREATE TYPE as-is, so a push-polluted MJ
  * database would fail on 0033/0037 even after the table-repair pass.
@@ -515,6 +514,30 @@ async function replayUnrecordedMigrations(pool: pg.Pool): Promise<void> {
   }
 }
 
+/**
+ * Fresh DBs cannot use drizzle `migrate()`: it wraps every pending file in
+ * one transaction, so `ALTER TYPE … ADD VALUE` in 0052 is still uncommitted
+ * when 0053 uses `DEFAULT 'manual'` (Postgres 55P04). Apply one journal file
+ * per autocommit so each new enum value is visible to the next file.
+ */
+async function applyPendingJournalMigrations(pool: pg.Pool): Promise<void> {
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
+    entries: JournalEntry[];
+  };
+  const recorded = await recordedMigrationHashes(pool);
+
+  for (const entry of journal.entries) {
+    const hash = migrationHash(entry.tag);
+    if (recorded.has(hash)) {
+      continue;
+    }
+    console.error(`migrate: applying ${entry.tag}`);
+    await applyMigrationStatements(pool, entry.tag);
+    await recordMigrationIfMissing(pool, entry.tag);
+    recorded.add(hash);
+  }
+}
+
 /** Applies pending Drizzle SQL migrations (with push-DB baseline when needed). */
 export async function runPendingMigrations(databaseUrl: string): Promise<void> {
   const pool = new pg.Pool({
@@ -524,11 +547,11 @@ export async function runPendingMigrations(databaseUrl: string): Promise<void> {
   });
   try {
     await ensureMigrationsTable(pool);
+    await ensureWorkspaceUsersBaseline(pool);
     await ensurePushBaseline(pool);
     await repairMissingSchema(pool);
     await replayUnrecordedMigrations(pool);
-    const db = drizzle(pool);
-    await migrate(db, { migrationsFolder });
+    await applyPendingJournalMigrations(pool);
   } finally {
     await pool.end();
   }

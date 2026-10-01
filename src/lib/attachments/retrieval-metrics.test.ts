@@ -22,6 +22,21 @@ describe("filenameMatches", () => {
       false
     );
   });
+
+  it("treats a download-stamped export name as the same file", () => {
+    expect(
+      filenameMatches(
+        "PQR-24-PR-102_20250320092518.pdf",
+        "PQR-24-PR-102.pdf"
+      )
+    ).toBe(true);
+    expect(
+      filenameMatches(
+        "PQR-24-PR-102.pdf",
+        "PQR-24-PR-102_20250320092518.pdf"
+      )
+    ).toBe(true);
+  });
 });
 
 describe("recall and MRR", () => {

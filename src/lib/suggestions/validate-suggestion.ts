@@ -1,12 +1,13 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
-import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
+import {
+  parseAiFixCommentContent,
+  sectionOrderWithOpenSuggestions,
+  sortedOpenSuggestionsForSection,
+} from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { hashContent } from "@/lib/ai/content-hash";
-import {
-  parseAiFixCommentContent,
-} from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
   flattenForAnchor,
@@ -21,6 +22,7 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
+import { narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 
 export type SuggestionLocateStatus =
   | "locatable"
@@ -135,6 +137,17 @@ export function validateSuggestionLocate(
   documentType: DocumentType = "investigation_report"
 ): SuggestionValidation {
   void documentType;
+  if (comment.kind === "ai_fix") {
+    const payload = parseAiFixCommentContent(comment.content);
+    if (payload.identityOperation) {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: true,
+        canPreview: true,
+      };
+    }
+  }
   const record = sectionContent as Record<string, unknown>;
   const resolved = resolveSuggestionMerge({
     section,
@@ -237,11 +250,32 @@ export function validateSuggestionLocate(
       };
     }
     const doc = getRichFieldValue(record, path);
+    // Painted table previews put insert marks in empty cells. cellPlainText
+    // includes those marks, so expectedText "" looks stale and inject never
+    // re-runs (canPreview false). Treat the live marks as the preview.
+    if (narrativeHasSuggestionMarks(doc, comment.id)) {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: true,
+        canPreview: true,
+        mergeStatus: "legacy",
+      };
+    }
     const result = applyTableOperation(doc, payload.tableOperation, {
       section,
       targetField: path,
     });
     if (!result.ok) {
+      if (result.status === "already_present") {
+        return {
+          locateStatus: "locatable",
+          documentChanged: false,
+          canApply: false,
+          canPreview: false,
+          mergeStatus: "noop",
+        };
+      }
       return {
         locateStatus: "not_found",
         documentChanged: true,
@@ -250,23 +284,9 @@ export function validateSuggestionLocate(
         mergeStatus: "legacy",
       };
     }
-    if (payload.second) {
-      const secondStatus = probeRichEdit(doc, {
-        anchorText: payload.second.anchorText,
-        deleteText: payload.second.deleteText,
-        insertText: payload.second.insertText,
-        scope: payload.second.scope,
-      });
-      if (!isApplyableStatus(secondStatus)) {
-        return {
-          locateStatus: mapProbeStatus(secondStatus),
-          documentChanged: true,
-          canApply: false,
-          canPreview: false,
-          mergeStatus: "legacy",
-        };
-      }
-    }
+    // Do not probe payload.second here. An empty-anchor Citations: append
+    // that fails locate used to mark the whole table card stale so inject
+    // never painted cells. Inject and Apply still try the second separately.
     return {
       locateStatus: "locatable",
       documentChanged: false,
@@ -394,6 +414,41 @@ export function countStaleOpenSuggestions(
     if (!validateSuggestionLocate(c, section, sectionContent).canApply) stale++;
   }
   return { total: open.length, stale };
+}
+
+/**
+ * Document-wide open AI suggestions. `locatable` is the Apply-all count;
+ * `total` includes stale leftovers so Dismiss all can still clear them.
+ * Sections that are not in `sectionOrder` but still have an open AI
+ * comment (no-criteria QSR/ELR fields) are appended so the header does
+ * not hide after the last evaluatable card is dismissed.
+ */
+export function countOpenSuggestionsForReport(
+  sectionOrder: readonly SectionType[],
+  comments: readonly CommentRecord[],
+  evaluations: readonly EvaluationRecord[],
+  sectionContentFor: (section: SectionType) => unknown
+): { total: number; locatable: number } {
+  let total = 0;
+  let locatable = 0;
+  for (const section of sectionOrderWithOpenSuggestions(
+    sectionOrder,
+    comments
+  )) {
+    const open = sortedOpenSuggestionsForSection(
+      section,
+      [...comments],
+      [...evaluations]
+    );
+    total += open.length;
+    const content = sectionContentFor(section);
+    for (const c of open) {
+      if (validateSuggestionLocate(c, section, content).canApply) {
+        locatable += 1;
+      }
+    }
+  }
+  return { total, locatable };
 }
 
 /** User-facing explanation when a suggestion cannot be applied. */

@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
-import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import { resolveAttachmentFields } from "@/lib/attachments/resolve-attachment";
+import {
+  closeOpenIngestRuns,
+  startDocumentIngest,
+} from "@/lib/attachments/start-ingest";
+import {
+  loadAssetForAttachment,
+  patchLinkedProcessing,
+} from "@/lib/attachments/sync-asset-processing";
 import {
   AttachmentPageBudgetExceededError,
   attachmentPageBudgetExceededResponse,
@@ -48,61 +56,35 @@ export async function POST(
   if (!attachment) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!canReprocessAttachment(attachment)) {
+  const asset = await loadAssetForAttachment(attachment);
+  const resolved = resolveAttachmentFields(attachment, asset);
+  if (!canReprocessAttachment(resolved)) {
     return NextResponse.json(
       { error: "Only failed or incompletely indexed attachments can be reprocessed" },
       { status: 400 }
     );
   }
-  if (!attachment.gcsGeneration) {
+  if (!resolved.gcsGeneration) {
     return NextResponse.json(
       { error: "Attachment has no finalized source document" },
       { status: 400 }
     );
   }
 
-  const [updated] = await db
-    .update(reportAttachments)
-    .set({
-      processingStatus: "queued",
-      processingProgress: 0,
-      processingPage: null,
-      processingError: null,
-    })
-    .where(
-      and(
-        eq(reportAttachments.id, attachmentId),
-        or(
-          eq(reportAttachments.processingStatus, "failed"),
-          and(
-            eq(reportAttachments.processingStatus, "ready"),
-            isNotNull(reportAttachments.processingError)
-          )
-        ),
-        isNull(reportAttachments.deletedAt)
-      )
-    )
-    .returning();
-
-  if (!updated) {
-    const [current] = await db
-      .select()
-      .from(reportAttachments)
-      .where(
-        and(
-          eq(reportAttachments.id, attachmentId),
-          eq(reportAttachments.reportId, reportId),
-          isNull(reportAttachments.deletedAt)
-        )
-      );
-    if (!current) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    return NextResponse.json({ attachment: toAttachmentDto(current) });
-  }
+  await closeOpenIngestRuns(
+    attachmentId,
+    attachment.assetId,
+    "Reprocess requested"
+  );
+  await patchLinkedProcessing(attachmentId, attachment.assetId, {
+    processingStatus: "queued",
+    processingProgress: 0,
+    processingPage: null,
+    processingError: null,
+  });
 
   try {
-    await startDocumentIngest(attachmentId, attachment.gcsGeneration);
+    await startDocumentIngest(attachmentId, resolved.gcsGeneration);
   } catch (error) {
     if (error instanceof AttachmentPageBudgetExceededError) {
       return attachmentPageBudgetExceededResponse(error);
@@ -118,10 +100,16 @@ export async function POST(
     reportId,
     summary: `Attachment reprocessed: ${attachment.filename}`,
     newValue: {
-      generation: attachment.gcsGeneration,
-      previousStatus: attachment.processingStatus,
+      generation: resolved.gcsGeneration,
+      previousStatus: resolved.processingStatus,
     },
   });
 
-  return NextResponse.json({ attachment: toAttachmentDto(updated) });
+  const [current] = await db
+    .select()
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, attachmentId));
+  return NextResponse.json({
+    attachment: toAttachmentDto(current ?? attachment),
+  });
 }

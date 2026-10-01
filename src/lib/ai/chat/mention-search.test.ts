@@ -3,6 +3,7 @@ import {
   applyMentionToInput,
   filterMentionCandidates,
   findMentionQuery,
+  mentionQueryContinuesPastCompletedTag,
   syncMentionCandidateLabels,
   type MentionCandidate,
 } from "@/lib/ai/chat/mention-search";
@@ -35,7 +36,9 @@ describe("findMentionQuery", () => {
 
   it("allows spaces so multi-word filenames stay searchable", () => {
     const text = "@cleaning log";
-    expect(findMentionQuery(text, text.length)?.query).toBe("cleaning log");
+    expect(findMentionQuery(text, text.length, candidates)?.query).toBe(
+      "cleaning log"
+    );
   });
 
   it("closes once the token crosses a newline", () => {
@@ -45,6 +48,41 @@ describe("findMentionQuery", () => {
 
   it("returns null when there is no @ before the caret", () => {
     expect(findMentionQuery("no tags here", 5)).toBeNull();
+  });
+
+  it("stays open on an exact tag so the engineer can confirm", () => {
+    const text = "check @Preventive Maintenance";
+    expect(findMentionQuery(text, text.length, [
+      { type: "section", id: "elr_preventive_maintenance", label: "Preventive Maintenance" },
+    ])?.query).toBe("Preventive Maintenance");
+  });
+
+  it("closes after a completed tag plus more words instead of showing no matches", () => {
+    const text = "can you check @Preventive Maintenance section and see";
+    expect(
+      findMentionQuery(text, text.length, [
+        {
+          type: "section",
+          id: "elr_preventive_maintenance",
+          label: "Preventive Maintenance",
+        },
+      ])
+    ).toBeNull();
+  });
+
+  it("still searches a longer filename that starts with a shorter tag", () => {
+    const overlapping: MentionCandidate[] = [
+      { type: "section", id: "pm", label: "Preventive Maintenance" },
+      { type: "document", id: "att_pm", label: "Preventive Maintenance Log" },
+    ];
+    expect(
+      findMentionQuery("@Preventive Maintenance L", "@Preventive Maintenance L".length, overlapping)
+        ?.query
+    ).toBe("Preventive Maintenance L");
+  });
+
+  it("keeps an unmatched query open so the empty state can show", () => {
+    expect(findMentionQuery("@nope", 5, candidates)?.query).toBe("nope");
   });
 });
 
@@ -119,6 +157,35 @@ describe("syncMentionCandidateLabels", () => {
   });
 });
 
+describe("mentionQueryContinuesPastCompletedTag", () => {
+  const elr: MentionCandidate[] = [
+    {
+      type: "section",
+      id: "elr_preventive_maintenance",
+      label: "Preventive Maintenance",
+    },
+  ];
+
+  it("is false while the query still matches a tag", () => {
+    expect(
+      mentionQueryContinuesPastCompletedTag("Preventive Maintenance", elr)
+    ).toBe(false);
+  });
+
+  it("is true once the engineer types past the matched tag", () => {
+    expect(
+      mentionQueryContinuesPastCompletedTag(
+        "Preventive Maintenance section and see",
+        elr
+      )
+    ).toBe(true);
+  });
+
+  it("is false for an unmatched token that is not a completed tag", () => {
+    expect(mentionQueryContinuesPastCompletedTag("nope", elr)).toBe(false);
+  });
+});
+
 describe("applyMentionToInput", () => {
   it("replaces the in-progress token and leaves the caret after it", () => {
     const text = "check @bat";
@@ -135,5 +202,25 @@ describe("applyMentionToInput", () => {
     const result = applyMentionToInput(text, range, candidates[0]!);
 
     expect(result.text).toBe("see @batch-coa.pdf  for detail");
+  });
+
+  it("closes the menu after a selected tag when typing continues", () => {
+    const text = "check @Prev";
+    const range = findMentionQuery(text, text.length)!;
+    const inserted = applyMentionToInput(text, range, {
+      type: "section",
+      id: "elr_preventive_maintenance",
+      label: "Preventive Maintenance",
+    });
+    const continued = `${inserted.text}section and see`;
+    expect(
+      findMentionQuery(continued, continued.length, [
+        {
+          type: "section",
+          id: "elr_preventive_maintenance",
+          label: "Preventive Maintenance",
+        },
+      ])
+    ).toBeNull();
   });
 });

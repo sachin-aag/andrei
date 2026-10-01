@@ -22,7 +22,7 @@ vi.mock("next/image", () => ({
 import { BrandLogo } from "./brand-logo";
 import { BrandLockup } from "./brand-lockup";
 
-function setCustomer(id: "demo" | "mj" | "convergent") {
+function setCustomer(id: "demo" | "mj" | "convergent" | "3xper") {
   vi.stubEnv("ANDREI_CUSTOMER", id);
   vi.stubEnv("NEXT_PUBLIC_ANDREI_CUSTOMER", id);
   vi.stubEnv("ANDREI_VERCEL_DEPLOY_SCOPE", id);
@@ -66,6 +66,15 @@ describe("BrandLogo", () => {
     expect(img).toHaveAttribute("src", "/logo.png");
     expect(img).toHaveAttribute("width", "28");
     expect(img).toHaveAttribute("height", "28");
+  });
+
+  it("renders a wide 3xper wordmark", () => {
+    setCustomer("3xper");
+    render(<BrandLogo />);
+    const img = screen.getByRole("img", { name: "3xper logo" });
+    expect(img).toHaveAttribute("src", "/logo-3xper.png");
+    expect(img).toHaveAttribute("width", "176");
+    expect(img).toHaveAttribute("height", "40");
   });
 });
 

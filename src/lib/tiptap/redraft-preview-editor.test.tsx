@@ -11,6 +11,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
 import { ImageInline } from "@/lib/tiptap/image-inline";
 import { MathBlock, MathInline } from "@/lib/tiptap/math-nodes";
+import { TableRef } from "@/lib/tiptap/table-ref";
 import {
   TableCellWithVerticalAlign,
   TableHeaderWithVerticalAlign,
@@ -39,6 +40,7 @@ function makeEditor(content: JSONContent) {
       ImageInline,
       MathInline,
       MathBlock,
+      TableRef,
       TableWithColumnWidths.configure({ resizable: false }),
       TableRow,
       TableCellWithVerticalAlign,

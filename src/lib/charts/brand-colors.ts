@@ -89,10 +89,35 @@ const CONVERGENT: ChartBrandColors = {
   ],
 };
 
+const XPER: ChartBrandColors = {
+  brand100: "#d0e3f4",
+  brand200: "#a1c7e9",
+  brand400: "#3d8ac7",
+  brand500: "#1a6bb3",
+  brand600: "#0a4e9b",
+  brand800: "#062b54",
+  grid: "#d5e0ec",
+  axis: "#4d6780",
+  foreground: "#0a2748",
+  plotFill: "#ffffff",
+  limit: "#dc2626",
+  series: [
+    "#0a4e9b",
+    "#ed1c6f",
+    "#0d9488",
+    "#7c3aed",
+    "#4d7c0f",
+    "#d97706",
+    "#075985",
+    "#b45309",
+  ],
+};
+
 const BY_PACK: Record<CustomerId, ChartBrandColors> = {
   demo: DEMO,
   mj: MJ,
   convergent: CONVERGENT,
+  "3xper": XPER,
 };
 
 export function chartBrandColors(

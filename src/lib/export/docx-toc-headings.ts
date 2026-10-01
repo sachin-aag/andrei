@@ -137,6 +137,34 @@ export const QRA_TOC_HEADINGS: readonly TocHeadingSpec[] = [
 ];
 
 /** MJ equipment lifecycle report (`mj-equipment-lifecycle-report-template.docx`). */
+/**
+ * SOP/QA/017-F01 R01 is a flat field form, not a numbered document — each
+ * heading is a form field label, all at one level.
+ */
+export const FIR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
+  heading("Non-Conformance Description/ Description of event:", "Heading1"),
+  heading("Standard Procedures:", "Heading1"),
+  heading("Immediate action taken (if any):", "Heading1"),
+  heading("Initial Impact Assessment", "Heading1"),
+  heading("Investigation Team:", "Heading1"),
+  heading("Investigation Tools Assigned:", "Heading1"),
+  heading("Chronology of the event:", "Heading1"),
+  heading("Investigation details:", "Heading1"),
+  heading("Historic Review:", "Heading1"),
+  heading("Root Cause/ Probable Cause:", "Heading1"),
+  heading("Human Error Evaluation", "Heading1"),
+  heading("Impact Assessment:", "Heading1"),
+  heading("Scope Assessment:", "Heading1"),
+  heading("Batch Disposition", "Heading1"),
+  heading("Correction, Corrective and Preventive action Details (CAPA):", "Heading1"),
+  heading("Correction Details:", "Heading2"),
+  heading("Corrective Action:", "Heading2"),
+  heading("Interim Control", "Heading2"),
+  heading("Preventive Action:", "Heading2"),
+  heading("CAPA Effectiveness Check", "Heading1"),
+  heading("List of Attachment:", "Heading1"),
+];
+
 export const ELR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
   heading("1.0 PURPOSE", "Heading1"),
   heading("2.0 SCOPE", "Heading1"),
@@ -145,24 +173,31 @@ export const ELR_TOC_HEADINGS: readonly TocHeadingSpec[] = [
   heading("3.2 ABBREVIATIONS", "Heading2"),
   heading("3.3 EQUIPMENT AND SYSTEM DESCRIPTION", "Heading2"),
   heading("3.4 QUALIFICATION AND PERIODIC RE-QUALIFICATION HISTORY", "Heading2"),
-  heading("3.5 MEDIA FILL / ASEPTIC PROCESS SIMULATION", "Heading2"),
-  heading("3.6 MONITORING", "Heading2"),
-  heading("3.7 CALIBRATION OF ASSOCIATED INSTRUMENTS", "Heading2"),
-  heading("3.8 PREVENTIVE MAINTENANCE", "Heading2"),
-  heading("3.9 BREAKDOWNS AND TRENDS", "Heading2"),
-  heading("3.9.1 BREAKDOWN TREND SUMMARY", "Heading3"),
-  heading("3.10 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION", "Heading2"),
-  heading("3.11 ALARM TRENDS", "Heading2"),
-  heading("3.11.1 ALARM TREND SUMMARY", "Heading3"),
-  heading("3.12 ACCESS CONTROL", "Heading2"),
-  heading("3.13 AUDIT TRAIL REVIEW", "Heading2"),
-  heading("3.14 COMPUTERIZED SYSTEM VALIDATION STATUS", "Heading2"),
+  heading("3.5 PROCESS VALIDATION REVIEW", "Heading2"),
+  heading("3.6 CLEANING VALIDATION REVIEW", "Heading2"),
+  heading("3.7 QUALITY RISK ASSESSMENT REVIEW", "Heading2"),
+  heading("3.8 MEDIA FILL / ASEPTIC PROCESS SIMULATION", "Heading2"),
+  heading("3.9 ALARM TRENDS", "Heading2"),
+  heading("3.9.1 ALARM TREND SUMMARY", "Heading3"),
+  heading("3.10 MONITORING", "Heading2"),
+  heading("3.11 CALIBRATION OF ASSOCIATED INSTRUMENTS", "Heading2"),
+  heading("3.12 PREVENTIVE MAINTENANCE", "Heading2"),
+  heading("3.13 BREAKDOWNS AND TRENDS", "Heading2"),
+  heading("3.13.1 BREAKDOWN TREND SUMMARY", "Heading3"),
+  heading("3.14 QMS RECORDS SINCE LAST PERIODIC RE-QUALIFICATION", "Heading2"),
+  heading("3.15 ACCESS CONTROL", "Heading2"),
+  heading("3.16 AUDIT TRAIL REVIEW", "Heading2"),
+  heading("3.17 COMPUTERIZED SYSTEM VALIDATION STATUS", "Heading2"),
   heading("4.0 DISCREPANCY / DEVIATIONS (If Any)", "Heading1"),
   heading("5.0 SUMMARY AND CONCLUSION", "Heading1"),
+  heading("5.1 SYSTEM TRENDS AND PATTERNS", "Heading2"),
+  heading("5.2 RISK ASSESSMENT AND PRIORITIZED ACTIONS", "Heading2"),
+  heading("5.3 CONCLUSION", "Heading2"),
   heading("6.0 RECOMMENDATION", "Heading1"),
   heading("7.0 ATTACHMENTS", "Heading1"),
   heading("8.0 REVISION HISTORY", "Heading1"),
   heading("9.0 APPROVAL PAGE", "Heading1"),
+  heading("10.0 CITATIONS", "Heading1"),
 ];
 
 export function tocHeadingSpecsForDocumentType(
@@ -179,6 +214,15 @@ export function tocHeadingSpecsForDocumentType(
       return QRA_TOC_HEADINGS;
     case "equipment_lifecycle_report":
       return ELR_TOC_HEADINGS;
+    case "vendor_qualification":
+      // Section titles are banner rows inside the form tables; export-xml
+      // marks them with outline levels instead of Heading styles.
+      return null;
+    case "qualification_summary_report":
+      // Headings and the Index are fixed paragraphs in the form template.
+      return null;
+    case "failure_investigation_report":
+      return FIR_TOC_HEADINGS;
     case "generic_document":
       return null;
     default: {

@@ -63,5 +63,19 @@
     "gold": [{ "filename": "software-requirements.pdf", "page": 2 }],
     "mustNotContainAnywhere": ["Narda SRM-3006"],
     "passCriteria": "Hits for SW-EVAL-7 must come from software-requirements.pdf. They must not paste the protocol equipment table (Narda SRM-3006) into the software-requirement excerpts."
+  },
+  {
+    "id": "pmc-pr-014-identifier",
+    "query": "PMC/PR/014",
+    "kind": "identifier",
+    "gold": [{ "filename": "software-requirements.pdf", "page": 2 }],
+    "passCriteria": "PMC/PR/014 is a slash-form document number on software-requirements.pdf page 2, not a cover sheet. Excerpts must include the literal ID PMC/PR/014 and must not attribute it to dv-protocol-equipment.pdf."
+  },
+  {
+    "id": "equipment-system-report-cover-magnet",
+    "query": "equipment system report",
+    "kind": "semantic",
+    "gold": [{ "filename": "dv-protocol-equipment.pdf", "page": 2 }],
+    "passCriteria": "Common cover tokens must not bury the Required Testing Equipment table. Gold is dv-protocol-equipment.pdf page 2, not page 1 of the longest file. Excerpts must show the required-equipment table, not only UUT/cover boilerplate."
   }
 ]

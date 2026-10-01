@@ -1,6 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
-import { ommlFragmentToMathml, mathmlToOmmlFragment, resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
+import {
+  escapeOmmlTextNodes,
+  ommlFragmentToMathml,
+  mathmlToOmmlFragment,
+  resolveOmmlFromMathAttrs,
+} from "@/lib/math/omml-mathml";
 
 describe("omml-mathml conversion", () => {
   beforeAll(async () => {
@@ -36,5 +41,26 @@ describe("omml-mathml conversion", () => {
       '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>2+2=4</m:t></m:r></m:oMath>';
     const mathml = ommlFragmentToMathml(omml);
     expect(mathml).toContain("<math");
+  });
+
+  it("XML-escapes a raw < in OMML m:t (the Word-breaking $<1 CFU/plate$ case)", () => {
+    const escaped = escapeOmmlTextNodes(
+      '<m:t xml:space="preserve"><1 CFU/plate</m:t>'
+    );
+    expect(escaped).toBe(
+      '<m:t xml:space="preserve">&lt;1 CFU/plate</m:t>'
+    );
+    expect(escaped).not.toMatch(/<m:t[^>]*><1/);
+  });
+
+  it("escapes cached OMML that already contains a raw <", () => {
+    const omml = resolveOmmlFromMathAttrs({
+      mathml: "",
+      latex: "",
+      omml: '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t><1 CFU/plate</m:t></m:r></m:oMath>',
+      ommlDirty: false,
+    });
+    expect(omml).toContain("&lt;1 CFU/plate");
+    expect(omml).not.toMatch(/<m:t[^>]*><1/);
   });
 });
