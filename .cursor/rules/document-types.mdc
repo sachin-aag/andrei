@@ -44,7 +44,9 @@ const sections = getWorkspaceSections(report.documentType);
   type-owned `chat.identityFields` (one suggestion card for the whole header;
   no citations on those cover scalars; duplicate document numbers fail at
   propose and at Apply; remaining-section treats a complete proposal as done).
-  QSR Capacity / Size keeps the printed unit. Do not add `identity` to
+  Identity dates are free-text inputs (not HTML date pickers) so Agent can
+  land `01-Apr-2025` as written; QRA/FIR `storage: "date"` still maps that
+  string onto `reports.date`. QSR Capacity / Size keeps the printed unit. Do not add `identity` to
   `SUGGEST_TARGET_FIELD_PATTERNS`. Do not reuse investigation field maps on DV.
   Title-page identity that chat needs (ELR `formatScope`) is
   `chat.contextIdentity` on the type — do not hardcode metadata keys in

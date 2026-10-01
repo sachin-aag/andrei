@@ -1,5 +1,6 @@
 import { documentTypeEnum, type DocumentType } from "@/db/schema";
 import { getDocumentType } from "@/lib/document-types";
+import { parseElrIdentityDate } from "@/lib/document-types/elr/financial-year";
 import type { ChatIdentityField } from "@/lib/document-types/types";
 import { isCreatePreloadDocumentNo } from "@/lib/reports/create-preload";
 
@@ -201,12 +202,14 @@ export function attachIdentityCapacityUnits(
   return `${trimmed} ${unit}`.slice(0, IDENTITY_VALUE_MAX);
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
 export function parseIdentityDate(value: string): string | null {
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = Date.parse(trimmed);
-  if (Number.isNaN(parsed)) return null;
-  return new Date(parsed).toISOString().slice(0, 10);
+  const parsed = parseElrIdentityDate(value);
+  if (!parsed) return null;
+  return `${parsed.year}-${pad2(parsed.month)}-${pad2(parsed.day)}`;
 }
 
 export type IdentityFieldPatch = {

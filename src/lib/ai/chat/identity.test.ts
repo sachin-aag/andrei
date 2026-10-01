@@ -165,6 +165,39 @@ describe("buildIdentityUpdate", () => {
     expect(update.metadata).toMatchObject({ sourceDocumentNo: "ERF/26/022" });
   });
 
+  it("keeps ELR period dates as written free text", () => {
+    const update = buildIdentityUpdate({
+      documentType: "equipment_lifecycle_report",
+      current: { documentNo: "ELR-25-001", date: "2026-01-01", metadata: {} },
+      fields: [
+        { key: "periodFrom", value: "01-Apr-2025" },
+        { key: "periodTo", value: "31-Mar-2026" },
+        { key: "nextPrqDate", value: "01-Apr-2026" },
+      ],
+    });
+    expect(update.ok).toBe(true);
+    if (!update.ok) return;
+    expect(update.metadata).toMatchObject({
+      periodFrom: "01-Apr-2025",
+      periodTo: "31-Mar-2026",
+      nextPrqDate: "01-Apr-2026",
+    });
+  });
+
+  it("parses FIR month-name dates onto reports.date", () => {
+    const update = buildIdentityUpdate({
+      documentType: "failure_investigation_report",
+      current: { documentNo: "ERF/26/022", date: "2026-01-01", metadata: {} },
+      fields: [{ key: "date", value: "15-Jan-2026" }],
+    });
+    expect(update.ok).toBe(true);
+    if (!update.ok) return;
+    expect(update.date?.toISOString()).toBe("2026-01-15T00:00:00.000Z");
+    expect(update.metadata).toMatchObject({
+      dateOfNonConformance: "2026-01-15",
+    });
+  });
+
   it("rejects unknown keys", () => {
     const update = buildIdentityUpdate({
       documentType: "qualification_summary_report",

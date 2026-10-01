@@ -28,7 +28,6 @@ export function IdentitySuggestionField({
   disabled,
   onChange,
   fieldKey,
-  type = "text",
 }: {
   id: string;
   label: string;
@@ -36,14 +35,10 @@ export function IdentitySuggestionField({
   disabled: boolean;
   onChange: (next: string) => void;
   fieldKey: string;
-  type?: "text" | "date";
 }) {
   const { comments } = useReportComments();
   const proposed = proposedIdentityValue(comments, fieldKey);
-  const showOverlay =
-    type === "text" && proposed !== undefined && proposed !== value;
-  const showDateChip =
-    type === "date" && proposed !== undefined && proposed !== value;
+  const showOverlay = proposed !== undefined && proposed !== value;
 
   return (
     <div className="grid gap-1.5" data-field-anchor={`identity.${fieldKey}`}>
@@ -51,7 +46,7 @@ export function IdentitySuggestionField({
       <div className="relative">
         <Input
           id={id}
-          type={type}
+          type="text"
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
@@ -77,14 +72,6 @@ export function IdentitySuggestionField({
           </div>
         ) : null}
       </div>
-      {showDateChip ? (
-        <p className="text-xs text-[var(--muted-foreground)]">
-          Proposed{" "}
-          <span className="suggestion-insert suggestion-insert-ai">
-            {proposed}
-          </span>
-        </p>
-      ) : null}
     </div>
   );
 }
