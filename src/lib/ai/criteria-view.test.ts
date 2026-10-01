@@ -60,4 +60,11 @@ describe("suggestionCardSectionKeys", () => {
       "identity"
     );
   });
+
+  it("omits QSR sections that have no criteria", () => {
+    const keys = suggestionCardSectionKeys("qualification_summary_report");
+    expect(keys).toContain("qsr_objective");
+    expect(keys).not.toContain("qsr_acronyms");
+    expect(keys).not.toContain("qsr_other_details");
+  });
 });

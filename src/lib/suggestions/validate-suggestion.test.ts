@@ -477,6 +477,29 @@ describe("countOpenSuggestionsForReport", () => {
     expect(counts.total).toBe(2);
     expect(counts.locatable).toBe(1);
   });
+
+  it("still counts an open suggestion on a section missing from the card order", () => {
+    const comments = [
+      aiFixComment({
+        id: "acro",
+        section: "qsr_acronyms",
+        contentPath: "table",
+        anchorText: "URS",
+        content: serializeAiFixCommentContent({
+          deleteText: "",
+          insertText: " User Requirement Specification",
+          reasoning: "",
+        }),
+      }),
+    ];
+    const counts = countOpenSuggestionsForReport(
+      ["qsr_objective"],
+      comments,
+      [],
+      () => undefined
+    );
+    expect(counts.total).toBe(1);
+  });
 });
 
 function equipmentTable(manufacturer: string) {

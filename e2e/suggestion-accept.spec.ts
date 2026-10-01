@@ -179,6 +179,41 @@ test.describe("suggestion accept keeps text visible", () => {
     await expect(editor.locator(".suggestion-insert")).toBeVisible();
   });
 
+  test("keeps Apply all and Dismiss all after dismissing one of two suggestions", async ({
+    page,
+  }) => {
+    const second = await page.request.post("/api/test/seed-ai-suggestion", {
+      data: {
+        reportId,
+        section: "define",
+        contentPath: "narrative",
+        anchorText: SECOND_ANCHOR,
+        insertText: SECOND_INSERT,
+        criterionKey: "define_impact",
+        criterionLabel: "Impact is described",
+      },
+      headers: await browserCookieHeaders(page),
+    });
+    expect(second.ok(), `second seed failed (${second.status()})`).toBeTruthy();
+
+    const editor = await openDefineWithPreview(page, reportId!);
+    const applyAll = bulkApplyAll(page);
+    await expect(applyAll).toBeVisible({ timeout: 15_000 });
+    await expect(applyAll).toHaveText(/apply all 2/i);
+    await expect(bulkDismissAll(page)).toBeVisible();
+
+    await showReviewMargin(page);
+    const dismiss = reviewMargin(page).getByRole("button", { name: /^dismiss$/i });
+    await expect(dismiss).toBeVisible({ timeout: 15_000 });
+    await dismiss.click();
+
+    await expect(applyAll).toHaveText(/apply all 1/i, { timeout: 15_000 });
+    await expect(bulkDismissAll(page)).toBeVisible();
+    await expect(
+      editor.locator(".suggestion-insert").filter({ hasText: SECOND_INSERT.trim() })
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
   test("Agent chrome proposes insert preview and Apply all for one suggestion", async ({
     page,
   }) => {

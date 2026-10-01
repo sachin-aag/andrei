@@ -23,6 +23,7 @@ import {
 } from "@/lib/suggestions/supersession";
 import {
   parseAiFixCommentContent,
+  sectionOrderWithOpenSuggestions,
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
 import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
@@ -540,7 +541,10 @@ export function reportSuggestionQueues(
   evaluations: readonly EvaluationRecord[]
 ): { section: SectionType; comments: CommentRecord[] }[] {
   const queues: { section: SectionType; comments: CommentRecord[] }[] = [];
-  for (const section of sectionOrder) {
+  for (const section of sectionOrderWithOpenSuggestions(
+    sectionOrder,
+    comments
+  )) {
     const open = sortedOpenSuggestionsForSection(
       section,
       [...comments],
