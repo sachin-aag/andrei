@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CHAT_IDENTITY_SECTION } from "@/lib/ai/chat/identity";
-import { decideIdentityHydrate } from "@/lib/reports/identity-form-hydrate";
+import {
+  decideIdentityHydrate,
+  shouldMarkIdentityHydratePersisted,
+} from "@/lib/reports/identity-form-hydrate";
 import { useIdentitySavePaused } from "@/components/report/identity-suggestion-field";
 import { useReportData } from "@/providers/report-provider";
 import { useAutoSave, type AutoSaveContext } from "@/hooks/use-auto-save";
@@ -98,18 +101,24 @@ export function useIdentityFormSave<T>(opts: {
 
   const incomingSerialized = serialize(incoming);
 
-  const hydrateIncoming = useCallback(() => {
-    const next = incomingRef.current;
-    const key = serialize(next);
-    valueRef.current = next;
-    persistKeyRef.current = key;
-    lastSeenUpdatedAtRef.current = reportUpdatedAt;
-    setValue(next);
-    markPersistedRef.current(next);
-  }, [reportUpdatedAt, serialize]);
+  const hydrateIncoming = useCallback(
+    (persist: boolean) => {
+      const next = incomingRef.current;
+      const key = serialize(next);
+      valueRef.current = next;
+      lastSeenUpdatedAtRef.current = reportUpdatedAt;
+      setValue(next);
+      if (!persist) return;
+      persistKeyRef.current = key;
+      markPersistedRef.current(next);
+    },
+    [reportUpdatedAt, serialize]
+  );
 
   // Hydrate while an identity card pauses autosave — Apply's setReport must
   // land in the inputs before the overlay disappears with the resolved card.
+  // Same-clock incoming (a delete that already called applyToReport) must
+  // not markPersisted, or autosave thinks the shorter value is already saved.
   useLayoutEffect(() => {
     const decision = decideIdentityHydrate({
       incomingSerialized,
@@ -132,7 +141,12 @@ export function useIdentityFormSave<T>(opts: {
       applyToReportRef.current(valueRef.current);
       return;
     }
-    hydrateIncoming();
+    hydrateIncoming(
+      shouldMarkIdentityHydratePersisted({
+        incomingUpdatedAt: reportUpdatedAt,
+        lastSeenUpdatedAt: lastSeenUpdatedAtRef.current,
+      })
+    );
   }, [hydrateIncoming, incomingSerialized, reportUpdatedAt, serialize]);
 
   return { value, update, status, lastSavedAt };

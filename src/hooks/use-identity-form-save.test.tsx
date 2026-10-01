@@ -202,4 +202,147 @@ describe("useIdentityFormSave", () => {
       expect.objectContaining({ method: "PATCH" })
     );
   });
+
+  it("PATCHes when a persisted identity character is deleted", async () => {
+    const applyToReport = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ incoming, reportUpdatedAt }: { incoming: IdentityValue; reportUpdatedAt: string }) =>
+        useIdentityFormSave({
+          reportId: "r1",
+          reportUpdatedAt,
+          readOnly: false,
+          incoming,
+          toPatch: (v) => ({ documentNo: v.documentNo, metadata: v.meta }),
+          applyToReport,
+        }),
+      {
+        initialProps: {
+          incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "01" } },
+          reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+        },
+      }
+    );
+
+    act(() => {
+      result.current.update((prev) => ({
+        ...prev,
+        meta: { cycleNo: "0" },
+      }));
+    });
+    rerender({
+      incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "0" } },
+      reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+    });
+
+    expect(result.current.status).toBe("saving");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/reports/r1",
+      expect.objectContaining({ method: "PATCH" })
+    );
+    expect(JSON.parse(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body))).toMatchObject({
+      metadata: { cycleNo: "0" },
+    });
+  });
+
+  it("PATCHes a deleted character after Apply hydrates the header", async () => {
+    const applyToReport = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ incoming, reportUpdatedAt }: { incoming: IdentityValue; reportUpdatedAt: string }) =>
+        useIdentityFormSave({
+          reportId: "r1",
+          reportUpdatedAt,
+          readOnly: false,
+          incoming,
+          toPatch: (v) => ({ documentNo: v.documentNo, metadata: v.meta }),
+          applyToReport,
+        }),
+      {
+        initialProps: {
+          incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "" } },
+          reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+        },
+      }
+    );
+
+    rerender({
+      incoming: {
+        documentNo: "ELR-PR-001",
+        meta: { cycleNo: "01/04/2025" },
+      },
+      reportUpdatedAt: "2026-10-01T15:00:02.000Z",
+    });
+    expect(result.current.value.meta.cycleNo).toBe("01/04/2025");
+
+    act(() => {
+      result.current.update((prev) => ({
+        ...prev,
+        meta: { cycleNo: "01/04/202" },
+      }));
+    });
+    rerender({
+      incoming: {
+        documentNo: "ELR-PR-001",
+        meta: { cycleNo: "01/04/202" },
+      },
+      reportUpdatedAt: "2026-10-01T15:00:02.000Z",
+    });
+
+    expect(result.current.status).toBe("saving");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(JSON.parse(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body))).toMatchObject({
+      metadata: { cycleNo: "01/04/202" },
+    });
+  });
+
+  it("PATCHes a same-clock truncated snapshot that never went through update()", async () => {
+    const applyToReport = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ incoming, reportUpdatedAt }: { incoming: IdentityValue; reportUpdatedAt: string }) =>
+        useIdentityFormSave({
+          reportId: "r1",
+          reportUpdatedAt,
+          readOnly: false,
+          incoming,
+          toPatch: (v) => ({ documentNo: v.documentNo, metadata: v.meta }),
+          applyToReport,
+        }),
+      {
+        initialProps: {
+          incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "" } },
+          reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+        },
+      }
+    );
+
+    rerender({
+      incoming: {
+        documentNo: "ELR-PR-001",
+        meta: { cycleNo: "01/04/2025" },
+      },
+      reportUpdatedAt: "2026-10-01T15:00:02.000Z",
+    });
+    expect(result.current.value.meta.cycleNo).toBe("01/04/2025");
+
+    rerender({
+      incoming: {
+        documentNo: "ELR-PR-001",
+        meta: { cycleNo: "01/04/202" },
+      },
+      reportUpdatedAt: "2026-10-01T15:00:02.000Z",
+    });
+
+    expect(result.current.value.meta.cycleNo).toBe("01/04/202");
+    expect(result.current.status).toBe("saving");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(JSON.parse(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body))).toMatchObject({
+      metadata: { cycleNo: "01/04/202" },
+    });
+  });
 });

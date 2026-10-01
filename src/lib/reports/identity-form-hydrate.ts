@@ -26,3 +26,16 @@ export function decideIdentityHydrate(input: {
   }
   return "hydrate";
 }
+
+/**
+ * Same-clock `setReport` (a keystroke / delete) is not a server persist.
+ * Only a newer `updatedAt` (Apply PATCH, GET after save) may clear dirty.
+ */
+export function shouldMarkIdentityHydratePersisted(input: {
+  incomingUpdatedAt?: string | null;
+  lastSeenUpdatedAt?: string | null;
+}): boolean {
+  if (!input.incomingUpdatedAt) return false;
+  if (!input.lastSeenUpdatedAt) return true;
+  return input.incomingUpdatedAt > input.lastSeenUpdatedAt;
+}

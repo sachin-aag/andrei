@@ -51,7 +51,10 @@ const sections = getWorkspaceSections(report.documentType);
   GET would wipe a keystroke that has not PATCHed yet). Apply hydrates the
   saved snapshot even while the identity card pauses autosave; skipping
   incoming until pause lifts copies a stale GET and the dates vanish with
-  the overlay. QSR Capacity / Size
+  the overlay. Same-clock `setReport` from a backspace is not a persist —
+  only a newer `updatedAt` may `markPersisted`, or deleting a character
+  never PATCHes. History identity snapshots include `documentNo` and
+  `date`, not only `metadata`. QSR Capacity / Size
   keeps the printed unit. Do not add `identity` to
   `SUGGEST_TARGET_FIELD_PATTERNS`. Do not reuse investigation field maps on DV.
   Title-page identity that chat needs (ELR `formatScope`) is
