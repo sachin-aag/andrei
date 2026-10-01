@@ -3,22 +3,7 @@ import {
   assembleDraftingGuidance,
   flattenDraftingGuidance,
   pickDraftingGuidance,
-  splitMarkdownH2,
 } from "./chat-drafting-guidance";
-
-describe("splitMarkdownH2", () => {
-  it("splits on ## headings", () => {
-    const parts = splitMarkdownH2(`## Alpha
-one
-
-## Beta
-two`);
-    expect(parts).toEqual([
-      { heading: "Alpha", body: "## Alpha\none" },
-      { heading: "Beta", body: "## Beta\ntwo" },
-    ]);
-  });
-});
 
 describe("assembleDraftingGuidance", () => {
   it("routes headings to always vs bySection", () => {

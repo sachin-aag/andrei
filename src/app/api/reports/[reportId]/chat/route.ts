@@ -45,6 +45,7 @@ import {
 } from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import {
+  chatEditableSections,
   chatSectionsInScope,
   countSectionInlineImages,
   primaryFieldForSection,
@@ -568,9 +569,9 @@ async function handleChatPost(
     switchToAnalytics,
     pendingPlan,
     hasChatImages: messageHasChatImage(userMsg?.parts),
-    hasSectionImages: Object.entries(mergedSections).some(
-      ([section, content]) =>
-        countSectionInlineImages(content ?? {}, section as SectionType) > 0
+    hasSectionImages: chatEditableSections(report.documentType).some(
+      (section) =>
+        countSectionInlineImages(mergedSections[section] ?? {}, section) > 0
     ),
     hasAnalyticsPlots: (analytics?.analyses ?? []).some((analysis) =>
       isGraphAnalysisKind(analysis.kind)

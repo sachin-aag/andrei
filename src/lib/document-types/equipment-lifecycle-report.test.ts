@@ -367,19 +367,20 @@ describe("equipment lifecycle report definition", () => {
     expect(def.prompts.perSection.elr_system_description).toContain(
       "numbered or bulleted list"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    const guidance = flattenDraftingGuidance(def.chat.draftingGuidance);
+    expect(guidance).toContain(
       "stations as a list"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "Core Functional Stations and Sub-Assemblies"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "Do not** add a **Materials of Construction (MOC)** heading"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toMatch(
+    expect(guidance).not.toMatch(
       /5\. \*\*Materials of Construction/
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toMatch(
+    expect(guidance).not.toMatch(
       /Packed paragraph: Equipment description/
     );
     const listed = getCriteria(TYPE, "elr_system_description").find(
@@ -407,35 +408,36 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.persona).toContain("both Vial and Cartridge");
     expect(def.chat.persona).toContain("ask_user");
     expect(def.chat.persona).toContain("do not infer it from the first PRQR");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    const guidance = flattenDraftingGuidance(def.chat.draftingGuidance);
+    expect(guidance).toContain(
       "If it is unset and attachments name **both** Vial and Cartridge, stop"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("1 April to 31 March");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("starts on 1 April");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("ends on 31 March");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("**both** calendar dates");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("31.03 of the following year");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toMatch(/Indian Financial Year/i);
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toMatch(/Indian FY\b/i);
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("one row per Grade A / environmental **method**");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("[[table:Alarm Trends]]");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toContain("compact process-alarm");
+    expect(guidance).toContain("1 April to 31 March");
+    expect(guidance).toContain("starts on 1 April");
+    expect(guidance).toContain("ends on 31 March");
+    expect(guidance).toContain("**both** calendar dates");
+    expect(guidance).toContain("31.03 of the following year");
+    expect(guidance).not.toMatch(/Indian Financial Year/i);
+    expect(guidance).not.toMatch(/Indian FY\b/i);
+    expect(guidance).toContain("one row per Grade A / environmental **method**");
+    expect(guidance).toContain("[[table:Alarm Trends]]");
+    expect(guidance).not.toContain("compact process-alarm");
     expect(
-      (flattenDraftingGuidance(def.chat.draftingGuidance) ?? "").split(
+      guidance.split(
         "Breakdowns and Trends (elr_breakdowns):"
       ).length - 1
     ).toBe(1);
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("product-contact MOC");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("secondary packaging");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("tertiary");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("ATTACHMENT NO.");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("findingsOmitted");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("Limits and counts");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("<1 CFU/plate");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("privilege matrix");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("Task × Operator");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("Revalidation Due Date");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("current, overdue, or due");
+    expect(guidance).toContain("product-contact MOC");
+    expect(guidance).toContain("secondary packaging");
+    expect(guidance).toContain("tertiary");
+    expect(guidance).toContain("ATTACHMENT NO.");
+    expect(guidance).toContain("findingsOmitted");
+    expect(guidance).toContain("Limits and counts");
+    expect(guidance).toContain("<1 CFU/plate");
+    expect(guidance).toContain("privilege matrix");
+    expect(guidance).toContain("Task × Operator");
+    expect(guidance).toContain("Revalidation Due Date");
+    expect(guidance).toContain("current, overdue, or due");
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([
         expect.stringContaining("container format: (unset)"),

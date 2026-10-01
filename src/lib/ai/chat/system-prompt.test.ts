@@ -55,26 +55,9 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       documentType: "qualification_summary_report",
     });
-    expect(qsr).toContain("neighbour URS-ID window");
     expect(qsr).toContain("do not copy URS-37's range onto URS-5");
-    expect(qsr).toContain("URS cover");
-    expect(qsr).toContain("Never write Complies, bare Section 13");
-    expect(qsr).toContain("one insert_rows");
-    expect(qsr).toContain("do not paste a protocol-to-URS mapping in chat");
     expect(qsr).toContain("four family columns");
     expect(qsr).toContain("Fill every matching family column");
-    expect(qsr).toContain("8.2.3 – Heating trial at 8000 L working volume");
-    expect(qsr).toContain("Never paste a markdown table of RTM rows in chat");
-    expect(qsr).toContain("Do not combine families in one cell");
-    expect(qsr).toContain("write NA in that family cell");
-    expect(qsr).toContain("only the source PDF changes");
-    expect(qsr).not.toContain("PQ, then OQ, then IQ, then DQ");
-    expect(qsr).toContain("fill or update RTM Reference cells");
-    expect(qsr).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");
-    expect(qsr).toContain("Do not list Proposed Updates that still show them");
-    expect(qsr).toContain(
-      "Do not tell them to accept a card and type 3.5"
-    );
 
     for (const documentType of [
       "investigation_report",

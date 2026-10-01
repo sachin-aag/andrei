@@ -132,7 +132,6 @@ function typeRetrievalBullets(
       forMode = guidance?.adaptive;
       break;
     case "focused":
-      forMode = undefined;
       break;
     default: {
       const _exhaustive: never = policy;
@@ -441,7 +440,8 @@ export function buildChatSystemPrompt(opts: {
   const documentType = opts.documentType ?? "investigation_report";
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const includePlotMeasurements = opts.includePlotMeasurements ?? true;
-  const chat = getDocumentType(documentType).chat;
+  const def = getDocumentType(documentType);
+  const chat = def.chat;
   const analyzeInScope = chatSectionsInScope(sectionScope, documentType).includes(
     "analyze"
   );
@@ -483,7 +483,7 @@ export function buildChatSystemPrompt(opts: {
       ? pickDraftingGuidance(chat.draftingGuidance, draftingKeys)
       : "";
   const draftingGuidance = draftingBody
-    ? `\n\n## ${getDocumentType(documentType).label} rules\n${draftingBody.replace(/^## /gm, "### ")}`
+    ? `\n\n## ${def.label} rules\n${draftingBody.replace(/^## /gm, "### ")}`
     : "";
 
   const intentTools =

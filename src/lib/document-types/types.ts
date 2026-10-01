@@ -50,22 +50,14 @@ export type DocumentChatExamplePrompts = {
   readonly agent: readonly string[];
 };
 
-/**
- * Type-owned bullets appended to the shared "Document evidence" block. Unlike
- * `draftingGuidance`, these load on read turns too: review and grep strategy
- * apply to questions as well as drafts. Each string is markdown bullets.
- */
+/** Type-owned Document-evidence bullets; loaded on read turns too. */
 export type DocumentChatRetrievalGuidance = {
-  /** Every retrieval mode. */
   readonly always?: string;
   readonly adaptive?: string;
   readonly comprehensive?: string;
 };
 
-/**
- * Type-owned drafting rules. A string is report-wide (every write turn). The
- * object form loads `always` plus only the in-scope `bySection` recipes.
- */
+/** Type-owned drafting rules: a string is report-wide; object form is scoped. */
 export type DocumentChatDraftingGuidance = {
   readonly always?: string;
   readonly bySection?: Partial<Record<SectionType, string>>;
@@ -93,14 +85,9 @@ export type DocumentTypeChatConfig = {
    * instead of matching verbs like "draft" or "complete".
    */
   inventorySections?: readonly SectionType[];
-  /**
-   * Optional document-type drafting rules appended to the chat system prompt
-   * on write turns (e.g. fixed table column schemas for matrix sections).
-   * Prefer `{ always, bySection }` so a tagged or remaining-section turn does
-   * not load every section recipe.
-   */
+  /** Write-turn drafting rules. Prefer `{ always, bySection }` for scoped recipes. */
   draftingGuidance?: string | DocumentChatDraftingGuidance;
-  /** Type-specific retrieval / document-review rules. See the type doc. */
+  /** Type-specific retrieval / document-review bullets. */
   retrievalGuidance?: DocumentChatRetrievalGuidance;
   /**
    * Title-page identity from `reports.metadata` for the chat context map.

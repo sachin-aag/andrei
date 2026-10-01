@@ -83,7 +83,8 @@ describe("quality risk assessment definition", () => {
     expect(def.prompts.promptVersion).toBe("mj-qra-sop-010-r04-v1");
     expect(def.documentNoLabel).toBe("RA Number");
     expect(def.chat.inventorySections).toEqual(["qra_fmea"]);
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("never write RPN");
+    const guidance = flattenDraftingGuidance(def.chat.draftingGuidance);
+    expect(guidance).toContain("never write RPN");
     expect(def.export.templatePath).toContain(
       "mj-quality-risk-assessment-template.docx"
     );

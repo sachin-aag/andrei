@@ -104,42 +104,43 @@ describe("Convergent customer pack", () => {
     expect(def.chat.persona).toContain(
       "execution blocks (oldest test-plan revision first)"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    const guidance = flattenDraftingGuidance(def.chat.draftingGuidance);
+    expect(guidance).toContain(
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       CONVERGENT_RESULTS_FIELD_SPLIT_NOTES
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("SW-SST-5.1.1");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain("SW-SST-5.1.1");
+    expect(guidance).toContain(
       "not every requirement ID mentioned in the protocol body"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("P for TOP-00017 PCON");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain("P for TOP-00017 PCON");
+    expect(guidance).toContain(
       "NEVER include a markdown table or Req. ID / Satisfied by / P/F rows here"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "omit paragraph 2 if a single full execution"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "SAMPLE inventory is not a quota"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("How to draft this report");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain("Never call this a recipe");
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toMatch(/~\d+ words/);
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain("How to draft this report");
+    expect(guidance).toContain("Never call this a recipe");
+    expect(guidance).not.toMatch(/~\d+ words/);
+    expect(guidance).toContain(
       "There are no separate start/end date fields"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "The purpose of this revision of this report"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "Software version numbers (scheme `mm.nn.ff.bb`"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "that primer is required inside Purpose paragraphs 3–4"
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).toContain(
+    expect(guidance).toContain(
       "This is the only place the"
     );
     expect(
@@ -173,10 +174,11 @@ describe("Convergent customer pack", () => {
       "approval_signoff",
       "appendices",
     ]);
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toContain(
+    const guidance = flattenDraftingGuidance(def.chat.draftingGuidance);
+    expect(guidance).not.toContain(
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
     );
-    expect(flattenDraftingGuidance(def.chat.draftingGuidance)).not.toContain(
+    expect(guidance).not.toContain(
       CONVERGENT_RESULTS_FIELD_SPLIT_NOTES
     );
   });

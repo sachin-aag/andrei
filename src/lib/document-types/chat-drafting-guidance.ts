@@ -15,7 +15,7 @@ function uniqueJoin(parts: readonly (string | undefined)[]): string {
   return out.join("\n\n");
 }
 
-/** Admin / tests: every always + bySection block, deduped. */
+/** Concatenate always + every bySection block. */
 export function flattenDraftingGuidance(
   guidance: string | DocumentChatDraftingGuidance | undefined
 ): string {
@@ -27,7 +27,7 @@ export function flattenDraftingGuidance(
   ]);
 }
 
-export function splitMarkdownH2(
+function splitMarkdownH2(
   markdown: string
 ): readonly { heading: string; body: string }[] {
   return markdown
@@ -42,10 +42,7 @@ export function splitMarkdownH2(
     });
 }
 
-/**
- * Split a `##`-headed recipe into always vs per-section blocks.
- * Every heading in `markdown` must appear in `headingTarget`.
- */
+/** Split a `##`-headed recipe into always vs per-section blocks. */
 export function assembleDraftingGuidance(opts: {
   markdown: string;
   headingTarget: Readonly<Record<string, DraftingHeadingTarget>>;
@@ -90,7 +87,7 @@ export function assembleDraftingGuidance(opts: {
   };
 }
 
-/** Load `always` plus recipes for the given section keys (deduped). */
+/** Concatenate always + the given bySection keys. */
 export function pickDraftingGuidance(
   guidance: string | DocumentChatDraftingGuidance | undefined,
   sectionKeys: readonly SectionType[]
