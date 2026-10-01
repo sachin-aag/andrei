@@ -367,7 +367,9 @@ export function prepareReportChatStep(
   }
 
   const skipReviewForAlreadyDrafted =
-    input.alreadyDrafted && input.emptyIdentityCells !== true;
+    input.alreadyDrafted &&
+    input.emptyIdentityCells !== true &&
+    !input.requireInventoryReview;
   const prepared = prepareDocumentReviewStep({
     policy: skipReviewForAlreadyDrafted ? "adaptive" : input.retrievalPolicy,
     phase: input.reviewPhase,

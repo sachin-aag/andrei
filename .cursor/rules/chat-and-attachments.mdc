@@ -75,7 +75,8 @@ cells (blank Reference Number / SOP Number / Document Number on a named
 row) are material gaps when they asked to draft or fill the section —
 including a bare "draft 1.3". Fill those cells from attachments; do not
 say the section is already drafted. Skip the already-drafted
-force-adaptive / skip-review overlay only when those cells are filled.
+force-adaptive / skip-review overlay only when those cells are filled
+and the in-scope inventory is not still empty.
 A named cell or document edit
 is that change: after the read, call `edit_table` or `propose_edit`. Explicit
 rewrite language is the escape hatch. If there are gaps,
