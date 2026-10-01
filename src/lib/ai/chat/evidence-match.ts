@@ -29,12 +29,16 @@ export function normalizeHaystack(text: string): string {
   return latinize(collapseWs(text)).toLowerCase();
 }
 
-/** OCR often splits 3.5 into "3 . 5" / "3. 5". Do not glue "070. 5 units". */
+/**
+ * OCR often splits 3.5 into "3 . 5" / "3. 5". Do not glue a numbered-list
+ * index onto the next measurement (`1. 2.5` is not `1.2.5`) or a whole
+ * quantity (`1. 1600` is not `1.1600`).
+ */
 function glueOcrDecimals(text: string): string {
   const dotted = text.replace(/[·•․．｡]/g, ".");
   return dotted
-    .replace(/(?<![\d.])(\d{1,4})\s*\.\s+(\d{1,4})(?!\d)/g, "$1.$2")
-    .replace(/(?<![\d.])(\d{1,4})\s+\.\s*(\d{1,4})(?!\d)/g, "$1.$2");
+    .replace(/(?<![\d.])(\d{1,4})\s*\.\s+(\d{1,3})(?!\d)(?!\.\d)/g, "$1.$2")
+    .replace(/(?<![\d.])(\d{1,4})\s+\.\s*(\d{1,3})(?!\d)(?!\.\d)/g, "$1.$2");
 }
 
 function escapeRegExp(value: string): string {
@@ -100,6 +104,7 @@ function hasSignedMatch(
  * "1.0 Purpose", or "2024" is not evidence for contaminated-units 0. A
  * sentence-final "0." still matches — only `.` + digit is a decimal.
  * OCR-split "3 . 5" / "3. 5" is evidence for 3.5, not for integer 3.
+ * Integer 1600 matches OCR `1600.0` / `1600.00`, not `1600.5`.
  * A leading minus is part of the number: 15 °C is not evidence for −15 °C.
  * The high end of a range (150 in −20 to 150 °C) is not evidence for 20 °C.
  */
@@ -124,13 +129,18 @@ function numericNeedlePresent(haystack: string, needle: string): boolean {
     );
   }
   if (/^\d+$/.test(digits)) {
-    return hasSignedMatch(
-      haystack,
-      new RegExp(
-        `(?<![\\d.])${escapeRegExp(digits)}(?!\\d)(?!\\s*\\.\\s*\\d)`,
-        "gi"
-      ),
-      wantNegative
+    const escaped = escapeRegExp(digits);
+    return (
+      hasSignedMatch(
+        haystack,
+        new RegExp(`(?<![\\d.])${escaped}(?!\\d)(?!\\s*\\.\\s*\\d)`, "gi"),
+        wantNegative
+      ) ||
+      hasSignedMatch(
+        haystack,
+        new RegExp(`(?<![\\d.])${escaped}\\s*\\.\\s*0+(?!\\d)`, "gi"),
+        wantNegative
+      )
     );
   }
   if (haystack.includes(n)) return true;

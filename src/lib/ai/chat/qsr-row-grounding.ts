@@ -818,11 +818,29 @@ export function descriptionSupportedNearKey(
   if (PASS_WORD_CELL_RE.test(trimmed)) return true;
   if (SECTION_NUMBER_CELL_RE.test(trimmed)) return true;
   if (isRtmSectionCellText(trimmed) || rtmCellSectionNumber(trimmed)) {
-    // The one-liner is a paraphrase of the test. Ground the protocol
-    // section number(s); do not require words like "stability" to appear
-    // beside that URS ID (protocol pages usually omit the URS number).
+    // A protocol section number is a locator (filename / page / Table N
+    // class), not a claim. Keep the model's heading even when OCR never
+    // printed `9.3.4`. Ground the remainder: measurements still go through
+    // extractHardFacts; invented paraphrase without facts still fails the
+    // token gate.
     if (rtmSectionNumbersCited(trimmed, quotes)) return true;
-    if (rtmCellSectionNumber(trimmed)) return false;
+    const remainder = rtmCellDescription(trimmed);
+    const remainderFacts = extractHardFacts(remainder);
+    if (
+      remainderFacts.some(
+        (fact) =>
+          fact.kind === "number" ||
+          fact.kind === "temperature" ||
+          fact.kind === "duration"
+      )
+    ) {
+      return true;
+    }
+    const tokens = significantDescriptionTokens(remainder).filter((token) =>
+      /[a-z]/.test(token)
+    );
+    if (tokens.length === 0) return true;
+    return tokensSupportedNearKey(tokens, quotes, key);
   }
   if (new RegExp(`^${key}$`, "i").test(trimmed)) return true;
   const tokens = significantDescriptionTokens(trimmed);
@@ -1314,6 +1332,16 @@ function rtmCellSectionNumber(
     }
   }
   return "";
+}
+
+/** True when a family cell names a protocol heading that this turn's quotes omit. */
+export function rtmFamilyLocatorMissing(
+  cell: string,
+  quotes: readonly string[]
+): boolean {
+  const trimmed = cell.replace(/\[[^\]]+\]/g, "").trim();
+  if (!trimmed || !rtmCellSectionNumber(trimmed)) return false;
+  return !rtmSectionNumbersCited(trimmed, quotes);
 }
 
 function rtmSectionNumbersCited(

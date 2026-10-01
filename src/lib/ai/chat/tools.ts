@@ -333,6 +333,7 @@ import {
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import {
+  repairSearchAttachmentIds,
   repairSearchQueries,
   repairTextsFromTableOperation,
   searchUnsupportedFactsRepair,
@@ -1580,6 +1581,8 @@ export function buildChatTools(opts: {
     blocked: boolean;
     provenanceClaims: number;
     unsourced: number;
+    locatorMissing?: boolean;
+    dropReason?: string;
   }) => {
     if (!actor) return;
     void recordAuditEvent({
@@ -1597,6 +1600,8 @@ export function buildChatTools(opts: {
         provenanceClaims: input.provenanceClaims,
         unsourced: input.unsourced,
         policy: unsupportedFactPolicy,
+        ...(input.locatorMissing ? { locatorMissing: true } : {}),
+        ...(input.dropReason ? { dropReason: input.dropReason } : {}),
       },
     }).catch((err) => {
       console.error("claim provenance audit failed", err);
@@ -1612,11 +1617,26 @@ export function buildChatTools(opts: {
     if (unsupportedFactPolicy !== "block") return emptyRepair;
     const queries = repairSearchQueries(input);
     if (queries.length === 0) return emptyRepair;
+    let readyDocuments: { attachmentId: string; filename: string }[] = [];
+    try {
+      readyDocuments = (await listReadyDocumentsForReport(reportId)).map(
+        (doc) => ({
+          attachmentId: doc.attachmentId,
+          filename: doc.filename,
+        })
+      );
+    } catch (err) {
+      console.error("unsupported-facts repair ready documents failed", err);
+    }
     const hits = await searchUnsupportedFactsRepair({
       reportId,
       queries,
-      attachmentIds:
-        pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
+      attachmentIds: repairSearchAttachmentIds({
+        texts: input.texts,
+        ledger: citationLedger,
+        readyDocuments,
+        pinnedAttachmentIds,
+      }),
     });
     // Seed quotes so re-ground can fill invented facts. Prose leftover
     // <date>/<identifier>/<number> after that pass persist. Table leftovers
@@ -2769,6 +2789,9 @@ export function buildChatTools(opts: {
               groundedInsert.provenance.claims.length +
               (groundedSecond?.provenance.claims.length ?? 0),
             unsourced: unsupported.length,
+            locatorMissing:
+              groundedInsert.locatorMissing || groundedSecond?.locatorMissing,
+            dropReason: groundedInsert.dropReason ?? groundedSecond?.dropReason,
           });
           return unsupportedFactsToolResult({
             unsupported,
@@ -3904,6 +3927,8 @@ export function buildChatTools(opts: {
             blocked: true,
             provenanceClaims: groundedTable.provenance.claims.length,
             unsourced: groundedTable.unsupported.length,
+            locatorMissing: groundedTable.locatorMissing,
+            dropReason: groundedTable.dropReason,
           });
           return unsupportedFactsToolResult({
             unsupported: groundedTable.unsupported,
@@ -4060,6 +4085,8 @@ export function buildChatTools(opts: {
             blocked: false,
             provenanceClaims: groundedTable.provenance.claims.length,
             unsourced: groundedTable.unsupported.length,
+            locatorMissing: groundedTable.locatorMissing,
+            dropReason: groundedTable.dropReason,
           });
         }
 
@@ -4346,6 +4373,8 @@ export function buildChatTools(opts: {
             blocked: true,
             provenanceClaims: groundedDraft.provenance.claims.length,
             unsourced: groundedDraft.unsupported.length,
+            locatorMissing: groundedDraft.locatorMissing,
+            dropReason: groundedDraft.dropReason,
           });
           return unsupportedFactsToolResult({
             unsupported: groundedDraft.unsupported,
@@ -4403,6 +4432,8 @@ export function buildChatTools(opts: {
             blocked: false,
             provenanceClaims: groundedDraft.provenance.claims.length,
             unsourced: groundedDraft.unsupported.length,
+            locatorMissing: groundedDraft.locatorMissing,
+            dropReason: groundedDraft.dropReason,
           });
         }
 

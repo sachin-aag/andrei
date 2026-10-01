@@ -212,6 +212,11 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   tools. Composer scope is `@` tags. Voice is click start / click stop
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
+- QSR RTM family-column headings (`9.3.4`, `8.2.4`) are locators, not
+  claims: a missing heading does not drop a cell whose measurements match
+  the cited page. Integer `1600` matches OCR `1600.0`. Repair search pins
+  to cited files. Gold: `qsr-rtm-draft-replay.test.ts` and
+  `scripts/eval/chat-draft-cases.json`.
 
 ## Turbopack 404
 

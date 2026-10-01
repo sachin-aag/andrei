@@ -28,6 +28,7 @@ import {
   quoteWindowAroundKey,
   pageLevelTokenAroundKey,
   rowKeyFromContext,
+  rtmFamilyLocatorMissing,
   rtmReferenceColumnIndexes,
   rtmSectionCellText,
   dropQsrRtmPlaceholderCells,
@@ -369,6 +370,27 @@ describe("descriptionSupportedNearKey", () => {
         "URS-10"
       )
     ).toBe(false);
+  });
+
+  it("treats a missing protocol heading as a locator when the remainder has measurements", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C)",
+        [
+          "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No.",
+        ],
+        "URS-3"
+      )
+    ).toBe(true);
+    expect(
+      descriptionSupportedNearKey(
+        "7.2 – Overflow volume verification 9320 L",
+        [
+          "cable 1200 NA 5 Full volume (L) 8000 6 Over flow volume (L) 9320 Format No.",
+        ],
+        "URS-2"
+      )
+    ).toBe(true);
   });
 });
 
@@ -963,6 +985,91 @@ describe("row helpers", () => {
 });
 
 describe("groundTableOperation optional RTM columns", () => {
+  it("keeps an OQ family cell when 9.3.4 is missing from OCR but the temperatures are present", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 83,
+        attachmentId: "oq",
+        quote:
+          "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No.",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-3",
+            insertText:
+              "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [Operational Qualification.PDF, p. 83]",
+            rowContext: "URS-3\nShell Operating temperature",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]?.insertText
+        : "";
+    expect(cell).toContain("9.3.4");
+    expect(cell).toContain("120.8");
+    expect(result.locatorMissing).toBe(true);
+    expect(
+      rtmFamilyLocatorMissing(
+        "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C)",
+        [ledger.recordedPages()[0]!.quote]
+      )
+    ).toBe(true);
+  });
+
+  it("keeps PQ 1600 L from live OCR Qty: 1600.0 L", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 17,
+        attachmentId: "pq",
+        quote: "8.2.4 Simulation. Qty: 1600.0 L 2. Note: Close the manhole",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 6,
+            rowKey: "URS-10",
+            insertText:
+              "8.2.4 – Simulation trial 1600 L [Performance Qualification.PDF, p. 17]",
+            rowContext: "URS-10\nWorking volume",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]?.insertText
+        : "";
+    expect(cell).toContain("1600 L");
+    expect(cell).toContain("8.2.4");
+    expect(result.locatorMissing).toBeUndefined();
+  });
+
   it("clears stock Complies instead of blocking the URS copy", () => {
     const ledger = ledgerFromPages([
       {

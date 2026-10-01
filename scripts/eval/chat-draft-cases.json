@@ -307,5 +307,105 @@
       "identityIncomplete": true,
       "identityIncompleteHits": 1
     }
+  },
+  {
+    "id": "qsr-rtm-pq-1600-ocr-decimal",
+    "task": "ground_draft",
+    "passCriteria": "PQ 1600 L persists when the cited protocol page prints Qty: 1600.0 L.",
+    "notes": "Live GLR-1301 PQ p.17 OCR. Integer 1600 must match 1600.0, not 1600.5.",
+    "input": {
+      "text": "8.2.4 – Simulation trial 1600 L [Performance Qualification.PDF, p. 17]",
+      "context": "URS-10\nWorking volume",
+      "section": "qsr_rtm_process",
+      "tableCol": 6,
+      "pages": [
+        {
+          "filename": "Performance Qualification.PDF",
+          "pageNumber": 17,
+          "attachmentId": "pq",
+          "quote": "8.2.4 Simulation. Qty: 1600.0 L 2. Note: Close the manhole"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["1600 L", "8.2.4"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-rtm-oq-locator-temps",
+    "task": "ground_draft",
+    "passCriteria": "OQ family cell keeps 9.3.4 as a locator when the cited page has −7.4 °C / 120.8 °C but never prints 9.3.4.",
+    "notes": "Live GLR-1301 OQ p.83 OCR. Section numbers are locators, not claims.",
+    "input": {
+      "text": "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [Operational Qualification.PDF, p. 83]",
+      "context": "URS-3\nShell Operating temperature",
+      "section": "qsr_rtm_process",
+      "tableCol": 5,
+      "pages": [
+        {
+          "filename": "Operational Qualification.PDF",
+          "pageNumber": 83,
+          "attachmentId": "oq",
+          "quote": "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["9.3.4", "120.8"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-rtm-oq-overflow-9320",
+    "task": "ground_draft",
+    "passCriteria": "OQ overflow 9320 L persists when the cited page prints (L) 9320 without heading 7.2.",
+    "notes": "Live GLR-1301 OQ p.12 OCR. Missing protocol heading must not drop a grounded quantity.",
+    "input": {
+      "text": "7.2 – Overflow volume verification 9320 L [Operational Qualification.PDF, p. 12]",
+      "context": "URS-2\nOverflow volume",
+      "section": "qsr_rtm_process",
+      "tableCol": 5,
+      "pages": [
+        {
+          "filename": "Operational Qualification.PDF",
+          "pageNumber": 12,
+          "attachmentId": "oq",
+          "quote": "cable 1200 NA 5 Full volume (L) 8000 6 Over flow volume (L) 9320 Format No."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["9320 L"],
+      "unsupportedMustBeEmpty": true
+    }
+  },
+  {
+    "id": "qsr-or-list-index-2.5",
+    "task": "ground_draft",
+    "passCriteria": "Operating Range 2.5 Kg/cm² persists when OCR prints a numbered row as 1. 2.5 Kg/cm².",
+    "notes": "Live GLR-1301 OQ p.17 OCR. Do not glue list index 1. onto 2.5.",
+    "input": {
+      "text": "2.5 Kg/cm² to Full Vacuum [Operational Qualification.PDF, p. 17]",
+      "context": "URS-4\nShell Operating pressure",
+      "section": "qsr_operating_range",
+      "pages": [
+        {
+          "filename": "Operational Qualification.PDF",
+          "pageNumber": 17,
+          "attachmentId": "oq",
+          "quote": "Coil/jacket side Reactor (GLR-1301) VESSEL (VES-1308) 1. 2.5 Kg/cm² to Full Vacuum NLT 0.5 Kg/cm² Operating pressure Kg/cm² 8.3 View lamp"
+        }
+      ]
+    },
+    "expected": {
+      "blocked": false,
+      "mustContain": ["2.5 Kg/cm²"],
+      "mustNotContain": ["<number>"],
+      "unsupportedMustBeEmpty": true
+    }
   }
 ]

@@ -85,6 +85,8 @@ const IQ_FILENAME = "Installation Qualification.PDF";
 const IQ_ID = "att_iq";
 const OQ_FILENAME = "Operational Qualification.PDF";
 const OQ_ID = "att_oq";
+const PQ_FILENAME = "Performance Qualification.PDF";
+const PQ_ID = "att_pq";
 const REPORT_ID = "report-qsr-rtm";
 
 const COVER_QUOTE =
@@ -162,6 +164,17 @@ function oqDoc(pageCount = 40) {
   return {
     attachmentId: OQ_ID,
     filename: OQ_FILENAME,
+    description: null,
+    pageCount,
+    ingestRunId: "run",
+    documentSummary: null,
+  };
+}
+
+function pqDoc(pageCount = 40) {
+  return {
+    attachmentId: PQ_ID,
+    filename: PQ_FILENAME,
     description: null,
     pageCount,
     ingestRunId: "run",
@@ -347,6 +360,27 @@ async function readOqPage(
   });
   const read = await tools.read_document_page!.execute!(
     { attachmentId: OQ_ID, pageNumber },
+    TEST_TOOL_OPTIONS
+  );
+  expect(read).toMatchObject({ status: "found" });
+}
+
+async function readPqPage(
+  tools: ReturnType<typeof buildChatTools>,
+  pageNumber: number,
+  transcript: string
+) {
+  readDocumentPageMock.mockResolvedValueOnce({
+    attachmentId: PQ_ID,
+    filename: PQ_FILENAME,
+    pageNumber,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    printedPageLabel: String(pageNumber),
+  });
+  const read = await tools.read_document_page!.execute!(
+    { attachmentId: PQ_ID, pageNumber },
     TEST_TOOL_OPTIONS
   );
   expect(read).toMatchObject({ status: "found" });
@@ -2162,5 +2196,88 @@ Complies`,
     expect(cells.find((c) => c.rowKey === "URS-7" && c.col === 4)?.insertText).toContain(
       "13.3.5"
     );
+  });
+
+  it("keeps PQ 1600 L from live OCR Qty: 1600.0 L instead of dropping the cell", async () => {
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        ["URS-10", "Working volume", "1600 L", "", "", "", "", ""],
+      ]),
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), pqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readPqPage(
+      tools,
+      17,
+      "8.2.4 Simulation. Qty: 1600.0 L 2. Note: Close the manhole"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill PQ from the simulation page.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 6,
+              rowKey: "URS-10",
+              insertText: `8.2.4 – Simulation trial 1600 L [${PQ_FILENAME}, p. 17]`,
+              rowContext: "URS-10\nWorking volume\n1600 L",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.find((cell) => cell.col === 6)?.insertText).toContain("1600 L");
+    expect(cells.find((cell) => cell.col === 6)?.insertText).toContain("8.2.4");
+  });
+
+  it("keeps OQ 9.3.4 as a locator when p.83 has the temperatures but not the heading", async () => {
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        ["URS-3", "Shell Operating temperature", "−15 °C to 130 °C", "", "", "", "", ""],
+      ]),
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), oqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readOqPage(
+      tools,
+      83,
+      "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No."
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill OQ from the operating-range page.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-3",
+              insertText: `9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [${OQ_FILENAME}, p. 83]`,
+              rowContext: "URS-3\nShell Operating temperature",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const oq = cells.find((cell) => cell.col === 5)?.insertText ?? "";
+    expect(oq).toContain("9.3.4");
+    expect(oq).toContain("120.8");
   });
 });

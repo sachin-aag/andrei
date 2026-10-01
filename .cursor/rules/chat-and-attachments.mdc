@@ -184,7 +184,13 @@ URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing.
 Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
-`3.5`. A named date column (Effective Date) must match the source value
+`3.5`. Integer `1600` matches OCR `1600.0` / `1600.00`, not `1600.5`.
+Do not glue a numbered-list index onto the next measurement (`1. 2.5`
+is not `1.2.5`). Protocol section numbers (`9.3.4`, `7.2`, `8.2.4`) are
+locators — they never block a family-column write; measurements in the
+remainder still must match a quote. Invented heading + paraphrase without
+facts still fails. Repair search pins to cited files when the draft named
+them. A named date column (Effective Date) must match the source value
 next to that same label — presence of a signature or observation date on
 the cited page is not that field. A leading minus is part of the number
 (`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
@@ -224,7 +230,8 @@ counter (`16`) or logged reading (`12.72 °C`) in Section still clears.
 Wrap-up quotes `adjustedCells.saved`
 Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
-one closed-set repair search (C1 retriever), seed new quotes, and
+one closed-set repair search (C1 retriever) pinned to cited files when
+the draft named them, seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover
 `<date>` / `<identifier>` / `<number>` persist after that lookup when
 the facts are still missing. Table leftovers bounce once

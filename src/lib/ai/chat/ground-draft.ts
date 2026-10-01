@@ -55,6 +55,7 @@ import {
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
   rtmFamilyAtColumn,
+  rtmFamilyLocatorMissing,
   qsrTableColumnLabel,
   rowKeyFromContext,
   editCellsGroupKey,
@@ -68,11 +69,17 @@ import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 
 export type { ClaimProvenance, ClaimProvenanceRecord } from "@/lib/ai/chat/claim-facts";
 
+export type GroundDropReason = "fail_closed" | "unsourced_fact" | "qsr_extra";
+
 export type GroundDraftResult = {
   text: string;
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
+  /** Family cell kept even though the protocol heading was not in this turn's quotes. */
+  locatorMissing?: boolean;
+  /** Why a blocked write dropped, for claim_unsupported audit metadata. */
+  dropReason?: GroundDropReason;
 };
 
 function filenamesMatch(left: string, right: string): boolean {
@@ -560,6 +567,7 @@ export function groundDraftText(input: {
       provenance: { claims: [], policy: input.policy },
       unsupported: [syntheticUnsupportedFact(failClosed)],
       blocked: input.policy === "block",
+      dropReason: input.policy === "block" ? "fail_closed" : undefined,
     };
   }
   if (!input.ledger.hasQuotedPages() || mode === "skip") {
@@ -652,11 +660,31 @@ export function groundDraftText(input: {
       !(record.status === "verified" && !record.source && !record.analysis)
   );
 
+  const dropReason: GroundDropReason | undefined = !blocked
+    ? undefined
+    : unsourcedFacts.length > 0
+      ? "unsourced_fact"
+      : extraUnsupported.length > 0
+        ? "qsr_extra"
+        : undefined;
+  const locatorMissing =
+    !blocked &&
+    rtmFamilyAtColumn(
+      input.grounding?.section,
+      input.grounding?.tableCol ?? -1
+    ) != null &&
+    rtmFamilyLocatorMissing(
+      cited,
+      input.ledger.recordedPages().map((page) => page.quote)
+    );
+
   return {
     text,
     provenance: { claims: provenanceClaims, policy: input.policy },
     unsupported: unsupportedFacts,
     blocked,
+    locatorMissing: locatorMissing || undefined,
+    dropReason,
   };
 }
 
@@ -682,6 +710,8 @@ export function groundTableOperation(input: {
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
+  locatorMissing?: boolean;
+  dropReason?: GroundDropReason;
 } {
   const cited = rewriteTableOperationCitations(
     attachLiveTableRowContext(input.operation, input.fieldDoc),
@@ -703,6 +733,7 @@ export function groundTableOperation(input: {
       provenance: { claims: [], policy: input.policy },
       unsupported: [syntheticUnsupportedFact(failClosed)],
       blocked: input.policy === "block",
+      dropReason: input.policy === "block" ? "fail_closed" : undefined,
     };
   }
   if (!input.ledger.hasQuotedPages()) {
@@ -717,6 +748,8 @@ export function groundTableOperation(input: {
   const claims: ClaimProvenanceRecord[] = [];
   const unsupported: HardFact[] = [];
   let blocked = false;
+  let locatorMissing = false;
+  let dropReason: GroundDropReason | undefined;
   const groundValue = (
     value: string,
     context: string | undefined,
@@ -756,7 +789,13 @@ export function groundTableOperation(input: {
     }
     claims.push(...grounded.provenance.claims);
     unsupported.push(...grounded.unsupported);
-    if (grounded.blocked) blocked = true;
+    if (grounded.blocked) {
+      blocked = true;
+      if (!dropReason && grounded.dropReason) dropReason = grounded.dropReason;
+    }
+    if (grounded.locatorMissing && grounded.text.trim()) {
+      locatorMissing = true;
+    }
     return grounded.text;
   };
 
@@ -880,6 +919,8 @@ export function groundTableOperation(input: {
     provenance: { claims, policy: input.policy },
     unsupported,
     blocked,
+    locatorMissing: locatorMissing || undefined,
+    dropReason: blocked ? dropReason : undefined,
   };
 }
 
