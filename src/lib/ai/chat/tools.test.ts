@@ -5422,6 +5422,7 @@ describe("buildChatTools draft_identity", () => {
     authorId: "engineer-1",
     documentType: "qualification_summary_report" as const,
   };
+  const inserts: unknown[] = [];
 
   beforeEach(() => {
     isDocumentNoTakenMock.mockReset();
@@ -5430,16 +5431,24 @@ describe("buildChatTools draft_identity", () => {
     listReadyDocumentsForReportMock.mockResolvedValue([]);
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
+    inserts.length = 0;
     dbSelectMock.mockReset();
     dbUpdateMock.mockReset();
+    dbInsertMock.mockReset();
     dbSelectMock.mockImplementation(() => ({
-      from: () => ({
-        where: vi.fn().mockResolvedValue([qsrRow]),
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(table === comments ? [] : [qsrRow]),
       }),
     }));
     dbUpdateMock.mockReturnValue({
       set: () => ({ where: vi.fn().mockResolvedValue([]) }),
     });
+    dbInsertMock.mockImplementation(() => ({
+      values: (value: unknown) => {
+        inserts.push(value);
+        return Promise.resolve();
+      },
+    }));
   });
 
   it("is registered on QSR and not on investigation", () => {
@@ -5464,17 +5473,21 @@ describe("buildChatTools draft_identity", () => {
 
   it("reads cover-identity scalars from the report row", async () => {
     dbSelectMock.mockImplementation(() => ({
-      from: () => ({
-        where: vi.fn().mockResolvedValue([
-          {
-            ...qsrRow,
-            documentNo: "QSR/GLR-1301",
-            metadata: {
-              equipmentName: "Glass Lined Reactor",
-              equipmentCode: "GLR-1301",
-            },
-          },
-        ]),
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  ...qsrRow,
+                  documentNo: "QSR/GLR-1301",
+                  metadata: {
+                    equipmentName: "Glass Lined Reactor",
+                    equipmentCode: "GLR-1301",
+                  },
+                },
+              ]
+        ),
       }),
     }));
     const tools = buildChatTools({
@@ -5496,14 +5509,7 @@ describe("buildChatTools draft_identity", () => {
     });
   });
 
-  it("applies QSR equipment scalars onto the report", async () => {
-    const updates: Array<Record<string, unknown>> = [];
-    dbUpdateMock.mockImplementation(() => ({
-      set: (value: Record<string, unknown>) => {
-        updates.push(value);
-        return { where: vi.fn().mockResolvedValue([]) };
-      },
-    }));
+  it("proposes QSR equipment scalars as one identity card", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -5524,22 +5530,24 @@ describe("buildChatTools draft_identity", () => {
       TEST_TOOL_OPTIONS
     )) as Record<string, unknown>;
     expect(result).toMatchObject({
-      status: "applied",
+      status: "proposed",
       section: "identity",
       label: "Cover identity",
       complete: true,
     });
     expect(result.remainingRequired).toEqual([]);
-    expect(updates[0]).toMatchObject({
-      documentNo: "QSR/GLR-1301",
-      metadata: expect.objectContaining({
-        equipmentName: "Glass Lined Reactor",
-        equipmentCode: "GLR-1301",
-        capacity: "8 KL",
-        plantSection: "Production Block-2",
-        revision: "00",
-      }),
-    });
+    expect(dbUpdateMock).not.toHaveBeenCalled();
+    expect(inserts).toHaveLength(1);
+    const row = inserts[0] as { section: string; kind: string; content: string };
+    expect(row.section).toBe("identity");
+    expect(row.kind).toBe("ai_fix");
+    const payload = parseAiFixCommentContent(row.content);
+    expect(payload.identityOperation?.fields).toEqual(
+      expect.arrayContaining([
+        { key: "documentNo", value: "QSR/GLR-1301" },
+        { key: "equipmentName", value: "Glass Lined Reactor" },
+      ])
+    );
   });
 
   it("returns duplicate_document_no when the number is already taken", async () => {
@@ -5558,16 +5566,72 @@ describe("buildChatTools draft_identity", () => {
     )) as Record<string, unknown>;
     expect(result.status).toBe("duplicate_document_no");
     expect(dbUpdateMock).not.toHaveBeenCalled();
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
-  it("restores Capacity/Size units from cited quotes when the model writes a bare number", async () => {
-    const updates: Array<Record<string, unknown>> = [];
+  it("folds a later draft_identity onto the open header card", async () => {
+    const existingContent = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "Equipment / System: Glass Lined Reactor",
+      reasoning: "first",
+      identityOperation: {
+        fields: [{ key: "equipmentName", value: "Glass Lined Reactor" }],
+      },
+      suggestionBase: { equipmentName: "" },
+      suggestionIntent: { equipmentName: "Glass Lined Reactor" },
+    });
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? [
+                {
+                  id: "ident-1",
+                  content: existingContent,
+                  kind: "ai_fix",
+                  status: "open",
+                },
+              ]
+            : [qsrRow]
+        ),
+      }),
+    }));
+    const commentUpdates: Array<Record<string, unknown>> = [];
     dbUpdateMock.mockImplementation(() => ({
       set: (value: Record<string, unknown>) => {
-        updates.push(value);
+        commentUpdates.push(value);
         return { where: vi.fn().mockResolvedValue([]) };
       },
     }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "qualification_summary_report",
+    });
+    const result = (await tools.draft_identity!.execute!(
+      {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+        reasoning: "Add the report number.",
+      },
+      TEST_TOOL_OPTIONS
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("proposed");
+    expect(result.suggestionId).toBe("ident-1");
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    const payload = parseAiFixCommentContent(
+      String(commentUpdates[0]?.content ?? "")
+    );
+    expect(payload.identityOperation?.fields).toEqual([
+      { key: "equipmentName", value: "Glass Lined Reactor" },
+      { key: "documentNo", value: "QSR/GLR-1301" },
+    ]);
+    expect(payload.suggestionBase).toMatchObject({
+      equipmentName: "",
+      documentNo: "",
+    });
+  });
+
+  it("restores Capacity/Size units from cited quotes when the model writes a bare number", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -5593,23 +5657,21 @@ describe("buildChatTools draft_identity", () => {
       },
       TEST_TOOL_OPTIONS
     )) as Record<string, unknown>;
-    expect(result.status).toBe("applied");
-    expect(updates[0]?.metadata).toMatchObject({
-      equipmentName: "Glass Lined Reactor",
-      equipmentCode: "GLR-1301",
-      capacity: "8000 L",
-      plantSection: "Production Block-2",
-    });
+    expect(result.status).toBe("proposed");
+    const payload = parseAiFixCommentContent(
+      String((inserts[0] as { content: string }).content)
+    );
+    expect(payload.identityOperation?.fields).toEqual(
+      expect.arrayContaining([
+        { key: "equipmentName", value: "Glass Lined Reactor" },
+        { key: "equipmentCode", value: "GLR-1301" },
+        { key: "capacity", value: "8000 L" },
+        { key: "plantSection", value: "Production Block-2" },
+      ])
+    );
   });
 
   it("does not attach a unit to non-capacity identity fields", async () => {
-    const updates: Array<Record<string, unknown>> = [];
-    dbUpdateMock.mockImplementation(() => ({
-      set: (value: Record<string, unknown>) => {
-        updates.push(value);
-        return { where: vi.fn().mockResolvedValue([]) };
-      },
-    }));
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -5629,21 +5691,17 @@ describe("buildChatTools draft_identity", () => {
       },
       TEST_TOOL_OPTIONS
     )) as Record<string, unknown>;
-    expect(result.status).toBe("applied");
-    expect(updates[0]?.metadata).toMatchObject({
-      equipmentCode: "GLR-1301",
-    });
-    expect(JSON.stringify(updates[0]?.metadata)).not.toContain("8000");
+    expect(result.status).toBe("proposed");
+    const payload = parseAiFixCommentContent(
+      String((inserts[0] as { content: string }).content)
+    );
+    expect(payload.identityOperation?.fields).toEqual([
+      { key: "equipmentCode", value: "GLR-1301" },
+    ]);
+    expect(JSON.stringify(payload.identityOperation)).not.toContain("8000");
   });
 
   it("leaves capacity bare when cited units for that figure conflict", async () => {
-    const updates: Array<Record<string, unknown>> = [];
-    dbUpdateMock.mockImplementation(() => ({
-      set: (value: Record<string, unknown>) => {
-        updates.push(value);
-        return { where: vi.fn().mockResolvedValue([]) };
-      },
-    }));
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -5663,18 +5721,16 @@ describe("buildChatTools draft_identity", () => {
       },
       TEST_TOOL_OPTIONS
     )) as Record<string, unknown>;
-    expect(result.status).toBe("applied");
-    expect(updates[0]?.metadata).toMatchObject({ capacity: "8000" });
+    expect(result.status).toBe("proposed");
+    const payload = parseAiFixCommentContent(
+      String((inserts[0] as { content: string }).content)
+    );
+    expect(payload.identityOperation?.fields).toEqual([
+      { key: "capacity", value: "8000" },
+    ]);
   });
 
   it("persists identity scalars without citations", async () => {
-    const updates: Array<Record<string, unknown>> = [];
-    dbUpdateMock.mockImplementation(() => ({
-      set: (value: Record<string, unknown>) => {
-        updates.push(value);
-        return { where: vi.fn().mockResolvedValue([]) };
-      },
-    }));
     const tools = buildChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -5694,13 +5750,16 @@ describe("buildChatTools draft_identity", () => {
       },
       TEST_TOOL_OPTIONS
     )) as Record<string, unknown>;
-    expect(result.status).toBe("applied");
-    expect(updates[0]?.metadata).toMatchObject({
-      equipmentName: "Glass Lined Reactor",
-      equipmentCode: "GLR-1301",
-    });
-    expect(JSON.stringify(updates[0]?.metadata)).not.toContain("protocol.pdf");
-    expect(JSON.stringify(updates[0]?.metadata)).not.toContain("Citations:");
+    expect(result.status).toBe("proposed");
+    const payload = parseAiFixCommentContent(
+      String((inserts[0] as { content: string }).content)
+    );
+    expect(payload.identityOperation?.fields).toEqual([
+      { key: "equipmentName", value: "Glass Lined Reactor" },
+      { key: "equipmentCode", value: "GLR-1301" },
+    ]);
+    expect(JSON.stringify(payload.identityOperation)).not.toContain("protocol.pdf");
+    expect(JSON.stringify(payload.identityOperation)).not.toContain("Citations:");
   });
 
   it("rejects keys that are not identity fields", async () => {
@@ -5718,5 +5777,6 @@ describe("buildChatTools draft_identity", () => {
     )) as Record<string, unknown>;
     expect(result).toMatchObject({ status: "unknown_key" });
     expect(dbUpdateMock).not.toHaveBeenCalled();
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 });

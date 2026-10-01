@@ -28,6 +28,10 @@ import type {
   ClaimProvenanceStatus,
   HardFactKind,
 } from "@/lib/ai/chat/claim-facts";
+import {
+  parseIdentityOperation,
+  type IdentityOperation,
+} from "@/lib/suggestions/identity-suggestion";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -233,6 +237,8 @@ export type ParsedAiFixPayload = {
   }>;
   /** Apply-boundary traceability for hard facts vs retrieved pages. */
   claimProvenance?: ClaimProvenance;
+  /** Whole-header identity fill from `draft_identity` (one card). */
+  identityOperation?: IdentityOperation;
 };
 
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
@@ -244,7 +250,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
       ("insertText" in parsed ||
         "tableOperation" in parsed ||
         "insertImage" in parsed ||
-        "removeImage" in parsed)
+        "removeImage" in parsed ||
+        "identityOperation" in parsed)
     ) {
       const tableOperation =
         parsed.tableOperation !== undefined
@@ -314,6 +321,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
             })
           : undefined,
         claimProvenance: parseClaimProvenance(parsed.claimProvenance),
+        identityOperation: parseIdentityOperation(parsed.identityOperation),
       };
     }
   } catch {

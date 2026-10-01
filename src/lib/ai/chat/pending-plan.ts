@@ -548,7 +548,7 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
   const identityLine = turn.some((item) =>
     isChatIdentitySection(item.sectionKey)
   )
-    ? " Cover/header identity is not a TipTap section — call draft_identity with the scalar fields (equipment name, document number, …). Search attachments first. That write lands immediately (not a suggestion card). ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR)."
+    ? " Cover/header identity is not a TipTap section — call draft_identity with the scalar fields (equipment name, document number, …). Search attachments first. That write is one suggestion card for the whole header (Apply / Dismiss), like other Agent edits. Duplicate document numbers fail at propose. Remaining-section marks identity done when the card is proposed and complete — do not wait for Apply. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR)."
     : "";
   return `## Multi-section plan
 The engineer asked to draft several sections (${done} of ${total} done). This turn: ${labels}.

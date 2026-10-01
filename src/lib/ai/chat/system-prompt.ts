@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v171-identity-fill";
+export const CHAT_PROMPT_VERSION = "chat-v172-identity-suggest";
 
 export type ChatMode = "plan" | "agent";
 
@@ -267,19 +267,18 @@ function agentRules(opts: {
     ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / edit_table / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
     : "";
   const identityToolLine = opts.hasIdentity
-    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. This write lands immediately in the header — not a suggestion card. Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list).${opts.keepIdentityUnits ? " Capacity / Size includes the unit as printed (8000 L, 3.0 KL) — not a bare 8000." : ""} Do not use draft_field for these keys.`
+    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. One suggestion card for the whole header — the engineer Apply / Dismisses it like draft_field / edit_table / propose_edit. Duplicate document numbers fail here and at Apply. Remaining-section treats a complete proposal as done (do not wait for Apply). Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list).${opts.keepIdentityUnits ? " Capacity / Size includes the unit as printed (8000 L, 3.0 KL) — not a bare 8000." : ""} Do not use draft_field for these keys.`
     : "";
   const hiddenWriteTools = opts.hasIdentity
     ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"
     : "draft_field / edit_table / propose_edit / insert_image / remove_image";
-  const immediateWrites = [
-    opts.hasIdentity ? "Cover/header identity (draft_identity)" : null,
-    opts.analyzeInScope ? "Analyze method (select_analyze_method)" : null,
-  ].filter((line): line is string => line !== null);
-  const landingLine =
-    immediateWrites.length > 0
-      ? `You are in Agent mode THIS SEND. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Use the tools to read sections and propose changes. Body edits go to the engineer for review — nothing in a TipTap section lands until they accept it. ${immediateWrites.join(" and ")} ${immediateWrites.length === 1 ? "lands" : "land"} immediately in the header. That review step is normal for section drafts: still call edit_table / draft_field / propose_edit to deliver those changes.`
-      : "You are in Agent mode THIS SEND. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.";
+  const analyzeImmediate = opts.analyzeInScope
+    ? " Analyze method (select_analyze_method) lands immediately in the header."
+    : "";
+  const identityReview = opts.hasIdentity
+    ? " Cover/header identity (draft_identity) is one suggestion card for the whole header — Apply / Dismiss like other Agent edits. Duplicate document numbers fail at propose and at Apply."
+    : "";
+  const landingLine = `You are in Agent mode THIS SEND. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Use the tools to read sections and propose changes. Body edits go to the engineer for review — nothing in a TipTap section lands until they accept it.${analyzeImmediate}${identityReview} That review step is normal for section drafts: still call edit_table / draft_field / propose_edit${opts.hasIdentity ? " / draft_identity" : ""} to deliver those changes.`;
   let reviewTools = "";
   let searchFirst: string;
   switch (opts.retrievalPolicy) {

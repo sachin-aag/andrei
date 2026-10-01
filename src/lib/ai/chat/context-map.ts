@@ -141,7 +141,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
         ? " Capacity / Size keeps the printed unit (8000 L, 3.0 KL)."
         : "";
       lines.push(
-        `- Fill unset identity with draft_identity from attachments (lands immediately; not a suggestion card). Plain scalars only — never citations.${unitHint}`
+        `- Fill unset identity with draft_identity from attachments (one suggestion card for the whole header; Apply / Dismiss). Duplicate document numbers fail at propose. Remaining-section treats a complete proposal as done. Plain scalars only — never citations.${unitHint}`
       );
     }
   }

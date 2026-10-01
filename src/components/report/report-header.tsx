@@ -9,6 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SaveStatus } from "./save-status";
+import {
+  IdentitySuggestionField,
+  useIdentitySavePaused,
+} from "./identity-suggestion-field";
+import { SectionSuggestionCard } from "./suggestion-card";
 import { useReportData } from "@/providers/report-provider";
 import {
   investigationOtherTools,
@@ -25,6 +30,7 @@ import {
   qsrMetadataFrom,
   type QsrMetadata,
 } from "@/lib/document-types/qsr/sections";
+import type { SectionType } from "@/db/schema";
 
 function ReportHeaderForm({
   report,
@@ -132,6 +138,8 @@ function IdentityField({
   disabled,
   placeholder,
   onChange,
+  fieldKey,
+  type = "text",
 }: {
   id: string;
   label: string;
@@ -139,18 +147,32 @@ function IdentityField({
   disabled: boolean;
   placeholder?: string;
   onChange: (next: string) => void;
+  fieldKey: string;
+  type?: "text" | "date";
 }) {
   return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+    <IdentitySuggestionField
+      id={id}
+      label={label}
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={onChange}
+      fieldKey={fieldKey}
+      type={type}
+    />
+  );
+}
+
+function IdentityHeaderShell({ children }: { children: React.ReactNode }) {
+  return (
+    <section id="identity" className="space-y-2">
+      {children}
+      <SectionSuggestionCard
+        section={"identity" as SectionType}
+        hideWhenEmpty
       />
-    </div>
+    </section>
   );
 }
 
@@ -176,8 +198,9 @@ function ElrIdentityForm({
     setMeta(elrMetadata(report));
   }, [report.documentNo, report.metadata]);
 
+  const pauseSave = useIdentitySavePaused();
   const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly,
+    enabled: !readOnly && !pauseSave,
     value: { documentNo, meta },
     onSave: async (v, context) => {
       const res = await fetch(`/api/reports/${report.id}`, {
@@ -195,10 +218,20 @@ function ElrIdentityForm({
     },
   });
 
-  const set = (key: keyof ElrMetadata) => (next: string) =>
-    setMeta((prev) => ({ ...prev, [key]: next }));
+  const setDocumentNoLive = (next: string) => {
+    setDocumentNo(next);
+    setReport((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof ElrMetadata) => (next: string) => {
+    setMeta((prev) => {
+      const meta = { ...prev, [key]: next };
+      setReport((r) => ({ ...r, metadata: meta }));
+      return meta;
+    });
+  };
 
   return (
+    <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
         <div className="flex items-start justify-between gap-4">
@@ -213,14 +246,16 @@ function ElrIdentityForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="elr-report-no"
+            fieldKey="documentNo"
             label="ELR Report No."
             value={documentNo}
             placeholder="ELR/DP/PR/26/001"
             disabled={readOnly}
-            onChange={setDocumentNo}
+            onChange={setDocumentNoLive}
           />
           <IdentityField
             id="elr-cycle-no"
+            fieldKey="cycleNo"
             label="ELR Cycle No."
             value={meta.cycleNo}
             disabled={readOnly}
@@ -228,6 +263,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-equipment-name"
+            fieldKey="equipmentName"
             label="Equipment name"
             value={meta.equipmentName}
             placeholder="Filling and Capping Machine"
@@ -236,6 +272,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-equipment-make"
+            fieldKey="equipmentMake"
             label="Equipment make"
             value={meta.equipmentMake}
             placeholder="Steriline SRL"
@@ -244,6 +281,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-equipment-model"
+            fieldKey="equipmentModel"
             label="Equipment model"
             value={meta.equipmentModel}
             placeholder="VKFCM168"
@@ -252,6 +290,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-equipment-id"
+            fieldKey="equipmentId"
             label="Equipment ID"
             value={meta.equipmentId}
             placeholder="E/PR/070"
@@ -260,6 +299,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-system-id"
+            fieldKey="systemId"
             label="Associated computerized system / ID"
             value={meta.systemId}
             placeholder="SCADA for Filling Line (E/PR/077)"
@@ -268,6 +308,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-format-scope"
+            fieldKey="formatScope"
             label="Container format / product scope"
             value={meta.formatScope}
             placeholder="Vial"
@@ -276,6 +317,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-location"
+            fieldKey="location"
             label="Location / area"
             value={meta.location}
             placeholder="Filling and capping room (GF-89)"
@@ -284,6 +326,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-department"
+            fieldKey="department"
             label="Department"
             value={meta.department}
             disabled={readOnly}
@@ -291,6 +334,7 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-risk-classification"
+            fieldKey="riskClassification"
             label="System impact (SLIA)"
             value={meta.riskClassification}
             placeholder="Direct Impact"
@@ -299,74 +343,61 @@ function ElrIdentityForm({
           />
           <IdentityField
             id="elr-frequency"
+            fieldKey="elrFrequency"
             label="ELR frequency (per VMP)"
             value={meta.elrFrequency}
             placeholder="Half yearly"
             disabled={readOnly}
             onChange={set("elrFrequency")}
           />
-          <div className="grid gap-1.5">
-            <Label htmlFor="elr-period-from">
-              ELR period — from
-              <CalendarDays className="ml-1 inline size-3" />
-            </Label>
-            <Input
-              id="elr-period-from"
-              type="date"
-              value={meta.periodFrom}
-              disabled={readOnly}
-              onChange={(e) => set("periodFrom")(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="elr-period-to">
-              ELR period — to
-              <CalendarDays className="ml-1 inline size-3" />
-            </Label>
-            <Input
-              id="elr-period-to"
-              type="date"
-              value={meta.periodTo}
-              disabled={readOnly}
-              onChange={(e) => set("periodTo")(e.target.value)}
-            />
-          </div>
+          <IdentityField
+            id="elr-period-from"
+            fieldKey="periodFrom"
+            type="date"
+            label="ELR period — from"
+            value={meta.periodFrom}
+            disabled={readOnly}
+            onChange={set("periodFrom")}
+          />
+          <IdentityField
+            id="elr-period-to"
+            fieldKey="periodTo"
+            type="date"
+            label="ELR period — to"
+            value={meta.periodTo}
+            disabled={readOnly}
+            onChange={set("periodTo")}
+          />
           <IdentityField
             id="elr-last-prq-no"
+            fieldKey="lastPrqNo"
             label="Last PRQ No."
             value={meta.lastPrqNo}
             placeholder="PRQR-25-PR-060"
             disabled={readOnly}
             onChange={set("lastPrqNo")}
           />
-          <div className="grid gap-1.5">
-            <Label htmlFor="elr-last-prq-date">
-              Last PRQ completion date
-              <CalendarDays className="ml-1 inline size-3" />
-            </Label>
-            <Input
-              id="elr-last-prq-date"
-              type="date"
-              value={meta.lastPrqDate}
-              disabled={readOnly}
-              onChange={(e) => set("lastPrqDate")(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="elr-next-prq-date">
-              Next PRQ due date
-              <CalendarDays className="ml-1 inline size-3" />
-            </Label>
-            <Input
-              id="elr-next-prq-date"
-              type="date"
-              value={meta.nextPrqDate}
-              disabled={readOnly}
-              onChange={(e) => set("nextPrqDate")(e.target.value)}
-            />
-          </div>
+          <IdentityField
+            id="elr-last-prq-date"
+            fieldKey="lastPrqDate"
+            type="date"
+            label="Last PRQ completion date"
+            value={meta.lastPrqDate}
+            disabled={readOnly}
+            onChange={set("lastPrqDate")}
+          />
+          <IdentityField
+            id="elr-next-prq-date"
+            fieldKey="nextPrqDate"
+            type="date"
+            label="Next PRQ due date"
+            value={meta.nextPrqDate}
+            disabled={readOnly}
+            onChange={set("nextPrqDate")}
+          />
           <IdentityField
             id="elr-revision"
+            fieldKey="revision"
             label="Revision"
             value={meta.revision}
             disabled={readOnly}
@@ -375,6 +406,7 @@ function ElrIdentityForm({
         </div>
       </CardContent>
     </Card>
+    </IdentityHeaderShell>
   );
 }
 
@@ -397,8 +429,9 @@ function QraIdentityForm({
     setMeta(qraMetadata(report));
   }, [report.date, report.documentNo, report.metadata]);
 
+  const pauseSave = useIdentitySavePaused();
   const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly,
+    enabled: !readOnly && !pauseSave,
     value: { date, documentNo, meta },
     onSave: async (v, context) => {
       const res = await fetch(`/api/reports/${report.id}`, {
@@ -417,7 +450,24 @@ function QraIdentityForm({
     },
   });
 
+  const setDocumentNoLive = (next: string) => {
+    setDocumentNo(next);
+    setReport((prev) => ({ ...prev, documentNo: next }));
+  };
+  const setDateLive = (next: string) => {
+    setDate(next);
+    setReport((prev) => ({ ...prev, date: next }));
+  };
+  const setMetaKey = (key: keyof QraMetadata) => (next: string) => {
+    setMeta((prev) => {
+      const meta = { ...prev, [key]: next };
+      setReport((r) => ({ ...r, metadata: meta }));
+      return meta;
+    });
+  };
+
   return (
+    <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
         <div className="flex items-start justify-between gap-4">
@@ -430,105 +480,100 @@ function QraIdentityForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="qra-ra-no"
+            fieldKey="documentNo"
             label="RA Number"
             value={documentNo}
             placeholder="RA/DP/QA/26/001"
             disabled={readOnly}
-            onChange={setDocumentNo}
+            onChange={setDocumentNoLive}
           />
-          <div className="grid gap-1.5">
-            <Label htmlFor="qra-date">
-              Date
-              <CalendarDays className="ml-1 inline size-3" />
-            </Label>
-            <Input
-              id="qra-date"
-              type="date"
-              value={date}
-              disabled={readOnly}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
+          <IdentityField
+            id="qra-date"
+            fieldKey="date"
+            type="date"
+            label="Date"
+            value={date}
+            disabled={readOnly}
+            onChange={setDateLive}
+          />
           <IdentityField
             id="qra-revision"
+            fieldKey="revision"
             label="Revision"
             value={meta.revision}
             disabled={readOnly}
-            onChange={(revision) => setMeta((prev) => ({ ...prev, revision }))}
+            onChange={setMetaKey("revision")}
           />
           <IdentityField
             id="qra-department"
+            fieldKey="department"
             label="Department"
             value={meta.department}
             disabled={readOnly}
-            onChange={(department) =>
-              setMeta((prev) => ({ ...prev, department }))
-            }
+            onChange={setMetaKey("department")}
           />
           <div className="sm:col-span-2">
             <IdentityField
               id="qra-title"
+              fieldKey="title"
               label="Title"
               value={meta.title}
               disabled={readOnly}
-              onChange={(title) => setMeta((prev) => ({ ...prev, title }))}
+              onChange={setMetaKey("title")}
             />
           </div>
           <IdentityField
             id="qra-product"
+            fieldKey="productName"
             label="Product / process / equipment"
             value={meta.productName}
             disabled={readOnly}
-            onChange={(productName) =>
-              setMeta((prev) => ({ ...prev, productName }))
-            }
+            onChange={setMetaKey("productName")}
           />
           <IdentityField
             id="qra-id-no"
+            fieldKey="idNo"
             label="ID No."
             value={meta.idNo}
             disabled={readOnly}
-            onChange={(idNo) => setMeta((prev) => ({ ...prev, idNo }))}
+            onChange={setMetaKey("idNo")}
           />
           <IdentityField
             id="qra-source-name"
+            fieldKey="sourceDocumentName"
             label="Source document name"
             value={meta.sourceDocumentName}
             disabled={readOnly}
-            onChange={(sourceDocumentName) =>
-              setMeta((prev) => ({ ...prev, sourceDocumentName }))
-            }
+            onChange={setMetaKey("sourceDocumentName")}
           />
           <IdentityField
             id="qra-source-no"
+            fieldKey="sourceDocumentNo"
             label="Source document no."
             value={meta.sourceDocumentNo}
             disabled={readOnly}
-            onChange={(sourceDocumentNo) =>
-              setMeta((prev) => ({ ...prev, sourceDocumentNo }))
-            }
+            onChange={setMetaKey("sourceDocumentNo")}
           />
           <IdentityField
             id="qra-pre-approval"
+            fieldKey="preApproval"
             label="Pre-approval (print placeholder)"
             value={meta.preApproval}
             disabled={readOnly}
-            onChange={(preApproval) =>
-              setMeta((prev) => ({ ...prev, preApproval }))
-            }
+            onChange={setMetaKey("preApproval")}
           />
           <IdentityField
             id="qra-post-approval"
+            fieldKey="postApproval"
             label="Post-approval (print placeholder)"
             value={meta.postApproval}
             disabled={readOnly}
-            onChange={(postApproval) =>
-              setMeta((prev) => ({ ...prev, postApproval }))
-            }
+            onChange={setMetaKey("postApproval")}
           />
         </div>
       </CardContent>
     </Card>
+    </IdentityHeaderShell>
   );
 }
 
@@ -551,8 +596,9 @@ function FirIdentityForm({
     setMeta(firMetadata(report));
   }, [report.date, report.documentNo, report.metadata]);
 
+  const pauseSave = useIdentitySavePaused();
   const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly,
+    enabled: !readOnly && !pauseSave,
     value: { date, documentNo, meta },
     onSave: async (v, context) => {
       const res = await fetch(`/api/reports/${report.id}`, {
@@ -571,10 +617,25 @@ function FirIdentityForm({
     },
   });
 
-  const set = (key: keyof FirMetadata) => (next: string) =>
-    setMeta((prev) => ({ ...prev, [key]: next }));
+  const setDocumentNoLive = (next: string) => {
+    setDocumentNo(next);
+    setReport((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof FirMetadata) => (next: string) => {
+    setMeta((prev) => {
+      const meta = { ...prev, [key]: next };
+      setReport((r) => ({ ...r, metadata: meta }));
+      return meta;
+    });
+  };
+  const setDateLive = (next: string) => {
+    setDate(next);
+    set("dateOfNonConformance")(next);
+    setReport((prev) => ({ ...prev, date: next }));
+  };
 
   return (
+    <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
         <div className="flex items-start justify-between gap-4">
@@ -587,32 +648,25 @@ function FirIdentityForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="fir-source-doc-no"
+            fieldKey="documentNo"
             label="Source Document No."
             value={documentNo}
             placeholder="ERF/26/022"
             disabled={readOnly}
-            onChange={setDocumentNo}
+            onChange={setDocumentNoLive}
           />
-          <div className="grid gap-1.5">
-            <Label htmlFor="fir-date">
-              Date of non-conformance
-              <CalendarDays className="ml-1 inline size-3" />
-            </Label>
-            <Input
-              id="fir-date"
-              type="date"
-              value={date}
-              disabled={readOnly}
-              onChange={(e) => {
-                setDate(e.target.value);
-                // The R01 header prints this field; keep it in step with the
-                // report date rather than making the engineer type it twice.
-                set("dateOfNonConformance")(e.target.value);
-              }}
-            />
-          </div>
+          <IdentityField
+            id="fir-date"
+            fieldKey="date"
+            type="date"
+            label="Date of non-conformance"
+            value={date}
+            disabled={readOnly}
+            onChange={setDateLive}
+          />
           <IdentityField
             id="fir-product"
+            fieldKey="productName"
             label="Product name"
             value={meta.productName}
             placeholder="r-Insulin Glargine"
@@ -621,6 +675,7 @@ function FirIdentityForm({
           />
           <IdentityField
             id="fir-batch"
+            fieldKey="batchNo"
             label="Batch No."
             value={meta.batchNo}
             placeholder="RIG25014"
@@ -629,6 +684,7 @@ function FirIdentityForm({
           />
           <IdentityField
             id="fir-equipment-id"
+            fieldKey="equipmentId"
             label="Equipment ID"
             value={meta.equipmentId}
             placeholder="L-1901"
@@ -637,6 +693,7 @@ function FirIdentityForm({
           />
           <IdentityField
             id="fir-unit"
+            fieldKey="unit"
             label="Unit"
             value={meta.unit}
             disabled={readOnly}
@@ -644,6 +701,7 @@ function FirIdentityForm({
           />
           <IdentityField
             id="fir-reference-sop"
+            fieldKey="referenceSopNo"
             label="Reference SOP No."
             value={meta.referenceSopNo}
             disabled={readOnly}
@@ -652,6 +710,7 @@ function FirIdentityForm({
         </div>
       </CardContent>
     </Card>
+    </IdentityHeaderShell>
   );
 }
 
@@ -674,8 +733,9 @@ function QsrIdentityForm({
     setMeta(qsrMetadataFrom(report.metadata));
   }, [report.documentNo, report.metadata]);
 
+  const pauseSave = useIdentitySavePaused();
   const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly,
+    enabled: !readOnly && !pauseSave,
     value: { documentNo, meta },
     onSave: async (v, context) => {
       const res = await fetch(`/api/reports/${report.id}`, {
@@ -693,10 +753,20 @@ function QsrIdentityForm({
     },
   });
 
-  const set = (key: keyof QsrMetadata) => (next: string) =>
-    setMeta((prev) => ({ ...prev, [key]: next }));
+  const setDocumentNoLive = (next: string) => {
+    setDocumentNo(next);
+    setReport((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof QsrMetadata) => (next: string) => {
+    setMeta((prev) => {
+      const meta = { ...prev, [key]: next };
+      setReport((r) => ({ ...r, metadata: meta }));
+      return meta;
+    });
+  };
 
   return (
+    <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
         <div className="flex items-start justify-between gap-4">
@@ -709,6 +779,7 @@ function QsrIdentityForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="qsr-equipment-name"
+            fieldKey="equipmentName"
             label="Equipment / System"
             value={meta.equipmentName}
             placeholder="Glass Lined Reactor"
@@ -717,6 +788,7 @@ function QsrIdentityForm({
           />
           <IdentityField
             id="qsr-equipment-code"
+            fieldKey="equipmentCode"
             label="Equipment Number"
             value={meta.equipmentCode}
             placeholder="GLR-1301"
@@ -725,6 +797,7 @@ function QsrIdentityForm({
           />
           <IdentityField
             id="qsr-capacity"
+            fieldKey="capacity"
             label="Capacity / Size"
             value={meta.capacity}
             placeholder="3.0 KL"
@@ -733,6 +806,7 @@ function QsrIdentityForm({
           />
           <IdentityField
             id="qsr-plant-section"
+            fieldKey="plantSection"
             label="Section"
             value={meta.plantSection}
             placeholder="Production Block-A"
@@ -741,14 +815,16 @@ function QsrIdentityForm({
           />
           <IdentityField
             id="qsr-report-no"
+            fieldKey="documentNo"
             label="Report No."
             value={documentNo}
             placeholder="QSR/GLR-1301"
             disabled={readOnly}
-            onChange={setDocumentNo}
+            onChange={setDocumentNoLive}
           />
           <IdentityField
             id="qsr-revision"
+            fieldKey="revision"
             label="Revision"
             value={meta.revision}
             placeholder="00"
@@ -757,6 +833,7 @@ function QsrIdentityForm({
           />
           <IdentityField
             id="qsr-revision-description"
+            fieldKey="revisionDescription"
             label="Revision description"
             value={meta.revisionDescription}
             placeholder="New Document"
@@ -766,6 +843,7 @@ function QsrIdentityForm({
         </div>
       </CardContent>
     </Card>
+    </IdentityHeaderShell>
   );
 }
 

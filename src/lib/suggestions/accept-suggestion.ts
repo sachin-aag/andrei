@@ -56,6 +56,23 @@ import {
 } from "@/lib/suggestions/resolve-merge";
 import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
 import { fetchWithKeepaliveIfSmall } from "@/lib/suggestions/keepalive-fetch";
+import {
+  identityBaseFromPayload,
+  identityIntentFromPayload,
+  isIdentitySuggestion,
+  mergeIdentitySuggestion,
+} from "@/lib/suggestions/identity-suggestion";
+import type { ChatIdentityReport } from "@/lib/ai/chat/identity";
+
+/** Same copy as `DUPLICATE_DOCUMENT_NO_ERROR` — keep client-safe (no `@/db`). */
+const IDENTITY_DUPLICATE_DOCUMENT_NO_ERROR =
+  "You already have a report with this document number";
+
+export type IdentityApplyPatch = {
+  documentNo?: string;
+  date?: string;
+  metadata?: Record<string, unknown>;
+};
 
 export type AcceptSuggestionResult =
   | {
@@ -64,16 +81,29 @@ export type AcceptSuggestionResult =
       nextRelatedSections?: Partial<Record<SectionType, Record<string, unknown>>>;
       remainder?: "conflict";
       dismissed: CommentRecord[];
+      nextIdentity?: IdentityApplyPatch;
     }
   | {
       ok: false;
-      reason: LocateStatus | "save_failed" | "status_failed" | "placeholder_conflict";
+      reason:
+        | LocateStatus
+        | "save_failed"
+        | "status_failed"
+        | "placeholder_conflict"
+        | "duplicate_document_no";
       error?: unknown;
     };
 
 export type DismissSuggestionResult =
   | { ok: true; nextSection: Record<string, unknown> | null }
   | { ok: false; reason: "status_failed" | "save_failed"; error?: unknown };
+
+export class IdentityDuplicateError extends Error {
+  constructor(message = IDENTITY_DUPLICATE_DOCUMENT_NO_ERROR) {
+    super(message);
+    this.name = "IdentityDuplicateError";
+  }
+}
 
 export class SectionPersistError extends Error {
   readonly status: number;
@@ -447,6 +477,107 @@ async function patchSectionAndRelated(
   }
 }
 
+async function patchIdentityReport(
+  reportId: string,
+  body: IdentityApplyPatch
+): Promise<{ report: IdentityApplyPatch }> {
+  const res = await fetchWithKeepaliveIfSmall(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) {
+    throw new IdentityDuplicateError();
+  }
+  if (!res.ok) {
+    throw new SectionPersistError(res.status, "Failed to save identity");
+  }
+  return (await res.json()) as { report: IdentityApplyPatch };
+}
+
+async function acceptIdentitySuggestion(args: {
+  reportId: string;
+  comment: CommentRecord;
+  documentType: DocumentType;
+  identityCurrent: ChatIdentityReport;
+}): Promise<AcceptSuggestionResult> {
+  const payload = parseAiFixCommentContent(args.comment.content);
+  const merged = mergeIdentitySuggestion({
+    documentType: args.documentType,
+    live: args.identityCurrent,
+    base: identityBaseFromPayload(payload),
+    intent: identityIntentFromPayload(payload),
+  });
+  if (merged.status === "already_present") {
+    const dismissedContent = withResolutionReason(
+      args.comment.content,
+      "already_present"
+    );
+    try {
+      await patchCommentStatus(args.reportId, args.comment.id, "dismissed", {
+        content: dismissedContent,
+      });
+    } catch (error) {
+      return { ok: false, reason: "status_failed", error };
+    }
+    return {
+      ok: true,
+      nextSection: {},
+      dismissed: [
+        {
+          ...args.comment,
+          status: "dismissed",
+          content: dismissedContent,
+        },
+      ],
+    };
+  }
+
+  const body: IdentityApplyPatch = {};
+  if (merged.documentNo !== undefined) body.documentNo = merged.documentNo;
+  if (merged.date !== undefined) body.date = merged.date.toISOString();
+  if (merged.metadata !== undefined) body.metadata = merged.metadata;
+
+  let saved: { report: IdentityApplyPatch };
+  try {
+    saved = await patchIdentityReport(args.reportId, body);
+  } catch (error) {
+    if (error instanceof IdentityDuplicateError) {
+      return { ok: false, reason: "duplicate_document_no", error };
+    }
+    return { ok: false, reason: "save_failed", error };
+  }
+
+  try {
+    await patchCommentStatus(args.reportId, args.comment.id, "resolved");
+  } catch (error) {
+    return { ok: false, reason: "status_failed", error };
+  }
+
+  return {
+    ok: true,
+    nextSection: {},
+    dismissed: [],
+    remainder: merged.status === "conflict" ? "conflict" : undefined,
+    nextIdentity: {
+      ...(saved.report.documentNo !== undefined
+        ? { documentNo: saved.report.documentNo }
+        : {}),
+      ...(saved.report.date !== undefined
+        ? {
+            date:
+              typeof saved.report.date === "string"
+                ? saved.report.date
+                : String(saved.report.date),
+          }
+        : {}),
+      ...(saved.report.metadata !== undefined
+        ? { metadata: saved.report.metadata }
+        : {}),
+    },
+  };
+}
+
 /**
  * Single writer for accepting an AI suggestion from any UI surface.
  * Order: locate → apply → PATCH section → flip comment status.
@@ -465,7 +596,20 @@ export async function acceptSuggestion(args: {
   openComments?: readonly CommentRecord[];
   documentType?: DocumentType;
   reportSections?: Readonly<Partial<Record<string, unknown>>>;
+  /** Live cover/header scalars — required to apply an identity card. */
+  identityCurrent?: ChatIdentityReport;
 }): Promise<AcceptSuggestionResult> {
+  if (isIdentitySuggestion(args.comment)) {
+    if (!args.documentType || !args.identityCurrent) {
+      return { ok: false, reason: "not_found" };
+    }
+    return acceptIdentitySuggestion({
+      reportId: args.reportId,
+      comment: args.comment,
+      documentType: args.documentType,
+      identityCurrent: args.identityCurrent,
+    });
+  }
   const pair = findOpenBlockPair(args.comment, args.openComments ?? []);
   const sequence =
     pair && pair.leadIn.id !== pair.block.id
@@ -622,6 +766,14 @@ export async function dismissSuggestion(args: {
   sectionContent: Record<string, unknown>;
   fieldContentPath?: string;
 }): Promise<DismissSuggestionResult> {
+  if (isIdentitySuggestion(args.comment)) {
+    try {
+      await patchCommentStatus(args.reportId, args.comment.id, "dismissed");
+    } catch (error) {
+      return { ok: false, reason: "status_failed", error };
+    }
+    return { ok: true, nextSection: null };
+  }
   const nextSection = stripSuggestionFromContent(args);
   if (nextSection) {
     try {
