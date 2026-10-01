@@ -153,7 +153,14 @@ export function useAutoSave<T>({
       abortRef.current = controller;
       try {
         const confirmed = await onSave(snapshot, { signal: controller.signal });
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          // Only this attempt owns the indicator; a newer flush already
+          // swapped abortRef and must keep Saving….
+          if (abortRef.current === controller) {
+            setStatus((current) => (current === "saving" ? "idle" : current));
+          }
+          return;
+        }
         const persistedSerialized =
           confirmed === undefined
             ? serialized
@@ -163,7 +170,12 @@ export function useAutoSave<T>({
         setStatus("saved");
         setLastSavedAt(new Date());
       } catch (err) {
-        if (isBenignSaveError(err, controller.signal)) return;
+        if (isBenignSaveError(err, controller.signal)) {
+          if (abortRef.current === controller) {
+            setStatus((current) => (current === "saving" ? "idle" : current));
+          }
+          return;
+        }
         console.error("AutoSave error", err);
         setStatus("error");
         throw err;
@@ -242,9 +254,7 @@ export function useAutoSave<T>({
         clearTimeout(timer.current);
         timer.current = null;
       }
-      if (!isSaving.current) {
-        setStatus((current) => (current === "saving" ? "idle" : current));
-      }
+      setStatus((current) => (current === "saving" ? "idle" : current));
       return;
     }
     const next = serializeValue(value);

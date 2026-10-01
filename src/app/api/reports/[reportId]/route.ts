@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -275,15 +275,17 @@ export async function PATCH(
       parsed.toolsUsed !== undefined ||
       parsed.otherTools !== undefined);
   if (documentContentChanged) {
-    await tryRecordManualDocumentRevision({
-      reportId,
-      documentType: existingReport.documentType,
-      createdBy: user.id,
-      summary: manualRevisionSummary(
-        existingReport.documentType,
-        DOCUMENT_REVISION_METADATA_SECTION
-      ),
-    });
+    after(() =>
+      tryRecordManualDocumentRevision({
+        reportId,
+        documentType: existingReport.documentType,
+        createdBy: user.id,
+        summary: manualRevisionSummary(
+          existingReport.documentType,
+          DOCUMENT_REVISION_METADATA_SECTION
+        ),
+      })
+    );
   }
 
   return NextResponse.json({ report: updatedWithManagers });

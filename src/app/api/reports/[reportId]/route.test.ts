@@ -39,6 +39,16 @@ vi.mock("@/lib/document-revisions/snapshot", () => ({
   tryRecordManualDocumentRevision: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    after: (task: () => unknown) => {
+      void task();
+    },
+  };
+});
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { recordAuditEvent } from "@/lib/audit";
@@ -226,6 +236,41 @@ describe("GET /api/reports/[reportId]", () => {
     await expect(response.json()).resolves.toMatchObject({
       report: { assignedManagerIds: ["manager-2", "manager-3"] },
     });
+  });
+
+  it("returns identity metadata PATCH before a slow document revision snapshot finishes", async () => {
+    let resolveRevision: ((value: null) => void) | undefined;
+    vi.mocked(tryRecordManualDocumentRevision).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRevision = resolve;
+      })
+    );
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([report]);
+    mockOrderedSelectOnce([]);
+    mockUpdateOnce({
+      ...report,
+      metadata: { ...report.metadata, equipmentName: "Filling Line" },
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/reports/report-1", {
+        method: "PATCH",
+        body: JSON.stringify({
+          metadata: { equipmentName: "Filling Line" },
+        }),
+      }),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(tryRecordManualDocumentRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: report.id,
+        createdBy: engineer.id,
+      })
+    );
+    resolveRevision?.(null);
   });
 
   it("finalizes a create preload as report_created", async () => {
