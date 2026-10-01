@@ -98,15 +98,54 @@ export function isToolPending(info: ChatToolPartInfo): boolean {
   return info.state === "input-streaming" || info.state === "input-available";
 }
 
+export type BuildChatActivityOptions = {
+  /**
+   * False when this assistant turn is no longer in flight. Gemini often leaves
+   * the last reasoning part at `state: "streaming"` after the SSE closes — the
+   * Thinking timer must not keep ticking on an idle message.
+   */
+  streaming?: boolean;
+};
+
 function readReasoningPart(
   part: UIMessage["parts"][number]
-): { text: string; pending: boolean } | null {
+): { text: string; stateStreaming: boolean } | null {
   if (part.type !== "reasoning") return null;
   const p = part as { text?: string; state?: string };
   const text = typeof p.text === "string" ? p.text.trim() : "";
-  const pending = p.state === "streaming";
-  if (!text && !pending) return null;
-  return { text, pending };
+  const stateStreaming = p.state === "streaming";
+  if (!text && !stateStreaming) return null;
+  return { text, stateStreaming };
+}
+
+function hasLaterSubstantiveActivity(
+  parts: UIMessage["parts"],
+  index: number
+): boolean {
+  for (let i = index + 1; i < parts.length; i++) {
+    const later = parts[i]!;
+    if (readReasoningPart(later)) return true;
+    if (readChatToolPart(later)) return true;
+    if (later.type === "text") {
+      const text =
+        "text" in later && typeof later.text === "string"
+          ? later.text.trim()
+          : "";
+      if (text) return true;
+    }
+  }
+  return false;
+}
+
+function thoughtIsPending(
+  reasoning: { stateStreaming: boolean },
+  index: number,
+  parts: UIMessage["parts"],
+  turnStreaming?: boolean
+): boolean {
+  if (!reasoning.stateStreaming) return false;
+  if (turnStreaming === false) return false;
+  return !hasLaterSubstantiveActivity(parts, index);
 }
 
 function stringField(value: unknown): string | null {
@@ -1012,7 +1051,8 @@ export function documentReviewActivityNode(
 
 export function buildChatActivityBlocks(
   parts: UIMessage["parts"],
-  filenameById?: AttachmentFilenameLookup
+  filenameById?: AttachmentFilenameLookup,
+  options?: BuildChatActivityOptions
 ): ChatActivityBlock[] {
   const blocks: ChatActivityBlock[] = [];
   let reviewBuffer: DocumentReviewToolPart[] = [];
@@ -1123,7 +1163,12 @@ export function buildChatActivityBlocks(
           children.push({
             kind: "thought",
             text: reasoning.text,
-            pending: reasoning.pending,
+            pending: thoughtIsPending(
+              reasoning,
+              index,
+              parts,
+              options?.streaming
+            ),
           });
           index += 1;
           continue;
@@ -1168,7 +1213,10 @@ export function buildChatActivityBlocks(
       flushSectionReads();
       blocks.push({
         kind: "activity",
-        node: buildThoughtNode(reasoning.text, reasoning.pending),
+        node: buildThoughtNode(
+          reasoning.text,
+          thoughtIsPending(reasoning, index, parts, options?.streaming)
+        ),
       });
       index += 1;
       continue;

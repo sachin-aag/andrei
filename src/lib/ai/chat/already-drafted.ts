@@ -97,7 +97,7 @@ function formatGapHintsBlock(hints: AlreadyDraftedGapHints): string {
 
 const GAP_REVIEW_RULES = `Gap rules:
 - Material gap only: a criterion clearly not met, or a required fact the section structure says must appear when true. Ignore "could be more detailed" without a failing criterion.
-- Empty cells they asked to fill (missing columns / blank Stage, Section, or Remarks) are material gaps even when AI Check is all met. Search attachments for each row; fill only cells a cited page supports; leave a cell empty when that parameter is not there. Do not paste a mapping table in chat.
+- Empty cells they asked to fill (missing columns / blank DQ, IQ, OQ, PQ, or Remarks) are material gaps even when AI Check is all met. A filled family cell they asked to detail (13.6 → 13.6 – Gasket material verified as PTFE) is the same gap — overwrite it from the cited protocol. Search attachments for each row; fill only cells a cited page supports; write NA when that family was searched and the parameter is not there. Do not paste a mapping table in chat.
 - No padding: do not expand length; respect the section structure and any length the engineer asked for. Current text length is a soft ceiling unless they want more.
 - Omit-if conflict: if filling a gap would violate an omit-if rule, ask once whether to include it (yes/no) — do not quiz them for facts already in the section or evidence.`;
 
@@ -131,7 +131,11 @@ export function detectAlreadyDraftedSection(input: {
   if (isExplicitSectionRewrite(input.userText)) return null;
 
   const documentType = input.documentType ?? "investigation_report";
-  const fromIntent = detectSectionIntentFromText(input.userText, documentType);
+  const fromIntent = detectSectionIntentFromText(
+    input.userText,
+    documentType,
+    { sections: input.sections }
+  );
   const scope = input.sectionScope ?? "all";
   const section = fromIntent ?? (scope !== "all" ? scope : null);
   if (!section) return null;

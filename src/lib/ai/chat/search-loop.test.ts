@@ -76,7 +76,7 @@ describe("searchLoopDirective", () => {
     ).toBe("continue");
   });
 
-  it("keeps search open after reading that DQ page until higher protocol families are queried", () => {
+  it("keeps search open after reading that DQ page until every protocol family is queried", () => {
     expect(
       searchLoopDirective([
         {
@@ -149,6 +149,8 @@ describe("searchLoopDirective", () => {
               toolName: "search_documents",
               input: {
                 queries: [
+                  "design qualification gaskets",
+                  "installation qualification gaskets",
                   "operational qualification gaskets",
                   "performance qualification gaskets",
                 ],
@@ -197,6 +199,34 @@ describe("searchLoopDirective", () => {
                 dividerHits: 2,
                 keepSearchOpen: true,
                 results: [{ pageNumber: 32, divider: true }],
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("continue");
+  });
+
+  it("does not treat a title list without identifiers as a cited page", () => {
+    expect(
+      searchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                returnedCount: 1,
+                identityIncompleteHits: 1,
+                keepSearchOpen: true,
+                results: [
+                  {
+                    pageNumber: 49,
+                    identityIncomplete: true,
+                    quote:
+                      "Standard operating procedure for operation & cleaning",
+                  },
+                ],
               },
             },
           ],

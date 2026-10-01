@@ -86,7 +86,7 @@ describe("resolveChatUserIntent", () => {
   });
 
   it("pins the missing-work classifier prompt version", () => {
-    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v6-missing-work");
+    expect(INTENT_CLASSIFIER_PROMPT_VERSION).toBe("intent-v7-ask-to-agent");
   });
 
   it("skips Lite when a missing-work complaint is already write", async () => {
@@ -102,6 +102,12 @@ describe("resolveChatUserIntent", () => {
         mode: "agent",
       })
     ).resolves.toEqual({ kind: "write", reason: "missing_work" });
+    await expect(
+      resolveChatUserIntent({
+        userText: "I switched to Agent",
+        mode: "agent",
+      })
+    ).resolves.toEqual({ kind: "write", reason: "switched_to_agent" });
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 

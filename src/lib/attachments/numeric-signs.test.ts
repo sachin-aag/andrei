@@ -1,5 +1,21 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { glueOcrMinusSigns, glueOcrUrsIds } from "./numeric-signs";
+import {
+  glueOcrMinusSigns,
+  glueOcrUrsIds,
+  overlayLeadingMinuses,
+  pageNeedsNumericSignLook,
+  unsignedQuantityRangeCount,
+} from "./numeric-signs";
+
+const GLR_1301_URS_PAGE_6 = readFileSync(
+  new URL("./fixtures/glr-1301-urs-page-6.transcript.txt", import.meta.url),
+  "utf8"
+);
+const GLR_1301_URS_PAGE_9 = readFileSync(
+  new URL("./fixtures/glr-1301-urs-page-9.transcript.txt", import.meta.url),
+  "utf8"
+);
 
 describe("glueOcrMinusSigns", () => {
   it("turns a unicode minus or en-dash sign into a hyphen", () => {
@@ -36,6 +52,79 @@ describe("glueOcrUrsIds", () => {
     expect(glueOcrUrsIds("URS-13 Jacket Type")).toBe("URS-13 Jacket Type");
     expect(glueOcrUrsIds("URS-1 Reactor Capacity URS-13 Jacket Type")).toBe(
       "URS-1 Reactor Capacity URS-13 Jacket Type"
+    );
+  });
+});
+
+describe("overlayLeadingMinuses", () => {
+  it("copies a leading minus onto URS-3's dropped −15 °C to 130 °C", () => {
+    expect(
+      overlayLeadingMinuses(
+        "than 1 mm\n15 °C to 130 °C\nFull Vacuum",
+        "Shell Operating temperature −15 °C to 130 °C"
+      )
+    ).toBe("than 1 mm\n-15 °C to 130 °C\nFull Vacuum");
+  });
+
+  it("copies a leading minus onto URS-37's dropped −20 °C to 150 °C", () => {
+    expect(
+      overlayLeadingMinuses(
+        "URS-37 Temperature\n20 °C to 150\n°C\n0.1°C",
+        "To measure the temperature - 20 °C to 150 °C"
+      )
+    ).toBe("URS-37 Temperature\n-20 °C to 150\n°C\n0.1°C");
+  });
+
+  it("does not rewrite live URS-10 ~50±10 RPM when evidence hallucinates −50 RPM", () => {
+    const next = overlayLeadingMinuses(
+      GLR_1301_URS_PAGE_6,
+      "−15 °C to 130 °C\n−50 RPM"
+    );
+    expect(next).toMatch(/-15 °C to 130 °C/);
+    expect(next).toContain("~50±10 RPM");
+    expect(next).not.toMatch(/-50±10 RPM/);
+    expect(next).not.toMatch(/-50 RPM/);
+  });
+
+  it("does not invent a minus from unsigned evidence", () => {
+    expect(
+      overlayLeadingMinuses(
+        "15 °C to 130 °C",
+        "User requirement 15 °C to 130 °C"
+      )
+    ).toBe("15 °C to 130 °C");
+  });
+
+  it("does not turn an en-dash range into a signed quantity", () => {
+    expect(
+      overlayLeadingMinuses("Process temperature 15–130 °C", "-15 °C to 130 °C")
+    ).toBe("Process temperature 15–130 °C");
+  });
+
+  it("overlays the live GLR-1301 page-6 fixture without emptying RPM", () => {
+    expect(GLR_1301_URS_PAGE_6).toContain("15 °C to 130 °C");
+    expect(GLR_1301_URS_PAGE_6).toContain("~50±10 RPM");
+    const next = overlayLeadingMinuses(GLR_1301_URS_PAGE_6, "−15 °C to 130 °C");
+    expect(next).toMatch(/-15 °C to 130 °C/);
+    expect(next).toContain("~50±10 RPM");
+  });
+
+  it("overlays the live GLR-1301 page-9 fixture for URS-37", () => {
+    expect(GLR_1301_URS_PAGE_9).toContain("20 °C to 150");
+    const next = overlayLeadingMinuses(GLR_1301_URS_PAGE_9, "−20 °C to 150 °C");
+    expect(next).toMatch(/-20 °C to 150/);
+  });
+});
+
+describe("pageNeedsNumericSignLook", () => {
+  it("looks at unsigned Celsius ranges even with no leftover hyphen", () => {
+    expect(unsignedQuantityRangeCount("15 °C to 130 °C\n15 °C to 130 °C")).toBe(
+      2
+    );
+    expect(pageNeedsNumericSignLook("15 °C to 130 °C")).toBe(true);
+    expect(pageNeedsNumericSignLook("-15 °C to 130 °C")).toBe(false);
+    expect(pageNeedsNumericSignLook("slice 0 line 0 of verification evidence")).toBe(
+      false
     );
   });
 });

@@ -30,6 +30,7 @@ import {
   isChatMode,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
+import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-reminder";
 import {
   createChatSession,
   findChatSession,
@@ -74,6 +75,7 @@ import {
 import { recoverDocumentMentionIds } from "@/lib/ai/chat/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
+import { geminiSafeModelMessages } from "@/lib/ai/chat/gemini-messages";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   advertisedChatToolNames,
@@ -305,7 +307,12 @@ async function handleAnalyticsChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = geminiSafeModelMessages(
+      messagesWithComposerModeReminder(
+        await convertToModelMessages(messages),
+        mode
+      )
+    );
     setRouteObservationIO({
       input: {
         reportId,
@@ -335,6 +342,7 @@ async function handleAnalyticsChatPost(
         streamText({
       model,
       system,
+      allowSystemInMessages: false,
       messages: modelMessages,
       tools,
       activeTools: advertisedTools,
@@ -354,7 +362,9 @@ async function handleAnalyticsChatPost(
           intentReason: userIntent.reason,
           worksheetHasData,
         });
-        const compacted = compactInTurnModelMessages(messages);
+        const compacted = geminiSafeModelMessages(
+          compactInTurnModelMessages(messages)
+        );
         if (!prepared) return { messages: compacted };
         return {
           activeTools: prepared.activeTools,

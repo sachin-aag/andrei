@@ -1,15 +1,21 @@
 "use client";
 
-import { useMemo, type ComponentType } from "react";
+import { useEffect, useMemo, type ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { useGenericReportSection } from "@/providers/report-provider";
+import {
+  useGenericReportSection,
+  useReportData,
+} from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import {
   EMPTY_QSR_CONTENT,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  QSR_TABLE_HEADERS,
+  ensureRtmFamilyColumns,
+  ensureVolumetricFormRows,
   isQsrTableSectionKey,
   shapeOperatingRangeTable,
   type QsrSectionContent,
@@ -17,6 +23,7 @@ import {
 } from "@/lib/document-types/qsr/sections";
 
 function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
+  const { readOnly } = useReportData();
   const { update } = useGenericReportSection<QsrSectionContent>(section);
   const { status, lastSavedAt, value, flushSave } =
     useGenericSectionSave(section);
@@ -24,13 +31,23 @@ function QsrSectionEditor({ section }: { section: QsrSectionKey }) {
     (value as QsrSectionContent | undefined) ?? EMPTY_QSR_CONTENT[section];
   const field = isQsrTableSectionKey(section) ? "table" : "narrative";
   const doc = (content as Record<string, JSONContent | undefined>)[field];
-  const shown = useMemo(
-    () =>
-      section === "qsr_operating_range" && doc
-        ? shapeOperatingRangeTable(doc)
-        : doc,
-    [section, doc]
-  );
+  const shown = useMemo(() => {
+    if (!doc) return doc;
+    if (section === "qsr_operating_range") return shapeOperatingRangeTable(doc);
+    if (section === "qsr_volumetric_details") return ensureVolumetricFormRows(doc);
+    if (isQsrTableSectionKey(section) && section.startsWith("qsr_rtm_")) {
+      return ensureRtmFamilyColumns(doc, QSR_TABLE_HEADERS[section]);
+    }
+    return doc;
+  }, [section, doc]);
+
+  useEffect(() => {
+    if (readOnly || !doc || !shown || shown === doc) return;
+    if (!(isQsrTableSectionKey(section) && section.startsWith("qsr_rtm_"))) {
+      return;
+    }
+    update(() => ({ [field]: shown }) as QsrSectionContent);
+  }, [doc, field, readOnly, section, shown, update]);
 
   return (
     <SectionShell

@@ -262,6 +262,15 @@ export function prepareReportChatStep(
   if (tableEditDirective === "finish") {
     return { activeTools: [] };
   }
+  if (
+    tableEditDirective === "review" &&
+    input.advertisedTools.includes("start_document_review")
+  ) {
+    return {
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    };
+  }
   if (tableEditDirective === "reread" && input.hasReadSectionTool) {
     return {
       activeTools: ["read_section"],
@@ -310,15 +319,15 @@ export function prepareReportChatStep(
   }
 
   const prepared = prepareDocumentReviewStep({
-    policy: input.alreadyDrafted ? "adaptive" : input.retrievalPolicy,
+    policy:
+      input.alreadyDrafted && !input.requireInventoryReview
+        ? "adaptive"
+        : input.retrievalPolicy,
     phase: input.reviewPhase,
     availableTools: input.advertisedTools,
-    requireInventoryReview: input.alreadyDrafted
-      ? false
-      : input.requireInventoryReview,
-    restartInventoryReview: input.alreadyDrafted
-      ? false
-      : (input.restartInventoryReview ?? input.requireInventoryReview),
+    requireInventoryReview: input.requireInventoryReview,
+    restartInventoryReview:
+      input.restartInventoryReview ?? input.requireInventoryReview,
   });
   const reviewActive =
     input.reviewPhase === "in_progress" ||

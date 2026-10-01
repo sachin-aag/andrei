@@ -26,6 +26,7 @@ import {
   CHAT_PROMPT_VERSION,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
+import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-reminder";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
@@ -133,6 +134,7 @@ import {
 import { createSearchGate } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
+import { geminiSafeModelMessages } from "@/lib/ai/chat/gemini-messages";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   captureChatAssistantFailure,
@@ -662,7 +664,12 @@ async function handleChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = await convertToModelMessages(messages);
+    const modelMessages = geminiSafeModelMessages(
+      messagesWithComposerModeReminder(
+        await convertToModelMessages(messages),
+        mode
+      )
+    );
     setRouteObservationIO({
       input: {
         reportId,
@@ -696,6 +703,9 @@ async function handleChatPost(
         streamText({
       model,
       system,
+      // Gemini rejects system-role messages after the first turn. Instructions
+      // stay on `system`; allowSystemInMessages throws if any slip back in.
+      allowSystemInMessages: false,
       messages: modelMessages,
       tools,
       activeTools: advertisedTools,
@@ -725,18 +735,14 @@ async function handleChatPost(
           ).some((section) => sectionHasTable(mergedSections[section], section)),
           retrievalPolicy: retrieval.policy,
           reviewPhase: documentReview.phase(),
-          requireInventoryReview:
-            alreadyDrafted != null
-              ? false
-              : inScopeEmptyInventoryNeedsReview({
-                  ...inventoryReviewInput,
-                  inventoryFinishSatisfiesDraft:
-                    documentReview.inventoryFinishSatisfiesDraft(),
-                }),
-          restartInventoryReview:
-            alreadyDrafted != null
-              ? false
-              : inScopeEmptyInventoryNeedsReview(inventoryReviewInput),
+          requireInventoryReview: inScopeEmptyInventoryNeedsReview({
+            ...inventoryReviewInput,
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
+          }),
+          restartInventoryReview: inScopeEmptyInventoryNeedsReview(
+            inventoryReviewInput
+          ),
           searchGate,
           forceListAttachments: shouldForceListAttachments(steps),
           forceFinishReview:
@@ -746,7 +752,9 @@ async function handleChatPost(
         });
         return {
           ...decision,
-          messages: compactInTurnModelMessages(messages),
+          messages: geminiSafeModelMessages(
+            compactInTurnModelMessages(messages)
+          ),
         };
       },
       abortSignal: turnAbort.signal,
