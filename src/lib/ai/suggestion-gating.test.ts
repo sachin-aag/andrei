@@ -280,6 +280,18 @@ describe("suggestion-gating", () => {
     ).toEqual(["qsr_objective", "qsr_acronyms"]);
   });
 
+  it("skips open suggestions whose section is null", () => {
+    expect(
+      sectionOrderWithOpenSuggestions(
+        ["qsr_objective"],
+        [
+          baseComment({ id: "c-null", section: null }),
+          baseComment({ id: "c-acro", section: "qsr_acronyms" }),
+        ]
+      )
+    ).toEqual(["qsr_objective", "qsr_acronyms"]);
+  });
+
   it("returns null when the resolved card was the last open suggestion", () => {
     expect(
       nextOpenSuggestionAfterResolve(

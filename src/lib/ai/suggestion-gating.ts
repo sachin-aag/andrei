@@ -547,7 +547,8 @@ export function sectionOrderWithOpenSuggestions(
     if (
       comment.parentId ||
       !isAiSuggestionKind(comment.kind) ||
-      comment.status !== "open"
+      comment.status !== "open" ||
+      !comment.section
     ) {
       continue;
     }
