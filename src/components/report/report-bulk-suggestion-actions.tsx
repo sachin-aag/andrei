@@ -14,6 +14,10 @@ import {
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
+import {
+  countOpenAiSuggestions,
+  sectionOrderWithOpenSuggestions,
+} from "@/lib/ai/suggestion-gating";
 import { getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
 import {
   acceptAllSuggestionsInReport,
@@ -48,11 +52,16 @@ export function ReportBulkSuggestionActions() {
       getUser(currentUserId)?.role === "manager");
 
   const sectionOrder = useMemo(
-    () => suggestionCardSectionKeys(report.documentType),
-    [report.documentType]
+    () =>
+      sectionOrderWithOpenSuggestions(
+        suggestionCardSectionKeys(report.documentType),
+        comments
+      ),
+    [report.documentType, comments]
   );
 
-  const { total: openTotal, locatable } = useMemo(
+  const openTotal = countOpenAiSuggestions(comments);
+  const { locatable } = useMemo(
     () =>
       countOpenSuggestionsForReport(
         sectionOrder,

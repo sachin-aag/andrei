@@ -713,6 +713,23 @@ describe("reportSuggestionQueues", () => {
     expect(queues[0].comments.map((c) => c.id)).toEqual(["c1", "c2"]);
     expect(queues[1].comments.map((c) => c.id)).toEqual(["m1"]);
   });
+
+  it("includes open suggestions on sections omitted from the card order", () => {
+    const leftover = comment(
+      "acro",
+      " User Requirement Specification",
+      "URS",
+      "qsr_acronyms"
+    );
+    leftover.contentPath = "table";
+    const queues = reportSuggestionQueues(
+      ["qsr_objective"],
+      [leftover],
+      []
+    );
+    expect(queues.map((q) => q.section)).toEqual(["qsr_acronyms"]);
+    expect(queues[0].comments.map((c) => c.id)).toEqual(["acro"]);
+  });
 });
 
 describe("acceptAllSuggestionsInReport", () => {
