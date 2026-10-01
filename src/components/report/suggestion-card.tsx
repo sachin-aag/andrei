@@ -76,6 +76,8 @@ import {
   measureSuggestionGutterParkCenterY,
   scrollToSuggestionComment,
 } from "@/lib/suggestions/navigate-suggestion";
+import { useReviewGutterColumnPainted } from "./review-gutter-painted";
+import { showDocumentSuggestionCard } from "./show-document-suggestion-card";
 import {
   countStaleOpenSuggestions,
   preferredOpenSuggestion,
@@ -636,9 +638,10 @@ export function SectionSuggestionCard({
   hideWhenEmpty = false,
 }: {
   section: SectionType;
-  /** In-section slot. The review margin is the other copy while Comments is on. */
+  /** In-section slot. Hidden while the review margin already shows this card. */
   hideWhenEmpty?: boolean;
 }) {
+  const gutterColumnPainted = useReviewGutterColumnPainted();
   const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
@@ -651,6 +654,7 @@ export function SectionSuggestionCard({
     enterSuggestionQueueBridge,
     endSuggestionApplyTransition,
     suggestionApplyTransition,
+    gutterSuggestionCommentForSection,
   } = useReportEvaluations();
   const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -1100,6 +1104,15 @@ export function SectionSuggestionCard({
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
+
+  const hideBecauseGutterShowsThisCard =
+    hideWhenEmpty &&
+    !showDocumentSuggestionCard({
+      documentSlot: true,
+      gutterColumnPainted,
+      sectionHasGutterCard: Boolean(gutterSuggestionCommentForSection(section)),
+    });
+  if (hideBecauseGutterShowsThisCard) return null;
 
   if (showBridge && bridgeNext) {
     const nextSection =

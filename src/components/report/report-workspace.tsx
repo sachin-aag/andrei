@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useSyncExternalStore,
   type ComponentType,
 } from "react";
@@ -53,6 +54,8 @@ import {
   type CanvasTabId,
 } from "./work-product-canvas";
 import { MarginGutter } from "./review-rail/margin-gutter";
+import { ReviewGutterPaintedProvider } from "./review-gutter-painted";
+import { isReviewGutterColumnPainted } from "./show-document-suggestion-card";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentCanvasStack } from "./attachment-canvas-stack";
@@ -461,6 +464,9 @@ export function ReportWorkspace({
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const reviewGutterAsideRef = useRef<HTMLElement>(null);
+  const [reviewGutterColumnPainted, setReviewGutterColumnPainted] =
+    useState(false);
   const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -556,6 +562,29 @@ export function ReportWorkspace({
   const showReviewGutter =
     reportSurface &&
     isReviewGutterVisible(commentsGutterVisible, false);
+
+  useLayoutEffect(() => {
+    if (!showReviewGutter) {
+      setReviewGutterColumnPainted(false);
+      return;
+    }
+    const el = reviewGutterAsideRef.current;
+    if (!el) {
+      setReviewGutterColumnPainted(false);
+      return;
+    }
+    const update = () => {
+      setReviewGutterColumnPainted(isReviewGutterColumnPainted(el));
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    const main = mainRef.current;
+    if (main) observer.observe(main);
+    return () => observer.disconnect();
+  }, [showReviewGutter]);
+
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -1228,6 +1257,7 @@ export function ReportWorkspace({
                   scrollTabId="report"
                   testId="report-document-canvas"
                 >
+                <ReviewGutterPaintedProvider painted={reviewGutterColumnPainted}>
                 <div
                   className={cn(
                     "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
@@ -1312,6 +1342,7 @@ export function ReportWorkspace({
                   </div>
                   {showReviewGutter ? (
                     <aside
+                      ref={reviewGutterAsideRef}
                       className={REVIEW_GUTTER_ASIDE_CLASS}
                       aria-label="Review margin"
                     >
@@ -1321,6 +1352,7 @@ export function ReportWorkspace({
                     </aside>
                   ) : null}
                 </div>
+                </ReviewGutterPaintedProvider>
                 </CanvasTabPane>
                 {analyticsOpen ? (
                   <CanvasTabPane
