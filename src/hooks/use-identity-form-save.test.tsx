@@ -80,7 +80,7 @@ describe("useIdentityFormSave", () => {
     });
   });
 
-  it("hydrates Apply values once the identity card pause lifts", () => {
+  it("hydrates Apply values while the identity card pause is still on", () => {
     pauseState.paused = true;
     const applyToReport = vi.fn();
     const { result, rerender } = renderHook(
@@ -101,13 +101,55 @@ describe("useIdentityFormSave", () => {
       }
     );
 
-    pauseState.paused = false;
     rerender({
       incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "02" } },
       reportUpdatedAt: "2026-10-01T15:00:02.000Z",
     });
 
     expect(result.current.value.meta.cycleNo).toBe("02");
+  });
+
+  it("keeps applied identity when a stale GET arrives after Apply", () => {
+    pauseState.paused = true;
+    const applyToReport = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ incoming, reportUpdatedAt }: { incoming: IdentityValue; reportUpdatedAt: string }) =>
+        useIdentityFormSave({
+          reportId: "r1",
+          reportUpdatedAt,
+          readOnly: false,
+          incoming,
+          toPatch: (v) => ({ documentNo: v.documentNo, metadata: v.meta }),
+          applyToReport,
+        }),
+      {
+        initialProps: {
+          incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "" } },
+          reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+        },
+      }
+    );
+
+    rerender({
+      incoming: {
+        documentNo: "ELR-PR-001",
+        meta: { cycleNo: "01/04/2025" },
+      },
+      reportUpdatedAt: "2026-10-01T15:00:02.000Z",
+    });
+    expect(result.current.value.meta.cycleNo).toBe("01/04/2025");
+
+    pauseState.paused = false;
+    rerender({
+      incoming: { documentNo: "ELR-PR-001", meta: { cycleNo: "" } },
+      reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+    });
+
+    expect(result.current.value.meta.cycleNo).toBe("01/04/2025");
+    expect(applyToReport).toHaveBeenLastCalledWith({
+      documentNo: "ELR-PR-001",
+      meta: { cycleNo: "01/04/2025" },
+    });
   });
 
   it("registers identity flush so chat refresh persists the header first", () => {

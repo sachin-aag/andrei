@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import {
+  applyIdentityPatchToReport,
   foldIdentityPayload,
   identitySnapshotMap,
   identitySuggestionInsertText,
@@ -220,6 +221,28 @@ describe("proposedIdentityValue", () => {
       }),
     ];
     expect(proposedIdentityValue(comments, "periodFrom")).toBe("01-Apr-2025");
+  });
+});
+
+describe("applyIdentityPatchToReport", () => {
+  it("copies applied metadata and the PATCH clock onto the live report", () => {
+    const next = applyIdentityPatchToReport(
+      {
+        documentNo: "S/PR/070",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: { periodFrom: "", periodTo: "" },
+        updatedAt: "2026-10-01T15:00:00.000Z",
+      },
+      {
+        metadata: { periodFrom: "01/04/2025", periodTo: "31/03/2026" },
+        updatedAt: "2026-10-01T15:00:02.000Z",
+      }
+    );
+    expect(next.metadata).toEqual({
+      periodFrom: "01/04/2025",
+      periodTo: "31/03/2026",
+    });
+    expect(next.updatedAt).toBe("2026-10-01T15:00:02.000Z");
   });
 });
 

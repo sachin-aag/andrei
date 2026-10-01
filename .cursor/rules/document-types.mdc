@@ -46,9 +46,12 @@ const sections = getWorkspaceSections(report.documentType);
   propose and at Apply; remaining-section treats a complete proposal as done).
   Identity dates are free-text inputs (not HTML date pickers) so Agent can
   land `01-Apr-2025` as written; QRA/FIR `storage: "date"` still maps that
-  string onto `reports.date`. Header identity forms use `useIdentityFormSave`
+  string onto `reports.date`.   Header identity forms use `useIdentityFormSave`
   — do not `useEffect`-copy `report.metadata` into inputs (chat `refresh()`
-  GET would wipe a keystroke that has not PATCHed yet). QSR Capacity / Size
+  GET would wipe a keystroke that has not PATCHed yet). Apply hydrates the
+  saved snapshot even while the identity card pauses autosave; skipping
+  incoming until pause lifts copies a stale GET and the dates vanish with
+  the overlay. QSR Capacity / Size
   keeps the printed unit. Do not add `identity` to
   `SUGGEST_TARGET_FIELD_PATTERNS`. Do not reuse investigation field maps on DV.
   Title-page identity that chat needs (ELR `formatScope`) is

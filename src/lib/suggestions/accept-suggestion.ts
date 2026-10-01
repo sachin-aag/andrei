@@ -72,6 +72,7 @@ export type IdentityApplyPatch = {
   documentNo?: string;
   date?: string;
   metadata?: Record<string, unknown>;
+  updatedAt?: string;
 };
 
 export type AcceptSuggestionResult =
@@ -559,22 +560,30 @@ async function acceptIdentitySuggestion(args: {
     nextSection: {},
     dismissed: [],
     remainder: merged.status === "conflict" ? "conflict" : undefined,
-    nextIdentity: {
-      ...(saved.report.documentNo !== undefined
-        ? { documentNo: saved.report.documentNo }
-        : {}),
-      ...(saved.report.date !== undefined
-        ? {
-            date:
-              typeof saved.report.date === "string"
-                ? saved.report.date
-                : String(saved.report.date),
-          }
-        : {}),
-      ...(saved.report.metadata !== undefined
-        ? { metadata: saved.report.metadata }
-        : {}),
-    },
+    nextIdentity: identityPatchFromSave(body, saved.report),
+  };
+}
+
+function identityDateString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === "string" ? value : String(value);
+}
+
+/** PATCH body first so applied fields land even if the JSON report is partial. */
+function identityPatchFromSave(
+  body: IdentityApplyPatch,
+  saved: IdentityApplyPatch
+): IdentityApplyPatch {
+  const updatedAt =
+    identityDateString(saved.updatedAt) ?? new Date().toISOString();
+  return {
+    ...body,
+    ...(saved.documentNo !== undefined ? { documentNo: saved.documentNo } : {}),
+    ...(saved.date !== undefined
+      ? { date: identityDateString(saved.date) }
+      : {}),
+    ...(saved.metadata !== undefined ? { metadata: saved.metadata } : {}),
+    updatedAt,
   };
 }
 

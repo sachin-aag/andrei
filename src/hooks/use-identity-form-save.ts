@@ -48,7 +48,6 @@ export function useIdentityFormSave<T>(opts: {
   const persistKeyRef = useRef(serialize(incoming));
   const lastSeenUpdatedAtRef = useRef(reportUpdatedAt);
   const pauseSave = useIdentitySavePaused();
-  const wasPausedRef = useRef(pauseSave);
   const { registerSectionFlush } = useReportData();
 
   incomingRef.current = incoming;
@@ -109,17 +108,9 @@ export function useIdentityFormSave<T>(opts: {
     markPersistedRef.current(next);
   }, [reportUpdatedAt, serialize]);
 
+  // Hydrate while an identity card pauses autosave — Apply's setReport must
+  // land in the inputs before the overlay disappears with the resolved card.
   useLayoutEffect(() => {
-    if (wasPausedRef.current && !pauseSave) {
-      hydrateIncoming();
-    }
-    wasPausedRef.current = pauseSave;
-  }, [hydrateIncoming, pauseSave]);
-
-  useLayoutEffect(() => {
-    // An open identity card / Apply transition owns the snapshot. Do not copy
-    // a GET over keystrokes or fight Apply; falling-edge hydrates instead.
-    if (pauseSave) return;
     const decision = decideIdentityHydrate({
       incomingSerialized,
       localSerialized: serialize(valueRef.current),
@@ -142,13 +133,7 @@ export function useIdentityFormSave<T>(opts: {
       return;
     }
     hydrateIncoming();
-  }, [
-    hydrateIncoming,
-    incomingSerialized,
-    pauseSave,
-    reportUpdatedAt,
-    serialize,
-  ]);
+  }, [hydrateIncoming, incomingSerialized, reportUpdatedAt, serialize]);
 
   return { value, update, status, lastSavedAt };
 }

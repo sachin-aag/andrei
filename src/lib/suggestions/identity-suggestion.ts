@@ -274,6 +274,7 @@ export function applyIdentityPatchToReport<
     documentNo: string;
     date: string;
     metadata: unknown;
+    updatedAt?: string;
   },
 >(
   report: T,
@@ -281,6 +282,7 @@ export function applyIdentityPatchToReport<
     documentNo?: string;
     date?: string;
     metadata?: Record<string, unknown>;
+    updatedAt?: string;
   }
 ): T {
   return {
@@ -290,6 +292,7 @@ export function applyIdentityPatchToReport<
     ...(patch.metadata !== undefined
       ? { metadata: patch.metadata as T["metadata"] }
       : {}),
+    ...(patch.updatedAt !== undefined ? { updatedAt: patch.updatedAt } : {}),
   };
 }
 
