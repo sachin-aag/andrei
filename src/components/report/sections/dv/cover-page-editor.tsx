@@ -1,13 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { SectionSuggestionCard } from "@/components/report/suggestion-card";
-import {
-  IdentitySuggestionField,
-  useIdentitySavePaused,
-} from "@/components/report/identity-suggestion-field";
-import { useAutoSave } from "@/hooks/use-auto-save";
+import { IdentitySuggestionField } from "@/components/report/identity-suggestion-field";
+import { useIdentityFormSave } from "@/hooks/use-identity-form-save";
 import { useReportData } from "@/providers/report-provider";
 import {
   designVerificationMetadata,
@@ -16,66 +13,56 @@ import {
 import type { DesignVerificationMetadata } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 
-async function patchIdentityReport(
-  reportId: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal
-) {
-  const res = await fetch(`/api/reports/${reportId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok) throw new Error("Save failed");
-}
-
 export function DvCoverPageEditor() {
   const { report, setReport, readOnly } = useReportData();
-  const [documentNo, setDocumentNo] = useState(report.documentNo);
-  const [meta, setMeta] = useState(() => designVerificationMetadata(report));
-  const pauseSave = useIdentitySavePaused();
-
-  useEffect(() => {
-    setDocumentNo(report.documentNo);
-    setMeta(designVerificationMetadata(report));
-  }, [report.documentNo, report.metadata]);
-
-  const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly && !pauseSave,
-    value: { documentNo, meta },
-    onSave: async (v, context) => {
-      await patchIdentityReport(
-        report.id,
-        {
-          documentNo: v.documentNo.trim(),
-          metadata: v.meta,
+  const toPatch = useCallback(
+    (v: { documentNo: string; meta: DesignVerificationMetadata }) => ({
+      documentNo: v.documentNo.trim(),
+      metadata: v.meta,
+    }),
+    []
+  );
+  const applyToReport = useCallback(
+    (v: { documentNo: string; meta: DesignVerificationMetadata }) => {
+      setReport((r: ReportRecord) => ({
+        ...r,
+        documentNo: v.documentNo,
+        metadata: {
+          ...(r.metadata as Record<string, unknown>),
+          ...v.meta,
         },
-        context?.signal
-      );
+      }));
     },
+    [setReport]
+  );
+  const { value, update, status, lastSavedAt } = useIdentityFormSave({
+    reportId: report.id,
+    reportUpdatedAt: report.updatedAt,
+    readOnly,
+    incoming: {
+      documentNo: report.documentNo,
+      meta: designVerificationMetadata(report),
+    },
+    toPatch,
+    applyToReport,
   });
+  const { documentNo, meta } = value;
 
   const setDocumentNoLive = useCallback(
     (next: string) => {
-      setDocumentNo(next);
-      setReport((prev: ReportRecord) => ({ ...prev, documentNo: next }));
+      update((prev) => ({ ...prev, documentNo: next }));
     },
-    [setReport]
+    [update]
   );
 
   const setMetaLive = useCallback(
     (key: keyof DesignVerificationMetadata) => (next: string) => {
-      setMeta((prev) => {
-        const metadata = { ...prev, [key]: next };
-        setReport((r) => ({
-          ...r,
-          metadata: { ...(r.metadata as Record<string, unknown>), ...metadata },
-        }));
-        return metadata;
-      });
+      update((prev) => ({
+        ...prev,
+        meta: { ...prev.meta, [key]: next },
+      }));
     },
-    [setReport]
+    [update]
   );
 
   return (

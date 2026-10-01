@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { CalendarDays, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,11 +8,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAutoSave } from "@/hooks/use-auto-save";
+import { useIdentityFormSave } from "@/hooks/use-identity-form-save";
 import { SaveStatus } from "./save-status";
-import {
-  IdentitySuggestionField,
-  useIdentitySavePaused,
-} from "./identity-suggestion-field";
+import { IdentitySuggestionField } from "./identity-suggestion-field";
 import { SectionSuggestionCard } from "./suggestion-card";
 import { useReportData } from "@/providers/report-provider";
 import {
@@ -32,20 +30,6 @@ import {
 } from "@/lib/document-types/qsr/sections";
 import type { SectionType } from "@/db/schema";
 import { parseIdentityDate } from "@/lib/ai/chat/identity";
-
-async function patchIdentityReport(
-  reportId: string,
-  body: Record<string, unknown>,
-  signal?: AbortSignal
-) {
-  const res = await fetch(`/api/reports/${reportId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!res.ok) throw new Error("Save failed");
-}
 
 function identityDatePatch(value: string): string | undefined {
   const isoDay = parseIdentityDate(value);
@@ -195,6 +179,13 @@ function IdentityHeaderShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function mergeIdentityMetadata(
+  prev: ReportRecord,
+  meta: Record<string, unknown>
+): ReportRecord["metadata"] {
+  return { ...(prev.metadata as Record<string, unknown>), ...meta };
+}
+
 /**
  * ELR title-page identity. The container format matters: a separate ELR is
  * compiled per format, and the format scopes the qualification and QMS rows.
@@ -209,43 +200,37 @@ function ElrIdentityForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [documentNo, setDocumentNo] = useState(report.documentNo);
-  const [meta, setMeta] = useState<ElrMetadata>(() => elrMetadata(report));
-
-  useEffect(() => {
-    setDocumentNo(report.documentNo);
-    setMeta(elrMetadata(report));
-  }, [report.documentNo, report.metadata]);
-
-  const pauseSave = useIdentitySavePaused();
-  const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly && !pauseSave,
-    value: { documentNo, meta },
-    onSave: async (v, context) => {
-      await patchIdentityReport(
-        report.id,
-        {
-          documentNo: v.documentNo.trim(),
-          metadata: v.meta,
-        },
-        context?.signal
-      );
-    },
-  });
-
-  const setDocumentNoLive = (next: string) => {
-    setDocumentNo(next);
-    setReport((prev) => ({ ...prev, documentNo: next }));
-  };
-  const set = (key: keyof ElrMetadata) => (next: string) => {
-    setMeta((prev) => {
-      const meta = { ...prev, [key]: next };
+  const toPatch = useCallback(
+    (v: { documentNo: string; meta: ElrMetadata }) => ({
+      documentNo: v.documentNo.trim(),
+      metadata: v.meta,
+    }),
+    []
+  );
+  const applyToReport = useCallback(
+    (v: { documentNo: string; meta: ElrMetadata }) => {
       setReport((r) => ({
         ...r,
-        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+        documentNo: v.documentNo,
+        metadata: mergeIdentityMetadata(r, v.meta),
       }));
-      return meta;
-    });
+    },
+    [setReport]
+  );
+  const { value, update, status, lastSavedAt } = useIdentityFormSave({
+    reportId: report.id,
+    reportUpdatedAt: report.updatedAt,
+    readOnly,
+    incoming: { documentNo: report.documentNo, meta: elrMetadata(report) },
+    toPatch,
+    applyToReport,
+  });
+  const { documentNo, meta } = value;
+  const setDocumentNoLive = (next: string) => {
+    update((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof ElrMetadata) => (next: string) => {
+    update((prev) => ({ ...prev, meta: { ...prev.meta, [key]: next } }));
   };
 
   return (
@@ -422,51 +407,49 @@ function QraIdentityForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [date, setDate] = useState(() => identityDateInputValue(report.date));
-  const [documentNo, setDocumentNo] = useState(report.documentNo);
-  const [meta, setMeta] = useState<QraMetadata>(() => qraMetadata(report));
-
-  useEffect(() => {
-    setDate(identityDateInputValue(report.date));
-    setDocumentNo(report.documentNo);
-    setMeta(qraMetadata(report));
-  }, [report.date, report.documentNo, report.metadata]);
-
-  const pauseSave = useIdentitySavePaused();
-  const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly && !pauseSave,
-    value: { date, documentNo, meta },
-    onSave: async (v, context) => {
+  const toPatch = useCallback(
+    (v: { date: string; documentNo: string; meta: QraMetadata }) => {
       const date = identityDatePatch(v.date);
-      await patchIdentityReport(
-        report.id,
-        {
-          ...(date ? { date } : {}),
-          documentNo: v.documentNo.trim(),
-          metadata: v.meta,
-        },
-        context?.signal
-      );
+      return {
+        ...(date ? { date } : {}),
+        documentNo: v.documentNo.trim(),
+        metadata: v.meta,
+      };
     },
-  });
-
-  const setDocumentNoLive = (next: string) => {
-    setDocumentNo(next);
-    setReport((prev) => ({ ...prev, documentNo: next }));
-  };
-  const setDateLive = (next: string) => {
-    setDate(next);
-    setReport((prev) => ({ ...prev, date: next }));
-  };
-  const setMetaKey = (key: keyof QraMetadata) => (next: string) => {
-    setMeta((prev) => {
-      const meta = { ...prev, [key]: next };
+    []
+  );
+  const applyToReport = useCallback(
+    (v: { date: string; documentNo: string; meta: QraMetadata }) => {
       setReport((r) => ({
         ...r,
-        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+        date: v.date,
+        documentNo: v.documentNo,
+        metadata: mergeIdentityMetadata(r, v.meta),
       }));
-      return meta;
-    });
+    },
+    [setReport]
+  );
+  const { value, update, status, lastSavedAt } = useIdentityFormSave({
+    reportId: report.id,
+    reportUpdatedAt: report.updatedAt,
+    readOnly,
+    incoming: {
+      date: identityDateInputValue(report.date),
+      documentNo: report.documentNo,
+      meta: qraMetadata(report),
+    },
+    toPatch,
+    applyToReport,
+  });
+  const { date, documentNo, meta } = value;
+  const setDocumentNoLive = (next: string) => {
+    update((prev) => ({ ...prev, documentNo: next }));
+  };
+  const setDateLive = (next: string) => {
+    update((prev) => ({ ...prev, date: next }));
+  };
+  const setMetaKey = (key: keyof QraMetadata) => (next: string) => {
+    update((prev) => ({ ...prev, meta: { ...prev.meta, [key]: next } }));
   };
 
   return (
@@ -587,52 +570,53 @@ function FirIdentityForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [date, setDate] = useState(() => identityDateInputValue(report.date));
-  const [documentNo, setDocumentNo] = useState(report.documentNo);
-  const [meta, setMeta] = useState<FirMetadata>(() => firMetadata(report));
-
-  useEffect(() => {
-    setDate(identityDateInputValue(report.date));
-    setDocumentNo(report.documentNo);
-    setMeta(firMetadata(report));
-  }, [report.date, report.documentNo, report.metadata]);
-
-  const pauseSave = useIdentitySavePaused();
-  const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly && !pauseSave,
-    value: { date, documentNo, meta },
-    onSave: async (v, context) => {
+  const toPatch = useCallback(
+    (v: { date: string; documentNo: string; meta: FirMetadata }) => {
       const date = identityDatePatch(v.date);
-      await patchIdentityReport(
-        report.id,
-        {
-          ...(date ? { date } : {}),
-          documentNo: v.documentNo.trim(),
-          metadata: v.meta,
-        },
-        context?.signal
-      );
+      return {
+        ...(date ? { date } : {}),
+        documentNo: v.documentNo.trim(),
+        metadata: v.meta,
+      };
     },
-  });
-
-  const setDocumentNoLive = (next: string) => {
-    setDocumentNo(next);
-    setReport((prev) => ({ ...prev, documentNo: next }));
-  };
-  const set = (key: keyof FirMetadata) => (next: string) => {
-    setMeta((prev) => {
-      const meta = { ...prev, [key]: next };
+    []
+  );
+  const applyToReport = useCallback(
+    (v: { date: string; documentNo: string; meta: FirMetadata }) => {
       setReport((r) => ({
         ...r,
-        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+        date: v.date,
+        documentNo: v.documentNo,
+        metadata: mergeIdentityMetadata(r, v.meta),
       }));
-      return meta;
-    });
+    },
+    [setReport]
+  );
+  const { value, update, status, lastSavedAt } = useIdentityFormSave({
+    reportId: report.id,
+    reportUpdatedAt: report.updatedAt,
+    readOnly,
+    incoming: {
+      date: identityDateInputValue(report.date),
+      documentNo: report.documentNo,
+      meta: firMetadata(report),
+    },
+    toPatch,
+    applyToReport,
+  });
+  const { date, documentNo, meta } = value;
+  const setDocumentNoLive = (next: string) => {
+    update((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof FirMetadata) => (next: string) => {
+    update((prev) => ({ ...prev, meta: { ...prev.meta, [key]: next } }));
   };
   const setDateLive = (next: string) => {
-    setDate(next);
-    set("dateOfNonConformance")(next);
-    setReport((prev) => ({ ...prev, date: next }));
+    update((prev) => ({
+      ...prev,
+      date: next,
+      meta: { ...prev.meta, dateOfNonConformance: next },
+    }));
   };
 
   return (
@@ -719,45 +703,40 @@ function QsrIdentityForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [documentNo, setDocumentNo] = useState(report.documentNo);
-  const [meta, setMeta] = useState<QsrMetadata>(() =>
-    qsrMetadataFrom(report.metadata)
+  const toPatch = useCallback(
+    (v: { documentNo: string; meta: QsrMetadata }) => ({
+      documentNo: v.documentNo.trim(),
+      metadata: v.meta,
+    }),
+    []
   );
-
-  useEffect(() => {
-    setDocumentNo(report.documentNo);
-    setMeta(qsrMetadataFrom(report.metadata));
-  }, [report.documentNo, report.metadata]);
-
-  const pauseSave = useIdentitySavePaused();
-  const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly && !pauseSave,
-    value: { documentNo, meta },
-    onSave: async (v, context) => {
-      await patchIdentityReport(
-        report.id,
-        {
-          documentNo: v.documentNo.trim(),
-          metadata: v.meta,
-        },
-        context?.signal
-      );
-    },
-  });
-
-  const setDocumentNoLive = (next: string) => {
-    setDocumentNo(next);
-    setReport((prev) => ({ ...prev, documentNo: next }));
-  };
-  const set = (key: keyof QsrMetadata) => (next: string) => {
-    setMeta((prev) => {
-      const meta = { ...prev, [key]: next };
+  const applyToReport = useCallback(
+    (v: { documentNo: string; meta: QsrMetadata }) => {
       setReport((r) => ({
         ...r,
-        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+        documentNo: v.documentNo,
+        metadata: mergeIdentityMetadata(r, v.meta),
       }));
-      return meta;
-    });
+    },
+    [setReport]
+  );
+  const { value, update, status, lastSavedAt } = useIdentityFormSave({
+    reportId: report.id,
+    reportUpdatedAt: report.updatedAt,
+    readOnly,
+    incoming: {
+      documentNo: report.documentNo,
+      meta: qsrMetadataFrom(report.metadata),
+    },
+    toPatch,
+    applyToReport,
+  });
+  const { documentNo, meta } = value;
+  const setDocumentNoLive = (next: string) => {
+    update((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof QsrMetadata) => (next: string) => {
+    update((prev) => ({ ...prev, meta: { ...prev.meta, [key]: next } }));
   };
 
   return (

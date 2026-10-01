@@ -260,6 +260,13 @@ export function useAutoSave<T>({
     const next = serializeValue(value);
     if (next === lastPersisted.current) {
       lastSerialized.current = next;
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      if (!isSaving.current) {
+        setStatus((current) => (current === "saving" ? "idle" : current));
+      }
       return;
     }
     if (next === lastSerialized.current && !justEnabled) return;

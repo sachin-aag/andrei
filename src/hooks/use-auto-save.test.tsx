@@ -224,6 +224,27 @@ describe("useAutoSave", () => {
     fetchSpy.mockRestore();
   });
 
+  it("clears Saving… when the value matches the last persisted snapshot", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 1_000 }),
+      { initialProps: { value: "initial" } }
+    );
+
+    rerender({ value: "typed" });
+    expect(result.current.status).toBe("saving");
+    expect(result.current.needsFlush()).toBe(true);
+
+    rerender({ value: "initial" });
+    expect(result.current.status).toBe("idle");
+    expect(result.current.needsFlush()).toBe(false);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("clears Saving… when disabled with a pending edit, then flushes on re-enable", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const { rerender, result } = renderHook(
