@@ -12,21 +12,21 @@ export function SaveStatus({
 }) {
   if (status === "saving") {
     return (
-      <div className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
+      <div className="text-xs text-[var(--muted-foreground)] flex shrink-0 items-center gap-1.5 whitespace-nowrap">
         <Loader2 className="size-3 animate-spin" /> Saving…
       </div>
     );
   }
   if (status === "error") {
     return (
-      <div className="text-xs text-red-400 flex items-center gap-1.5">
+      <div className="text-xs text-red-400 flex shrink-0 items-center gap-1.5 whitespace-nowrap">
         <CircleAlert className="size-3" /> Save error
       </div>
     );
   }
   if (status === "saved") {
     return (
-      <div className="text-xs text-green-700 flex items-center gap-1.5">
+      <div className="text-xs text-green-700 flex shrink-0 items-center gap-1.5 whitespace-nowrap">
         <Check className="size-3" /> Saved
         {lastSavedAt
           ? ` · ${lastSavedAt.toLocaleTimeString([], {
@@ -38,7 +38,7 @@ export function SaveStatus({
     );
   }
   return (
-    <div className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
+    <div className="text-xs text-[var(--muted-foreground)] flex shrink-0 items-center gap-1.5 whitespace-nowrap">
       <Check className="size-3" /> Up to date
     </div>
   );

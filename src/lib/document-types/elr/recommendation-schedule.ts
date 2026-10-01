@@ -3,6 +3,8 @@
  * follow-up runs. Shared by Criteria and remaining-section completeness.
  */
 
+import { parseElrIdentityDate } from "@/lib/document-types/elr/financial-year";
+
 const MONTH =
   "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)";
 
@@ -22,7 +24,7 @@ const MONTH_NAMES = [
 ] as const;
 
 const DATE_RE = new RegExp(
-  String.raw`\b(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+${MONTH}\s+\d{4}|${MONTH}\s+\d{4})\b`,
+  String.raw`\b(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}[ ./-]+${MONTH}[ ./-]+\d{2,4}|${MONTH}\s+\d{4})\b`,
   "i"
 );
 
@@ -69,15 +71,13 @@ function normalizeDateHaystack(text: string): string {
 function dateMentionTokens(cell: string): string[] {
   const raw = cell.trim();
   if (!raw) return [];
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
-  if (iso) return tokensForYmd(iso[1]!, iso[2]!, iso[3]!);
-  const dmy = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/.exec(raw);
-  if (dmy) {
-    const day = dmy[1]!.padStart(2, "0");
-    const month = dmy[2]!.padStart(2, "0");
-    const yearRaw = dmy[3]!;
-    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
-    return tokensForYmd(year, month, day);
+  const parsed = parseElrIdentityDate(raw);
+  if (parsed) {
+    return tokensForYmd(
+      String(parsed.year),
+      String(parsed.month).padStart(2, "0"),
+      String(parsed.day).padStart(2, "0")
+    );
   }
   return [normalizeDateHaystack(raw)];
 }
@@ -94,6 +94,8 @@ function tokensForYmd(year: string, month: string, day: string): string[] {
     `${d}/${month}/${year}`,
     `${d}/${m}/${year}`,
     `${day}-${month}-${year}`,
+    `${day}-${short}-${year}`,
+    `${d}-${short}-${year}`,
     `${d} ${short} ${year}`,
     `${d} ${long} ${year}`,
     `${day} ${long} ${year}`,

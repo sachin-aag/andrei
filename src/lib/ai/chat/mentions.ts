@@ -2,6 +2,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import {
   CHAT_SECTION_SCOPE_ALL,
   isChatEditableSection,
+  isChatMentionableSection,
   sectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
@@ -139,7 +140,7 @@ export function parseChatMentions(
 
     const trimmed = id.trim();
     if (!trimmed) continue;
-    if (type === "section" && !isChatEditableSection(trimmed, documentType)) {
+    if (type === "section" && !isChatMentionableSection(trimmed, documentType)) {
       continue;
     }
 

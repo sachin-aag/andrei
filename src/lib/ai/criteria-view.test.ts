@@ -48,6 +48,19 @@ describe("suggestionCardSectionKeys", () => {
     expect(suggestionCardSectionKeys("generic_document")).toEqual(["body"]);
   });
 
+  it("prepends identity for types with a cover/header fill", () => {
+    const keys = suggestionCardSectionKeys("qualification_summary_report");
+    expect(keys[0]).toBe("identity");
+    expect(keys).toContain("qsr_objective");
+    expect(suggestionCardSectionKeys("design_verification")[0]).toBe("identity");
+  });
+
+  it("does not prepend identity for investigation reports", () => {
+    expect(suggestionCardSectionKeys("investigation_report")[0]).not.toBe(
+      "identity"
+    );
+  });
+
   it("omits QSR sections that have no criteria", () => {
     const keys = suggestionCardSectionKeys("qualification_summary_report");
     expect(keys).toContain("qsr_objective");

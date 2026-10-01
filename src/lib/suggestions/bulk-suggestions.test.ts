@@ -841,6 +841,48 @@ describe("acceptAllSuggestionsInReport", () => {
     expect(result.skippedIds).toContain("c1");
     expect(result.appliedIds).toEqual(["m1"]);
   });
+
+  it("skips an identity card when Apply hits a duplicate document number", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith("/api/reports/report-1")) {
+          return { ok: false, status: 409, json: async () => ({}) } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+    const identity = comment("ident-1", "QSR/GLR-1301", "", "identity" as SectionType);
+    identity.sectionId = null;
+    identity.contentPath = "documentNo";
+    identity.content = JSON.stringify({
+      deleteText: "",
+      insertText: "Report No.: QSR/GLR-1301",
+      reasoning: "cover",
+      identityOperation: {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+      },
+      suggestionBase: { documentNo: "" },
+      suggestionIntent: { documentNo: "QSR/GLR-1301" },
+    });
+
+    const result = await acceptAllSuggestionsInReport({
+      reportId: "report-1",
+      sectionOrder: ["identity" as SectionType],
+      comments: [identity],
+      evaluations: [],
+      sectionContentFor: () => undefined,
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.skippedIds).toEqual(["ident-1"]);
+    expect(result.appliedIds).toEqual([]);
+  });
 });
 
 describe("dismissAllSuggestionsInReport", () => {

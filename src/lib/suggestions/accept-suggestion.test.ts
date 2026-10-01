@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { JSONContent } from "@tiptap/core";
+import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
   applySuggestionToContent,
   dismissSuggestion,
+  IdentityDuplicateError,
   patchSection,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
@@ -809,5 +811,202 @@ describe("patchSection", () => {
       })
     );
     vi.unstubAllGlobals();
+  });
+});
+
+describe("acceptSuggestion identity header card", () => {
+  const identityComment: CommentRecord = {
+    ...comment,
+    id: "ident-1",
+    sectionId: null,
+    section: "identity" as CommentRecord["section"],
+    contentPath: "documentNo",
+    content: serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "Report No.: QSR/GLR-1301",
+      reasoning: "Copied from the protocol cover.",
+      identityOperation: {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+      },
+      suggestionBase: { documentNo: "" },
+      suggestionIntent: { documentNo: "QSR/GLR-1301" },
+    }),
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("PATCHes the report row then resolves the card", async () => {
+    const fetches: Array<{ url: string; status?: number; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        fetches.push({ url: String(url), body });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            report: {
+              documentNo: "QSR/GLR-1301",
+              metadata: {},
+              updatedAt: "2026-10-01T15:00:02.000Z",
+            },
+          }),
+        } as Response;
+      })
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "identity" as SectionType,
+      comment: identityComment,
+      sectionContent: {},
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.nextIdentity).toMatchObject({
+      documentNo: "QSR/GLR-1301",
+      updatedAt: "2026-10-01T15:00:02.000Z",
+    });
+    expect(fetches[0]?.url).toBe("/api/reports/report-1");
+    expect(fetches[0]?.body).toMatchObject({ documentNo: "QSR/GLR-1301" });
+    expect(fetches[1]?.url).toContain("/comments/ident-1");
+    expect(fetches[1]?.body).toEqual({ status: "resolved" });
+  });
+
+  it("returns ELR period dates and a clock so Apply can hydrate the header", async () => {
+    const elrComment: CommentRecord = {
+      ...identityComment,
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "ELR period — from: 01/04/2025; ELR period — to: 31/03/2026",
+        reasoning: "FY window from the last PRQ.",
+        identityOperation: {
+          fields: [
+            { key: "periodFrom", value: "01/04/2025" },
+            { key: "periodTo", value: "31/03/2026" },
+          ],
+        },
+        suggestionBase: { periodFrom: "", periodTo: "" },
+        suggestionIntent: {
+          periodFrom: "01/04/2025",
+          periodTo: "31/03/2026",
+        },
+      }),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          report: {
+            metadata: {
+              periodFrom: "01/04/2025",
+              periodTo: "31/03/2026",
+            },
+            updatedAt: "2026-10-01T15:00:02.000Z",
+          },
+        }),
+      }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "identity" as SectionType,
+      comment: elrComment,
+      sectionContent: {},
+      documentType: "equipment_lifecycle_report",
+      identityCurrent: {
+        documentNo: "S/PR/070",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.nextIdentity).toMatchObject({
+      metadata: {
+        periodFrom: "01/04/2025",
+        periodTo: "31/03/2026",
+      },
+      updatedAt: "2026-10-01T15:00:02.000Z",
+    });
+  });
+
+  it("stamps updatedAt when the PATCH JSON omits it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T15:00:03.000Z"));
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            report: { documentNo: "QSR/GLR-1301", metadata: {} },
+          }),
+        }) as Response)
+      );
+
+      const result = await acceptSuggestion({
+        reportId,
+        section: "identity" as SectionType,
+        comment: identityComment,
+        sectionContent: {},
+        documentType: "qualification_summary_report",
+        identityCurrent: {
+          documentNo: "",
+          date: "2026-01-01T00:00:00.000Z",
+          metadata: {},
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.nextIdentity?.documentNo).toBe("QSR/GLR-1301");
+      expect(result.nextIdentity?.updatedAt).toBe("2026-10-01T15:00:03.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails the whole apply when the document number is taken", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({}),
+      }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "identity" as SectionType,
+      comment: identityComment,
+      sectionContent: {},
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("duplicate_document_no");
+    expect(result.error).toBeInstanceOf(IdentityDuplicateError);
   });
 });

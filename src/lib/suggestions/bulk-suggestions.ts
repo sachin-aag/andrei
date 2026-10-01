@@ -2,10 +2,17 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SuggestionApplyMode } from "@/lib/document-types";
 import {
+  isChatIdentitySection,
+  type ChatIdentityReport,
+} from "@/lib/ai/chat/identity";
+import {
+  acceptSuggestion,
   applySuggestionToContent,
+  type IdentityApplyPatch,
   patchSection,
   stripSuggestionFromContent,
 } from "@/lib/suggestions/accept-suggestion";
+import { applyIdentityPatchToReport } from "@/lib/suggestions/identity-suggestion";
 import { patchCommentStatuses } from "@/lib/suggestions/persist-comment-status";
 import { partitionBulkApplies } from "@/lib/suggestions/suggestion-overlap";
 import {
@@ -66,6 +73,10 @@ type ReportBulkArgs = {
   ) => void;
   /** Always called once a section's batch is over, including on failure. */
   onSectionEnd?: (section: SectionType) => void;
+  /** Live cover/header scalars — required to apply an identity card. */
+  identityCurrent?: ChatIdentityReport;
+  /** Called after a header identity PATCH so later sections see the new scalars. */
+  onIdentitySettled?: (next: IdentityApplyPatch) => void;
 };
 
 function appliedCommentThatSupersedesTableOp(
@@ -149,7 +160,12 @@ export async function acceptAllSuggestions(args: {
   documentType?: DocumentType;
   allSectionContent?: Readonly<Partial<Record<string, unknown>>>;
   tableNumberComments?: readonly CommentRecord[];
+  identityCurrent?: ChatIdentityReport;
+  onIdentitySettled?: (next: IdentityApplyPatch) => void;
 }): Promise<BulkSuggestionResult> {
+  if (isChatIdentitySection(args.section)) {
+    return acceptAllIdentitySuggestions(args);
+  }
   const partition = partitionBulkApplies({
     section: args.section,
     comments: args.comments,
@@ -365,6 +381,9 @@ export async function dismissAllSuggestions(args: {
   sectionContent: Record<string, unknown>;
   onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
+  if (isChatIdentitySection(args.section)) {
+    return dismissAllIdentitySuggestions(args);
+  }
   let current = args.sectionContent;
   let changed = false;
   const candidateIds = args.comments.map((c) => c.id);
@@ -418,6 +437,100 @@ export function shouldShowSuggestionBulkActions(queueTotal: number): boolean {
   return queueTotal >= 1;
 }
 
+async function acceptAllIdentitySuggestions(args: {
+  reportId: string;
+  section: SectionType;
+  comments: readonly CommentRecord[];
+  documentType?: DocumentType;
+  identityCurrent?: ChatIdentityReport;
+  onIdentitySettled?: (next: IdentityApplyPatch) => void;
+}): Promise<BulkSuggestionResult> {
+  const appliedIds: string[] = [];
+  const skippedIds: string[] = [];
+  const failedIds: string[] = [];
+  const dismissedIds: string[] = [];
+  const dismissedContent: Record<string, string> = {};
+  if (!args.documentType || !args.identityCurrent) {
+    return {
+      appliedIds,
+      skippedIds: args.comments.map((comment) => comment.id),
+      failedIds,
+      dismissedIds,
+      dismissedContent,
+      nextSection: {},
+    };
+  }
+  let live = args.identityCurrent;
+  for (const comment of args.comments) {
+    const result = await acceptSuggestion({
+      reportId: args.reportId,
+      section: args.section,
+      comment,
+      sectionContent: {},
+      documentType: args.documentType,
+      identityCurrent: live,
+    });
+    if (!result.ok) {
+      if (result.reason === "duplicate_document_no") {
+        skippedIds.push(comment.id);
+      } else {
+        failedIds.push(comment.id);
+      }
+      continue;
+    }
+    const selfDismissed = result.dismissed.find((row) => row.id === comment.id);
+    if (selfDismissed) {
+      dismissedIds.push(comment.id);
+      dismissedContent[comment.id] = selfDismissed.content;
+      continue;
+    }
+    appliedIds.push(comment.id);
+    if (result.nextIdentity) {
+      live = applyIdentityPatchToReport(
+        {
+          documentNo: live.documentNo,
+          date:
+            typeof live.date === "string"
+              ? live.date
+              : live.date.toISOString(),
+          metadata: live.metadata ?? {},
+        },
+        result.nextIdentity
+      );
+      args.onIdentitySettled?.(result.nextIdentity);
+    }
+  }
+  return {
+    appliedIds,
+    skippedIds,
+    failedIds,
+    dismissedIds,
+    dismissedContent,
+    nextSection: {},
+  };
+}
+
+async function dismissAllIdentitySuggestions(args: {
+  reportId: string;
+  comments: readonly CommentRecord[];
+}): Promise<BulkSuggestionResult> {
+  const candidateIds = args.comments.map((comment) => comment.id);
+  const { failedIds } = await patchCommentStatuses(
+    args.reportId,
+    candidateIds,
+    "dismissed"
+  );
+  const failed = new Set(failedIds);
+  return {
+    appliedIds: candidateIds.filter((id) => !failed.has(id)),
+    skippedIds: [],
+    failedIds,
+    dismissedIds: [],
+    dismissedContent: {},
+    nextSection: {},
+  };
+}
+
 /**
  * Per-section queues in document order, skipping sections with nothing open.
  * Each section keeps its own severity ordering.
@@ -465,6 +578,8 @@ export async function acceptAllSuggestionsInReport(
       documentType: args.documentType,
       allSectionContent: live,
       tableNumberComments: args.comments,
+      identityCurrent: args.identityCurrent,
+      onIdentitySettled: args.onIdentitySettled,
     })
   );
 }
@@ -514,7 +629,9 @@ async function runReportBulk(
   );
 
   for (const queue of queues) {
-    const sectionContent = args.sectionContentFor(queue.section);
+    const sectionContent = isChatIdentitySection(queue.section)
+      ? (args.sectionContentFor(queue.section) ?? {})
+      : args.sectionContentFor(queue.section);
     if (!sectionContent) {
       skippedIds.push(...queue.comments.map((c) => c.id));
       continue;

@@ -5,6 +5,11 @@ import {
   chatTargetFields,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import {
+  chatIdentityFields,
+  chatIdentityLabel,
+  hasChatIdentity,
+} from "@/lib/ai/chat/identity";
 import { getDocumentType } from "@/lib/document-types";
 import {
   type AlreadyDraftedGapHints,
@@ -20,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v170-qsr-rtm-family-columns";
+export const CHAT_PROMPT_VERSION = "chat-v172-identity-suggest";
 
 export type ChatMode = "plan" | "agent";
 
@@ -32,7 +37,7 @@ function fieldTaxonomy(
   scope: ChatSectionScope,
   documentType: DocumentType = "investigation_report"
 ): string {
-  return chatSectionsInScope(scope, documentType)
+  const body = chatSectionsInScope(scope, documentType)
     .map((section) => {
       const fields = chatTargetFields(section)
         .map((f) => `${f.targetField} (${f.kind})`)
@@ -40,6 +45,19 @@ function fieldTaxonomy(
       return `- ${sectionLabel(section)} [${section}]: ${fields}`;
     })
     .join("\n");
+  if (scope !== "all" || !hasChatIdentity(documentType)) return body;
+  const fields = chatIdentityFields(documentType);
+  const keys = fields
+    .map(
+      (field) =>
+        `${field.key} (plain${field.required ? ", required" : ""}${field.keepUnits ? ", keep printed unit" : ""})`
+    )
+    .join(", ");
+  const unitHint = fields.some((field) => field.keepUnits)
+    ? ". Capacity / Size keeps the printed unit (8000 L, 3.0 KL)"
+    : "";
+  const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field. Plain scalars only — never [filename, p. N], numbered [n], or a Citations: list${unitHint}`;
+  return body ? `${identityLine}\n${body}` : identityLine;
 }
 
 function draftPriorityPhrase(draftOrder: readonly SectionType[]): string {
@@ -99,7 +117,7 @@ Follow the latest user message. Ask vs Agent is chosen per send — not for the 
 - Greeting, thanks, or small talk ("hi", "hello", "thanks"): reply in one short sentence and offer to help. Do not call any tools. Do not search attachments. Do not draft or edit any section.
 - A question, a plan, or an outline ("plan the first 3 sections", "what should go in Purpose", "how would you structure this"): answer in chat. Do not call draft_field, propose_edit, or edit_table unless they also asked to write or insert.
 - How many attachments, which files in which folder, PDF vs Word, file status, or filename/topic matches: call list_attachments and read folders[] / fileTypes[]. Do not guess from the Documents index. Do not call search_documents for an inventory — that greps page text. Which files mention a fact inside a PDF is still search_documents.
-- A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, a yes to your offer to draft, or a complaint that work did not land — "nothing was filled", "I don't see the table", "you said you filled it"): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with the highest-signal sections — still only because they asked.
+- A write request (draft, fill, write, edit, add, insert, remove, rewrite, paste, put, place, start the report, a yes to your offer to draft, or a complaint that work did not land — "nothing was filled", "I don't see the table", "you said you filled it"): then follow the drafting rules. Draft only the sections they named. If they asked to draft the whole report, start with cover/header identity when it is unset, then the highest-signal sections — still only because they asked.
 - Before claiming a prior proposal is still waiting, was approved, or was dismissed, call list_suggestions (or read pendingSuggestions / suggestionCounts from read_section). Open cards are proposed, not landed. Never treat a dismissed or approved card as still pending.
 - A bare statement, pasted content, or correction: if this prompt has a "Tools available this turn" block saying write tools start hidden, answer in chat unless they asked to change the document — then call the write tool. Otherwise in Agent mode treat it as a write and deliver the change. In Ask mode, answer.
 Empty fields and ready documents are not a request to write.`;
@@ -241,11 +259,26 @@ function agentRules(opts: {
   retrievalPolicy: RetrievalPolicy;
   includePlotMeasurements: boolean;
   writesLoaded: boolean;
+  hasIdentity: boolean;
+  keepIdentityUnits: boolean;
 }): string {
   const priority = draftPriorityPhrase(opts.draftOrder);
   const analyzeToolLine = opts.analyzeInScope
     ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / edit_table / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
     : "";
+  const identityToolLine = opts.hasIdentity
+    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. One suggestion card for the whole header — the engineer Apply / Dismisses it like draft_field / edit_table / propose_edit. Duplicate document numbers fail here and at Apply. Remaining-section treats a complete proposal as done (do not wait for Apply). Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list).${opts.keepIdentityUnits ? " Capacity / Size includes the unit as printed (8000 L, 3.0 KL) — not a bare 8000." : ""} Do not use draft_field for these keys.`
+    : "";
+  const hiddenWriteTools = opts.hasIdentity
+    ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"
+    : "draft_field / edit_table / propose_edit / insert_image / remove_image";
+  const analyzeImmediate = opts.analyzeInScope
+    ? " Analyze method (select_analyze_method) lands immediately in the header."
+    : "";
+  const identityReview = opts.hasIdentity
+    ? " Cover/header identity (draft_identity) is one suggestion card for the whole header — Apply / Dismiss like other Agent edits. Duplicate document numbers fail at propose and at Apply."
+    : "";
+  const landingLine = `You are in Agent mode THIS SEND. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Use the tools to read sections and propose changes. Body edits go to the engineer for review — nothing in a TipTap section lands until they accept it.${analyzeImmediate}${identityReview} That review step is normal for section drafts: still call edit_table / draft_field / propose_edit${opts.hasIdentity ? " / draft_identity" : ""} to deliver those changes.`;
   let reviewTools = "";
   let searchFirst: string;
   switch (opts.retrievalPolicy) {
@@ -271,7 +304,7 @@ function agentRules(opts: {
 
   if (!opts.writesLoaded) {
     return `## Mode: AGENT (read this turn — write tools start hidden)
-You are in Agent mode THIS SEND — not Ask. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode or that they must switch. This message is a question or review, so draft_field / edit_table / propose_edit / insert_image / remove_image start hidden.
+You are in Agent mode THIS SEND — not Ask. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode or that they must switch. This message is a question or review, so ${hiddenWriteTools} start hidden.
 ${reviewTools}
 ${searchFirst}
 
@@ -286,7 +319,7 @@ Delivery in this chrome is ALWAYS a suggestion card:
 - The only turns that end with no edit tool call are questions and small talk. If "Tools available this turn" is absent, deliver the write.
 - finish_document_review is a READ step, never the end of a write turn. Its findings are input to the draft, not the reply. When it returns deliverNow, call that write tool in the same turn. Composing the section and printing it in chat leaves the field empty — the engineer sees prose they cannot accept and a section still marked not started.`;
   return `## Mode: AGENT (draft and propose edits)
-You are in Agent mode THIS SEND. Ignore earlier Ask-mode notes in this thread. Never write that you are still in Ask mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing lands until they accept it. That review step is normal and expected: still call edit_table / draft_field / propose_edit to deliver the change.${proposeDeliveryRule}
+${landingLine}${proposeDeliveryRule}
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
@@ -296,7 +329,7 @@ Choosing the right tool:
 ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). Do not use this to move a figure. The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").
-- list_suggestions — open / approved / dismissed AI cards. Call this before claiming a prior proposal is still waiting or that nothing was proposed. Open = proposed, not landed.${analyzeToolLine}${reviewTools}
+- list_suggestions — open / approved / dismissed AI cards. Call this before claiming a prior proposal is still waiting or that nothing was proposed. Open = proposed, not landed.${analyzeToolLine}${identityToolLine}${reviewTools}
 
 Drafting decisions (important):
 - Only draft or edit when this turn is a write request (see User intent). Do not volunteer drafts of empty sections.
@@ -320,7 +353,11 @@ Editing rules:
 6. draft_field refuses a replacement that keeps most of the field ("not_a_rewrite") — that is the signal to go back to propose_edit. Nearby wording in the same field belongs in one propose_edit (span the unchanged words between). Distant paragraphs can be separate calls. Removing details ("drop the version numbers", "take out that clause") keeps most of the field, so it is propose_edit even when it touches several places. Adding a table under existing bullets is create_table, not a rewrite.
 7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use an angle-bracket placeholder only after a search or page read this turn still does not contain the fact. Do not copy document topics/summaries into the draft. Hard facts copied from attachments (SOP numbers, equipment IDs from records, inventory rows, measured numbers, protocol IDs) must appear on a page this turn retrieved — in Purpose and Responsibilities as well as evidence tables. Title-page / user-confirmed identity, 1 April–31 March bounds, and facts already written in this report (another section or the sibling table) are not gated that way. On a Qualification Summary Report RTM row, do not copy a neighbour URS-ID window (do not copy URS-37's range onto URS-5). Facts on the URS cover or outside any URS-ID window (capacity, MOC) may be copied onto the matching row. A URS page that lists the IDs and parameters first, then the requirement sentences, still goes in one insert_rows: every ID from the pages you read, with that sentence in User requirements. Call list_attachments and search attached Design Qualification / Installation Qualification / Operational Qualification / Performance Qualification PDFs in the same turn for each URS row's Parameters (jacket, agitator, nozzle — not a canned mapping). When they asked to fill or update RTM Reference cells, read_section first. You may overwrite filled DQ / IQ / OQ / PQ / Remarks with the cited protocol section even when those cells already have a number (13.6 may become 13.6 – Gasket material verified as PTFE; 8.2.3 may become 8.2.3 – Heating Trial or 8.2.3 – Fill the reactor to 8000 L) — keep that live dotted number and add one audit line from that same section (heading title, procedure, or observation; a title next to the number is not required); the card copies the grounded family-column / Remarks insertText you already wrote — do not rewrite a named cell to a different protocol family or neighbour heading (IQ 13.8.5.1 PSV stays IQ, not PQ 8.2.3; 8.2.3 – Heating trial at 8000 L working volume stays that line, not 8.2.4 – Operational verification). Empty or leftover family-column cells still clear page counters (16, Page 21 of 51) and logged readings (12.72 °C) instead of persisting them. Search every attached DQ / IQ / OQ / PQ protocol in the same turn (any order). Fill each Reference – DQ / IQ / OQ / PQ cell from that family's cited body; write NA when that family was searched and does not cover the row. On other tables, do not rewrite a filled cell in the same batch. Fill Reference – DQ, Reference – IQ, Reference – OQ, Reference – PQ, and Remarks only from a cited protocol body of that family that names that ID or that describes that parameter. Each family cell is the protocol section number plus one plain line about the test done for qualification, taken from that section — not only the heading title (8.2.3 – Heating trial at 8000 L working volume, or 8.2.3 – Fill the reactor to 8000 L), about 18 words at most. Two tests on that row may share the cell with / or & (8.2.4 / 8.8 – Agitator speed check, 8.5 & 8.6 – Pressure and vacuum hold). PQ/OQ/IQ section numbers are dotted (8.2.3, 8.1.1, 13.6), never the printed page counter (16, 14, Page 21 of 51) and never a logged measurement (Bottomsensor- 12.72 °C is not section 12.72). Cite [file, p. N] on the page that prints that dotted heading. Never copy the page number (Page 21 of 51), the running header that repeats Capacity/Size / Effective Date on every page, a signature, a date, or a cut-off grade (Gr. 380 must stay intact) into that cell. Fill every matching family column on that row — not a single highest-stage cell. The four family columns use the same fill rule — only the source PDF changes (Design Qualification → DQ, Installation Qualification → IQ, Operational Qualification → OQ, Performance Qualification → PQ). If that family's protocol was searched and the parameter is not in the body, write NA in that family cell — still persist the URS ID, Parameters, and User requirements. Never write \`<remarks>\` or \`<section>\` as RTM cell text. Empty DQ / IQ / OQ / PQ / Remarks they asked to fill are a gap: search attached IQ / OQ / PQ / DQ protocol bodies this turn for that row's Parameters, then fill the cited result or NA — do not persist the angle brackets. If a tool returns leftover placeholders, search those protocols before calling edit_table again. Do not write stock Complies / bare Section 13 unless that protocol result line supports the row (Verified on the result may be Complies; a Verified By signature block is not a pass). Do not paste a protocol-to-URS mapping in chat and wait for confirmation. Do not tell them to accept a card and type 3.5 (or any leftover <number>) into a cell when a retrieved URS page already states that figure — persist the number. When filling a named column, copy the value printed next to that same label on the source page. A matching number or date elsewhere on the cited page (a signature block, an observation line, a different header) is not that field. A leading minus is part of the number (−15 °C is not 15 °C; −50 ± 10 RPM is not 50±10 RPM or an approximate sign). A leading tilde is approximate, not a minus (~50 ± 10 RPM is not −50 RPM — copy the tilde as written, and never invent a minus). The server rejects unsupported hard facts on every pack.
 8. After proposing, briefly summarize what you drafted in document language (the section names the engineer sees). List placeholders to complete, and name any sections you deliberately skipped and why. Do not walk field-by-field through targetField names, SAMPLE, omit-if switches, or tool names. Never call the drafting rules a recipe. Never say you filled, proposed, drafted, or applied a change unless a tool this turn returned status proposed, drafted, or applied. An open suggestion card is proposed, not landed. When edit_table returns adjustedCells, those cells were saved with the \`saved\` text (empty = left blank), not what you requested — report the saved values and name the blank cells; quote the saved family-column line from adjustedCells.saved, not a different test heading than the card; never say you added Complies to a cell whose saved value is empty. proposedRowKeys / proposedCellCount / proposalNote are the rows on the open card; droppedRowKeys were not saved. Do not list URS-N rows as updated unless they appear in proposedRowKeys. One edit_table call is one suggestion card — not one card per URS row — and that card already holds every saved cell of that call. The card title (Update N table cells) counts only cells that actually change — identity Remarks that are already Complies are not in N. list_suggestions preview also names those rowKeys (Update N table cells on URS-1, …). Never paste a markdown table of RTM rows in chat (the suggestion card on the report is the document). If edit_table returns review_incomplete, start the document review instead of pasting the rows or asking them to confirm a mapping. Do not combine families in one cell — each family has its own column. A slash in a family cell (8.2.4 / 8.8) is two protocol section numbers, not two stages. Do not write 16 or 14 in that cell — those are page counters, not PQ sections. Do not write 12.72 — that is a sensor reading, not a protocol heading. Do not list Proposed Updates that still show \`<remarks>\` / \`<section>\`. Do not claim a prior-turn suggestion is still waiting unless list_suggestions (or read_section.pendingSuggestions) shows it open. Never treat a dismissed or approved card as still pending. Never quote attachment ids, analysis ids, or suggestion-card ids — name the file, plot title, or section. If insert_rows returns unsupported_facts, name the missing facts. Do not ask the engineer to accept an open card before the remaining rows are proposed. Do not paste a protocol-to-URS mapping in chat and wait for confirmation. Do not tell them to type a leftover <number> / <date> / <identifier> into the table when a retrieved page already printed that figure.
-9. Put source citations as [filename, p. N] immediately after the supported word or claim (or cell), never mid-word or inside **bold**. The server may number several sources on one claim as [1,2]. Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer — copy the citation field from a tool result instead of composing one. When finish_document_review / citationDigest / read_document_page / search_documents gave a page number, include p. N — use [filename] only if the page is missing or ambiguous. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule in both Document and Agent chrome. If a tool returns unsupported_facts, search or read the page that states the fact, then fill the real value. Do not persist angle-bracket placeholders in a table until that subsequent search. Leftover <date>/<identifier>/<number> are OK in prose, or in a table only after that lookup still misses — do not invent the missing identifiers or results.`;
+9. Put source citations as [filename, p. N] immediately after the supported word or claim (or cell), never mid-word or inside **bold**. The server may number several sources on one claim as [1,2]. Page numbers are the absolute PDF page position (what Adobe/pdf.js uses), never a printed page number from a header or footer — copy the citation field from a tool result instead of composing one. When finish_document_review / citationDigest / read_document_page / search_documents gave a page number, include p. N — use [filename] only if the page is missing or ambiguous. The server numbers them and parks the sources under a trailing "Citations:" heading. A split propose_edit (primary + second) still works. Do not invent citation numbers. draft_field and edit_table follow the same rule in both Document and Agent chrome.${
+    opts.hasIdentity
+      ? " draft_identity is the exception: cover/header scalars print on the cover — never put source brackets, numbered markers, or a Citations: list in those values."
+      : ""
+  } If a tool returns unsupported_facts, search or read the page that states the fact, then fill the real value. Do not persist angle-bracket placeholders in a table until that subsequent search. Leftover <date>/<identifier>/<number> are OK in prose, or in a table only after that lookup still misses — do not invent the missing identifiers or results.`;
 }
 
 const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6M / 5-Why / Brainstorming):
@@ -400,6 +437,10 @@ export function buildChatSystemPrompt(opts: {
           retrievalPolicy,
           includePlotMeasurements,
           writesLoaded,
+          hasIdentity: hasChatIdentity(documentType),
+          keepIdentityUnits: chatIdentityFields(documentType).some(
+            (field) => field.keepUnits
+          ),
         });
   const draftedBlock = opts.alreadyDrafted
     ? `\n\n${alreadyDraftedBlock(

@@ -4,11 +4,13 @@ import {
   MANUAL_REVISION_IDLE_MS,
 } from "@/lib/document-revisions/constants";
 import {
+  identityRevisionSnapshot,
   manualRevisionSummary,
   mergeManualSummary,
   planManualRevision,
   revisionFingerprint,
 } from "@/lib/document-revisions/snapshot";
+import { hashSectionContent } from "@/lib/audit";
 
 vi.mock("@/db", () => ({ db: {} }));
 
@@ -122,6 +124,38 @@ describe("mergeManualSummary", () => {
     expect(mergeManualSummary("Edited Define", "Edited Measure")).toBe(
       "Edited document"
     );
+  });
+});
+
+describe("identityRevisionSnapshot", () => {
+  it("hashes a document-number-only change", () => {
+    const before = identityRevisionSnapshot({
+      metadata: { cycleNo: "01" },
+      documentNo: "ELR-PR-001",
+      date: "2026-04-01T00:00:00.000Z",
+    });
+    const after = identityRevisionSnapshot({
+      metadata: { cycleNo: "01" },
+      documentNo: "ELR-PR-00",
+      date: "2026-04-01T00:00:00.000Z",
+    });
+    expect(hashSectionContent(before)).not.toBe(hashSectionContent(after));
+    expect(after.documentNo).toBe("ELR-PR-00");
+  });
+
+  it("includes ISO dates so a header date delete is not skipped", () => {
+    const fromDate = identityRevisionSnapshot({
+      metadata: {},
+      documentNo: "RA-1",
+      date: new Date("2026-04-01T00:00:00.000Z"),
+    });
+    const toDate = identityRevisionSnapshot({
+      metadata: {},
+      documentNo: "RA-1",
+      date: "2026-04-01T00:00:00.000Z",
+    });
+    expect(fromDate.date).toBe("2026-04-01T00:00:00.000Z");
+    expect(hashSectionContent(fromDate)).toBe(hashSectionContent(toDate));
   });
 });
 
