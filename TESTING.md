@@ -270,6 +270,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 |------|------------------|
 | does not blank Define while the gutter Apply is in flight | Seeded insert stays in the live editor for every sampled frame until it becomes ordinary text |
 | does not blank Define while inline Accept is in flight | Same for the inline Accept control on the highlighted span |
+| shows Apply all and Dismiss all for a single pending suggestion | Header bulk actions stay for one open card |
+| keeps Apply all and Dismiss all after dismissing one of two suggestions | Dismissing the first card leaves Apply all 1 / Dismiss all and the remaining inline preview |
 
 </details>
 
@@ -460,7 +462,7 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 
 Playwright stub chat (`ALLOW_TEST_STUB_CHAT`, `e2e/report-chat.spec.ts`) streams a canned reply. It **cannot** assert tool selection or citation grounding. Live Gemini in the browser is not a CI job (`docs/harness-plan.md` F2).
 
-**Quality floor beyond Vitest / Playwright:** git owns `scripts/eval/chat-draft-cases.json`. `pnpm chat-eval -- --replay` scores those cases against `groundDraftText` and layer-1 harness tool availability (no LLM). `pnpm chat-eval -- --sync` upserts Langfuse dataset `chat-draft-quality-floor`. `--experiment` upserts that dataset, then `dataset.runExperiment` so prompt/gate changes compare in the Datasets UI (`quality_floor` per item, `pass_rate` on the run). Missing `LANGFUSE_*` keys skip sync/experiment. `--live` is reserved until a headless Agent turn exists. Add a case when an incident ships, then replay. Copy `chat-draft-cases.local.example.json` to the gitignored overlay for private traces.
+**Quality floor beyond Vitest / Playwright:** git owns `scripts/eval/chat-draft-cases.json`. `pnpm chat-eval -- --replay` scores those cases against `groundDraftText`, QSR page-plan collapse, identity-incomplete search hits, and layer-1 harness tool availability (no LLM). `pnpm chat-eval -- --sync` upserts Langfuse dataset `chat-draft-quality-floor`. `--experiment` upserts that dataset, then `dataset.runExperiment` so prompt/gate changes compare in the Datasets UI (`quality_floor` per item, `pass_rate` on the run). Missing `LANGFUSE_*` keys skip sync/experiment. `--live` is reserved until a headless Agent turn exists. Add a case when an incident ships, then replay. Copy `chat-draft-cases.local.example.json` to the gitignored overlay for private traces.
 
 The layer that catches a production overblock (QSR section 5 dropping cover-page capacity, vacuum range, MOC) is a Vitest **replay** through `buildChatTools`:
 
@@ -476,7 +478,7 @@ The layer that catches a production overblock (QSR section 5 dropping cover-page
 | `tools.test.ts` | Tool schemas, ELR inventory lock, placeholder bounce, document-review start shape |
 | `ground-draft.test.ts` / `qsr-row-grounding.test.ts` | Pure grounding helpers (no `edit_table`) |
 | `harness-scenarios.ts` | Layer-1 tool *availability* (greeting / rewrite / empty inventory) — not write-path grounding |
-| `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour block, unread URS fail-closed, jacket IQ topic-match Stage, IQ header-only Stage blocked, greeting / empty-inventory harness |
+| `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour block, unread URS fail-closed, jacket IQ topic-match Stage, IQ header-only Stage blocked, mixed Table 3 + SOP not a cover walk, `Draft section 2,3,4` mixed, Table 3-only still a cover walk, SOP title list keeps search open, greeting / empty-inventory harness |
 
 `restoreFromFinishedReview` zeros skip counts, so it cannot reproduce a floor-8 skipped-file deadlock. Use a real start → continue → finish for that class of bug. Copy `qsr-rtm-draft-replay.test.ts` for the next incident; do not dump it into `tools.test.ts`.
 

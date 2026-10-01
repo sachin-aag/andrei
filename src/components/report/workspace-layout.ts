@@ -41,6 +41,7 @@ export const REVIEW_GUTTER_CONTAINER_MIN_PX = 480;
 export const REVIEW_GUTTER_GRID_COLS =
   "@[480px]:grid-cols-[minmax(0,var(--doc-col))_minmax(208px,1fr)]" as const;
 
+/** Hidden below 480px; `showDocumentSuggestionCard` unmounts the in-document copy only while this box actually paints. */
 export const REVIEW_GUTTER_ASIDE_CLASS =
   "relative hidden min-w-0 @[480px]:block" as const;
 

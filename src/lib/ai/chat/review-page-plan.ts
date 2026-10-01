@@ -11,8 +11,15 @@ import { phraseFamiliesForReviewObjective } from "@/lib/ai/chat/search-phrase-fa
 import {
   isQsrRtmSection,
   isUrsFilename,
+  QSR_RTM_SECTIONS,
   rtmHeadingPhrases,
 } from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  QSR_TABLE_HEADERS,
+  QSR_TABLE_SECTION_KEYS,
+  type QsrTableSectionKey,
+} from "@/lib/document-types/qsr/sections";
+import { detectSectionIntentsFromText } from "@/lib/ai/chat/section-intent";
 
 const STOPWORDS = new Set([
   "a",
@@ -85,50 +92,195 @@ const QSR_RTM_OBJECTIVE_PHRASES = [
   "requirement traceability",
 ] as const;
 
-/**
- * Collapse verbose Table 3 / References walk copy onto the section keys so a
- * later turn that scopes `qsr_qualification_documents` can reuse the finish.
- */
-function stableQsrCoverageObjective(normalized: string): string | null {
-  if (!normalized) return null;
+export type QsrReviewPagePlan = "cover" | "urs" | "scored" | "mixed";
+
+const QSR_COVER_SECTIONS = new Set<string>([
+  "qsr_qualification_documents",
+  "qsr_references",
+]);
+
+const QSR_URS_SECTIONS = new Set<string>([
+  ...QSR_RTM_SECTIONS,
+  "qsr_operating_range",
+  "qsr_rtm",
+]);
+
+function pagePlanForQsrSection(section: string): Exclude<QsrReviewPagePlan, "mixed"> {
+  if (QSR_COVER_SECTIONS.has(section)) return "cover";
+  if (QSR_URS_SECTIONS.has(section) || isQsrRtmSection(section)) return "urs";
+  return "scored";
+}
+
+function isUniqueIdentityHeader(header: string): boolean {
+  const needle = header.toLowerCase().replace(/\s+/g, " ").trim();
+  if (needle === "urs id") return true;
+  if (/\b(?:s\.?\s*no|serial|sr\.?\s*no)\b/.test(needle)) return false;
+  return (
+    /\b(?:document|sop|reference|protocol|report)\s+(?:number|no\.?)\b/.test(
+      needle
+    ) ||
+    (/\b(?:number|no\.?)\b/.test(needle) &&
+      /\b(?:document|sop|reference|protocol|report)\b/.test(needle))
+  );
+}
+
+function addQualDocIdentity(normalized: string, found: Set<string>): void {
   if (
     normalized === "qsr_qualification_documents" ||
-    normalized.includes("qsr_qualification_documents")
-  ) {
-    return "qsr_qualification_documents";
-  }
-  if (
+    normalized.includes("qsr_qualification_documents") ||
     normalized.includes("qualification document") ||
     normalized.includes("qsr_qualification") ||
-    normalized.includes("lifecycle document") ||
-    (normalized.includes("table 3") &&
-      (normalized.includes("qualification") ||
-        normalized.includes("qsr") ||
-        normalized.includes("qual doc")))
+    normalized.includes("lifecycle document")
   ) {
-    return "qsr_qualification_documents";
+    found.add("qsr_qualification_documents");
   }
+}
+
+function addSopIdentity(normalized: string, found: Set<string>): void {
+  if (
+    normalized === "qsr_sops" ||
+    normalized.includes("qsr_sops")
+  ) {
+    found.add("qsr_sops");
+  }
+}
+
+function addReferencesIdentity(normalized: string, found: Set<string>): void {
   if (
     normalized === "qsr_references" ||
     normalized.includes("qsr_references")
   ) {
-    return "qsr_references";
+    found.add("qsr_references");
+    return;
   }
   if (
     /\breferences\b/.test(normalized) &&
     (normalized.includes("qsr") || normalized.includes("qualification summary"))
   ) {
-    return "qsr_references";
+    found.add("qsr_references");
   }
+}
+
+function addRtmIdentity(normalized: string, found: Set<string>): void {
   if (
     normalized === "qsr_rtm" ||
     /^qsr_rtm_/.test(normalized) ||
     normalized.includes("qsr_rtm_")
   ) {
+    found.add("qsr_rtm");
+    return;
+  }
+  if (QSR_RTM_OBJECTIVE_PHRASES.some((phrase) => normalized.includes(phrase))) {
+    found.add("qsr_rtm");
+  }
+}
+
+/**
+ * Every QSR identity named in a review objective. Used to refuse collapsing
+ * mixed page plans (cover vs URS vs scored body) onto a single `|obj:` key.
+ */
+export function qsrIdentitiesInObjective(
+  objective: string | null | undefined
+): string[] {
+  const normalized = (objective ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return [];
+  const found = new Set<string>();
+
+  for (const key of QSR_TABLE_SECTION_KEYS) {
+    if (normalized === key || normalized.includes(key)) found.add(key);
+  }
+  addQualDocIdentity(normalized, found);
+  addSopIdentity(normalized, found);
+  addReferencesIdentity(normalized, found);
+  addRtmIdentity(normalized, found);
+
+  for (const [section, headers] of Object.entries(QSR_TABLE_HEADERS) as Array<
+    [QsrTableSectionKey, readonly string[]]
+  >) {
+    for (const header of headers) {
+      if (!isUniqueIdentityHeader(header)) continue;
+      if (normalized.includes(header.toLowerCase())) found.add(section);
+    }
+  }
+
+  for (const section of detectSectionIntentsFromText(
+    objective ?? "",
+    "qualification_summary_report"
+  )) {
+    if (
+      (QSR_TABLE_SECTION_KEYS as readonly string[]).includes(section) ||
+      QSR_COVER_SECTIONS.has(section) ||
+      QSR_URS_SECTIONS.has(section)
+    ) {
+      found.add(section);
+    }
+  }
+
+  return [...found];
+}
+
+function isBareCoverIdentity(normalized: string): boolean {
+  const hasDocIdentity =
+    normalized.includes("document number") ||
+    normalized.includes("document no") ||
+    normalized.includes("document name");
+  const hasRevisionOrStatus =
+    normalized.includes("revision") ||
+    normalized.includes("status") ||
+    normalized.includes("effective");
+  return hasDocIdentity && hasRevisionOrStatus;
+}
+
+/**
+ * How this objective should queue pages. Collapse `|obj:` only when every
+ * named identity shares a plan — a mixed "draft 3 and 4" must not become a
+ * Table 3 cover walk.
+ */
+export function qsrReviewPagePlan(
+  objective: string | null | undefined
+): QsrReviewPagePlan {
+  const normalized = (objective ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return "scored";
+  const identities = qsrIdentitiesInObjective(objective);
+  const plans = new Set(identities.map((section) => pagePlanForQsrSection(section)));
+  if (plans.size > 1) return "mixed";
+  if (plans.size === 1) return [...plans][0]!;
+  if (isBareCoverIdentity(normalized) && identities.length === 0) return "cover";
+  return "scored";
+}
+
+/**
+ * Collapse verbose Table 3 / References / RTM walk copy onto the section
+ * keys so a later turn that scopes the same identity can reuse the finish.
+ * Do not collapse when the named identities need different page plans.
+ */
+function stableQsrCoverageObjective(normalized: string): string | null {
+  if (!normalized) return null;
+  if (qsrReviewPagePlan(normalized) === "mixed") return null;
+
+  const identities = qsrIdentitiesInObjective(normalized);
+  const rtmNamed = identities.some(
+    (id) => id === "qsr_rtm" || isQsrRtmSection(id) || id === "qsr_operating_range"
+  );
+  const coverNamed = identities.filter((id) => QSR_COVER_SECTIONS.has(id));
+  const plans = new Set(identities.map((section) => pagePlanForQsrSection(section)));
+
+  if (plans.size === 1 && plans.has("urs") && rtmNamed) {
+    if (
+      identities.length === 1 &&
+      identities[0] === "qsr_operating_range"
+    ) {
+      return "qsr_operating_range";
+    }
     return "qsr_rtm";
   }
-  // Gemini names 5.2–5.4 in prose ("control philosophy", "gmp requirements")
-  // instead of `qsr_rtm_control`. Stamp the same family so edit_table unlocks.
+  if (plans.size === 1 && plans.has("cover") && coverNamed.length > 0) {
+    if (coverNamed.includes("qsr_qualification_documents")) {
+      return "qsr_qualification_documents";
+    }
+    return "qsr_references";
+  }
+  if (identities.length === 1) return identities[0]!;
   if (QSR_RTM_OBJECTIVE_PHRASES.some((phrase) => normalized.includes(phrase))) {
     return "qsr_rtm";
   }
@@ -162,6 +314,14 @@ export function coverageKeySatisfiesObjective(
   // NL RTM copy ("control philosophy") collapses to qsr_rtm; do not
   // tokenize the collapsed family or `qsr` leaks onto Table 3.
   if (coverageObjectiveDigest(digest) === want) return true;
+  // A mixed-plan finish (Table 3 covers + SOP body) must not unlock a
+  // later single-identity walk via overlapping tokens.
+  if (
+    qsrReviewPagePlan(digest) === "mixed" &&
+    qsrReviewPagePlan(objective) !== "mixed"
+  ) {
+    return false;
+  }
   const wantTokens = objectiveTokens(objective);
   const haveTokens = objectiveTokens(digest);
   if (wantTokens.length === 0 || haveTokens.length === 0) return false;
@@ -252,33 +412,13 @@ function qsrInventorySectionKeys(): readonly string[] {
 /**
  * Table 3 (Qualification Documents) and References: covers, not protocol
  * bodies. RTM inventories are not covers — they need URS IDs throughout.
+ * Mixed identities that also need body pages are not a cover walk.
  */
 export function isQsrLifecycleCoverObjective(
   objective: string | null | undefined
 ): boolean {
   if (!objective) return false;
-  const digest = coverageObjectiveDigest(objective);
-  if (!digest) return false;
-  if (
-    digest === "qsr_qualification_documents" ||
-    digest.includes("qsr_qualification_documents")
-  ) {
-    return true;
-  }
-  if (digest === "qsr_references" || digest.includes("qsr_references")) {
-    return true;
-  }
-  if (digest.includes("qualification document")) return true;
-  if (digest.includes("lifecycle document")) return true;
-  const hasDocIdentity =
-    digest.includes("document number") ||
-    digest.includes("document no") ||
-    digest.includes("document name");
-  const hasRevisionOrStatus =
-    digest.includes("revision") ||
-    digest.includes("status") ||
-    digest.includes("effective");
-  return hasDocIdentity && hasRevisionOrStatus;
+  return qsrReviewPagePlan(objective) === "cover";
 }
 
 function qsrInventorySectionForObjective(
@@ -329,13 +469,9 @@ export function isQsrInventoryReviewObjective(
 export function isQsrUrsWalkObjective(
   ...objectives: Array<string | null | undefined>
 ): boolean {
-  return objectives.some((objective) => {
-    if (!objective || isQsrLifecycleCoverObjective(objective)) return false;
-    const mapped =
-      qsrInventorySectionForObjective(objective) ??
-      inventorySectionForObjective(objective);
-    return isQsrRtmSection(mapped) || mapped === "qsr_operating_range";
-  });
+  return objectives.some(
+    (objective) => Boolean(objective) && qsrReviewPagePlan(objective) === "urs"
+  );
 }
 
 /** Ready files to page-list for a QSR inventory walk. */

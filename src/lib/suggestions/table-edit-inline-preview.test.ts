@@ -260,7 +260,9 @@ describe("Table 5 23-cell dummy-row fill (production screenshot)", () => {
   it("is a 23-cell TABLE EDIT card", () => {
     const operation = table5Operation();
     expect(operation.cells).toHaveLength(23);
-    expect(summarizeTableOperation(operation)).toBe("Update 23 table cells");
+    expect(summarizeTableOperation(operation)).toBe(
+      "Update 23 table cells on URS-1, URS-2, URS-3 (+8 more)"
+    );
   });
 
   it("applies the empty remainder without overwriting Gross Vessel Volume", () => {

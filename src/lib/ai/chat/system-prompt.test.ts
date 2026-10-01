@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v153-prompt-structure");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v171-prompt-structure");
   });
 
   it("keeps shared source-list and wrap-up rules on every type", () => {
@@ -30,13 +30,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain(
       "Do not tell them to accept a card and type a leftover <number>"
     );
-    expect(prompt).toContain(
-      "Do not tell them to accept a card and type a leftover <number>"
-    );
+    expect(prompt).toContain("If edit_table returns review_incomplete");
+    expect(prompt).toContain("never paste a markdown table in chat as a stand-in");
+    expect(prompt).toContain("adjustedCells");
+    expect(prompt).toContain("proposedRowKeys");
+    expect(prompt).toContain("droppedRowKeys");
+    expect(prompt).toContain("not one card per source row");
+    expect(prompt).toContain("counts only cells that actually change");
     expect(prompt).toContain("drop the version numbers");
     expect(prompt).toContain("Do not copy document topics/summaries into the draft");
     expect(prompt).toContain("−15 °C is not 15 °C");
-    expect(prompt).toContain("−50 ± 10 RPM");
+    expect(prompt).toContain("~50 ± 10 RPM");
     expect(prompt).toContain(
       "When filling a named column, copy the value printed next to that same label"
     );
@@ -57,9 +61,16 @@ describe("buildChatSystemPrompt", () => {
     expect(qsr).toContain("Never write Complies, bare Section 13");
     expect(qsr).toContain("one insert_rows");
     expect(qsr).toContain("do not paste a protocol-to-URS mapping in chat");
-    expect(qsr).toContain("leave those three cells empty for that row");
-    expect(qsr).toContain("PQ, then OQ, then IQ, then DQ");
-    expect(qsr).toContain("including a filled Reference – Section");
+    expect(qsr).toContain("four family columns");
+    expect(qsr).toContain("Fill every matching family column");
+    expect(qsr).toContain("8.2.3 – Heating trial at 8000 L working volume");
+    expect(qsr).toContain("Never paste a markdown table of RTM rows in chat");
+    expect(qsr).toContain("Do not combine families in one cell");
+    expect(qsr).toContain("write NA in that family cell");
+    expect(qsr).toContain("only the source PDF changes");
+    expect(qsr).not.toContain("PQ, then OQ, then IQ, then DQ");
+    expect(qsr).toContain("fill or update RTM Reference cells");
+    expect(qsr).toContain("13.6 may become 13.6 – Gasket material verified as PTFE");
     expect(qsr).toContain("Do not list Proposed Updates that still show them");
     expect(qsr).toContain(
       "Do not tell them to accept a card and type 3.5"
@@ -72,7 +83,7 @@ describe("buildChatSystemPrompt", () => {
     ] as const) {
       const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", documentType });
       expect(prompt).not.toContain("URS-37");
-      expect(prompt).not.toContain("Reference – Section");
+      expect(prompt).not.toContain("Reference – DQ");
       expect(prompt).not.toContain("protocol-to-URS mapping");
       expect(prompt).not.toContain("Installation Qualification");
     }
@@ -84,10 +95,10 @@ describe("buildChatSystemPrompt", () => {
       mode: "plan",
       documentType: "qualification_summary_report",
     });
-    expect(qsr).toContain("one URS ID is not one grep");
-    expect(qsr).toContain("An IQ protocol hit is not enough");
+    expect(qsr).toContain("one requirement ID is not one grep");
+    expect(qsr).toContain("A hit on one family is not enough");
     expect(buildChatSystemPrompt({ ...opts, mode: "plan" })).not.toContain(
-      "one URS ID is not one grep"
+      "one requirement ID is not one grep"
     );
   });
 
@@ -412,6 +423,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("propose a short outline");
     expect(prompt).not.toContain("switch to Agent mode to generate");
     expect(prompt).not.toContain("Mode: AGENT");
+    expect(prompt).toContain("This send is Ask");
+    expect(prompt).toContain("Do not say the whole session is locked in Ask");
   });
 
   it("agent mode enables drafting with draft_field and placeholder heuristics", () => {
@@ -420,6 +433,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: ASK");
+    expect(prompt).toContain("This send is Agent");
+    expect(prompt).toContain("Do not write that you are still in Ask mode");
   });
 
   it("sends a small change in a filled field back to propose_edit", () => {
@@ -584,6 +599,8 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(plan).toContain("divider=true");
     expect(agent).toContain("divider=true");
+    expect(plan).toContain("identityIncomplete=true");
+    expect(agent).toContain("identityIncomplete=true");
     expect(agent).toContain("Never claim 100% on-time");
     expect(agent).toContain("Do not start a document review");
     expect(agent).toContain(
@@ -687,6 +704,9 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("Qualification Summary Report Table 3");
     expect(prompt).toContain("every attached URS / DS / DQ / IQ / OQ / PQ");
+    expect(prompt).toContain(
+      "If the same review also names another identity (SOP Number, Reference Number, Effective Date for those rows), do not treat it as a Table 3 cover walk"
+    );
     expect(prompt).toContain("the server keeps the URS");
     expect(prompt).toContain("A 12-page URS is a 12-page walk");
     expect(prompt).not.toContain("For ELR inventory tables");

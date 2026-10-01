@@ -6,6 +6,7 @@ import {
   ELR_TABLE_CAPTION_TITLES,
   elrTableHeadersForSection,
 } from "@/lib/document-types/elr/sections";
+import { QSR_RTM_FAMILY_HEADERS } from "@/lib/document-types/qsr/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -136,7 +137,14 @@ export type TableOperationStatus =
   | "already_present";
 
 export type TableOperationResult =
-  | { ok: true; status: "ok"; doc: JSONContent; tableNumber?: number }
+  | {
+      ok: true;
+      status: "ok";
+      doc: JSONContent;
+      tableNumber?: number;
+      /** Cells that actually change the live table (identity / dummy leftovers dropped). */
+      appliedOperation?: TableOperation;
+    }
   | { ok: false; status: Exclude<TableOperationStatus, "ok">; hint: string };
 
 export const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s+/i;
@@ -268,6 +276,28 @@ export function countFilledTablesInDocument(
     if (tableHasData(table)) count += 1;
   });
   return count;
+}
+
+/**
+ * Section that owns printed Table N among filled grids. Empty unused shells
+ * do not consume N — same ordinal as the context-map caption.
+ */
+export function sectionForPrintedTableNumber(
+  contents: readonly DocumentTableContent[],
+  printed: number
+): string | undefined {
+  if (!Number.isInteger(printed) || printed < 1) return undefined;
+  let ordinal = 0;
+  let found: string | undefined;
+  walkFilledTablesInDocument(contents, ({ section, table }) => {
+    if (!tableHasData(table)) return;
+    ordinal += 1;
+    if (ordinal === printed) {
+      found = section;
+      return false;
+    }
+  });
+  return found;
 }
 
 /**
@@ -578,6 +608,9 @@ function captionAfterFill(
     ...(captioned.tableNumber !== undefined
       ? { tableNumber: captioned.tableNumber }
       : {}),
+    ...(result.appliedOperation
+      ? { appliedOperation: result.appliedOperation }
+      : {}),
   };
 }
 
@@ -817,6 +850,24 @@ function agreedSiblingRowKey(
   return [...keys][0] ?? "";
 }
 
+/** Family / Remarks indexes on a QSR RTM header row (legacy Stage/Section too). */
+function qsrRtmReferenceColumns(
+  headers: readonly string[]
+): ReadonlySet<number> | null {
+  const cols = new Set<number>();
+  const families = new Set<string>(QSR_RTM_FAMILY_HEADERS);
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i]!;
+    const name = header.toLowerCase();
+    if (name === "remarks" || families.has(header)) cols.add(i);
+    else if (name.includes("qualification stage")) cols.add(i);
+    else if (name.includes("reference") && name.includes("section")) {
+      cols.add(i);
+    }
+  }
+  return cols.size > 0 ? cols : null;
+}
+
 /**
  * Rematch each edit_cells cell onto its own live URS / first-cell row, then
  * drop cells whose insertText already equals the live cell (identity). Empty
@@ -832,6 +883,8 @@ function agreedSiblingRowKey(
  * the suggestion stale and skip inline preview for the empty remainder.
  * A mixed fill-empty batch also skips rewriting filled cells so the empty
  * remainder still lands; a batch that only rewrites filled cells still applies.
+ * QSR RTM family columns and Remarks are the exception: a follow-up may
+ * overwrite a filled number with the cited heading (13.6 → 13.6 – Gasket material verified as PTFE).
  */
 export function resolveEditCells(
   rows: readonly JSONContent[],
@@ -977,9 +1030,13 @@ export function resolveEditCells(
     if (liveCellIsEmpty(live)) fillsEmpty.push(cell);
     else rewritesFilled.push(cell);
   }
+  const rtmCols = qsrRtmReferenceColumns(headers);
   const applied =
     fillsEmpty.length > 0 && rewritesFilled.length > 0
-      ? fillsEmpty
+      ? [
+          ...fillsEmpty,
+          ...rewritesFilled.filter((cell) => rtmCols?.has(cell.col) === true),
+        ]
       : changing;
   if (applied.length === 0) {
     if (sawStale && !sawIdentity) {
@@ -1437,7 +1494,12 @@ function applyEditCells(
     const node = rowCells(rows[cell.row]!)[cell.col]!;
     setCellText(node, cell.insertText);
   }
-  return { ok: true, status: "ok", doc };
+  return {
+    ok: true,
+    status: "ok",
+    doc,
+    appliedOperation: { ...operation, cells: resolved.cells },
+  };
 }
 
 function applyInsertRows(
@@ -2287,9 +2349,23 @@ export function summarizeTableOperation(operation: TableOperation): string {
   switch (operation.kind) {
     case "edit_cells": {
       const n = operation.cells.length;
+      const keys: string[] = [];
+      const seen = new Set<string>();
+      for (const cell of operation.cells) {
+        const key = cell.rowKey?.replace(/\s+/g, " ").trim();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        keys.push(key);
+      }
+      const shown = keys.slice(0, 3);
+      const extra = keys.length - shown.length;
+      const onRows =
+        shown.length === 0
+          ? ""
+          : ` on ${shown.join(", ")}${extra > 0 ? ` (+${extra} more)` : ""}`;
       return n === 1
-        ? `Update 1 table cell`
-        : `Update ${n} table cells`;
+        ? `Update 1 table cell${onRows}`
+        : `Update ${n} table cells${onRows}`;
     }
     case "insert_rows": {
       const n = operation.rows.length;

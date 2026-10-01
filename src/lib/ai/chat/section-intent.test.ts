@@ -149,6 +149,29 @@ describe("detectSectionIntentFromText", () => {
       )
     ).toEqual(["qsr_rtm_control", "qsr_rtm_gmp", "qsr_rtm_safety"]);
     expect(
+      detectSectionIntentsFromText(
+        "Draft section 2,3,4",
+        "qualification_summary_report"
+      )
+    ).toEqual([
+      "qsr_overview",
+      "qsr_background",
+      "qsr_qualification_documents",
+      "qsr_sops",
+    ]);
+    expect(
+      detectSectionIntentFromText(
+        "draft table 4",
+        "qualification_summary_report"
+      )
+    ).toBe("qsr_rtm_process");
+    expect(
+      detectSectionIntentsFromText(
+        "populate tables 3 and 4",
+        "qualification_summary_report"
+      )
+    ).toEqual(["qsr_sops", "qsr_rtm_process"]);
+    expect(
       detectSectionIntentFromText("5.2", "equipment_lifecycle_report")
     ).toBeNull();
   });

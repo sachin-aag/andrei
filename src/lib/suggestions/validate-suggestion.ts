@@ -1,12 +1,13 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
-import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
+import {
+  parseAiFixCommentContent,
+  sectionOrderWithOpenSuggestions,
+  sortedOpenSuggestionsForSection,
+} from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { hashContent } from "@/lib/ai/content-hash";
-import {
-  parseAiFixCommentContent,
-} from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
   flattenForAnchor,
@@ -407,6 +408,9 @@ export function countStaleOpenSuggestions(
 /**
  * Document-wide open AI suggestions. `locatable` is the Apply-all count;
  * `total` includes stale leftovers so Dismiss all can still clear them.
+ * Sections that are not in `sectionOrder` but still have an open AI
+ * comment (no-criteria QSR/ELR fields) are appended so the header does
+ * not hide after the last evaluatable card is dismissed.
  */
 export function countOpenSuggestionsForReport(
   sectionOrder: readonly SectionType[],
@@ -416,7 +420,10 @@ export function countOpenSuggestionsForReport(
 ): { total: number; locatable: number } {
   let total = 0;
   let locatable = 0;
-  for (const section of sectionOrder) {
+  for (const section of sectionOrderWithOpenSuggestions(
+    sectionOrder,
+    comments
+  )) {
     const open = sortedOpenSuggestionsForSection(
       section,
       [...comments],

@@ -201,7 +201,7 @@ describe("fieldFillState seeded tables", () => {
     expect(sectionFillState(content, "vq_section_g")).toBe("empty");
   });
 
-  it("treats the QSR template plus one real row as filled", () => {
+  it("treats extra blank URS-ID rows as still empty", () => {
     const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
       table: { content?: Array<{ content?: unknown[] }> };
     };
@@ -215,6 +215,32 @@ describe("fieldFillState seeded tables", () => {
             type: "paragraph",
             content:
               index === 0 ? [{ type: "text", text: "URS-2" }] : [],
+          },
+        ],
+      })),
+    });
+    expect(fieldFillState(content, "qsr_rtm_process", "table")).toBe("empty");
+    expect(sectionFillState(content, "qsr_rtm_process")).toBe("empty");
+  });
+
+  it("treats the QSR template plus a filled requirement row as not empty", () => {
+    const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
+      table: { content?: Array<{ content?: unknown[] }> };
+    };
+    const table = content.table.content?.[0] as { content: unknown[] };
+    table.content.push({
+      type: "tableRow",
+      content: QSR_RTM_HEADERS.map((_, index) => ({
+        type: "tableCell",
+        content: [
+          {
+            type: "paragraph",
+            content:
+              index === 0
+                ? [{ type: "text", text: "URS-2" }]
+                : index === 1
+                  ? [{ type: "text", text: "MOC" }]
+                  : [],
           },
         ],
       })),
@@ -258,21 +284,18 @@ describe("fieldFillState seeded tables", () => {
     expect(sectionFillState(content, "qsr_volumetric_details")).not.toBe("empty");
   });
 
-  it("treats QSR other details as filled once the agitator type is named", () => {
-    const content = {
-      narrative: {
-        type: "doc",
-        content: [
-          {
-            type: "paragraph",
-            content: [
-              { type: "text", text: "Agitator Type: ", marks: [{ type: "bold" }] },
-              { type: "text", text: "Pitched blade" },
-            ],
-          },
-        ],
-      },
+  it("treats QSR other details as filled once a Details cell is written", () => {
+    const content = structuredClone(emptyQsrContent("qsr_other_details")) as {
+      narrative: JSONContent;
     };
+    const table = content.narrative.content?.find((node) => node.type === "table");
+    const agitatorRow = table?.content?.[2];
+    const detailsCell = agitatorRow?.content?.[1];
+    expect(detailsCell).toBeTruthy();
+    if (!detailsCell) return;
+    detailsCell.content = [
+      { type: "paragraph", content: [{ type: "text", text: "Pitched blade" }] },
+    ];
     expect(sectionFillState(content, "qsr_other_details")).not.toBe("empty");
   });
 
@@ -282,9 +305,8 @@ describe("fieldFillState seeded tables", () => {
     };
     const table = content.table.content?.[0];
     const ursRow = table?.content?.[1];
-    const blankRow = table?.content?.[3];
     const sourceCell = ursRow?.content?.[0];
-    const destCell = blankRow?.content?.[0];
+    const destCell = ursRow?.content?.[1];
     expect(sourceCell && destCell).toBeTruthy();
     if (!sourceCell || !destCell) return;
     destCell.content = sourceCell.content;

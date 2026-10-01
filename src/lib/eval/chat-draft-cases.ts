@@ -5,6 +5,15 @@ import {
   HARNESS_SCENARIOS,
   type HarnessScenarioId,
 } from "@/lib/ai/chat/harness-scenarios";
+import { annotateIdentityIncompleteSearchHits } from "@/lib/ai/chat/identity-incomplete-hits";
+import {
+  coverageKeySatisfiesObjective,
+  coverageObjectiveDigest,
+  isQsrLifecycleCoverObjective,
+  isQsrUrsWalkObjective,
+  qsrReviewPagePlan,
+  type QsrReviewPagePlan,
+} from "@/lib/ai/chat/review-page-plan";
 import {
   CHAT_USER_INTENTS,
   type ChatUserIntentKind,
@@ -74,10 +83,58 @@ export type ChatDraftLiveCase = {
   };
 };
 
+export const QSR_REVIEW_PAGE_PLANS = [
+  "cover",
+  "urs",
+  "scored",
+  "mixed",
+] as const satisfies readonly QsrReviewPagePlan[];
+
+export type ChatDraftPagePlanCase = {
+  id: string;
+  task: "page_plan";
+  passCriteria: string;
+  notes?: string;
+  input: {
+    objective: string;
+    laterObjective?: string;
+  };
+  expected: {
+    pagePlan: QsrReviewPagePlan;
+    coverageDigest?: string;
+    coverageDigestMustNotBe?: string[];
+    isCoverWalk?: boolean;
+    isUrsWalk?: boolean;
+    laterObjectiveSatisfies?: boolean;
+  };
+};
+
+export type ChatDraftIdentityIncompleteHit = {
+  quote?: string;
+  text?: string;
+};
+
+export type ChatDraftIdentityIncompleteCase = {
+  id: string;
+  task: "identity_incomplete";
+  passCriteria: string;
+  notes?: string;
+  input: {
+    hits: ChatDraftIdentityIncompleteHit[];
+  };
+  expected: {
+    keepSearchOpen: boolean;
+    identityIncomplete?: boolean;
+    identityIncompleteHits?: number;
+  };
+};
+
 export type ChatDraftEvalCase =
   | ChatDraftGroundDraftCase
   | ChatDraftHarnessCase
-  | ChatDraftLiveCase;
+  | ChatDraftLiveCase
+  | ChatDraftPagePlanCase
+  | ChatDraftIdentityIncompleteCase;
 
 export type ChatDraftCaseOutput = {
   id: string;
@@ -88,6 +145,14 @@ export type ChatDraftCaseOutput = {
   intent?: string;
   activeTools?: string[];
   requireInventoryReview?: boolean;
+  pagePlan?: QsrReviewPagePlan;
+  coverageDigest?: string;
+  isCoverWalk?: boolean;
+  isUrsWalk?: boolean;
+  laterObjectiveSatisfies?: boolean;
+  identityIncomplete?: boolean;
+  keepSearchOpen?: boolean;
+  identityIncompleteHits?: number;
   skipped?: string;
 };
 
@@ -150,6 +215,43 @@ function parsePages(value: unknown, id: string): ChatDraftPage[] {
 }
 
 const HARNESS_IDS = new Set(HARNESS_SCENARIOS.map((scenario) => scenario.id));
+
+const PAGE_PLAN_IDS = new Set<string>(QSR_REVIEW_PAGE_PLANS);
+
+function parsePagePlan(
+  value: unknown,
+  id: string
+): QsrReviewPagePlan {
+  if (
+    typeof value !== "string" ||
+    !PAGE_PLAN_IDS.has(value)
+  ) {
+    throw new Error(
+      `${id}: expected.pagePlan must be cover, urs, scored, or mixed`
+    );
+  }
+  return value as QsrReviewPagePlan;
+}
+
+function parseIdentityHits(
+  value: unknown,
+  id: string
+): ChatDraftIdentityIncompleteHit[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`${id}: input.hits must be a non-empty array`);
+  }
+  return value.map((row, index) => {
+    if (!isRecord(row)) {
+      throw new Error(`${id}: input.hits[${index}] must be an object`);
+    }
+    const quote = typeof row.quote === "string" ? row.quote : undefined;
+    const text = typeof row.text === "string" ? row.text : undefined;
+    if (quote === undefined && text === undefined) {
+      throw new Error(`${id}: input.hits[${index}] needs quote or text`);
+    }
+    return { quote, text };
+  });
+}
 
 function parseCase(value: unknown, index: number): ChatDraftEvalCase {
   if (!isRecord(value)) {
@@ -273,6 +375,83 @@ function parseCase(value: unknown, index: number): ChatDraftEvalCase {
       },
     };
   }
+  if (task === "page_plan") {
+    if (!isRecord(value.input) || !isRecord(value.expected)) {
+      throw new Error(`${id}: input and expected are required`);
+    }
+    if (typeof value.input.objective !== "string" || value.input.objective.trim() === "") {
+      throw new Error(`${id}: input.objective is required`);
+    }
+    const laterObjective =
+      typeof value.input.laterObjective === "string"
+        ? value.input.laterObjective
+        : undefined;
+    if (
+      value.expected.laterObjectiveSatisfies !== undefined &&
+      laterObjective === undefined
+    ) {
+      throw new Error(`${id}: expected.laterObjectiveSatisfies needs input.laterObjective`);
+    }
+    return {
+      id,
+      task,
+      passCriteria: value.passCriteria,
+      notes,
+      input: {
+        objective: value.input.objective,
+        laterObjective,
+      },
+      expected: {
+        pagePlan: parsePagePlan(value.expected.pagePlan, id),
+        coverageDigest:
+          typeof value.expected.coverageDigest === "string"
+            ? value.expected.coverageDigest
+            : undefined,
+        coverageDigestMustNotBe: asStringArray(
+          value.expected.coverageDigestMustNotBe,
+          `${id}.coverageDigestMustNotBe`
+        ),
+        isCoverWalk:
+          typeof value.expected.isCoverWalk === "boolean"
+            ? value.expected.isCoverWalk
+            : undefined,
+        isUrsWalk:
+          typeof value.expected.isUrsWalk === "boolean"
+            ? value.expected.isUrsWalk
+            : undefined,
+        laterObjectiveSatisfies:
+          typeof value.expected.laterObjectiveSatisfies === "boolean"
+            ? value.expected.laterObjectiveSatisfies
+            : undefined,
+      },
+    };
+  }
+  if (task === "identity_incomplete") {
+    if (!isRecord(value.input) || !isRecord(value.expected)) {
+      throw new Error(`${id}: input and expected are required`);
+    }
+    if (typeof value.expected.keepSearchOpen !== "boolean") {
+      throw new Error(`${id}: expected.keepSearchOpen is required`);
+    }
+    return {
+      id,
+      task,
+      passCriteria: value.passCriteria,
+      notes,
+      input: { hits: parseIdentityHits(value.input.hits, id) },
+      expected: {
+        keepSearchOpen: value.expected.keepSearchOpen,
+        identityIncomplete:
+          typeof value.expected.identityIncomplete === "boolean"
+            ? value.expected.identityIncomplete
+            : undefined,
+        identityIncompleteHits:
+          typeof value.expected.identityIncompleteHits === "number"
+            ? value.expected.identityIncompleteHits
+            : undefined,
+      },
+    };
+  }
   throw new Error(`${id}: unknown task ${String(task)}`);
 }
 
@@ -358,6 +537,34 @@ export function runChatDraftCase(entry: ChatDraftEvalCase): ChatDraftCaseOutput 
         skipped:
           "Live Gemini turns are not in this runner yet. Use --replay for the quality floor; add a headless Agent turn later.",
       };
+    case "page_plan": {
+      const laterObjective = entry.input.laterObjective;
+      return {
+        id: entry.id,
+        task: entry.task,
+        pagePlan: qsrReviewPagePlan(entry.input.objective),
+        coverageDigest: coverageObjectiveDigest(entry.input.objective),
+        isCoverWalk: isQsrLifecycleCoverObjective(entry.input.objective),
+        isUrsWalk: isQsrUrsWalkObjective(entry.input.objective),
+        laterObjectiveSatisfies:
+          laterObjective === undefined
+            ? undefined
+            : coverageKeySatisfiesObjective(
+                `att:10:run|obj:${coverageObjectiveDigest(entry.input.objective)}`,
+                laterObjective
+              ),
+      };
+    }
+    case "identity_incomplete": {
+      const annotated = annotateIdentityIncompleteSearchHits(entry.input.hits);
+      return {
+        id: entry.id,
+        task: entry.task,
+        identityIncomplete: annotated.identityIncompleteHits > 0,
+        keepSearchOpen: annotated.keepSearchOpen,
+        identityIncompleteHits: annotated.identityIncompleteHits,
+      };
+    }
     default: {
       const neverTask: never = entry;
       throw new Error(`unhandled chat-draft task ${JSON.stringify(neverTask)}`);
@@ -431,6 +638,75 @@ export function scoreChatDraftCase(
     }
     case "live":
       break;
+    case "page_plan": {
+      if (output.pagePlan !== entry.expected.pagePlan) {
+        failures.push(
+          `pagePlan=${String(output.pagePlan)} expected ${entry.expected.pagePlan}`
+        );
+      }
+      if (
+        entry.expected.coverageDigest !== undefined &&
+        output.coverageDigest !== entry.expected.coverageDigest
+      ) {
+        failures.push(
+          `coverageDigest=${JSON.stringify(output.coverageDigest)} expected ${JSON.stringify(entry.expected.coverageDigest)}`
+        );
+      }
+      for (const needle of entry.expected.coverageDigestMustNotBe ?? []) {
+        if (output.coverageDigest === needle) {
+          failures.push(`coverageDigest collapsed to ${JSON.stringify(needle)}`);
+        }
+      }
+      if (
+        entry.expected.isCoverWalk !== undefined &&
+        output.isCoverWalk !== entry.expected.isCoverWalk
+      ) {
+        failures.push(
+          `isCoverWalk=${String(output.isCoverWalk)} expected ${String(entry.expected.isCoverWalk)}`
+        );
+      }
+      if (
+        entry.expected.isUrsWalk !== undefined &&
+        output.isUrsWalk !== entry.expected.isUrsWalk
+      ) {
+        failures.push(
+          `isUrsWalk=${String(output.isUrsWalk)} expected ${String(entry.expected.isUrsWalk)}`
+        );
+      }
+      if (
+        entry.expected.laterObjectiveSatisfies !== undefined &&
+        output.laterObjectiveSatisfies !== entry.expected.laterObjectiveSatisfies
+      ) {
+        failures.push(
+          `laterObjectiveSatisfies=${String(output.laterObjectiveSatisfies)} expected ${String(entry.expected.laterObjectiveSatisfies)}`
+        );
+      }
+      break;
+    }
+    case "identity_incomplete": {
+      if (output.keepSearchOpen !== entry.expected.keepSearchOpen) {
+        failures.push(
+          `keepSearchOpen=${String(output.keepSearchOpen)} expected ${String(entry.expected.keepSearchOpen)}`
+        );
+      }
+      if (
+        entry.expected.identityIncomplete !== undefined &&
+        output.identityIncomplete !== entry.expected.identityIncomplete
+      ) {
+        failures.push(
+          `identityIncomplete=${String(output.identityIncomplete)} expected ${String(entry.expected.identityIncomplete)}`
+        );
+      }
+      if (
+        entry.expected.identityIncompleteHits !== undefined &&
+        output.identityIncompleteHits !== entry.expected.identityIncompleteHits
+      ) {
+        failures.push(
+          `identityIncompleteHits=${String(output.identityIncompleteHits)} expected ${String(entry.expected.identityIncompleteHits)}`
+        );
+      }
+      break;
+    }
     default: {
       const neverTask: never = entry;
       throw new Error(`unhandled chat-draft task ${JSON.stringify(neverTask)}`);

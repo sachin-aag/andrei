@@ -127,6 +127,34 @@ describe("buildChatActivityBlocks", () => {
     );
   });
 
+  it("does not keep a nested document thought pending after the turn is idle", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        toolPart("search_documents", "output-available"),
+        {
+          type: "reasoning",
+          text: "Checking the protocol appendix.",
+          state: "streaming",
+        },
+      ] as never,
+      undefined,
+      { streaming: false }
+    );
+
+    expect(blocks).toHaveLength(1);
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.pending).toBe(false);
+    expect(blocks[0].node.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "thought",
+          text: "Checking the protocol appendix.",
+          pending: false,
+        }),
+      ])
+    );
+  });
+
   it("updates one Read chip as more pages of the same PDF stream in", () => {
     const blocks = buildChatActivityBlocks(
       [
@@ -233,6 +261,49 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks[0].node.label).toBe("Thinking…");
     expect(blocks[0].node.pending).toBe(true);
     expect(blocks[0].node.thoughtText).toBe("");
+  });
+
+  it("stops a leftover streaming thought when the turn is idle", () => {
+    const blocks = buildChatActivityBlocks(
+      [
+        {
+          type: "reasoning",
+          text: "Clarifying URS-65 from the specification.",
+          state: "streaming",
+        },
+      ] as never,
+      undefined,
+      { streaming: false }
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.label).toBe("Thought");
+    expect(blocks[0].node.pending).toBe(false);
+  });
+
+  it("settles a streaming thought once later output has arrived", () => {
+    const blocks = buildChatActivityBlocks([
+      {
+        type: "reasoning",
+        text: "Clarifying URS-65.",
+        state: "streaming",
+      },
+      toolPart(
+        "edit_table",
+        "output-available",
+        { section: "qsr_rtm" },
+        { status: "proposed", section: "qsr_rtm", targetField: "rtmTable" }
+      ),
+    ] as never);
+
+    expect(blocks[0]?.kind).toBe("activity");
+    if (blocks[0]?.kind !== "activity") return;
+    expect(blocks[0].node.kind).toBe("thought");
+    expect(blocks[0].node.pending).toBe(false);
+    expect(blocks[0].node.label).toBe("Thought");
   });
 
   it("collapses edit failures to Edit attempted with hidden detail", () => {

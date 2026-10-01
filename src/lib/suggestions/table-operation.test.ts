@@ -140,7 +140,7 @@ function bannerRow(text: string, colspan: number): JSONContent {
 }
 
 function rtmRow(id: string, requirement = `${id} text`): string[] {
-  return [id, "Parameter", requirement, "", "", ""];
+  return [id, "Parameter", requirement, "", "", "", "", ""];
 }
 
 function rtmDoc(ids: string[], bannersAt?: Record<number, string>): JSONContent {
@@ -533,7 +533,7 @@ describe("applyTableOperation", () => {
     const table = doc.content![0]!;
     table.content = [
       ...(table.content ?? []),
-      bannerRow("ANY SPECIFIC REQUIREMENTS", 6),
+      bannerRow("ANY SPECIFIC REQUIREMENTS", QSR_RTM_HEADERS.length),
     ];
     const result = applyTableOperation(doc, {
       kind: "insert_rows",
@@ -545,7 +545,7 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(cellText(result.doc, 3, 0)).toBe("URS-58");
     expect(cellColspan(result.doc, 3, 0)).toBe(1);
-    expect(tableRowAt(result.doc, 3).content).toHaveLength(6);
+    expect(tableRowAt(result.doc, 3).content).toHaveLength(QSR_RTM_HEADERS.length);
   });
 
   it("does not insert a merged banner row from { banner }", () => {
@@ -950,6 +950,38 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(cellText(result.doc, 1, 2)).toBe("1 Apr 2025 – 31 Mar 2026");
     expect(cellText(result.doc, 1, 4)).toContain("Within limits");
+  });
+
+  it("overwrites a filled QSR RTM Section cell in a mixed fill-empty batch", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [["URS-41", "Gaskets", "PTFE or Equivalent", "", "13.6", "", "", ""]]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-41",
+          expectedText: "13.6",
+          insertText: "13.6; Gaskets PTFE or equivalent",
+        },
+        {
+          row: 1,
+          col: 7,
+          rowKey: "URS-41",
+          expectedText: "",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 1, 4)).toBe("13.6; Gaskets PTFE or equivalent");
+    expect(cellText(result.doc, 1, 7)).toBe("Complies");
   });
 
   it("still rewrites a filled cell when the batch has no empty fills", () => {
@@ -2476,5 +2508,82 @@ describe("summarizeTableOperation", () => {
     expect(
       summarizeTableOperation({ kind: "delete_table", tableIndex: 0 })
     ).toBe("Delete table");
+  });
+
+  it("names the URS rows on an edit_cells card", () => {
+    expect(
+      summarizeTableOperation({
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2 – Simulation" },
+          { row: 1, col: 5, rowKey: "URS-1", insertText: "Complies" },
+          { row: 6, col: 4, rowKey: "URS-6", insertText: "10.5 – Jacket" },
+        ],
+      })
+    ).toBe("Update 3 table cells on URS-1, URS-6");
+  });
+});
+
+describe("applyEditCells appliedOperation", () => {
+  it("omits identity Remarks so the card title matches the previewed cells", () => {
+    const doc = tableDoc(
+      [...QSR_RTM_HEADERS],
+      [
+        ["URS-1", "Reactor Capacity", "8000 L", "PQ", "8.2.3", "Complies"],
+        ["URS-63", "Agitator", "50 RPM", "PQ", "8.2.4", "Complies"],
+      ]
+    );
+    const result = applyTableOperation(doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          expectedText: "8.2.3",
+          insertText: "8.2.3 – Heating Trial",
+        },
+        {
+          row: 1,
+          col: 5,
+          rowKey: "URS-1",
+          expectedText: "Complies",
+          insertText: "Complies",
+        },
+        {
+          row: 2,
+          col: 4,
+          rowKey: "URS-63",
+          expectedText: "8.2.4",
+          insertText: "8.2.4 – Operational verification of agitator",
+        },
+        {
+          row: 2,
+          col: 5,
+          rowKey: "URS-63",
+          expectedText: "Complies",
+          insertText: "Complies",
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.appliedOperation?.kind).toBe("edit_cells");
+    const cells =
+      result.appliedOperation?.kind === "edit_cells"
+        ? result.appliedOperation.cells
+        : [];
+    expect(cells).toHaveLength(2);
+    expect(cells.every((cell) => cell.col === 4)).toBe(true);
+    expect(summarizeTableOperation(result.appliedOperation!)).toBe(
+      "Update 2 table cells on URS-1, URS-63"
+    );
+    expect(cellText(result.doc, 1, 4)).toBe("8.2.3 – Heating Trial");
+    expect(cellText(result.doc, 1, 5)).toBe("Complies");
+    expect(cellText(result.doc, 2, 4)).toBe(
+      "8.2.4 – Operational verification of agitator"
+    );
   });
 });

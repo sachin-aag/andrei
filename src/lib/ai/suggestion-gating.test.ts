@@ -5,6 +5,7 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   sectionContentHash,
+  sectionOrderWithOpenSuggestions,
   serializeAiFixCommentContent,
   sortGapCriteria,
   sortedOpenSuggestionsForSection,
@@ -245,6 +246,50 @@ describe("suggestion-gating", () => {
         "analyze",
       ])?.id
     ).toBe("c-define");
+  });
+
+  it("hands off to an open suggestion whose section is not in the card order", () => {
+    const comments = [
+      baseComment({ id: "c-objective", section: "qsr_objective" }),
+      baseComment({
+        id: "c-acronyms",
+        section: "qsr_acronyms",
+        createdAt: "2026-01-02T00:00:00Z",
+      }),
+    ];
+    expect(
+      nextOpenSuggestionAfterResolve(
+        "c-objective",
+        "qsr_objective",
+        comments,
+        [],
+        ["qsr_objective", "qsr_scope"]
+      )?.id
+    ).toBe("c-acronyms");
+  });
+
+  it("appends sections with leftover open suggestions after the card order", () => {
+    expect(
+      sectionOrderWithOpenSuggestions(
+        ["qsr_objective"],
+        [
+          baseComment({ id: "c-acro", section: "qsr_acronyms" }),
+          baseComment({ id: "c-obj", section: "qsr_objective" }),
+        ]
+      )
+    ).toEqual(["qsr_objective", "qsr_acronyms"]);
+  });
+
+  it("skips open suggestions whose section is null", () => {
+    expect(
+      sectionOrderWithOpenSuggestions(
+        ["qsr_objective"],
+        [
+          baseComment({ id: "c-null", section: null }),
+          baseComment({ id: "c-acro", section: "qsr_acronyms" }),
+        ]
+      )
+    ).toEqual(["qsr_objective", "qsr_acronyms"]);
   });
 
   it("returns null when the resolved card was the last open suggestion", () => {

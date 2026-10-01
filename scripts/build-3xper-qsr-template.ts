@@ -15,6 +15,8 @@ import path from "node:path";
 import PizZip from "pizzip";
 import {
   bookmarkXml,
+  buildCellProperties,
+  cellGridSpan,
   childElements,
   elementText,
   findChild,
@@ -22,6 +24,7 @@ import {
   paragraphRunProperties,
   setParagraphText,
   splitTopLevelElements,
+  tableGridWidths,
   textRunXml,
   withChildren,
 } from "../src/lib/export/qsr/ooxml";
@@ -78,6 +81,131 @@ function clearedRow(tr: string, marker: string): string {
     return cell;
   });
   return withChildren(tr, children);
+}
+
+const RTM_FAMILY_LABELS = ["DQ", "IQ", "OQ", "PQ"] as const;
+
+function splitFour(total: number): [number, number, number, number] {
+  const base = Math.floor(total / 4);
+  return [base, base, base, total - base * 3];
+}
+
+function cellVMerge(tc: string): "restart" | "continue" | null {
+  const merge = findChild(findChild(tc, "w:tcPr") ?? "", "w:vMerge");
+  if (!merge) return null;
+  return /w:val="restart"/.test(merge) ? "restart" : "continue";
+}
+
+function shapedCell(
+  tc: string,
+  width: number,
+  span: number,
+  vMerge: "restart" | "continue" | null = cellVMerge(tc)
+): string {
+  const children = childElements(tc);
+  return withChildren(
+    tc,
+    children.map((child) =>
+      isElement(child, "w:tcPr")
+        ? buildCellProperties(child, { width, gridSpan: span, vMerge })
+        : child
+    )
+  );
+}
+
+/**
+ * Source form is Stage | Section under Reference. The editor fills one
+ * column per protocol family, so split that pair into DQ / IQ / OQ / PQ.
+ */
+function expandRtmReferenceToFamilies(tbl: string): string {
+  const widths = tableGridWidths(tbl);
+  const rows = childElements(tbl).filter((child) => isElement(child, "w:tr"));
+  const headerCells = childElements(rows[1] ?? "").filter((child) =>
+    isElement(child, "w:tc")
+  );
+  const stageIndex = headerCells.findIndex(
+    (tc) => elementText(tc).trim() === "Qualification Stage"
+  );
+  if (stageIndex < 0 || stageIndex + 1 >= widths.length) {
+    fail("RTM table is missing Qualification Stage / Section");
+  }
+  const familyWidths = splitFour(widths[stageIndex]! + widths[stageIndex + 1]!);
+  const newWidths = [
+    ...widths.slice(0, stageIndex),
+    ...familyWidths,
+    ...widths.slice(stageIndex + 2),
+  ];
+  const familyTotal = familyWidths.reduce((sum, width) => sum + width, 0);
+
+  const expandRow = (tr: string, rowIndex: number): string => {
+    const kids = childElements(tr);
+    const tcs = kids.filter((child) => isElement(child, "w:tc"));
+    if (tcs.length === 1 && cellGridSpan(tcs[0]!) === widths.length) {
+      return withChildren(
+        tr,
+        kids.map((child) =>
+          isElement(child, "w:tc")
+            ? shapedCell(
+                child,
+                newWidths.reduce((a, b) => a + b, 0),
+                newWidths.length
+              )
+            : child
+        )
+      );
+    }
+    if (rowIndex === 0) {
+      return withChildren(
+        tr,
+        kids.map((child) => {
+          if (!isElement(child, "w:tc")) return child;
+          if (
+            cellGridSpan(child) === 2 &&
+            elementText(child).trim() === "Reference"
+          ) {
+            return shapedCell(child, familyTotal, 4, null);
+          }
+          return child;
+        })
+      );
+    }
+    let tcIndex = -1;
+    const out: string[] = [];
+    for (const child of kids) {
+      if (!isElement(child, "w:tc")) {
+        out.push(child);
+        continue;
+      }
+      tcIndex += 1;
+      if (tcIndex === stageIndex) {
+        for (let i = 0; i < 4; i++) {
+          const label = rowIndex === 1 ? RTM_FAMILY_LABELS[i]! : "";
+          out.push(
+            shapedCell(clearedCell(child, label), familyWidths[i]!, 1, null)
+          );
+        }
+        continue;
+      }
+      if (tcIndex === stageIndex + 1) continue;
+      out.push(child);
+    }
+    return withChildren(tr, out);
+  };
+
+  let rowIndex = -1;
+  return withChildren(
+    tbl,
+    childElements(tbl).map((child) => {
+      if (isElement(child, "w:tblGrid")) {
+        return `<w:tblGrid>${newWidths
+          .map((width) => `<w:gridCol w:w="${width}"/>`)
+          .join("")}</w:tblGrid>`;
+      }
+      if (!isElement(child, "w:tr")) return child;
+      rowIndex += 1;
+      return expandRow(child, rowIndex);
+    })
+  );
 }
 
 function prototypeTable(
@@ -234,12 +362,13 @@ function main() {
   const tableSlot = (
     key: QsrSectionKey,
     index: number,
-    spec: { headerRows: number; dataRow: number; bannerRow?: number }
+    spec: { headerRows: number; dataRow: number; bannerRow?: number },
+    tbl = els[index]
   ) =>
     replacements.push({
       from: index,
       to: index,
-      xml: [markerParagraph(qsrSlotStart(key)), prototypeTable(els[index], spec), markerParagraph(qsrSlotEnd(key))],
+      xml: [markerParagraph(qsrSlotStart(key)), prototypeTable(tbl, spec), markerParagraph(qsrSlotEnd(key))],
     });
 
   narrative("qsr_objective", 84);
@@ -250,12 +379,12 @@ function main() {
   narrative("qsr_background", 102);
   tableSlot("qsr_qualification_documents", 106, { headerRows: 1, dataRow: 2, bannerRow: 1 });
   tableSlot("qsr_sops", 109, { headerRows: 1, dataRow: 1 });
-  tableSlot("qsr_rtm_process", 113, { headerRows: 2, dataRow: 2, bannerRow: 31 });
-  tableSlot("qsr_rtm_control", 116, { headerRows: 2, dataRow: 2 });
-  tableSlot("qsr_rtm_gmp", 120, { headerRows: 2, dataRow: 2 });
-  tableSlot("qsr_rtm_safety", 124, { headerRows: 2, dataRow: 2 });
-  tableSlot("qsr_rtm_csv", 126, { headerRows: 2, dataRow: 2 });
-  tableSlot("qsr_rtm_maintenance", 129, { headerRows: 2, dataRow: 2 });
+  tableSlot("qsr_rtm_process", 113, { headerRows: 2, dataRow: 2, bannerRow: 31 }, expandRtmReferenceToFamilies(els[113]));
+  tableSlot("qsr_rtm_control", 116, { headerRows: 2, dataRow: 2 }, expandRtmReferenceToFamilies(els[116]));
+  tableSlot("qsr_rtm_gmp", 120, { headerRows: 2, dataRow: 2 }, expandRtmReferenceToFamilies(els[120]));
+  tableSlot("qsr_rtm_safety", 124, { headerRows: 2, dataRow: 2 }, expandRtmReferenceToFamilies(els[124]));
+  tableSlot("qsr_rtm_csv", 126, { headerRows: 2, dataRow: 2 }, expandRtmReferenceToFamilies(els[126]));
+  tableSlot("qsr_rtm_maintenance", 129, { headerRows: 2, dataRow: 2 }, expandRtmReferenceToFamilies(els[129]));
   replacements.push({
     from: 147,
     to: 161,

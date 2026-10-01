@@ -60,7 +60,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   from the batch so the remaining cells still preview — do not mark the
   whole table card stale. A mixed fill-empty batch also skips rewriting
   filled cells so the empty remainder still lands; a batch that only
-  rewrites filled cells still applies. Leftover `<…>` cells are dropped
+  rewrites filled cells still applies. QSR RTM Stage / Section / Remarks
+  may still be overwritten in that mixed batch (a filled 13.6 may become
+  `13.6 – Gasket material verified as PTFE`: section number plus a one-line
+  test description; page numbers and header blocks are stripped). Leftover `<…>` cells are dropped
   on apply for any table kind. Pending table-preview insert marks also keep the
   card previewable (`alreadyMarked` in validate, same as Apply). Do not insert
   `{ banner }` group rows; existing template banners keep their colspan, and
@@ -103,7 +106,11 @@ DV mixes LLM criteria with deterministic `check()` functions.
   Apply all dismisses a same-table leftover invalidated by an operation
   applied earlier in the batch (`superseded_by:<id>`), not as a skip. The
   Apply all count only includes locatable suggestions; Dismiss all still
-  counts every open suggestion so stale leftovers can be cleared.
+  counts every open suggestion so stale leftovers can be cleared. Bulk
+  visibility and apply/dismiss also walk sections that still have an open
+  AI comment even when they are not evaluatable (QSR acronyms / other
+  details, ELR attachments) so dismissing 1 of N cannot hide the header
+  while a leftover is still inline.
 - `draft_field` refuses a filled field unless `replaceFilledField: true`.
   After a redraft, filled `[Label: value]` placeholders must be preserved
   unless the caller opted into replacing them.

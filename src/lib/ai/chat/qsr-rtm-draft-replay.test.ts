@@ -228,15 +228,8 @@ function rtmTableDoc(rows: string[][]): JSONContent {
 }
 
 const TABLE5_URS_ROWS = [
-  [
-    "URS-4",
-    "Shell Operating pressure",
-    "Full Vacuum to 3.5 Kg/cm²",
-    "",
-    "",
-    "",
-  ],
-  ["URS-13", "Jacket Type", "Limpet/Plain", "", "", ""],
+  ["URS-4", "Shell Operating pressure", "Full Vacuum to 3.5 Kg/cm²", "", "", "", "", ""],
+  ["URS-13", "Jacket Type", "Limpet/Plain", "", "", "", "", ""],
 ];
 
 const TABLE5_PLACEHOLDER_CELLS = [
@@ -256,14 +249,14 @@ const TABLE5_PLACEHOLDER_CELLS = [
   },
   {
     row: 1,
-    col: 5,
+    col: 7,
     rowKey: "URS-13",
     insertText: "<remarks>",
     rowContext: "URS-13\nJacket Type\nLimpet/Plain",
   },
   {
     row: 1,
-    col: 5,
+    col: 7,
     rowKey: "URS-4",
     insertText: "<remarks>",
     rowContext: "URS-4\nShell Operating pressure\nFull Vacuum to 3.5 Kg/cm²",
@@ -477,6 +470,8 @@ describe("QSR RTM section 5 draft replay", () => {
               "",
               "",
               "",
+              "",
+              "",
             ],
           ],
         },
@@ -502,14 +497,7 @@ describe("QSR RTM section 5 draft replay", () => {
         operation: {
           kind: "insert_rows",
           rows: [
-            [
-              "URS-39",
-              "Contact parts MOC",
-              "Glass lined / SS 316L",
-              "",
-              "",
-              "",
-            ],
+            ["URS-39", "Contact parts MOC", "Glass lined / SS 316L", "", "", "", "", ""],
           ],
         },
       },
@@ -536,30 +524,9 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            [
-              "URS-2",
-              "MOC",
-              "High-quality Glass Lining and thickness should not be less than 1 mm",
-              "",
-              "",
-              "",
-            ],
-            [
-              "URS-3",
-              "Shell Operating temperature",
-              "15 °C to 130 °C",
-              "",
-              "",
-              "",
-            ],
-            [
-              "URS-4",
-              "Shell Operating pressure",
-              "Full Vacuum to 3.5 Kg/cm²",
-              "",
-              "",
-              "",
-            ],
+            ["URS-2", "MOC", "High-quality Glass Lining and thickness should not be less than 1 mm", "", "", "", "", ""],
+            ["URS-3", "Shell Operating temperature", "15 °C to 130 °C", "", "", "", "", ""],
+            ["URS-4", "Shell Operating pressure", "Full Vacuum to 3.5 Kg/cm²", "", "", "", "", ""],
           ],
         },
       },
@@ -580,9 +547,9 @@ describe("QSR RTM section 5 draft replay", () => {
   it("proposes URS-33 when the URS page wraps the ID at the table footer", async () => {
     mockSection("qsr_rtm_process", {
       table: rtmTableDoc([
-        ["URS-30", "Batch Size", "", "", "", ""],
-        ["URS-31", "Type of Operation", "", "", "", ""],
-        ["URS-32", "Location", "", "", "", ""],
+        ["URS-30", "Batch Size", "", "", "", "", "", ""],
+        ["URS-31", "Type of Operation", "", "", "", "", "", ""],
+        ["URS-32", "Location", "", "", "", "", "", ""],
       ]),
     });
     const tools = buildTools({ section: "qsr_rtm_process" });
@@ -610,14 +577,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-32",
           rows: [
-            [
-              "URS-33",
-              "Stage and location",
-              "Equipment intended for intermediate stage manufacturing operations.",
-              "",
-              "",
-              "",
-            ],
+            ["URS-33", "Stage and location", "Equipment intended for intermediate stage manufacturing operations.", "", "", "", "", ""],
           ],
         },
       },
@@ -661,14 +621,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            [
-              "URS-4",
-              "Shell Operating pressure",
-              "Full Vacuum to 3.5 Kg/cm²",
-              "",
-              "",
-              "",
-            ],
+            ["URS-4", "Shell Operating pressure", "Full Vacuum to 3.5 Kg/cm²", "", "", "", "", ""],
           ],
         },
       },
@@ -765,6 +718,164 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(cells.map((cell) => cell.insertText).join(" ")).toContain("−15 °C");
   });
 
+  it("blocks unsigned 15 °C on URS-3 when the column-major URS value is −15 °C", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript:
+        "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm −15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const blocked = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the column-major URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-3", "Shell Operating temperature", "15 °C to 130 °C", "", "", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "unsupported_facts" });
+    const proposed = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the column-major URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-3", "Shell Operating temperature", "−15 °C to 130 °C", "", "", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(proposed).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("−15 °C");
+  });
+
+  it("blocks unsigned 15 °C on URS-3 when the parser dropped the minus and visualInterpretation recovered it", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript: COLUMN_QUOTE,
+      visualInterpretation:
+        "URS-3 shell operating temperature prints −15 °C to 130 °C",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const blocked = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the URS page.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-3", "Shell Operating temperature", "15 °C to 130 °C", "", "", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "unsupported_facts" });
+    const proposed = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Insert URS-3 from the recovered signed temperature.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-3", "Shell Operating temperature", "−15 °C to 130 °C", "", "", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(proposed).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("−15 °C");
+  });
+
+  it("blocks unsigned 15 °C on operating-range Minimum when URS-37 is also 15–130 °C", async () => {
+    mockSection("qsr_operating_range");
+    const tools = buildTools({ section: "qsr_operating_range" });
+    readDocumentPageMock
+      .mockResolvedValueOnce({
+        attachmentId: URS_ID,
+        filename: URS_FILENAME,
+        pageNumber: 6,
+        transcript: "URS-3 Shell Operating temperature −15 °C to 130 °C",
+        visualInterpretation: "",
+        pageContext: null,
+        printedPageLabel: "6",
+      })
+      .mockResolvedValueOnce({
+        attachmentId: URS_ID,
+        filename: URS_FILENAME,
+        pageNumber: 4,
+        transcript: NEIGHBOUR_QUOTE,
+        visualInterpretation: "",
+        pageContext: null,
+        printedPageLabel: "4",
+      });
+    await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 4 },
+      TEST_TOOL_OPTIONS
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_operating_range",
+        targetField: "table",
+        reasoning: "Fill temperature minimum from the URS.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [{ row: 4, col: 3, rowKey: "4.", insertText: "15 °C" }],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+  });
+
   it("blocks unsigned 50+-10 RPM on URS-10 when the URS shows −50 ± 10 RPM", async () => {
     mockSection("qsr_rtm_process");
     const tools = buildTools({ section: "qsr_rtm_process" });
@@ -791,7 +902,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            ["URS-10", "RPM requirement", "50+-10 RPM", "", "", ""],
+            ["URS-10", "RPM requirement", "50+-10 RPM", "", "", "", "", ""],
           ],
         },
       },
@@ -837,7 +948,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            ["URS-10", "RPM requirement", "–50 ± 10 RPM", "", "", ""],
+            ["URS-10", "RPM requirement", "–50 ± 10 RPM", "", "", "", "", ""],
           ],
         },
       },
@@ -849,6 +960,46 @@ describe("QSR RTM section 5 draft replay", () => {
     const rows = op.kind === "insert_rows" ? op.rows : [];
     expect(rows.flat().join(" ")).toMatch(/[-−–]50/);
     expect(rows.flat().join(" ")).toMatch(/10\s*RPM/i);
+  });
+
+  it("proposes ~50±10 RPM on URS-10 when the URS shows a tilde", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    readDocumentPageMock.mockResolvedValueOnce({
+      attachmentId: URS_ID,
+      filename: URS_FILENAME,
+      pageNumber: 6,
+      transcript: "URS-10 RPM requirement ~50±10 RPM",
+      visualInterpretation: "",
+      pageContext: null,
+      printedPageLabel: "6",
+    });
+    const read = await tools.read_document_page!.execute!(
+      { attachmentId: URS_ID, pageNumber: 6 },
+      TEST_TOOL_OPTIONS
+    );
+    expect(read).toMatchObject({ status: "found" });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill URS-10 RPM from the URS.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "URS-1",
+          rows: [
+            ["URS-10", "RPM requirement", "~50±10 RPM", "", "", "", "", ""],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    expect(rows.flat().join(" ")).toContain("~50");
+    expect(rows.flat().join(" ")).not.toMatch(/[-−–]50/);
   });
 
   it("blocks unsigned 20 °C on URS-37 when the URS shows −20 °C to 150 °C", async () => {
@@ -878,7 +1029,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            ["URS-37", "Temperature", "20 °C", "", "", ""],
+            ["URS-37", "Temperature", "20 °C", "", "", "", "", ""],
           ],
         },
       },
@@ -925,7 +1076,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            ["URS-37", "Temperature", "-20 °C to 150 °C", "", "", ""],
+            ["URS-37", "Temperature", "-20 °C to 150 °C", "", "", "", "", ""],
           ],
         },
       },
@@ -967,7 +1118,7 @@ describe("QSR RTM section 5 draft replay", () => {
         operation: {
           kind: "insert_rows",
           afterRowKey: "URS-1",
-          rows: [["URS-5", "Jacket temperature", "15–130 °C", "", "", ""]],
+          rows: [["URS-5", "Jacket temperature", "15–130 °C", "", "", "", "", ""]],
         },
       },
       TEST_TOOL_OPTIONS
@@ -998,7 +1149,7 @@ describe("QSR RTM section 5 draft replay", () => {
         operation: {
           kind: "insert_rows",
           afterRowKey: "URS-1",
-          rows: [["URS-5", "Jacket temperature", "20-25 °C", "IQ", "Section 13", "Complies"]],
+          rows: [["URS-5", "Jacket temperature", "20-25 °C", "", "Section 13", "", "", "Complies"]],
         },
       },
       TEST_TOOL_OPTIONS
@@ -1010,7 +1161,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows[0]?.[0]).toContain("URS-5");
     expect(rows[0]?.[1]).toBe("Jacket temperature");
     expect(rows[0]?.[2]).toContain("20-25 °C");
-    expect(rows[0]?.slice(3)).toEqual(["", "", ""]);
+    expect(rows[0]?.slice(3)).toEqual(["", "", "", "", ""]);
     expect(rows.flat().join(" ")).not.toMatch(/Complies/i);
   });
 
@@ -1032,7 +1183,7 @@ describe("QSR RTM section 5 draft replay", () => {
         operation: {
           kind: "insert_rows",
           afterRowKey: "URS-1",
-          rows: [["URS-5", "Jacket temperature", "20-25 °C", "IQ", "8.1", "Complies"]],
+          rows: [["URS-5", "Jacket temperature", "20-25 °C", "", "8.1", "", "", "Complies"]],
         },
       },
       TEST_TOOL_OPTIONS
@@ -1044,10 +1195,10 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(rows[0]?.[0]).toContain("URS-5");
     expect(rows[0]?.[1]).toBe("Jacket temperature");
     expect(rows[0]?.[2]).toContain("20-25 °C");
-    expect(rows[0]?.[3]).toContain("IQ");
+    expect(rows[0]?.[3]).toBe("");
     expect(rows[0]?.[4]).toContain("8.1");
     expect(rows[0]?.[4]).not.toMatch(/Section 13/i);
-    expect(rows[0]?.[5]).toMatch(/Complies/i);
+    expect(rows[0]?.[7]).toMatch(/Complies/i);
   });
 
   it("keeps IQ / 13.3.5.1 from a jacket IQ page that never prints URS-5", async () => {
@@ -1069,14 +1220,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            [
-              "URS-5",
-              "Jacket temperature",
-              "20-25 °C",
-              "IQ",
-              "13.3.5.1",
-              "Complies",
-            ],
+            ["URS-5", "Jacket temperature", "20-25 °C", "", "13.3.5.1", "", "", "Complies"],
           ],
         },
       },
@@ -1087,12 +1231,22 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(op.kind).toBe("insert_rows");
     const rows = op.kind === "insert_rows" ? op.rows : [];
     expect(rows[0]?.[0]).toContain("URS-5");
-    expect(rows[0]?.[3]).toContain("IQ");
+    expect(rows[0]?.[3]).toBe("");
     expect(rows[0]?.[4]).toContain("13.3.5.1");
-    expect(rows[0]?.[5] ?? "").not.toMatch(/Complies/i);
+    expect(rows[0]?.[7] ?? "").not.toMatch(/Complies/i);
+    expect(result).toMatchObject({
+      adjustedCells: expect.arrayContaining([
+        expect.objectContaining({
+          rowKey: "URS-5",
+          column: "Remarks",
+          requested: "Complies",
+          saved: "",
+        }),
+      ]),
+    });
   });
 
-  it("rewrites a DQ Stage up to IQ when both protocol bodies topic-match", async () => {
+  it("keeps chat DQ / 12.1 even when both protocol bodies topic-match", async () => {
     mockSection("qsr_rtm_process");
     listReadyDocumentsForReportMock.mockResolvedValue([
       ursDoc(),
@@ -1120,14 +1274,7 @@ describe("QSR RTM section 5 draft replay", () => {
           kind: "insert_rows",
           afterRowKey: "URS-1",
           rows: [
-            [
-              "URS-5",
-              "Jacket temperature",
-              "20-25 °C",
-              "DQ",
-              "12.1",
-              "Complies",
-            ],
+            ["URS-5", "Jacket temperature", "20-25 °C", "12.1", "", "", "", "Complies"],
           ],
         },
       },
@@ -1137,10 +1284,10 @@ describe("QSR RTM section 5 draft replay", () => {
     const op = proposedTableOp(inserted);
     expect(op.kind).toBe("insert_rows");
     const rows = op.kind === "insert_rows" ? op.rows : [];
-    expect(rows[0]?.[3]).toMatch(/^IQ\b/);
-    expect(rows[0]?.[3] ?? "").not.toMatch(/\bDQ\b/);
-    expect(rows[0]?.[4]).toContain("13.3.5.1");
-    expect(rows[0]?.[5] ?? "").toMatch(/Complies/i);
+    expect(rows[0]?.[3]).toContain("12.1");
+    expect(rows[0]?.[3] ?? "").not.toMatch(/\bIQ\b/);
+    expect(rows[0]?.[4]).toBe("");
+    expect(rows[0]?.[4] ?? "").not.toContain("13.3.5.1");
   });
 
   it("does not fill URS-1 Stage from an IQ running header", async () => {
@@ -1201,7 +1348,7 @@ describe("QSR RTM section 5 draft replay", () => {
         operation: {
           kind: "insert_rows",
           afterRowKey: "URS-1",
-          rows: [["URS-62", "Heat Transfer Area", "NLT 25.0 m²", "", "", ""]],
+          rows: [["URS-62", "Heat Transfer Area", "NLT 25.0 m²", "", "", "", "", ""]],
         },
       },
       TEST_TOOL_OPTIONS
@@ -1232,7 +1379,7 @@ describe("QSR RTM section 5 draft replay", () => {
         reasoning: "Fill control philosophy.",
         operation: {
           kind: "insert_rows",
-          rows: [["URS-35", "Vacuum gauge", "", "0 to 760 mmHg", "", "", ""]],
+          rows: [["URS-35", "Vacuum gauge", "", "0 to 760 mmHg", "", "", "", "", ""]],
         },
       },
       TEST_TOOL_OPTIONS
@@ -1378,6 +1525,8 @@ describe("QSR RTM section 5 draft replay", () => {
               "",
               "",
               "",
+              "",
+              "",
             ],
           ],
         },
@@ -1489,6 +1638,8 @@ describe("QSR RTM section 5 draft replay", () => {
               "",
               "",
               "",
+              "",
+              "",
             ],
           ],
         },
@@ -1529,7 +1680,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
-  it("fills dummy-row Table 5 placeholders from IQ / OQ after those pages are read", async () => {
+  it("does not fill dummy-row Table 5 placeholders from IQ / OQ after those pages are read", async () => {
     mockSection("qsr_rtm_process", { table: rtmTableDoc(TABLE5_URS_ROWS) });
     listReadyDocumentsForReportMock.mockResolvedValue([
       ursDoc(),
@@ -1561,38 +1712,11 @@ describe("QSR RTM section 5 draft replay", () => {
       },
       TEST_TOOL_OPTIONS
     );
-    expect(result).toMatchObject({ status: "proposed" });
-    const comment = inserted.find((row) => {
-      const parsed = parseAiFixCommentContent(String(row.content ?? ""));
-      return parsed.tableOperation != null;
-    });
-    expect(comment).toBeTruthy();
-    const payload = parseAiFixCommentContent(String(comment!.content));
-    const op = payload.tableOperation!;
-    expect(op.kind).toBe("edit_cells");
-    const cells = op.kind === "edit_cells" ? op.cells : [];
-    const byKey = (key: string) =>
-      cells
-        .filter(
-          (cell) =>
-            cell.rowKey === key || (cell.rowContext ?? "").includes(`${key}\n`)
-        )
-        .map((cell) => cell.insertText)
-        .join(" ");
-    const urs13 = byKey("URS-13");
-    const urs4 = byKey("URS-4");
-    expect(urs13).toMatch(/\bIQ\b/);
-    expect(urs13).toContain("13.3.5.1");
-    expect(urs13).toMatch(/\[\d+\]/);
-    expect(urs13).not.toContain("<remarks>");
-    expect(urs13).not.toContain("8.1");
-    expect(urs4).toMatch(/\bOQ\b/);
-    expect(urs4).toContain("8.1");
-    expect(urs4).toMatch(/\[\d+\]/);
-    expect(urs4).not.toContain("<remarks>");
-    const parked = payload.second?.insertText ?? "";
-    expect(parked).toContain(IQ_FILENAME);
-    expect(parked).toContain(OQ_FILENAME);
+    expect(result).not.toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+    const blob = JSON.stringify(result);
+    expect(blob).not.toMatch(/\bIQ\b/);
+    expect(blob).not.toContain("13.3.5.1");
   });
 
   it("does not persist leftover Table 5 <remarks> on a same-turn retry without protocol pages", async () => {
@@ -1642,8 +1766,8 @@ describe("QSR RTM section 5 draft replay", () => {
 
   it("keeps Table 7 URS-41 IQ / 13.6 / Complies in preview when rowContext is only URS-41 / IQ / Complies", async () => {
     const table7Rows = [
-      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", ""],
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "", "", "", ""],
     ];
     mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
     listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
@@ -1664,23 +1788,15 @@ describe("QSR RTM section 5 draft replay", () => {
           cells: [
             {
               row: 1,
-              col: 3,
-              rowKey: "URS-41",
-              expectedText: "",
-              insertText: `IQ [${IQ_FILENAME}, p. 42]`,
-              rowContext: `URS-41\nIQ [${IQ_FILENAME}, p. 42]\n13.6\nComplies`,
-            },
-            {
-              row: 1,
               col: 4,
               rowKey: "URS-41",
               expectedText: "",
-              insertText: "13.6",
+              insertText: `13.6 [${IQ_FILENAME}, p. 42]`,
               rowContext: `URS-41\nIQ [${IQ_FILENAME}, p. 42]\n13.6\nComplies`,
             },
             {
               row: 1,
-              col: 5,
+              col: 7,
               rowKey: "URS-41",
               expectedText: "",
               insertText: "Complies",
@@ -1705,7 +1821,6 @@ describe("QSR RTM section 5 draft replay", () => {
       .filter((cell) => cell.rowKey === "URS-41")
       .map((cell) => cell.insertText)
       .join(" ");
-    expect(urs41).toMatch(/\bIQ\b/);
     expect(urs41).toContain("13.6");
     expect(urs41).toMatch(/\[\d+\]/);
     expect(urs41).toMatch(/Complies/i);
@@ -1729,15 +1844,14 @@ describe("QSR RTM section 5 draft replay", () => {
     const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
     const urs41Row = JSON.stringify(rows[2]);
     expect(urs41Row).toContain(suggestionInsertMarkName);
-    expect(urs41Row).toMatch(/\bIQ\b/);
     expect(urs41Row).toContain("13.6");
     expect(urs41Row).toMatch(/Complies/i);
   });
 
-  it("does not replace Table 7 URS-41 Section 13.6 with DQ 12.3", async () => {
+  it("keeps chat DQ / 12.3 on Table 7 URS-41 instead of rewriting to live 13.6", async () => {
     const table7Rows = [
-      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""],
     ];
     mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
     listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), dqDoc(), iqDoc()]);
@@ -1761,24 +1875,22 @@ describe("QSR RTM section 5 draft replay", () => {
               col: 3,
               rowKey: "URS-41",
               expectedText: "",
-              insertText: `DQ [${DQ_FILENAME}, p. 13]`,
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+              insertText: `12.3 [${DQ_FILENAME}, p. 13]`,
+              rowContext: `URS-41
+DQ [${DQ_FILENAME}, p. 13]
+12.3
+Complies`,
             },
             {
               row: 1,
-              col: 4,
-              rowKey: "URS-41",
-              expectedText: "13.6",
-              insertText: "12.3",
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
-            },
-            {
-              row: 1,
-              col: 5,
+              col: 7,
               rowKey: "URS-41",
               expectedText: "",
               insertText: "Complies",
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+              rowContext: `URS-41
+DQ [${DQ_FILENAME}, p. 13]
+12.3
+Complies`,
             },
           ],
         },
@@ -1801,11 +1913,10 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(op.kind).toBe("edit_cells");
     const cells = op.kind === "edit_cells" ? op.cells : [];
     const blob = cells.map((cell) => cell.insertText).join(" ");
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
-    const section = cells.find((cell) => cell.col === 4);
-    if (section) expect(section.insertText).toBe("13.6");
-    if (cells.length === 0) return;
+    expect(blob).toContain("12.3");
+    const section = cells.find((cell) => cell.col === 3);
+    expect(section?.insertText).toContain("12.3");
+    expect(section?.insertText ?? "").not.toContain("13.6");
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-dq",
       authorId: "ai",
@@ -1813,26 +1924,22 @@ describe("QSR RTM section 5 draft replay", () => {
       createdAt: "2026-09-27T00:00:00.000Z",
       kind: "fix",
     });
-    if (!preview.ok) {
-      expect(preview.status).toBe("already_present");
-      return;
-    }
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
     const table = (preview.doc.content ?? []).find((node) => node.type === "table");
     const rows = (table?.content ?? []).filter((node) => node.type === "tableRow");
     const sectionCell = JSON.stringify(
       (rows[2]?.content ?? []).filter(
         (node) => node.type === "tableCell" || node.type === "tableHeader"
-      )[4]
+      )[3]
     );
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
   });
 
-  it("fill-empty URS-41 paints IQ / Complies and leaves filled 13.6 unstruck when IQ and DQ were both read", async () => {
+  it("keeps chat DQ / 12.3 / Complies on fill-empty URS-41 instead of rewriting to IQ 13.6", async () => {
     const table7Rows = [
-      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""],
     ];
     mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
     listReadyDocumentsForReportMock.mockResolvedValue([
@@ -1865,24 +1972,22 @@ describe("QSR RTM section 5 draft replay", () => {
               col: 3,
               rowKey: "URS-41",
               expectedText: "",
-              insertText: `DQ [${DQ_FILENAME}, p. 13]`,
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+              insertText: `12.3 [${DQ_FILENAME}, p. 13]`,
+              rowContext: `URS-41
+DQ [${DQ_FILENAME}, p. 13]
+12.3
+Complies`,
             },
             {
               row: 1,
-              col: 4,
-              rowKey: "URS-41",
-              expectedText: "13.6",
-              insertText: "12.3",
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
-            },
-            {
-              row: 1,
-              col: 5,
+              col: 7,
               rowKey: "URS-41",
               expectedText: "",
               insertText: "Complies",
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n12.3\nComplies`,
+              rowContext: `URS-41
+DQ [${DQ_FILENAME}, p. 13]
+12.3
+Complies`,
             },
           ],
         },
@@ -1894,11 +1999,12 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(op.kind).toBe("edit_cells");
     const cells = op.kind === "edit_cells" ? op.cells : [];
     const blob = cells.map((cell) => cell.insertText).join(" ");
-    expect(blob).toMatch(/\bIQ\b/);
     expect(blob).toMatch(/Complies/i);
-    expect(blob).not.toMatch(/\bDQ\b/);
-    expect(blob).not.toContain("12.3");
-    expect(cells.find((cell) => cell.col === 4)).toBeUndefined();
+    expect(blob).not.toMatch(/\bIQ\b/);
+    expect(blob).toContain("12.3");
+    const section = cells.find((cell) => cell.col === 3);
+    expect(section?.insertText).toContain("12.3");
+    expect(section?.insertText ?? "").not.toContain("13.6");
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-fill-empty",
       authorId: "ai",
@@ -1913,18 +2019,16 @@ describe("QSR RTM section 5 draft replay", () => {
     const cellsInRow = (rows[2]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    const sectionCell = JSON.stringify(cellsInRow[4]);
-    expect(sectionCell).toContain("13.6");
-    expect(sectionCell).not.toContain("12.3");
-    expect(sectionCell).not.toContain(suggestionInsertMarkName);
-    expect(JSON.stringify(cellsInRow[3])).toMatch(/\bIQ\b/);
-    expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
+    const sectionCell = JSON.stringify(cellsInRow[3]);
+    expect(sectionCell).toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[3])).toContain("12.3");
+    expect(JSON.stringify(cellsInRow[7])).toMatch(/Complies/i);
   });
 
   it("paints Complies inline when IQ p.42 names URS-41 in a header list and Verified in the gasket body", async () => {
     const table7Rows = [
-      ["URS-40", "Non-Contact parts", "SS 304", "", "", ""],
-      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", ""],
+      ["URS-40", "Non-Contact parts", "SS 304", "", "", "", "", ""],
+      ["URS-41", "Gaskets", "PTFE or Equivalent [1]", "", "13.6", "", "", ""],
     ];
     mockSection("qsr_rtm_gmp", { table: rtmTableDoc(table7Rows) });
     listReadyDocumentsForReportMock.mockResolvedValue([
@@ -1949,27 +2053,25 @@ describe("QSR RTM section 5 draft replay", () => {
           cells: [
             {
               row: 1,
-              col: 3,
-              rowKey: "URS-41",
-              expectedText: "",
-              insertText: `IQ [${IQ_FILENAME}, p. 42]`,
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n13.7.5\nComplies`,
-            },
-            {
-              row: 1,
               col: 4,
               rowKey: "URS-41",
               expectedText: "13.6",
-              insertText: "13.7.5",
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n13.7.5\nComplies`,
+              insertText: `13.7.5 [${IQ_FILENAME}, p. 42]`,
+              rowContext: `URS-41
+DQ [${DQ_FILENAME}, p. 13]
+13.7.5
+Complies`,
             },
             {
               row: 1,
-              col: 5,
+              col: 7,
               rowKey: "URS-41",
               expectedText: "",
               insertText: "Complies",
-              rowContext: `URS-41\nDQ [${DQ_FILENAME}, p. 13]\n13.7.5\nComplies`,
+              rowContext: `URS-41
+DQ [${DQ_FILENAME}, p. 13]
+13.7.5
+Complies`,
             },
           ],
         },
@@ -1981,7 +2083,7 @@ describe("QSR RTM section 5 draft replay", () => {
     expect(op.kind).toBe("edit_cells");
     const cells = op.kind === "edit_cells" ? op.cells : [];
     expect(cells.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
-    expect(cells.find((cell) => cell.col === 5)?.insertText).toMatch(/Complies/i);
+    expect(cells.find((cell) => cell.col === 7)?.insertText).toMatch(/Complies/i);
     const preview = buildTableOperationPreviewDoc(rtmTableDoc(table7Rows), op, {
       id: "sug-table7-urs41-complies-header-list",
       authorId: "ai",
@@ -1996,9 +2098,69 @@ describe("QSR RTM section 5 draft replay", () => {
     const cellsInRow = (rows[2]?.content ?? []).filter(
       (node) => node.type === "tableCell" || node.type === "tableHeader"
     );
-    expect(JSON.stringify(cellsInRow[4])).toContain("13.6");
-    expect(JSON.stringify(cellsInRow[4])).not.toContain(suggestionInsertMarkName);
-    expect(JSON.stringify(cellsInRow[5])).toMatch(/Complies/i);
-    expect(JSON.stringify(cellsInRow[5])).toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[4])).toContain(suggestionInsertMarkName);
+    expect(JSON.stringify(cellsInRow[7])).toMatch(/Complies/i);
+    expect(JSON.stringify(cellsInRow[7])).toContain(suggestionInsertMarkName);
+  });
+
+  it("lands Complies on executed IQ rows (Langfuse 256f0e5d, Table 5 IQ Remarks blank)", async () => {
+    // Production: Stage IQ / Section 13.3.5.4 landed but Remarks saved empty,
+    // because signed IQ records print no pass word and p.18 has a
+    // `Model Number NA` spec cell.
+    const table5Rows = [
+      ["URS-7", "Agitator", "Anchor agitator, flame proof flange mounted motor", "", "", "", "", ""],
+      ["URS-13", "Equipment identification", "Manufacturer name plate and serial number", "", "", "", "", ""],
+    ];
+    mockSection("qsr_rtm_process", { table: rtmTableDoc(table5Rows) });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readIqPage(
+      tools,
+      25,
+      "3xper EMPOWERING INNOVATION Issued By MASTER COPY Issued On INSTALLATION QUALIFICATION Carat Kumar Gedla 3xper Innoventure Limited, 30/04/202619:20 Equipment/System Glass Lined Reactor Protocol No. Report No. IQP/GLR-1301 IQR/GLR-1301 Equipment Number GLR-1301 13.3.5.4. Agitator Motor Specifications Revision: 01 Page No. Section Revision: 01 Capacity/Size Effective Date 25 of 60 Production Block-2 8000 L 30-04-2026 Sr. No Parameters 1. Make Actual Verification Verified By Design specifications observations Source (Sign & Date) Design Crompton Crompton 2. Type mounted 3. Motor speed 1470 rpm 14708pm Flame proof, Flange Flame Proof, Analification Afita Design 01-05-2006 01-05-2026 Flange mounted qualification R.Ajita Design qualification R. Ajith 01-05-2026"
+    );
+    await readIqPage(
+      tools,
+      18,
+      "Issued On 30/04/202619:20 INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Page No. 18 of 60 Protocol No. IQP/GLR-1301 Effective Date 30-04-2026 13.3. System Identification & technical specification verification Reactor S. No Description Actual Observation Verified By (Sign & Date) 1.0 Name of the equipment Glass Lined Reactor R.Ajita 2.0 Manufacturer Standard Glass Lining Technology Ltd 01-05-2026 3.0 Model Number NA RANG 01-05-2076 4.0 Serial Number £250710956 RAjith 01-05-2026 7.0 Equipment Identification GLR-1301 01-05-2026"
+    );
+    const cell = (row: number, col: number, rowKey: string, insertText: string) => ({
+      row,
+      col,
+      rowKey,
+      expectedText: "",
+      insertText,
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill Stage, Section, and Remarks from the IQ records.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            cell(1, 4, "URS-7", `13.3.5 [${IQ_FILENAME}, p. 25]`),
+            cell(1, 7, "URS-7", "Complies"),
+            cell(2, 4, "URS-13", `13.3 [${IQ_FILENAME}, p. 18]`),
+            cell(2, 7, "URS-13", "Complies"),
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    const remarks = (rowKey: string) =>
+      cells.find((c) => c.rowKey === rowKey && c.col === 7)?.insertText;
+    expect(remarks("URS-7")).toBe("Complies");
+    expect(remarks("URS-13")).toBe("Complies");
+    const adjusted =
+      (result as { adjustedCells?: Array<{ column?: string }> }).adjustedCells ?? [];
+    expect(adjusted.filter((adj) => adj.column === "Remarks")).toEqual([]);
+    expect(cells.find((c) => c.rowKey === "URS-7" && c.col === 4)?.insertText).toContain(
+      "13.3.5"
+    );
   });
 });

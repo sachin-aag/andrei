@@ -87,7 +87,10 @@ import {
 } from "@/lib/export/docx-toc-headings";
 import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
 import {
-  citationsAppendixXml as reportCitationsAppendixXml,
+  threeXperCitationIdentityKey,
+  threeXperCitationsAppendixXml,
+} from "@/lib/export/3xper-citations-table";
+import {
   elrCitationsAppendixXml,
   insertXmlBeforeLastSectPr,
   unifyElrCitationsForExport,
@@ -569,9 +572,16 @@ export async function generateReportDocx({
       report.documentType === "vendor_qualification"
         ? VQ_SECTION_KEYS
         : QSR_SECTION_KEYS;
-    const unified = unifyReportCitationsForExport(exportSections, sectionKeys);
+    const unified = unifyReportCitationsForExport(exportSections, sectionKeys, {
+      sourceIdentity: (source) =>
+        threeXperCitationIdentityKey(source, exportSections),
+    });
     exportSections = unified.sections;
-    citationsAppendixXml = reportCitationsAppendixXml(unified.bibliography, "CITATIONS");
+    citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
+      sections: exportSections,
+      variant:
+        report.documentType === "vendor_qualification" ? "vq" : "qsr",
+    });
   }
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
