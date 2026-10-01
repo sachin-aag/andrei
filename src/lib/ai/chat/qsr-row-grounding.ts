@@ -11,6 +11,7 @@ import {
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
+  QSR_RTM_FAMILY_HEADERS,
   QSR_TABLE_HEADERS,
 } from "@/lib/document-types/qsr/sections";
 import {
@@ -121,9 +122,9 @@ export const QSR_IDENTITY_TABLE_SECTIONS = [
 export type QsrRtmSection = (typeof QSR_RTM_SECTIONS)[number];
 export type QualDocFamily = "urs" | "dq" | "iq" | "oq" | "pq" | "ds";
 
-/** Highest remaining-column Stage first. Single cell — not a compound list. */
-export const QSR_STAGE_RANK = ["pq", "oq", "iq", "dq"] as const;
-export type RtmStageFamily = (typeof QSR_STAGE_RANK)[number];
+/** Editor and search order. Each family column fills only from that family's PDF. */
+export const QSR_RTM_FAMILY_ORDER = ["dq", "iq", "oq", "pq"] as const;
+export type RtmStageFamily = (typeof QSR_RTM_FAMILY_ORDER)[number];
 
 const STAGE_LABEL: Record<RtmStageFamily, "PQ" | "OQ" | "IQ" | "DQ"> = {
   pq: "PQ",
@@ -177,7 +178,7 @@ export function isQsrRtmSection(
   );
 }
 
-/** Stage / Section / Remarks may empty instead of failing the URS copy. */
+/** Family columns (DQ / IQ / OQ / PQ) and Remarks may empty or NA instead of failing the URS copy. */
 export function isQsrRtmOptionalReferenceColumn(
   section: string | null | undefined,
   col: number
@@ -185,31 +186,66 @@ export function isQsrRtmOptionalReferenceColumn(
   if (!isQsrRtmSection(section)) return false;
   const header = QSR_TABLE_HEADERS[section][col];
   if (!header) return false;
-  const name = header.toLowerCase();
-  return (
-    name.includes("qualification stage") ||
-    (name.includes("reference") && name.includes("section")) ||
-    name === "remarks"
-  );
+  if (header === "Remarks") return true;
+  return (QSR_RTM_FAMILY_HEADERS as readonly string[]).includes(header);
+}
+
+export function rtmFamilyFromColumnHeader(
+  header: string | null | undefined
+): RtmStageFamily | null {
+  if (!header) return null;
+  const match = /^reference\s+[–-]\s+(dq|iq|oq|pq)$/i.exec(header.trim());
+  return (match?.[1]?.toLowerCase() as RtmStageFamily | undefined) ?? null;
+}
+
+export function rtmFamilyAtColumn(
+  section: string | null | undefined,
+  col: number
+): RtmStageFamily | null {
+  if (!isQsrRtmSection(section)) return null;
+  return rtmFamilyFromColumnHeader(QSR_TABLE_HEADERS[section][col]);
 }
 
 export function rtmReferenceColumnIndexes(
   section: string | null | undefined
-): { stage: number; section: number; remarks: number } | null {
+): {
+  dq: number;
+  iq: number;
+  oq: number;
+  pq: number;
+  remarks: number;
+} | null {
   if (!isQsrRtmSection(section)) return null;
   const headers = QSR_TABLE_HEADERS[section];
-  let stage = -1;
-  let sectionCol = -1;
+  const families: Partial<Record<RtmStageFamily, number>> = {};
   let remarks = -1;
   for (let i = 0; i < headers.length; i++) {
-    const name = headers[i]!.toLowerCase();
-    if (name.includes("qualification stage")) stage = i;
-    else if (name.includes("reference") && name.includes("section")) {
-      sectionCol = i;
-    } else if (name === "remarks") remarks = i;
+    const family = rtmFamilyFromColumnHeader(headers[i]);
+    if (family) families[family] = i;
+    else if (headers[i] === "Remarks") remarks = i;
   }
-  if (stage < 0 || sectionCol < 0 || remarks < 0) return null;
-  return { stage, section: sectionCol, remarks };
+  if (
+    families.dq == null ||
+    families.iq == null ||
+    families.oq == null ||
+    families.pq == null ||
+    remarks < 0
+  ) {
+    return null;
+  }
+  return {
+    dq: families.dq,
+    iq: families.iq,
+    oq: families.oq,
+    pq: families.pq,
+    remarks,
+  };
+}
+
+const RTM_NOT_FOUND_RE = /^(?:n\/?a|n\.a\.|not\s+applicable)$/i;
+
+export function isRtmNotFoundMarker(text: string | null | undefined): boolean {
+  return RTM_NOT_FOUND_RE.test(text?.replace(/\[[^\]]*\]/g, "").trim() ?? "");
 }
 
 export function isQsrIdentityTableSection(
@@ -256,23 +292,6 @@ export function editCellsGroupKey(cell: TableCellEdit): string {
   );
 }
 
-function editCellsSiblingContext(
-  siblings: readonly TableCellEdit[],
-  key: string
-): string {
-  return [
-    key.startsWith("__row:") ? "" : key,
-    ...siblings.flatMap((sib) => [
-      sib.rowKey,
-      sib.insertText,
-      sib.expectedText,
-      sib.rowContext,
-    ]),
-  ]
-    .filter((part): part is string => Boolean(part?.trim()))
-    .join("\n");
-}
-
 function mergeRowContextLines(
   live: string,
   existing: string | undefined
@@ -292,11 +311,11 @@ function mergeRowContextLines(
   return lines.join("\n");
 }
 
-/** First-cell → live Parameters / User requirements for that URS row. */
-export function liveTableRowContextByKey(
+/** First-cell → live row cells (col → text) for that URS row. */
+function liveTableRowsByKey(
   fieldDoc: JSONContent | null | undefined
-): Map<string, string> {
-  const map = new Map<string, string>();
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
   if (!fieldDoc) return map;
   for (const table of summarizeTablesInDoc(fieldDoc)) {
     const byRow = new Map<number, string[]>();
@@ -310,10 +329,21 @@ export function liveTableRowContextByKey(
     for (const cells of byRow.values()) {
       const first = (cells[0] ?? "").replace(/\s+/g, " ").trim();
       if (!first) continue;
-      const lines = cells.filter((part) => Boolean(part?.trim()));
-      if (lines.length === 0) continue;
-      map.set(first.toUpperCase(), lines.join("\n"));
+      map.set(first.toUpperCase(), cells);
     }
+  }
+  return map;
+}
+
+/** First-cell → live Parameters / User requirements for that URS row. */
+export function liveTableRowContextByKey(
+  fieldDoc: JSONContent | null | undefined
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const [key, cells] of liveTableRowsByKey(fieldDoc)) {
+    const lines = cells.filter((part) => Boolean(part?.trim()));
+    if (lines.length === 0) continue;
+    map.set(key, lines.join("\n"));
   }
   return map;
 }
@@ -327,16 +357,33 @@ export function attachLiveTableRowContext(
   fieldDoc: JSONContent | null | undefined
 ): TableOperation {
   if (operation.kind !== "edit_cells") return operation;
-  const live = liveTableRowContextByKey(fieldDoc);
-  if (live.size === 0) return operation;
+  const liveRows = liveTableRowsByKey(fieldDoc);
+  if (liveRows.size === 0) return operation;
   return {
     ...operation,
     cells: operation.cells.map((cell) => {
-      const snapshot = live.get(editCellsGroupKey(cell));
-      if (!snapshot) return cell;
-      const merged = mergeRowContextLines(snapshot, cell.rowContext);
-      if (merged === (cell.rowContext ?? "").trim()) return cell;
-      return { ...cell, rowContext: merged };
+      const liveCells = liveRows.get(editCellsGroupKey(cell));
+      if (!liveCells) return cell;
+      const snapshot = liveCells.filter((part) => Boolean(part?.trim())).join("\n");
+      const liveText = (liveCells[cell.col] ?? "").trim();
+      let next = cell;
+      if (snapshot) {
+        const merged = mergeRowContextLines(snapshot, cell.rowContext);
+        if (merged !== (cell.rowContext ?? "").trim()) {
+          next = { ...next, rowContext: merged };
+        }
+      }
+      // Dummy-row fills omit expectedText. Stamp the live cell so identity
+      // Remarks that are already Complies drop, without treating an empty
+      // insert as an explicit clear.
+      if (
+        liveText &&
+        cell.insertText.trim() &&
+        (cell.expectedText ?? "").trim() === ""
+      ) {
+        next = { ...next, expectedText: liveText };
+      }
+      return next;
     }),
   };
 }
@@ -556,6 +603,30 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   }
   if (end <= at) return null;
   return hay.slice(at, end);
+}
+
+/**
+ * Every span of this URS-N, not only the first. Parser text plus a later
+ * visualInterpretation line (`transcript\nURS-3 … prints −15 °C`) must both
+ * count so a recovered minus wins over unsigned 15 in the text layer.
+ */
+function quoteWindowsAroundKey(quote: string, key: string): string[] {
+  if (!quote.trim() || !key) return [];
+  const hay = ursHaystack(quote);
+  const needle = key.toUpperCase();
+  const windows: string[] = [];
+  const seen = new Set<string>();
+  const add = (window: string | null) => {
+    if (!window || seen.has(window)) return;
+    seen.add(window);
+    windows.push(window);
+  };
+  add(quoteWindowAroundKey(hay, key));
+  for (const span of ursSpans(hay)) {
+    if (span.id !== needle) continue;
+    add(quoteWindowAroundKey(hay.slice(span.at), key));
+  }
+  return windows;
 }
 
 /**
@@ -953,9 +1024,9 @@ const RTM_PROTOCOL_QUERY_RE: Record<RtmStageFamily, RegExp> = {
 };
 
 /**
- * Identifier-only greps often land on a DQ page that prints the URS ID, or
- * on IQ before PQ / OQ have been searched. Keep search open while a higher
- * protocol family than the best hit has not been queried.
+ * Identifier-only greps often land on a DQ page that prints the URS ID.
+ * Keep search open until every protocol family (DQ, IQ, OQ, PQ) has been
+ * queried — any order. The four family columns each need their own document.
  */
 export function shouldKeepRtmProtocolSearchOpen(
   queries: readonly string[],
@@ -966,28 +1037,18 @@ export function shouldKeepRtmProtocolSearchOpen(
     .filter(
       (family): family is RtmStageFamily =>
         family != null &&
-        (QSR_STAGE_RANK as readonly string[]).includes(family)
+        (QSR_RTM_FAMILY_ORDER as readonly string[]).includes(family)
     );
   if (hitFamilies.length === 0) return false;
-  const bestHitRank = Math.min(
-    ...hitFamilies.map((family) => QSR_STAGE_RANK.indexOf(family))
-  );
-  if (bestHitRank <= 0) return false;
   const joined = queries.join("\n");
-  return QSR_STAGE_RANK.some(
-    (family, index) =>
-      index < bestHitRank && !RTM_PROTOCOL_QUERY_RE[family].test(joined)
+  return QSR_RTM_FAMILY_ORDER.some(
+    (family) => !RTM_PROTOCOL_QUERY_RE[family].test(joined)
   );
-}
-
-function optionalRefExpectedFilled(cell: TableCellEdit): boolean {
-  const live = (cell.expectedText ?? "").trim();
-  return live.length > 0 && !isQsrRtmPlaceholderText(live);
 }
 
 export function stageFamilyFromCell(
   text: string | null | undefined
-): QualDocFamily | null {
+): RtmStageFamily | null {
   const trimmed = text?.replace(/\[[^\]]*\]/g, "").trim().toUpperCase() ?? "";
   switch (trimmed) {
     case "DQ":
@@ -1094,8 +1155,49 @@ function headingTitleAfterNumber(rest: string): string {
   return raw.replace(/[.:;,-]+$/g, "").replace(/\s+/g, " ").trim();
 }
 
-function formatRtmSectionHeading(number: string, rest: string): string {
+const RESULT_ONLY_AUDIT_RE =
+  /^(?:results?|remarks?|status|inference|conclusion|verdict)?\s*[:\-–]?\s*(?:complies|complied|verified|pass(?:ed|es)?|satisfactory|accepted|acceptable)\b/i;
+
+function isResultOnlyAuditLine(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/^(?:complies|complied)\.?$/i.test(trimmed)) return true;
+  return (
+    RESULT_ONLY_AUDIT_RE.test(trimmed) && trimmed.split(/\s+/).length <= 6
+  );
+}
+
+/** One audit line from a protocol section block, or "" when nothing usable. */
+function cleanAuditLine(raw: string): string {
+  const cleaned = cleanRtmSectionDescription(raw);
+  if (cleaned && !isResultOnlyAuditLine(cleaned)) return cleaned;
+  const words = raw.replace(/\s+/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length <= RTM_SECTION_DESCRIPTION_MAX_WORDS) return "";
+  const trimmed = cleanRtmSectionDescription(
+    words.slice(0, RTM_SECTION_DESCRIPTION_MAX_WORDS).join(" ")
+  );
+  return trimmed && !isResultOnlyAuditLine(trimmed) ? trimmed : "";
+}
+
+/**
+ * Reviewer line for a family column. A heading title is fine
+ * (`Heating Trial`); so is a procedure or observation from that same
+ * block (`Fill the reactor to 8000 L`). Result-only leftovers
+ * (`Result: Complies`) are not.
+ */
+function auditLineFromSectionBlock(rest: string): string {
   const title = cleanRtmSectionDescription(headingTitleAfterNumber(rest));
+  if (title && !isResultOnlyAuditLine(title)) return title;
+  const text = rest.replace(SAME_AS_PROTOCOL_RE, " ").replace(/\s+/g, " ").trim();
+  for (const chunk of text.split(/(?<=\.)\s+|(?:;\s+)/)) {
+    const cleaned = cleanAuditLine(chunk);
+    if (cleaned) return cleaned;
+  }
+  return cleanAuditLine(text);
+}
+
+function formatRtmSectionHeading(number: string, rest: string): string {
+  const title = auditLineFromSectionBlock(rest);
   return title ? `${number} – ${title}` : number;
 }
 
@@ -1116,6 +1218,9 @@ const RTM_SECTION_JUNK_RES: readonly RegExp[] = [
   /\b\d{1,2}([-/.])\d{1,2}\1(?:\d{4}|\d{2})\b/,
   // A lone trailing letter is a cut-off word unless it is a unit (8000 L).
   /(?:^|[^\d\s])\s[A-Za-z]$/,
+  // PQ purpose / scope sentences are not a test audit line.
+  /\bensures that\b/i,
+  /\bperformance qualification\s*\(\s*pq\s*\)\s*ensures/i,
 ];
 
 /** One plain line about the test performed, or "" when it is page furniture. */
@@ -1239,6 +1344,39 @@ function rtmSectionNumbersCited(
   });
 }
 
+/**
+ * One audit line from a protocol body when there is no dotted heading.
+ * Prefer a sentence that names this row's Parameters so Jacket Type is
+ * not labelled with a neighbour agitator trial on the same page.
+ */
+function fallbackAuditLineFromBody(
+  body: string,
+  context: string,
+  family?: RtmStageFamily | null
+): string | null {
+  const stripped = protocolBodyQuote(body);
+  if (!stripped) return null;
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  const chunks = stripped.split(/(?<=\.)\s+|(?:;\s+)/);
+  for (const chunk of chunks) {
+    if (
+      tokens.length > 0 &&
+      !tokens.some((token) => windowHasToken(chunk, token))
+    ) {
+      continue;
+    }
+    const numbered = protocolSectionHeading(chunk, context, family);
+    if (numbered && rtmCellSectionNumber(numbered, family)) return numbered;
+    const cleaned = cleanAuditLine(chunk);
+    if (!cleaned) continue;
+    if (rtmCellSectionNumber(cleaned, family)) return cleaned;
+    const rawNumber = rtmSectionNumber(cleaned);
+    if (rawNumber && !rtmCellSectionNumber(cleaned, family)) continue;
+    return cleaned;
+  }
+  return null;
+}
+
 function preferredRtmSectionNumber(
   requested: string,
   heading: string,
@@ -1252,6 +1390,98 @@ function preferredRtmSectionNumber(
     if (parts.includes(fromHeading)) return fromRequested;
   }
   return fromHeading || fromRequested;
+}
+
+/**
+ * Next sibling heading in a protocol body. Three-or-more-level numbers
+ * (`8.2.4`) may start a lowercase procedure; two-level (`13.6 Heating`)
+ * still need a capital so `3.5 kg` is not a heading.
+ */
+const NEXT_SECTION_HEADING_RE =
+  /(?:^|\s)(?:\d+(?:\.\d+){2,4}\.?\s+(?=[A-Za-z])|\d+\.\d+(?!\.\d)\.?\s+(?=[A-Z]))/;
+
+/**
+ * Block whose number is `number` (`8.2.3 Heating Trial` or
+ * `8.2.3 Fill the reactor…` on a page that also prints 8.2.1 / 8.2.4).
+ * Do not take a neighbour test. The audit line is any one line from
+ * that block — heading title if present, else a procedure/observation.
+ */
+function headingBlockBody(
+  stripped: string,
+  number: string
+): string | null {
+  if (!number || !isUsableProtocolSectionNumber(number)) return null;
+  const escaped = number.replace(/\./g, "\\.");
+  const re = new RegExp(
+    `(?:^|\\s)(?:section\\s+)?(${escaped})(?!\\.\\d)\\.?(\\s+[A-Za-z][\\s\\S]*)?`,
+    "i"
+  );
+  const match = re.exec(` ${stripped}`);
+  if (!match) return null;
+  const rest = (match[2] ?? "").trim();
+  const next = rest.search(NEXT_SECTION_HEADING_RE);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+function headingBlockForNumber(
+  stripped: string,
+  number: string
+): string | null {
+  const block = headingBlockBody(stripped, number);
+  if (block == null) return null;
+  return formatRtmSectionHeading(number, block);
+}
+
+function headingFromQuotes(
+  quotes: readonly string[],
+  number: string,
+  family?: RtmStageFamily | null
+): string | null {
+  if (!number) return null;
+  for (const quote of quotes) {
+    const heading = headingBlockForNumber(protocolBodyQuote(quote), number);
+    if (!heading) continue;
+    const found = rtmCellSectionNumber(heading, family);
+    if (found === number || rtmSectionNumberParts(heading).includes(number)) {
+      return heading;
+    }
+  }
+  return null;
+}
+
+/**
+ * A family column is `{protocol section number} – {one line about the
+ * test}`. The number comes from the matched protocol heading when there is
+ * one; the model's one-line description is kept when it is clean, else any
+ * audit line from that section (heading title, procedure, or observation).
+ * Printed page counters (`16`, `14`) and logged readings (`12.72 °C`)
+ * never persist, even as a description-only cell.
+ */
+export function rtmSectionCellText(
+  requested: string,
+  pick: {
+    sectionHeading?: string | null;
+    family?: RtmStageFamily | null;
+  } | null
+): string {
+  const heading = pick?.sectionHeading ?? "";
+  const family = pick?.family ?? null;
+  const number = preferredRtmSectionNumber(requested, heading, family);
+  const description = rtmCellDescription(requested) || rtmCellDescription(heading);
+  if (number && description) return `${number} – ${description}`;
+  if (number) return number;
+  const requestedRaw = rtmSectionNumber(requested);
+  if (requestedRaw && !rtmCellSectionNumber(requested, family)) return "";
+  const headingRaw = rtmSectionNumber(heading);
+  if (headingRaw && !rtmCellSectionNumber(heading, family)) return "";
+  if (
+    description &&
+    heading &&
+    rtmCellDescription(heading) === description
+  ) {
+    return description;
+  }
+  return "";
 }
 
 function rtmCellDescription(text: string): string {
@@ -1268,48 +1498,19 @@ function rtmCellDescription(text: string): string {
   return cleanRtmSectionDescription(rest);
 }
 
-/**
- * Reference – Section is `{protocol section number} – {one line about the
- * test}`. The number comes from the matched protocol heading when there is
- * one; the model's one-line description is kept when it is clean, else the
- * heading title. Printed page counters (`16`, `14`) and logged readings
- * (`12.72 °C`) never persist, even as a description-only cell.
- */
-export function rtmSectionCellText(
-  requested: string,
-  pick: {
-    sectionHeading?: string | null;
-    family?: RtmStageFamily | null;
-  } | null
-): string {
-  const heading = pick?.sectionHeading ?? "";
-  const family = pick?.family ?? null;
-  const number = preferredRtmSectionNumber(requested, heading, family);
-  const description = rtmCellDescription(requested) || rtmCellDescription(heading);
-  if (number && description) return `${number} – ${description}`;
-  return number;
-}
-
 function rtmSectionNumberParts(text: string): string[] {
   const number = rtmCellSectionNumber(text);
   return number ? number.split(/\s*[\/&]\s*/).filter(Boolean) : [];
 }
 
-/** Filled `13.6` vs neighbour `13.7.5` — not an IQ→PQ rank-up. */
-function conflictingFilledSectionNumber(live: string, next: string): boolean {
-  const liveNum = rtmCellSectionNumber(live);
-  const nextNum = rtmCellSectionNumber(next);
-  if (!liveNum || !nextNum) return false;
-  if (liveNum === nextNum) return false;
-  return !rtmSectionNumberParts(next).includes(liveNum);
-}
-
-const MULTI_LEVEL_HEADING_RE = /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Z])/g;
+const MULTI_LEVEL_HEADING_RE =
+  /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Za-z])/g;
 
 /**
  * A PQ page often prints several tests (8.2.1 Physical verification …
- * 8.2.3 Heating Trial …). Pick the heading whose block names this row's
- * topic so Reactor Capacity is not labelled with the first test on the page.
+ * 8.2.3 Heating Trial …, or untitled procedure sentences under those
+ * numbers). Pick the block whose text names this row's topic so Reactor
+ * Capacity is not labelled with the first test on the page.
  */
 function rowMatchedSectionHeading(stripped: string, context: string): string | null {
   const starts = [...stripped.matchAll(MULTI_LEVEL_HEADING_RE)].map((m) => ({
@@ -1336,13 +1537,18 @@ function rowMatchedSectionHeading(stripped: string, context: string): string | n
 function protocolSectionHeading(
   body: string,
   context = "",
-  family?: RtmStageFamily | null
+  family?: RtmStageFamily | null,
+  preferredNumber?: string
 ): string | null {
   const stripped = protocolBodyQuote(body);
+  if (preferredNumber) {
+    const preferred = headingBlockForNumber(stripped, preferredNumber);
+    if (preferred && rtmCellSectionNumber(preferred, family)) return preferred;
+  }
   const matched = context ? rowMatchedSectionHeading(stripped, context) : null;
   if (matched && rtmCellSectionNumber(matched, family)) return matched;
   const multiTitle = stripped.match(
-    /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Z][\s\S]*)/
+    /(?:^|[\s])(\d+(?:\.\d+){2,4})\.?\s+([A-Za-z][\s\S]*)/
   );
   if (
     multiTitle?.[1] &&
@@ -1361,7 +1567,7 @@ function protocolSectionHeading(
     const number = titled[1]!;
     const after = stripped.slice(titled.index + titled[0].length);
     if (!isUsableProtocolSectionNumber(number, after)) continue;
-    if (!/^\s+[A-Z]/.test(after)) continue;
+    if (!/^\s+[A-Za-z]/.test(after)) continue;
     return formatRtmSectionHeading(number, after);
   }
   const labeled = stripped.match(
@@ -1394,88 +1600,6 @@ function matchingProtocolPages(
   });
 }
 
-function formatRtmStageCell(pick: RtmReferencePick): string {
-  return `${pick.stageLabel} [${pick.filename}, p. ${pick.pageNumber}]`;
-}
-
-function isRtmStageFamily(family: QualDocFamily | null): family is RtmStageFamily {
-  return (
-    family != null &&
-    (QSR_STAGE_RANK as readonly string[]).includes(family)
-  );
-}
-
-function stageRankIndex(family: RtmStageFamily): number {
-  return QSR_STAGE_RANK.indexOf(family);
-}
-
-function firstSectionNumberLine(text: string): string {
-  for (const line of text.split("\n")) {
-    const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
-    if (isRtmSectionCellText(trimmed)) {
-      return trimmed.replace(/^section\s+/i, "");
-    }
-  }
-  return "";
-}
-
-function liveReferenceFloor(
-  siblings: readonly TableCellEdit[],
-  cols: { stage: number; section: number; remarks: number }
-): { stageFamily: RtmStageFamily | null; sectionText: string } {
-  let stageFamily: RtmStageFamily | null = null;
-  let sectionText = "";
-  for (const sib of siblings) {
-    const live = (sib.expectedText ?? "").trim();
-    if (!live) continue;
-    if (sib.col === cols.stage) {
-      const family = stageFamilyFromCell(live);
-      if (isRtmStageFamily(family)) stageFamily = family;
-    }
-    if (sib.col === cols.section) sectionText = live;
-  }
-  if (!sectionText) {
-    for (const sib of siblings) {
-      if (!sib.rowContext) continue;
-      sectionText = firstSectionNumberLine(sib.rowContext);
-      if (sectionText) break;
-    }
-  }
-  return { stageFamily, sectionText };
-}
-
-function pickWouldReplaceFilledReference(
-  pick: RtmReferencePick,
-  floor: { stageFamily: RtmStageFamily | null; sectionText: string }
-): boolean {
-  if (floor.stageFamily) {
-    return stageRankIndex(pick.family) > stageRankIndex(floor.stageFamily);
-  }
-  if (
-    floor.sectionText &&
-    pick.sectionHeading &&
-    !sameRtmSectionCell(floor.sectionText, pick.sectionHeading)
-  ) {
-    // DQ pages print every URS ID. A heading clash with a filled Section
-    // means this pick must not stamp empty Stage / Remarks beside it.
-    // IQ / OQ / PQ protocol-body hits may still fill those empty cells.
-    return pick.family === "dq";
-  }
-  return false;
-}
-
-function stickyRtmPick(
-  pick: RtmReferencePick | null,
-  siblings: readonly TableCellEdit[],
-  cols: { stage: number; section: number; remarks: number }
-): RtmReferencePick | null {
-  if (!pick) return null;
-  if (pickWouldReplaceFilledReference(pick, liveReferenceFloor(siblings, cols))) {
-    return null;
-  }
-  return pick;
-}
-
 function headingNumberOnPage(quote: string, number: string): boolean {
   if (!number) return false;
   const body = ` ${protocolBodyQuote(quote)} `;
@@ -1495,11 +1619,17 @@ function headingNumberOnPage(quote: string, number: string): boolean {
 function sectionHeadingFromQuote(
   quote: string,
   context: string,
-  family: RtmStageFamily
+  family: RtmStageFamily,
+  preferredNumber?: string
 ): string | null {
   const body = protocolBodyQuote(quote);
   if (!body) return null;
-  const heading = protocolSectionHeading(body, context, family);
+  const heading = protocolSectionHeading(
+    body,
+    context,
+    family,
+    preferredNumber
+  );
   if (!heading) return null;
   const number = rtmCellSectionNumber(heading, family);
   if (!number) return null;
@@ -1510,12 +1640,34 @@ function citePageForSectionHeading(
   pages: readonly { filename: string; pageNumber: number; quote: string }[],
   passPage: { filename: string; pageNumber: number; quote: string },
   context: string,
-  family: RtmStageFamily
+  family: RtmStageFamily,
+  preferredNumber?: string
 ): {
   page: { filename: string; pageNumber: number; quote: string };
   heading: string | null;
 } {
-  const passHeading = sectionHeadingFromQuote(passPage.quote, context, family);
+  if (preferredNumber) {
+    const home = pages.find((page) =>
+      headingNumberOnPage(page.quote, preferredNumber)
+    );
+    if (home) {
+      const heading =
+        headingBlockForNumber(protocolBodyQuote(home.quote), preferredNumber) ??
+        sectionHeadingFromQuote(
+          home.quote,
+          context,
+          family,
+          preferredNumber
+        );
+      return { page: home, heading };
+    }
+  }
+  const passHeading = sectionHeadingFromQuote(
+    passPage.quote,
+    context,
+    family,
+    preferredNumber
+  );
   if (passHeading) {
     const number = rtmCellSectionNumber(passHeading, family);
     if (number && headingNumberOnPage(passPage.quote, number)) {
@@ -1527,7 +1679,12 @@ function citePageForSectionHeading(
     if (home) return { page: home, heading: passHeading };
   }
   for (const page of pages) {
-    const heading = sectionHeadingFromQuote(page.quote, context, family);
+    const heading = sectionHeadingFromQuote(
+      page.quote,
+      context,
+      family,
+      preferredNumber
+    );
     if (!heading) continue;
     const number = rtmCellSectionNumber(heading, family);
     if (number && headingNumberOnPage(page.quote, number)) {
@@ -1537,12 +1694,31 @@ function citePageForSectionHeading(
   return { page: passPage, heading: passHeading };
 }
 
+function firstSectionNumberLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.replace(/\[[^\]]*\]/g, "").trim();
+    if (isRtmSectionCellText(trimmed)) {
+      return trimmed.replace(/^section\s+/i, "");
+    }
+  }
+  return "";
+}
+
 export function pickRtmReference(
   ledger: CitationPageLedger,
   key: string,
-  context: string
+  context: string,
+  preferredSectionNumber?: string,
+  preferredFamily?: RtmStageFamily
 ): RtmReferencePick | null {
-  for (const family of QSR_STAGE_RANK) {
+  const preferred =
+    preferredSectionNumber?.trim() ||
+    rtmCellSectionNumber(firstSectionNumberLine(context)) ||
+    undefined;
+  const families: readonly RtmStageFamily[] = preferredFamily
+    ? [preferredFamily]
+    : QSR_RTM_FAMILY_ORDER;
+  for (const family of families) {
     const pages = matchingProtocolPages(ledger, key, family, context);
     if (pages.length === 0) continue;
     const passPage =
@@ -1552,7 +1728,13 @@ export function pickRtmReference(
         const topic = protocolTopicBody(page.quote, context);
         return topic != null && hasProtocolPassToken(topic);
       }) ?? pages[0]!;
-    const cited = citePageForSectionHeading(pages, passPage, context, family);
+    const cited = citePageForSectionHeading(
+      pages,
+      passPage,
+      context,
+      family,
+      preferred
+    );
     const body =
       protocolTopicBody(passPage.quote, context) ??
       quoteWindowAroundKey(passPage.quote, key) ??
@@ -1562,229 +1744,13 @@ export function pickRtmReference(
       stageLabel: STAGE_LABEL[family],
       filename: cited.page.filename,
       pageNumber: cited.page.pageNumber,
-      sectionHeading: cited.heading,
+      sectionHeading:
+        cited.heading ??
+        fallbackAuditLineFromBody(body ?? "", context, family),
       remarks: rtmRemarksForPick(body, ledger, key, family, context),
     };
   }
   return null;
-}
-
-function rowTouchesReference(
-  row: readonly string[],
-  cols: { stage: number; section: number; remarks: number }
-): boolean {
-  return [cols.stage, cols.section, cols.remarks].some(
-    (col) => (row[col] ?? "").trim().length > 0
-  );
-}
-
-function applyPickToRow(
-  row: readonly string[],
-  cols: { stage: number; section: number; remarks: number },
-  pick: RtmReferencePick | null
-): string[] {
-  if (!rowTouchesReference(row, cols)) return [...row];
-  const next = [...row];
-  const last = Math.max(cols.stage, cols.section, cols.remarks);
-  while (next.length <= last) next.push("");
-  const liveStage = stageFamilyFromCell(next[cols.stage]);
-  const floor = {
-    stageFamily: isRtmStageFamily(liveStage) ? liveStage : null,
-    sectionText: (next[cols.section] ?? "").trim(),
-  };
-  if (pick && pickWouldReplaceFilledReference(pick, floor)) {
-    return next;
-  }
-  if (!pick) {
-    next[cols.stage] = "";
-    next[cols.section] = "";
-    next[cols.remarks] = "";
-    return next;
-  }
-  next[cols.stage] = formatRtmStageCell(pick);
-  next[cols.section] = rtmSectionCellText(next[cols.section] ?? "", pick);
-  next[cols.remarks] = pick.remarks;
-  return next;
-}
-
-function rankEditCells(
-  operation: Extract<TableOperation, { kind: "edit_cells" }>,
-  ledger: CitationPageLedger,
-  section: string | undefined,
-  cols: { stage: number; section: number; remarks: number }
-): TableOperation {
-  const byKey = new Map<string, TableCellEdit[]>();
-  for (const cell of operation.cells) {
-    const key = editCellsGroupKey(cell);
-    const list = byKey.get(key) ?? [];
-    list.push(cell);
-    byKey.set(key, list);
-  }
-  const rewritten = operation.cells.flatMap((cell) => {
-    const key = editCellsGroupKey(cell);
-    const siblings = byKey.get(key) ?? [];
-    const touchesRef = siblings.some((sib) =>
-      isQsrRtmOptionalReferenceColumn(section, sib.col)
-    );
-    if (!touchesRef) return [cell];
-    if (!isQsrRtmOptionalReferenceColumn(section, cell.col)) return [cell];
-    if (optionalRefExpectedFilled(cell) && !cell.insertText.trim()) {
-      // Explicit clear of a live Stage / Section / Remarks cell.
-      return [cell];
-    }
-    const context = editCellsSiblingContext(siblings, key);
-    const rowKey = key.startsWith("__row:")
-      ? rowKeyFromContext(context)
-      : key;
-    if (!rowKey) return [cell];
-    const rawPick = pickRtmReference(ledger, rowKey, context);
-    const pick = stickyRtmPick(rawPick, siblings, cols);
-    if (!pick) {
-      // ID-only DQ (or a lower family) must not rewrite a filled IQ Section.
-      if (rawPick) return [];
-      if (cell.col !== cols.section) return [cell];
-      const text = rtmSectionCellText(cell.insertText, null);
-      if (!text && optionalRefExpectedFilled(cell)) return [];
-      if (text.trim() === (cell.expectedText ?? "").trim()) return [];
-      return [{ ...cell, insertText: text }];
-    }
-    if (cell.col === cols.stage) {
-      return [{ ...cell, insertText: formatRtmStageCell(pick) }];
-    }
-    if (cell.col === cols.section) {
-      const text = rtmSectionCellText(cell.insertText, pick);
-      const live = (cell.expectedText ?? "").trim();
-      const floor = liveReferenceFloor(siblings, cols);
-      const rankingUp = Boolean(
-        floor.stageFamily &&
-          stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
-      );
-      if (!rankingUp && conflictingFilledSectionNumber(live, text)) {
-        return [];
-      }
-      if (!text.trim() && optionalRefExpectedFilled(cell)) {
-        // Drop a logged reading / page counter the engineer already accepted
-        // so the next card can replace it; do not keep `12.72` as Section.
-        if (!rtmCellSectionNumber(live, pick.family)) {
-          return [{ ...cell, insertText: "" }];
-        }
-        return [];
-      }
-      if (text.trim() === live) return [];
-      return [{ ...cell, insertText: text }];
-    }
-    if (cell.col === cols.remarks) {
-      return [{ ...cell, insertText: pick.remarks }];
-    }
-    return [cell];
-  });
-  const present = new Set(
-    rewritten.map((cell) => `${editCellsGroupKey(cell)}:${cell.col}`)
-  );
-  const extra: TableCellEdit[] = [];
-  for (const [key, siblings] of byKey) {
-    if (key.startsWith("__row:")) continue;
-    const touchesRef = siblings.some((sib) =>
-      isQsrRtmOptionalReferenceColumn(section, sib.col)
-    );
-    if (!touchesRef) continue;
-    const context = editCellsSiblingContext(siblings, key);
-    const floor = liveReferenceFloor(siblings, cols);
-    const pick = stickyRtmPick(
-      pickRtmReference(ledger, key, context),
-      siblings,
-      cols
-    );
-    if (!pick) continue;
-    const template = siblings[0]!;
-    const liveText = (col: number): string => {
-      if (col === cols.section && floor.sectionText) return floor.sectionText;
-      const sib = siblings.find((cell) => cell.col === col);
-      return (sib?.expectedText ?? "").trim();
-    };
-    const add = (col: number, insertText: string) => {
-      if (!insertText.trim()) return;
-      const live = liveText(col);
-      if (live === insertText.trim()) return;
-      if (present.has(`${key}:${col}`)) return;
-      present.add(`${key}:${col}`);
-      extra.push({
-        row: template.row,
-        col,
-        rowKey: template.rowKey ?? key,
-        expectedText: live,
-        insertText,
-        ...(template.rowContext ? { rowContext: template.rowContext } : {}),
-      });
-    };
-    add(cols.stage, formatRtmStageCell(pick));
-    const rankingUp = Boolean(
-      floor.stageFamily &&
-        stageRankIndex(pick.family) < stageRankIndex(floor.stageFamily)
-    );
-    const sectionText = rtmSectionCellText("", pick);
-    if (!rankingUp && conflictingFilledSectionNumber(floor.sectionText, sectionText)) {
-      // Keep the filled number; still fill empty Stage / Remarks.
-    } else {
-      add(cols.section, sectionText);
-    }
-    add(cols.remarks, pick.remarks);
-  }
-  return {
-    ...operation,
-    cells: extra.length > 0 ? [...rewritten, ...extra] : rewritten,
-  };
-}
-
-/** Rewrite Stage / Section / Remarks to the highest matching family. */
-export function rankRtmReferenceOperation(
-  operation: TableOperation,
-  ledger: CitationPageLedger,
-  section?: string
-): TableOperation {
-  const cols = rtmReferenceColumnIndexes(section);
-  if (!cols) return operation;
-  switch (operation.kind) {
-    case "insert_rows":
-      return {
-        ...operation,
-        rows: operation.rows.map((row) => {
-          const context = row.join("\n");
-          const key = rowKeyFromContext(context);
-          if (!key) return row;
-          return applyPickToRow(
-            row,
-            cols,
-            pickRtmReference(ledger, key, context)
-          );
-        }),
-      };
-    case "create_table":
-      return {
-        ...operation,
-        rows: operation.rows?.map((row) => {
-          const context = [...operation.headers, ...row].join("\n");
-          const key = rowKeyFromContext(context);
-          if (!key) return row;
-          return applyPickToRow(
-            row,
-            cols,
-            pickRtmReference(ledger, key, context)
-          );
-        }),
-      };
-    case "edit_cells":
-      return rankEditCells(operation, ledger, section, cols);
-    case "insert_column":
-    case "delete_rows":
-    case "delete_column":
-    case "delete_table":
-      return operation;
-    default: {
-      const exhaustive: never = operation;
-      return exhaustive;
-    }
-  }
 }
 
 export function syntheticUnsupportedFact(text: string): HardFact {
@@ -1798,23 +1764,47 @@ export function syntheticUnsupportedFact(text: string): HardFact {
   };
 }
 
-/** Remarks / stage cells that must not persist stock language. */
+/**
+ * Families that may justify Remarks Complies. A family column only
+ * accepts a pass from that column's protocol. Remarks used to require
+ * an `IQ` / `DQ` label in the row (the old Stage cell). Family columns
+ * no longer write that label, so Remarks checks every protocol that
+ * actually passed this URS ID.
+ */
+function compliesFamiliesToCheck(options?: {
+  section?: string;
+  tableCol?: number;
+}): readonly RtmStageFamily[] {
+  const fromCol =
+    options?.tableCol != null
+      ? rtmFamilyAtColumn(options.section, options.tableCol)
+      : null;
+  return fromCol ? [fromCol] : QSR_RTM_FAMILY_ORDER;
+}
+
+/** Remarks / family cells that must not persist stock language. */
 export function qsrRtmCellUnsupported(
   cell: string,
   context: string,
-  ledger: CitationPageLedger
+  ledger: CitationPageLedger,
+  options?: { section?: string; tableCol?: number }
 ): HardFact | null {
   const key = rowKeyFromContext(context);
   const trimmed = cell.trim();
   if (!key || !trimmed) return null;
+  if (isRtmNotFoundMarker(trimmed)) return null;
 
   if (STOCK_BARE_SECTION_13_RE.test(trimmed)) {
     return syntheticUnsupportedFact(trimmed);
   }
 
   if (STOCK_COMPLIES_RE.test(trimmed)) {
-    const stage = stageFamilyFromCell(rowStageFromContext(context));
-    if (!stage || !protocolPassWindow(ledger, key, stage, context)) {
+    const families = compliesFamiliesToCheck(options);
+    if (
+      !families.some((family) =>
+        protocolPassWindow(ledger, key, family, context)
+      )
+    ) {
       return syntheticUnsupportedFact(trimmed);
     }
     return null;
@@ -1827,15 +1817,6 @@ export function qsrRtmCellUnsupported(
   return null;
 }
 
-function rowStageFromContext(context: string): string {
-  for (const family of QSR_STAGE_RANK) {
-    if (new RegExp(`\\b${STAGE_LABEL[family]}\\b`).test(context)) {
-      return STAGE_LABEL[family];
-    }
-  }
-  return "";
-}
-
 export function qsrOperatingRangeUnsupported(
   cell: string,
   context: string,
@@ -1846,7 +1827,7 @@ export function qsrOperatingRangeUnsupported(
   const quotes = ledger.recordedPages().map((page) => page.quote);
   if (RPM_PARAMETER_RE.test(context)) {
     const hasRpm = quotes.some((quote) =>
-      /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
+      /(?<![A-Za-z0-9.])(?:[~≈]|[-−–])?\s*\d+(?:\.\d+)?\s*(?:±|\+\/-|\+\-|plus\/minus)?\s*\d*\s*rpm\b/i.test(
         quote
       )
     );
@@ -1859,19 +1840,23 @@ export function qsrOperatingRangeUnsupported(
 
 /**
  * Operating Range / RTM "15 °C" or "50 ± 10 RPM" when the URS prints −15 °C
- * or −50 ± 10 RPM. A leading en-dash read as ~ / ± is the same miss.
+ * or −50 ± 10 RPM. A leading tilde / ≈ is approximate, not a dropped minus.
  */
 function unsignedQuantityWhenEvidenceIsNegative(
   cell: string,
   context: string,
-  quotes: readonly string[]
+  quotes: readonly string[],
+  section?: string
 ): HardFact | null {
   const isTemp = /\btemperature\b/i.test(context);
   const isRpm = RPM_PARAMETER_RE.test(context);
   if (!isTemp && !isRpm) return null;
   const match = LEADING_QUANTITY_RE.exec(cell);
   if (!match) return null;
-  const token = glueOcrMinusSigns(match[0].replace(/^[~≈±]+/, "").replace(/\s+/g, ""));
+  // Live GLR-1301 URS-10 is ~50±10 RPM. Do not strip that tilde and treat
+  // 50 as unsigned against a hypothetical −50.
+  if (/^[~≈]/.test(match[0].trim())) return null;
+  const token = glueOcrMinusSigns(match[0].replace(/^[±]+/, "").replace(/\s+/g, ""));
   if (!token || token.startsWith("-")) return null;
   const unit = isTemp ? " °C" : " RPM";
   const kind = isTemp ? ("temperature" as const) : ("number" as const);
@@ -1889,6 +1874,18 @@ function unsignedQuantityWhenEvidenceIsNegative(
     text: `-${token}${unit}`,
     normalized: `-${token}${normalizedUnit}`,
   };
+  const key = rowKeyFromContext(context);
+  if (key) {
+    const windows = quotes.flatMap((quote) =>
+      quoteWindowsAroundKey(quote, key)
+    );
+    const windowHasNegative = windows.some((quote) =>
+      evidenceContainsFact(quote, signed)
+    );
+    if (windowHasNegative) {
+      return syntheticUnsupportedFact(cell);
+    }
+  }
   const hasUnsigned = quotes.some((quote) =>
     evidenceContainsFact(quote, unsigned)
   );
@@ -1896,6 +1893,13 @@ function unsignedQuantityWhenEvidenceIsNegative(
     evidenceContainsFact(quote, signed)
   );
   if (hasNegative && !hasUnsigned) {
+    return syntheticUnsupportedFact(cell);
+  }
+  // Operating Range has no URS-N row key. A neighbour unsigned range of
+  // 15–130 °C must not licence Temperature Minimum 15 when the shell URS
+  // prints −15 °C. Live GLR-1301 URS-37 is −20 °C to 150 °C; that row is
+  // not this unsigned en-dash example.
+  if (section === "qsr_operating_range" && hasNegative) {
     return syntheticUnsupportedFact(cell);
   }
   return null;
@@ -1981,7 +1985,25 @@ export function extraQsrUnsupported(input: {
     seen.add(fact.normalized);
     out.push(fact);
   };
-  add(qsrRtmCellUnsupported(input.cell, input.context, input.ledger));
+  add(
+    qsrRtmCellUnsupported(input.cell, input.context, input.ledger, {
+      section: input.section,
+      tableCol: input.tableCol,
+    })
+  );
+  const family =
+    input.tableCol != null
+      ? rtmFamilyAtColumn(input.section, input.tableCol)
+      : null;
+  if (family && input.cell.trim() && !isRtmNotFoundMarker(input.cell)) {
+    const trimmed = input.cell.trim();
+    if (
+      stageFamilyFromCell(trimmed) ||
+      !rtmSectionCellText(trimmed, { family })
+    ) {
+      add(syntheticUnsupportedFact(trimmed));
+    }
+  }
   if (input.section === "qsr_operating_range") {
     add(qsrOperatingRangeUnsupported(input.cell, input.context, input.ledger));
   }
@@ -1989,7 +2011,8 @@ export function extraQsrUnsupported(input: {
     unsignedQuantityWhenEvidenceIsNegative(
       input.cell.trim(),
       input.context,
-      input.ledger.recordedPages().map((page) => page.quote)
+      input.ledger.recordedPages().map((page) => page.quote),
+      input.section
     )
   );
   add(
@@ -2013,7 +2036,7 @@ export function extraQsrUnsupported(input: {
   return out;
 }
 
-/** Empty Stage / Section / Remarks `edit_cells` — a clear, not a URS copy. */
+/** Empty family / Remarks `edit_cells` — a clear, not a URS copy. */
 export function isClearOnlyOptionalRtmEdit(
   operation: TableOperation,
   section?: string | null

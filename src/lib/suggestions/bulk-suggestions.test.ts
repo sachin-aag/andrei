@@ -713,6 +713,23 @@ describe("reportSuggestionQueues", () => {
     expect(queues[0].comments.map((c) => c.id)).toEqual(["c1", "c2"]);
     expect(queues[1].comments.map((c) => c.id)).toEqual(["m1"]);
   });
+
+  it("includes open suggestions on sections omitted from the card order", () => {
+    const leftover = comment(
+      "acro",
+      " User Requirement Specification",
+      "URS",
+      "qsr_acronyms"
+    );
+    leftover.contentPath = "table";
+    const queues = reportSuggestionQueues(
+      ["qsr_objective"],
+      [leftover],
+      []
+    );
+    expect(queues.map((q) => q.section)).toEqual(["qsr_acronyms"]);
+    expect(queues[0].comments.map((c) => c.id)).toEqual(["acro"]);
+  });
 });
 
 describe("acceptAllSuggestionsInReport", () => {
@@ -823,6 +840,48 @@ describe("acceptAllSuggestionsInReport", () => {
 
     expect(result.skippedIds).toContain("c1");
     expect(result.appliedIds).toEqual(["m1"]);
+  });
+
+  it("skips an identity card when Apply hits a duplicate document number", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith("/api/reports/report-1")) {
+          return { ok: false, status: 409, json: async () => ({}) } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+    const identity = comment("ident-1", "QSR/GLR-1301", "", "identity" as SectionType);
+    identity.sectionId = null;
+    identity.contentPath = "documentNo";
+    identity.content = JSON.stringify({
+      deleteText: "",
+      insertText: "Report No.: QSR/GLR-1301",
+      reasoning: "cover",
+      identityOperation: {
+        fields: [{ key: "documentNo", value: "QSR/GLR-1301" }],
+      },
+      suggestionBase: { documentNo: "" },
+      suggestionIntent: { documentNo: "QSR/GLR-1301" },
+    });
+
+    const result = await acceptAllSuggestionsInReport({
+      reportId: "report-1",
+      sectionOrder: ["identity" as SectionType],
+      comments: [identity],
+      evaluations: [],
+      sectionContentFor: () => undefined,
+      documentType: "qualification_summary_report",
+      identityCurrent: {
+        documentNo: "",
+        date: "2026-01-01T00:00:00.000Z",
+        metadata: {},
+      },
+    });
+
+    expect(result.skippedIds).toEqual(["ident-1"]);
+    expect(result.appliedIds).toEqual([]);
   });
 });
 

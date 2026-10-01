@@ -71,6 +71,7 @@ const REPORT_ONLY_TOOLS = new Set([
   "insert_image",
   "remove_image",
   "select_analyze_method",
+  "draft_identity",
   "start_document_review",
   "continue_document_review",
   "finish_document_review",

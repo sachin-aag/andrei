@@ -170,10 +170,10 @@ describe("qualification summary report DOCX export", () => {
 
     expect(body).not.toContain("Site Acceptance Test Checklist");
     expect(rowContaining(document, "ANY SPECIFIC REQUIREMENTS")).toContain(
-      '<w:gridSpan w:val="6"/>'
+      '<w:gridSpan w:val="8"/>'
     );
     expect(rowContaining(document, "OTHER AUXILIARY REQUIREMENT")).toContain(
-      '<w:gridSpan w:val="6"/>'
+      '<w:gridSpan w:val="8"/>'
     );
     expect(document).not.toContain("PRIMARY CONDENSER");
     expect(document).not.toContain("MOTOR & GEARBOX");
@@ -274,10 +274,9 @@ describe("qualification summary report DOCX export", () => {
         qsr_rtm_process: { table: seeded },
       })
     );
-    const banner = (document.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? []).find(
-      (r) => visibleText(r) === "ANY SPECIFIC REQUIREMENTS"
+    expect(rowContaining(document, "ANY SPECIFIC REQUIREMENTS")).toContain(
+      '<w:gridSpan w:val="8"/>'
     );
-    expect(banner).toContain('<w:gridSpan w:val="6"/>');
   });
 
   it("spans Details across a blank Range cell on the operating range table", async () => {
@@ -317,7 +316,7 @@ describe("qualification summary report DOCX export", () => {
           },
         },
         qsr_rtm_process: {
-          table: tableDoc(QSR_RTM_HEADERS, [["URS-1", "Capacity", "3.0 KL", "IQ", "8.1", "Complies"]]),
+          table: tableDoc(QSR_RTM_HEADERS, [["URS-1", "Capacity", "3.0 KL", "", "8.1", "", "", "Complies"]]),
         },
       })
     );
@@ -325,7 +324,7 @@ describe("qualification summary report DOCX export", () => {
       (p) => visibleText(p) === "IQ completed"
     );
     expect(listParagraph).toContain("<w:numPr>");
-    expect(visibleText(rowContaining(document, "URS-1"))).toBe("URS-1Capacity3.0 KLIQ8.1Complies");
+    expect(visibleText(rowContaining(document, "URS-1"))).toBe("URS-1Capacity3.0 KL8.1Complies");
   });
 
   it("shows the operating range table as the form, without a Range header", () => {
@@ -434,5 +433,57 @@ describe("qualification summary report DOCX export", () => {
     expect(tableText.indexOf("URS/PB2/001/12345")).toBeLessThan(
       tableText.indexOf("IQ/PB2/003/9")
     );
+  });
+
+  it("dedupes the same file and page in the CITATIONS table", async () => {
+    function cited(body: string, source: string): JSONContent {
+      return {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [text(body)] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [text("Citations:")] },
+          { type: "paragraph", content: [text(`1. ${source}`)] },
+        ],
+      };
+    }
+    const { document } = await exportXml(
+      sectionsWith({
+        qsr_qualification_documents: {
+          table: tableDoc(QSR_QUALIFICATION_DOCUMENT_HEADERS, [
+            [
+              "User Requirement Specification",
+              "URS/PB2/001/12345",
+              "00",
+              "Approved",
+              "01/01/2026",
+              "",
+            ],
+          ]),
+        },
+        qsr_objective: {
+          narrative: cited(
+            "The URS was approved [1].",
+            "[User Requirement Specification.PDF, p. 2]"
+          ),
+        },
+        qsr_scope: {
+          narrative: cited("Capacity matches the URS [1].", "[URS.pdf, p.2]"),
+        },
+      })
+    );
+    const headingAt = document.indexOf("CITATIONS");
+    const citationsTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        document.indexOf(tbl) > headingAt &&
+        visibleText(tbl).includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const tableText = visibleText(citationsTable!);
+    expect(tableText.match(/URS\/PB2\/001\/12345/g)).toHaveLength(1);
+    expect(tableText.match(/Page # 2/g)).toHaveLength(1);
+    const body = visibleText(document);
+    expect(body).toContain("The URS was approved");
+    expect(body).toContain("Capacity matches the URS");
   });
 });

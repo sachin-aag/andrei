@@ -20,7 +20,9 @@ import {
 import { EMPTY_VQ_CONTENT } from "@/lib/document-types/vq/sections";
 import {
   chatEditableSections,
+  chatMentionableSectionCandidates,
   isChatEditableSection,
+  isChatMentionableSection,
   listFieldTables,
   fieldFillState,
   sectionFillState,
@@ -36,6 +38,25 @@ describe("chatEditableSections", () => {
     expect(editable).not.toContain("elr_attachments");
     expect(editable).toContain("elr_objective");
     expect(isChatEditableSection("elr_attachments", "equipment_lifecycle_report")).toBe(
+      false
+    );
+  });
+});
+
+describe("chatMentionableSectionCandidates", () => {
+  it("puts cover identity first on QSR and not on investigation", () => {
+    const qsr = chatMentionableSectionCandidates("qualification_summary_report");
+    expect(qsr[0]).toEqual({ id: "identity", label: "Cover identity" });
+    expect(isChatMentionableSection("identity", "qualification_summary_report")).toBe(
+      true
+    );
+    expect(isChatEditableSection("identity", "qualification_summary_report")).toBe(
+      false
+    );
+    expect(
+      chatMentionableSectionCandidates("investigation_report")[0]?.id
+    ).not.toBe("identity");
+    expect(isChatMentionableSection("identity", "investigation_report")).toBe(
       false
     );
   });
@@ -263,7 +284,7 @@ describe("fieldFillState seeded tables", () => {
     expect(sectionFillState(content, "vq_section_g")).toBe("empty");
   });
 
-  it("treats the QSR template plus one real row as filled", () => {
+  it("treats extra blank URS-ID rows as still empty", () => {
     const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
       table: { content?: Array<{ content?: unknown[] }> };
     };
@@ -277,6 +298,32 @@ describe("fieldFillState seeded tables", () => {
             type: "paragraph",
             content:
               index === 0 ? [{ type: "text", text: "URS-2" }] : [],
+          },
+        ],
+      })),
+    });
+    expect(fieldFillState(content, "qsr_rtm_process", "table")).toBe("empty");
+    expect(sectionFillState(content, "qsr_rtm_process")).toBe("empty");
+  });
+
+  it("treats the QSR template plus a filled requirement row as not empty", () => {
+    const content = structuredClone(emptyQsrContent("qsr_rtm_process")) as {
+      table: { content?: Array<{ content?: unknown[] }> };
+    };
+    const table = content.table.content?.[0] as { content: unknown[] };
+    table.content.push({
+      type: "tableRow",
+      content: QSR_RTM_HEADERS.map((_, index) => ({
+        type: "tableCell",
+        content: [
+          {
+            type: "paragraph",
+            content:
+              index === 0
+                ? [{ type: "text", text: "URS-2" }]
+                : index === 1
+                  ? [{ type: "text", text: "MOC" }]
+                  : [],
           },
         ],
       })),
@@ -341,9 +388,8 @@ describe("fieldFillState seeded tables", () => {
     };
     const table = content.table.content?.[0];
     const ursRow = table?.content?.[1];
-    const blankRow = table?.content?.[3];
     const sourceCell = ursRow?.content?.[0];
-    const destCell = blankRow?.content?.[0];
+    const destCell = ursRow?.content?.[1];
     expect(sourceCell && destCell).toBeTruthy();
     if (!sourceCell || !destCell) return;
     destCell.content = sourceCell.content;

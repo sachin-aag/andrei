@@ -28,6 +28,10 @@ import type {
   ClaimProvenanceStatus,
   HardFactKind,
 } from "@/lib/ai/chat/claim-facts";
+import {
+  parseIdentityOperation,
+  type IdentityOperation,
+} from "@/lib/suggestions/identity-suggestion";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -233,6 +237,8 @@ export type ParsedAiFixPayload = {
   }>;
   /** Apply-boundary traceability for hard facts vs retrieved pages. */
   claimProvenance?: ClaimProvenance;
+  /** Whole-header identity fill from `draft_identity` (one card). */
+  identityOperation?: IdentityOperation;
 };
 
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
@@ -244,7 +250,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
       ("insertText" in parsed ||
         "tableOperation" in parsed ||
         "insertImage" in parsed ||
-        "removeImage" in parsed)
+        "removeImage" in parsed ||
+        "identityOperation" in parsed)
     ) {
       const tableOperation =
         parsed.tableOperation !== undefined
@@ -314,6 +321,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
             })
           : undefined,
         claimProvenance: parseClaimProvenance(parsed.claimProvenance),
+        identityOperation: parseIdentityOperation(parsed.identityOperation),
       };
     }
   } catch {
@@ -532,8 +540,37 @@ export function countOpenAiSuggestions(comments: readonly CommentRecord[]): numb
 }
 
 /**
+ * Document order for bulk actions and the next-card handoff. Starts with
+ * the caller’s list (evaluatable / card sections) and appends every other
+ * section that still has an open AI suggestion so a leftover on a
+ * no-criteria section (QSR acronyms, ELR attachments) is not dropped.
+ */
+export function sectionOrderWithOpenSuggestions(
+  sectionOrder: readonly SectionType[],
+  comments: readonly CommentRecord[]
+): SectionType[] {
+  const seen = new Set<string>(sectionOrder);
+  const extra: SectionType[] = [];
+  for (const comment of comments) {
+    if (
+      comment.parentId ||
+      !isAiSuggestionKind(comment.kind) ||
+      comment.status !== "open" ||
+      !comment.section
+    ) {
+      continue;
+    }
+    if (seen.has(comment.section)) continue;
+    seen.add(comment.section);
+    extra.push(comment.section);
+  }
+  if (extra.length === 0) return [...sectionOrder];
+  return [...sectionOrder, ...extra];
+}
+
+/**
  * Next card to offer after resolving `resolvedId` in `section`.
- * Same-section queue first (severity order), then later evaluatable
+ * Same-section queue first (severity order), then later suggestion
  * sections, then earlier ones. Each other section contributes its
  * active (first) open suggestion.
  */
@@ -551,11 +588,12 @@ export function nextOpenSuggestionAfterResolve(
   ).filter((c) => c.id !== resolvedId);
   if (remainingHere[0]) return remainingHere[0];
 
-  const rank = sectionOrder.indexOf(section);
+  const order = sectionOrderWithOpenSuggestions(sectionOrder, comments);
+  const rank = order.indexOf(section);
   const ordered =
     rank === -1
-      ? sectionOrder
-      : [...sectionOrder.slice(rank + 1), ...sectionOrder.slice(0, rank)];
+      ? order
+      : [...order.slice(rank + 1), ...order.slice(0, rank)];
 
   for (const nextSection of ordered) {
     const active = activeSuggestionForSection(

@@ -95,6 +95,25 @@ import {
   sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
+import {
+  CHAT_IDENTITY_SECTION,
+  buildIdentityUpdate,
+  chatIdentityFields,
+  chatIdentityLabel,
+  hasChatIdentity,
+  identityGroundingText,
+  identitySnapshotFields,
+  isChatIdentitySection,
+  attachIdentityCapacityUnits,
+  sanitizeIdentityScalar,
+} from "@/lib/ai/chat/identity";
+import {
+  foldIdentityPayload,
+  identityIntentFromPayload,
+  identitySnapshotMap,
+  identitySuggestionInsertText,
+  remainingRequiredAfterIdentityIntent,
+} from "@/lib/suggestions/identity-suggestion";
 import { annotateDividerSearchHits } from "@/lib/ai/chat/attachment-divider";
 import {
   annotateIdentityIncompleteSearchHits,
@@ -238,6 +257,10 @@ import {
   recordAuditEvent,
 } from "@/lib/audit";
 import {
+  DUPLICATE_DOCUMENT_NO_ERROR,
+  isDocumentNoTaken,
+} from "@/lib/reports/document-no";
+import {
   DOCUMENT_SEARCH_MODES,
   listDocumentPagesForReview,
   listReadyDocumentsForReport,
@@ -296,6 +319,7 @@ import {
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
+  tableEditLandedSummary,
   tableEditProposalMessage,
   tableEditProposalMeta,
   type TableCellAdjustment,
@@ -1792,11 +1816,15 @@ export function buildChatTools(opts: {
   // When Analyze is in scope, allow reading Define/Measure for method selection
   // even if @ focus is narrowed to Analyze (draft/propose stay restricted).
   // Sections tagged with @ are readable on the same terms.
+  const identityReadable = hasChatIdentity(documentType)
+    ? ([CHAT_IDENTITY_SECTION] as SectionType[])
+    : [];
   const readableSections: SectionType[] = Array.from(
     new Set<SectionType>([
       ...allowedSections,
       ...(analyzeInScope ? (["define", "measure"] as SectionType[]) : []),
       ...mentionedSections,
+      ...identityReadable,
     ])
   );
   const readableSectionEnum = readableSections as [SectionType, ...SectionType[]];
@@ -1818,6 +1846,9 @@ export function buildChatTools(opts: {
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
+        (hasChatIdentity(documentType)
+          ? ` You may also read section "${CHAT_IDENTITY_SECTION}" for cover/header identity scalars (equipment name, document number, …). Fill those with draft_identity, not draft_field.`
+          : "") +
         taggedReadHint,
       inputSchema: z.object({
         section: z.enum(readableSectionEnum).describe("Section to read."),
@@ -1829,6 +1860,79 @@ export function buildChatTools(opts: {
       execute: async ({ section, fields }): Promise<
         ReadSectionSuccess | { error: "invalid_section" | "section_not_found" }
       > => {
+        if (isChatIdentitySection(section)) {
+          if (
+            !hasChatIdentity(documentType) ||
+            !readableSections.includes(section)
+          ) {
+            return { error: "invalid_section" as const };
+          }
+          const [existing] = await db
+            .select({
+              documentNo: reports.documentNo,
+              date: reports.date,
+              metadata: reports.metadata,
+            })
+            .from(reports)
+            .where(eq(reports.id, reportId));
+          if (!existing) return { error: "section_not_found" as const };
+          const snapshot = identitySnapshotFields(documentType, {
+            documentNo: existing.documentNo,
+            date: existing.date,
+            metadata:
+              existing.metadata && typeof existing.metadata === "object"
+                ? (existing.metadata as Record<string, unknown>)
+                : null,
+          });
+          const requested =
+            fields && fields.length > 0
+              ? snapshot.filter((field) => fields.includes(field.targetField))
+              : snapshot;
+          const pendingRows = await db
+            .select({
+              kind: comments.kind,
+              content: comments.content,
+              contentPath: comments.contentPath,
+              status: comments.status,
+            })
+            .from(comments)
+            .where(
+              and(eq(comments.reportId, reportId), eq(comments.section, section))
+            );
+          const pendingSuggestions = pendingRows.flatMap((row) => {
+            if (row.status !== "open" || !isAiSuggestionKind(row.kind)) return [];
+            const targetField = row.contentPath ?? "identity";
+            return [
+              {
+                kind: row.kind,
+                targetField,
+                preview: suggestionPreviewFromRow(row),
+              },
+            ];
+          });
+          const suggestionCounts = pendingRows.reduce(
+            (counts, row) => {
+              if (!isAiSuggestionKind(row.kind)) return counts;
+              if (row.status === "open") counts.open += 1;
+              else if (row.status === "resolved") counts.resolved += 1;
+              else if (row.status === "dismissed") counts.dismissed += 1;
+              return counts;
+            },
+            { open: 0, resolved: 0, dismissed: 0 }
+          );
+          return {
+            section,
+            fields: requested,
+            images: [],
+            ...(pendingSuggestions.length > 0 ? { pendingSuggestions } : {}),
+            ...(suggestionCounts.open +
+              suggestionCounts.resolved +
+              suggestionCounts.dismissed >
+            0
+              ? { suggestionCounts }
+              : {}),
+          };
+        }
         if (!isChatEditableSection(section, documentType)) {
           return { error: "invalid_section" as const };
         }
@@ -4047,9 +4151,10 @@ export function buildChatTools(opts: {
           ? citationAppendPart(stripped.citations, fieldText)
           : undefined;
 
+        const storedOperation = applied.appliedOperation ?? stripped.operation;
         const suggestionId = createId();
         const createTable =
-          stripped.operation.kind === "create_table" ? stripped.operation : null;
+          storedOperation.kind === "create_table" ? storedOperation : null;
         const appendTable = Boolean(
           createTable && isAppendBlock({ afterAnchor: createTable.afterAnchor })
         );
@@ -4057,7 +4162,7 @@ export function buildChatTools(opts: {
           deleteText: "",
           insertText: "",
           reasoning,
-          tableOperation: stripped.operation,
+          tableOperation: storedOperation,
           second,
           claimProvenance:
             groundedTable.provenance.claims.length > 0
@@ -4094,10 +4199,10 @@ export function buildChatTools(opts: {
               loaded.content as Record<string, unknown>,
               section,
               resolvedField,
-              { kind: "table", operation: stripped.operation }
+              { kind: "table", operation: storedOperation }
             )
           ),
-          anchorText: summarizeTableOperation(stripped.operation),
+          anchorText: summarizeTableOperation(storedOperation),
           contentPath: resolvedField,
           fromPos: null,
           toPos: null,
@@ -4126,12 +4231,12 @@ export function buildChatTools(opts: {
         );
         const adjustedCells = tableCellAdjustments(
           originalTableOp,
-          groundedTable.operation,
+          storedOperation,
           (col) => qsrTableColumnLabel(section, col)
         );
         const proposal = tableEditProposalMeta(
           originalTableOp,
-          groundedTable.operation
+          storedOperation
         );
         return proposedWithSupersession(
           {
@@ -4139,7 +4244,7 @@ export function buildChatTools(opts: {
             suggestionId,
             section,
             targetField: resolvedField,
-            summary: reasoning,
+            summary: tableEditLandedSummary(reasoning, proposal),
             ...(applied.tableNumber !== undefined
               ? { tableNumber: applied.tableNumber }
               : {}),
@@ -4166,7 +4271,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image. Cover/header identity scalars use draft_identity, not this tool.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -4645,6 +4750,304 @@ export function buildChatTools(opts: {
           status: "rejected" as const,
           reason: result.reason,
           message: result.message,
+        };
+      },
+    });
+  }
+
+  if (hasChatIdentity(documentType) && canEdit) {
+    const identityCatalog = chatIdentityFields(documentType);
+    const identityKeys = identityCatalog
+      .map((field) => `'${field.key}' (${field.label}${field.required ? ", required" : ""})`)
+      .join(", ");
+    const capacityUnitHint = identityCatalog.some((field) => field.keepUnits)
+      ? " Measured size (capacity) includes the printed unit (8000 L, 3.0 KL) — not a bare number."
+      : "";
+    tools.draft_identity = tool({
+      description:
+        `Fill cover/header identity scalars (${identityKeys}). Search attachments first. This write is one suggestion card for the whole header — the engineer Apply / Dismisses it like other Agent edits. Duplicate document numbers fail here and at Apply. Pass the bare scalar with no [filename, p. N], numbered [n], or Citations: list — these fields print on the cover.${capacityUnitHint} ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Do not use draft_field for these keys.`,
+      inputSchema: z.object({
+        fields: z
+          .array(
+            z.object({
+              key: z
+                .string()
+                .min(1)
+                .max(80)
+                .describe("Identity field key from the list in this tool's description."),
+              value: z
+                .string()
+                .min(1)
+                .max(500)
+                .describe(
+                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list. Measured size fields keep the printed unit (8000 L, 3.0 KL)."
+                ),
+            })
+          )
+          .min(1)
+          .max(20),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe(
+            "One short sentence explaining the fill (shown to the engineer). Use the field names they see."
+          ),
+      }),
+      execute: async ({ fields, reasoning }) => {
+        if (!canEdit) {
+          return {
+            status: "not_editable" as const,
+            message:
+              "This report is not editable in its current state, so identity cannot be filled.",
+          };
+        }
+        const [existing] = await db
+          .select({
+            id: reports.id,
+            documentNo: reports.documentNo,
+            date: reports.date,
+            metadata: reports.metadata,
+            authorId: reports.authorId,
+            documentType: reports.documentType,
+          })
+          .from(reports)
+          .where(eq(reports.id, reportId));
+        if (!existing) {
+          return {
+            status: "report_not_found" as const,
+            message: "Report not found.",
+          };
+        }
+
+        const current = {
+          documentNo: existing.documentNo,
+          date: existing.date,
+          metadata:
+            existing.metadata && typeof existing.metadata === "object"
+              ? (existing.metadata as Record<string, unknown>)
+              : null,
+        };
+        const parsed = buildIdentityUpdate({
+          documentType,
+          current,
+          fields,
+        });
+        if (!parsed.ok) {
+          return {
+            status: parsed.status,
+            message: parsed.message,
+            ...(parsed.allowedKeys ? { allowedKeys: parsed.allowedKeys } : {}),
+          };
+        }
+
+        const identityGrounding = await writeGrounding(
+          CHAT_IDENTITY_SECTION,
+          parsed.applied[0] ?? "identity",
+          "draft_identity"
+        );
+        await ensureEvidence();
+        const groundIdentityFields = (patches: typeof fields) => {
+          const groundedPatches: Array<{ key: string; value: string }> = [];
+          const unsupported = [];
+          let blocked = false;
+          for (const patch of patches) {
+            const grounded = groundDraftText({
+              text: patch.value,
+              ledger: citationLedger,
+              policy: unsupportedFactPolicy,
+              grounding: identityGrounding,
+            });
+            if (grounded.blocked) blocked = true;
+            unsupported.push(...grounded.unsupported);
+            groundedPatches.push({
+              key: patch.key,
+              value: patch.value,
+            });
+          }
+          return { groundedPatches, unsupported, blocked };
+        };
+
+        let groundedIdentity = groundIdentityFields(fields);
+        const repair =
+          citationGroundingRunsRepair(identityGrounding.mode ?? "frame") &&
+          (groundedIdentity.blocked ||
+            groundedIdentity.groundedPatches.some((patch) =>
+              containsGatedFactPlaceholders(patch.value)
+            ))
+            ? await runUnsupportedFactsRepair({
+                unsupported: groundedIdentity.unsupported,
+                texts: [identityGroundingText(documentType, fields)],
+              })
+            : emptyRepair;
+        if (repair.hits.length > 0) {
+          groundedIdentity = groundIdentityFields(fields);
+        }
+        if (groundedIdentity.blocked) {
+          return unsupportedFactsToolResult({
+            unsupported: groundedIdentity.unsupported,
+            draftWithPlaceholders: identityGroundingText(
+              documentType,
+              groundedIdentity.groundedPatches
+            ),
+            ...repairResultFields(repair.hits),
+          });
+        }
+
+        const identityQuotes = citationLedger
+          .recordedPages()
+          .map((page) => page.quote);
+        const identityCatalog = chatIdentityFields(documentType);
+        const cleanedFields = groundedIdentity.groundedPatches.map((patch) => {
+          const field = identityCatalog.find(
+            (item) => item.key === patch.key.trim()
+          );
+          let value = sanitizeIdentityScalar(patch.value);
+          if (field?.keepUnits) {
+            value = attachIdentityCapacityUnits(value, identityQuotes);
+          }
+          return { key: patch.key, value };
+        });
+        const update = buildIdentityUpdate({
+          documentType,
+          current,
+          fields: cleanedFields,
+        });
+        if (!update.ok) {
+          return {
+            status: update.status,
+            message: update.message,
+            ...(update.allowedKeys ? { allowedKeys: update.allowedKeys } : {}),
+          };
+        }
+
+        const thisPayload: ParsedAiFixPayload = {
+          deleteText: "",
+          insertText: identitySuggestionInsertText(documentType, {
+            fields: cleanedFields,
+          }),
+          reasoning,
+          identityOperation: { fields: cleanedFields },
+          suggestionBase: identitySnapshotMap(documentType, current),
+          suggestionIntent: Object.fromEntries(
+            cleanedFields.map((field) => [field.key, field.value])
+          ),
+        };
+
+        const openIdentityRows = await db
+          .select({
+            id: comments.id,
+            content: comments.content,
+            kind: comments.kind,
+            status: comments.status,
+          })
+          .from(comments)
+          .where(
+            and(
+              eq(comments.reportId, reportId),
+              eq(comments.section, CHAT_IDENTITY_SECTION),
+              eq(comments.status, "open")
+            )
+          );
+        const existingOpen = openIdentityRows.find((row) =>
+          isAiSuggestionKind(row.kind)
+        );
+
+        const payload = existingOpen
+          ? foldIdentityPayload(
+              parseAiFixCommentContent(existingOpen.content),
+              thisPayload
+            )
+          : thisPayload;
+        payload.insertText = identitySuggestionInsertText(documentType, {
+          fields: payload.identityOperation?.fields ?? cleanedFields,
+        });
+
+        const mergedIntent = identityIntentFromPayload(payload);
+        const mergedUpdate = buildIdentityUpdate({
+          documentType,
+          current,
+          fields: Object.entries(mergedIntent).map(([key, value]) => ({
+            key,
+            value,
+          })),
+        });
+        if (!mergedUpdate.ok) {
+          return {
+            status: mergedUpdate.status,
+            message: mergedUpdate.message,
+            ...(mergedUpdate.allowedKeys
+              ? { allowedKeys: mergedUpdate.allowedKeys }
+              : {}),
+          };
+        }
+        if (
+          mergedUpdate.documentNo &&
+          mergedUpdate.documentNo !== existing.documentNo &&
+          (await isDocumentNoTaken(
+            mergedUpdate.documentNo,
+            existing.authorId,
+            existing.documentType,
+            reportId
+          ))
+        ) {
+          return {
+            status: "duplicate_document_no" as const,
+            message: DUPLICATE_DOCUMENT_NO_ERROR,
+          };
+        }
+
+        const suggestionId = existingOpen?.id ?? createId();
+        if (existingOpen) {
+          await patchFixComment(existingOpen.id, payload);
+        } else {
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: null,
+            section: CHAT_IDENTITY_SECTION,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent(payload),
+            anchorText: "",
+            contentPath: cleanedFields[0]?.key ?? "identity",
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+        }
+
+        const remainingRequired = remainingRequiredAfterIdentityIntent(
+          documentType,
+          current,
+          mergedIntent
+        );
+        for (const key of update.applied) {
+          const field = chatIdentityFields(documentType).find(
+            (item) => item.key === key
+          );
+          const value = cleanedFields.find((item) => item.key === key)?.value;
+          if (value) {
+            rememberSameTurnStated(CHAT_IDENTITY_SECTION, key, value);
+            if (field) {
+              rememberSameTurnStated(
+                CHAT_IDENTITY_SECTION,
+                field.label,
+                `${field.label}: ${value}`
+              );
+            }
+          }
+        }
+
+        return {
+          status: "proposed" as const,
+          suggestionId,
+          section: CHAT_IDENTITY_SECTION,
+          label: chatIdentityLabel(documentType),
+          applied: update.applied,
+          skipped: update.skipped,
+          remainingRequired,
+          complete: remainingRequired.length === 0,
         };
       },
     });

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
-import { emptyQsrContent } from "@/lib/document-types/qsr/sections";
+import { getDocumentType } from "@/lib/document-types";
+import {
+  emptyQsrContent,
+  QSR_RTM_HEADERS,
+} from "@/lib/document-types/qsr/sections";
 import {
   CHAT_AUTO_CONTINUE_TEXT,
   CHAT_PLAN_SAME_SECTION_TURN_LIMIT,
@@ -160,6 +164,63 @@ describe("seedSectionQueuePlan", () => {
     expect(seeded?.items.some((item) => item.sectionKey === "elr_attachments")).toBe(
       false
     );
+  });
+
+  it("prepends cover identity when required QSR header scalars are blank", () => {
+    const filled = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Filled content. ".repeat(20) }],
+        },
+      ],
+    };
+    const sections: Record<string, Record<string, unknown>> = {
+      qsr_scope: { narrative: filled },
+    };
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "qualification_summary_report",
+      sections,
+      promptVersion: "chat-v133-identity-no-cite",
+      report: { documentNo: "", date: "2026-01-01", metadata: {} },
+    });
+    expect(seeded?.items[0]).toMatchObject({
+      sectionKey: "identity",
+      label: "Cover identity",
+      state: "in_progress",
+    });
+  });
+
+  it("seeds an identity-only queue when every body section is already filled", () => {
+    const filled = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Filled content. ".repeat(20) }],
+        },
+      ],
+    };
+    const sections: Record<string, Record<string, unknown>> = {};
+    for (const section of getDocumentType("qualification_summary_report").chat.draftOrder) {
+      sections[section] = { narrative: filled, table: filled };
+    }
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "qualification_summary_report",
+      sections,
+      promptVersion: "chat-v133-identity-no-cite",
+      report: { documentNo: "", date: "2026-01-01", metadata: {} },
+    });
+    expect(seeded?.items).toEqual([
+      {
+        sectionKey: "identity",
+        label: "Cover identity",
+        state: "in_progress",
+      },
+    ]);
   });
 });
 
@@ -761,6 +822,28 @@ describe("resolvePlanAtTurnStart", () => {
     );
   });
 
+  it("forwards report into remaining-section identity prepend", () => {
+    const seeded = resolvePlanAtTurnStart({
+      existing: null,
+      userText: "Draft the remaining sections",
+      autoContinue: false,
+      writeIntent: true,
+      documentType: "qualification_summary_report",
+      sections: {
+        qsr_scope: { narrative: emptyNarrative.narrative },
+        qsr_objective: { narrative: emptyNarrative.narrative },
+      },
+      promptVersion: "chat-v153-identity-no-cite",
+      now: new Date("2026-09-28T00:00:00.000Z"),
+      report: { documentNo: "", date: "2026-01-01", metadata: {} },
+    });
+    expect(seeded?.items[0]).toMatchObject({
+      sectionKey: "identity",
+      label: "Cover identity",
+      state: "in_progress",
+    });
+  });
+
   it("pauses an active plan when the engineer types a new prompt", () => {
     const started = plan([
       { sectionKey: "define", label: "Define", state: "in_progress" },
@@ -1027,6 +1110,32 @@ describe("plan prompt and metadata", () => {
     expect(view.pending.map((item) => item.sectionKey)).toEqual([
       "elr_calibration",
     ]);
+  });
+
+  it("marks identity done only when draft_identity reports complete", () => {
+    const started = plan([
+      { sectionKey: "identity", label: "Cover identity", state: "in_progress" },
+      { sectionKey: "qsr_objective", label: "Objective", state: "queued" },
+    ]);
+    const partial = livePlanProgressFromParts([
+      {
+        type: "tool-draft_identity",
+        state: "output-available",
+        input: { fields: [{ key: "equipmentName", value: "Reactor" }] },
+        output: { status: "proposed", complete: false, remainingRequired: ["documentNo"] },
+      },
+    ]);
+    expect(partial.draftedSectionKeys).toEqual([]);
+    const complete = livePlanProgressFromParts([
+      {
+        type: "tool-draft_identity",
+        state: "output-available",
+        input: { fields: [{ key: "equipmentName", value: "Reactor" }] },
+        output: { status: "proposed", complete: true, remainingRequired: [] },
+      },
+    ]);
+    expect(complete.draftedSectionKeys).toEqual(["identity"]);
+    expect(completedPlanSectionLabel(started, complete)).toBe("Cover identity");
   });
 
   it("advances past an evidence section once the assessment has a count", () => {
@@ -1458,6 +1567,38 @@ describe("plan prompt and metadata", () => {
           "uspiy53ymhnfd9rktwo3u4g7:12:h0xk4yu7sl9rrds22xhvk43f|obj:extract all requirements for control philosophy (5.2), gmp requirements (5.3), a",
       })
     ).toBe(false);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_rtm_process",
+        content: emptyQsrContent("qsr_rtm_process"),
+        finishedCoverageKey: null,
+      })
+    ).toBe(true);
+    const extraUrsIds = structuredClone(
+      emptyQsrContent("qsr_rtm_process")
+    ) as { table: { content?: Array<{ content?: unknown[] }> } };
+    const table = extraUrsIds.table.content?.[0] as { content: unknown[] };
+    table.content.push({
+      type: "tableRow",
+      content: QSR_RTM_HEADERS.map((_, index) => ({
+        type: "tableCell",
+        content: [
+          {
+            type: "paragraph",
+            content: index === 0 ? [{ type: "text", text: "URS-2" }] : [],
+          },
+        ],
+      })),
+    });
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_rtm_process",
+        content: extraUrsIds,
+        finishedCoverageKey: null,
+      })
+    ).toBe(true);
   });
 
   it("does not treat a floor-8 skipped finish as matching coverage", () => {

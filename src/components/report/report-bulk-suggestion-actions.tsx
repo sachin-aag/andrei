@@ -14,6 +14,10 @@ import {
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
+import {
+  countOpenAiSuggestions,
+  sectionOrderWithOpenSuggestions,
+} from "@/lib/ai/suggestion-gating";
 import { getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
 import {
   acceptAllSuggestionsInReport,
@@ -22,6 +26,11 @@ import {
   formatBulkDismissToast,
   shouldShowSuggestionBulkActions,
 } from "@/lib/suggestions/bulk-suggestions";
+import {
+  applyIdentityPatchToReport,
+  identityCurrentFromReport,
+} from "@/lib/suggestions/identity-suggestion";
+import type { IdentityApplyPatch } from "@/lib/suggestions/accept-suggestion";
 import { countOpenSuggestionsForReport } from "@/lib/suggestions/validate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import type { SectionType } from "@/db/schema";
@@ -31,7 +40,7 @@ import type { SectionType } from "@/db/schema";
  * per-suggestion Apply / Dismiss on the gutter card stay section-scoped.
  */
 export function ReportBulkSuggestionActions() {
-  const { report, readOnly, currentUserId, refresh } = useReportData();
+  const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
   const { getUser } = useUserDirectory();
   const { comments, setComments } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -48,11 +57,16 @@ export function ReportBulkSuggestionActions() {
       getUser(currentUserId)?.role === "manager");
 
   const sectionOrder = useMemo(
-    () => suggestionCardSectionKeys(report.documentType),
-    [report.documentType]
+    () =>
+      sectionOrderWithOpenSuggestions(
+        suggestionCardSectionKeys(report.documentType),
+        comments
+      ),
+    [report.documentType, comments]
   );
 
-  const { total: openTotal, locatable } = useMemo(
+  const openTotal = countOpenAiSuggestions(comments);
+  const { locatable } = useMemo(
     () =>
       countOpenSuggestionsForReport(
         sectionOrder,
@@ -80,6 +94,12 @@ export function ReportBulkSuggestionActions() {
       documentType: report.documentType,
       sectionContentFor: (section: SectionType) =>
         sections[section] as Record<string, unknown> | undefined,
+      identityCurrent: identityCurrentFromReport(report),
+      onIdentitySettled: (next: IdentityApplyPatch) => {
+        flushSync(() => {
+          setReport((prev) => applyIdentityPatchToReport(prev, next));
+        });
+      },
       onSectionStart: (section: SectionType, firstCommentId: string) => {
         // Pauses that section's auto-save. Apply-all uses "bulk" (keep insert
         // text, hide deletes instantly). Dismiss-all uses "dismiss" so the
@@ -95,11 +115,13 @@ export function ReportBulkSuggestionActions() {
     [
       report.id,
       report.documentType,
+      report,
       sectionOrder,
       comments,
       evaluations,
       sections,
       replaceSection,
+      setReport,
       beginSuggestionApplyTransition,
     ]
   );

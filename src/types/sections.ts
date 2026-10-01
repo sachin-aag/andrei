@@ -152,6 +152,7 @@ export const SECTION_LABELS: Record<string, string> = {
   signature_approvals: "Approvals (QC / QA)",
   // Design verification
   cover_page: "Cover Page",
+  identity: "Cover identity",
   purpose_scope: "Purpose & Scope",
   references: "References",
   traceability: "Traceability",

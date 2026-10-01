@@ -518,6 +518,58 @@ describe("prepareReportChatStep (characterization)", () => {
     expect(decision.activeTools).not.toContain("start_document_review");
   });
 
+  it("starts a document review after the already-drafted read when the inventory is still empty", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          alreadyDrafted: true,
+          requireInventoryReview: true,
+          retrievalPolicy: "adaptive",
+          inScopeHasTable: true,
+          steps: [
+            {
+              toolCalls: [{ toolName: "read_section", toolCallId: "r1" }],
+              toolResults: [
+                { toolName: "read_section", toolCallId: "r1", output: {} },
+              ],
+            },
+          ],
+        })
+      )
+    ).toEqual({
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    });
+  });
+
+  it("starts a document review after review_incomplete instead of emptying tools", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          alreadyDrafted: true,
+          requireInventoryReview: true,
+          retrievalPolicy: "comprehensive",
+          inScopeHasTable: true,
+          steps: [
+            {
+              toolCalls: [{ toolName: "edit_table", toolCallId: "e1" }],
+              toolResults: [
+                {
+                  toolName: "edit_table",
+                  toolCallId: "e1",
+                  output: { status: "review_incomplete" },
+                },
+              ],
+            },
+          ],
+        })
+      )
+    ).toEqual({
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    });
+  });
+
   it("ends tools after a second failed edit_table", () => {
     const failed = (id: string): SearchLoopStep => ({
       toolCalls: [{ toolName: "edit_table", toolCallId: id }],
@@ -541,7 +593,7 @@ describe("prepareReportChatStep (characterization)", () => {
         {
           toolName: "edit_table",
           toolCallId: id,
-          output: { status: "unsupported_facts" },
+          output: { status: "stale" },
         },
       ],
     });

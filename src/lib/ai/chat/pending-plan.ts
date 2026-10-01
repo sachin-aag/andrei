@@ -2,6 +2,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import {
   isChatEditableSection,
   isEmptyTableScaffoldDoc,
+  seedFieldDoc,
   sectionFillState,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
@@ -30,6 +31,13 @@ import {
   elrIncompleteSectionKeysFromParts,
   planEditToolLanded,
 } from "@/lib/document-types/elr/plan-complete";
+import {
+  CHAT_IDENTITY_SECTION,
+  chatIdentityLabel,
+  identityNeedsDraft,
+  isChatIdentitySection,
+  type ChatIdentityReport,
+} from "@/lib/ai/chat/identity";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 
 /** Client-sent user turn that continues a server-owned section queue. */
@@ -264,7 +272,10 @@ export function isEmptyInventoryTable(
   content: Record<string, unknown> | undefined
 ): boolean {
   if (!inventorySectionSet(documentType).has(section)) return false;
-  return isEmptyTableScaffoldDoc(getRichFieldValue(content ?? {}, "table"));
+  return isEmptyTableScaffoldDoc(
+    getRichFieldValue(content ?? {}, "table"),
+    seedFieldDoc(section, "table")
+  );
 }
 
 export function inventoryFinishSatisfiesEmptyTable(input: {
@@ -352,9 +363,17 @@ export function seedSectionQueuePlan(input: {
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   promptVersion: string;
   now?: Date;
+  report?: ChatIdentityReport | null;
 }): ChatPendingPlan | null {
   const def = getDocumentType(input.documentType);
   const items: ChatPlanItem[] = [];
+  if (identityNeedsDraft(input.documentType, input.report)) {
+    items.push({
+      sectionKey: CHAT_IDENTITY_SECTION,
+      label: chatIdentityLabel(input.documentType),
+      state: "queued",
+    });
+  }
   for (const section of def.chat.draftOrder) {
     const fill = sectionFillState(input.sections[section], section);
     if (fill !== "empty") continue;
@@ -364,7 +383,10 @@ export function seedSectionQueuePlan(input: {
       state: "queued",
     });
   }
-  if (items.length < 2) return null;
+  if (items.length === 0) return null;
+  const identityOnly =
+    items.length === 1 && isChatIdentitySection(items[0]!.sectionKey);
+  if (items.length < 2 && !identityOnly) return null;
   const first = items[0];
   if (first) first.state = "in_progress";
   return {
@@ -395,7 +417,11 @@ export function seedNamedSectionQueuePlan(input: {
   promptVersion: string;
   now?: Date;
 }): ChatPendingPlan | null {
-  const named = detectSectionIntentsFromText(input.userText, input.documentType);
+  const named = detectSectionIntentsFromText(
+    input.userText,
+    input.documentType,
+    { sections: input.sections }
+  );
   const items: ChatPlanItem[] = [];
   const seen = new Set<string>();
   for (const section of named) {
@@ -433,6 +459,7 @@ export function resolvePlanAtTurnStart(input: {
   sections: Partial<Record<SectionType, Record<string, unknown> | undefined>>;
   promptVersion: string;
   now?: Date;
+  report?: ChatIdentityReport | null;
 }): ChatPendingPlan | null {
   const existing = input.existing;
   if (input.autoContinue && existing && !existing.paused) {
@@ -473,6 +500,7 @@ export function resolvePlanAtTurnStart(input: {
         sections: input.sections,
         promptVersion: input.promptVersion,
         now: input.now,
+        report: input.report,
       });
     }
   }
@@ -578,9 +606,14 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
     plan.source === "make_plan"
       ? `You planned this with make_plan: ${plan.objective}`
       : "The engineer asked to draft several sections";
+  const identityLine = turn.some((item) =>
+    isChatIdentitySection(item.sectionKey)
+  )
+    ? " Cover/header identity is not a TipTap section — call draft_identity with the scalar fields (equipment name, document number, …). Search attachments first. That write is one suggestion card for the whole header (Apply / Dismiss), like other Agent edits. Duplicate document numbers fail at propose. Remaining-section marks identity done when the card is proposed and complete — do not wait for Apply. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR)."
+    : "";
   return `## Multi-section plan
 ${origin} (${done} of ${total} done). This turn: ${labels}.
-Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${elrSiblingLine}${planExecutionPromptLine(plan.items, documentType)}`;
+Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${identityLine}${elrSiblingLine}${planExecutionPromptLine(plan.items, documentType)}`;
 }
 
 function toolNamesFromParts(parts: unknown): string[] {
@@ -734,7 +767,18 @@ const PLAN_EDIT_TOOLS = new Set([
   "draft_field",
   "edit_table",
   "propose_edit",
+  "draft_identity",
 ]);
+
+function identityPlanLanded(part: {
+  output?: unknown;
+  result?: unknown;
+}): boolean {
+  if (!planEditToolLanded(part)) return false;
+  const raw = part.output ?? part.result;
+  if (!raw || typeof raw !== "object") return false;
+  return (raw as { complete?: unknown }).complete === true;
+}
 
 export type LivePlanProgress = {
   draftedSectionKeys: string[];
@@ -773,9 +817,27 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
     if (!PLAN_EDIT_TOOLS.has(name)) continue;
     const input = rec.input;
     if (!input || typeof input !== "object") continue;
-    const section = (input as { section?: unknown }).section;
-    if (typeof section !== "string" || !section.trim()) continue;
-    const key = section.trim();
+    if (name === "draft_identity") {
+      const identityKey = CHAT_IDENTITY_SECTION;
+      const state = typeof rec.state === "string" ? rec.state : "";
+      if (state === "output-available") {
+        if (
+          identityPlanLanded(rec) &&
+          !draftedSectionKeys.includes(identityKey)
+        ) {
+          draftedSectionKeys.push(identityKey);
+        }
+        if (inFlightSectionKey === identityKey) inFlightSectionKey = null;
+        continue;
+      }
+      if (state === "output-error") continue;
+      inFlightSectionKey = identityKey;
+      continue;
+    }
+    const sectionFromInput = (input as { section?: unknown }).section;
+    const key =
+      typeof sectionFromInput === "string" ? sectionFromInput.trim() : "";
+    if (!key) continue;
     const state = typeof rec.state === "string" ? rec.state : "";
     if (state === "output-available") {
       if (

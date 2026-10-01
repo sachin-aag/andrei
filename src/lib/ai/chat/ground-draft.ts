@@ -54,8 +54,8 @@ import {
   isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
+  rtmFamilyAtColumn,
   qsrTableColumnLabel,
-  rankRtmReferenceOperation,
   rowKeyFromContext,
   editCellsGroupKey,
   syntheticUnsupportedFact,
@@ -466,7 +466,8 @@ function retargetMarkerAfterFact(
 function applyMovedCitations(
   text: string,
   facts: readonly HardFact[],
-  records: readonly ClaimProvenanceRecord[]
+  records: readonly ClaimProvenanceRecord[],
+  pinCitationsToEnd = false
 ): string {
   let next = text;
   const insertions: Array<{ at: number; cite: string }> = [];
@@ -516,7 +517,9 @@ function applyMovedCitations(
     }
     if (!replaced) {
       insertions.push({
-        at: citationSiteOffset(text, fact.end),
+        at: pinCitationsToEnd
+          ? text.length
+          : citationSiteOffset(text, fact.end),
         cite: ` ${neu}`,
       });
     }
@@ -598,7 +601,17 @@ export function groundDraftText(input: {
       }),
     });
   });
-  const withMoved = applyMovedCitations(cited, facts, records);
+  const withMoved = applyMovedCitations(
+    cited,
+    facts,
+    records,
+    Boolean(
+      rtmFamilyAtColumn(
+        input.grounding?.section,
+        input.grounding?.tableCol ?? -1
+      )
+    )
+  );
   const unsourcedFacts = facts.filter(
     (_, index) => records[index]?.status === "unsourced"
   );
@@ -655,7 +668,7 @@ export function groundTableOperation(input: {
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
   /**
-   * After repair, empty unsupported RTM Stage / Section / Remarks
+   * After repair, empty unsupported RTM family / Remarks cells
    * instead of blocking the URS copy.
    */
   clearOptionalOnBlock?: boolean;
@@ -670,13 +683,9 @@ export function groundTableOperation(input: {
   unsupported: HardFact[];
   blocked: boolean;
 } {
-  const cited = rankRtmReferenceOperation(
-    rewriteTableOperationCitations(
-      attachLiveTableRowContext(input.operation, input.fieldDoc),
-      input.ledger
-    ),
-    input.ledger,
-    input.grounding?.section
+  const cited = rewriteTableOperationCitations(
+    attachLiveTableRowContext(input.operation, input.fieldDoc),
+    input.ledger
   );
   const failClosed = isClearOnlyOptionalRtmEdit(
     cited,

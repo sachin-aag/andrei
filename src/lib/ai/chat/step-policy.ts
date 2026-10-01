@@ -284,6 +284,15 @@ export function prepareReportChatStep(
   if (tableEditDirective === "finish") {
     return { activeTools: [] };
   }
+  if (
+    tableEditDirective === "review" &&
+    input.advertisedTools.includes("start_document_review")
+  ) {
+    return {
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    };
+  }
   if (tableEditDirective === "reread" && input.hasReadSectionTool) {
     return {
       activeTools: ["read_section"],

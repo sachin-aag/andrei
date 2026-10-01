@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
+  tableEditLandedSummary,
   tableEditProposalMessage,
   tableEditProposalMeta,
 } from "@/lib/ai/chat/table-cell-adjustments";
@@ -13,25 +14,25 @@ describe("tableCellAdjustments", () => {
         kind: "edit_cells",
         tableIndex: 0,
         cells: [
-          { row: 7, col: 3, rowKey: "URS-7", insertText: "IQ [IQ.pdf, p. 25]" },
-          { row: 7, col: 5, rowKey: "URS-7", insertText: "Complies" },
+          { row: 7, col: 4, rowKey: "URS-7", insertText: "13.3.5.4 [IQ.pdf, p. 25]" },
+          { row: 7, col: 7, rowKey: "URS-7", insertText: "Complies" },
         ],
       },
       {
         kind: "edit_cells",
         tableIndex: 0,
         cells: [
-          { row: 7, col: 3, rowKey: "URS-7", insertText: "IQ [IQ.pdf, p. 25]" },
-          { row: 7, col: 5, rowKey: "URS-7", insertText: "" },
+          { row: 7, col: 4, rowKey: "URS-7", insertText: "13.3.5.4 [IQ.pdf, p. 25]" },
+          { row: 7, col: 7, rowKey: "URS-7", insertText: "" },
         ],
       },
-      (col) => (col === 5 ? "Remarks" : null)
+      (col) => (col === 7 ? "Remarks" : null)
     );
     expect(adjustments).toEqual([
       {
         rowKey: "URS-7",
         row: 7,
-        col: 5,
+        col: 7,
         column: "Remarks",
         requested: "Complies",
         saved: "",
@@ -62,18 +63,17 @@ describe("tableCellAdjustments", () => {
         {
           kind: "insert_rows",
           tableIndex: 0,
-          rows: [["URS-5", "Jacket", "20-25 °C", "DQ", "12.1", "Complies"]],
+          rows: [["URS-5", "Jacket", "20-25 °C", "12.1", "", "", "", "Complies"]],
         },
         {
           kind: "insert_rows",
           tableIndex: 0,
-          rows: [["URS-5", "Jacket", "20-25 °C", "IQ [IQ.pdf, p. 22]", "13.3.5.1", ""]],
+          rows: [["URS-5", "Jacket", "20-25 °C", "", "13.3.5.1 [IQ.pdf, p. 22]", "", "", ""]],
         }
       ).map((adj) => [adj.col, adj.saved])
     ).toEqual([
-      [3, "IQ [IQ.pdf, p. 22]"],
-      [4, "13.3.5.1"],
-      [5, ""],
+      [3, ""],
+      [7, ""],
     ]);
   });
 
@@ -81,7 +81,7 @@ describe("tableCellAdjustments", () => {
     const op = {
       kind: "edit_cells" as const,
       tableIndex: 0,
-      cells: [{ row: 1, col: 5, rowKey: "URS-1", insertText: "Complies" }],
+      cells: [{ row: 1, col: 7, rowKey: "URS-1", insertText: "Complies" }],
     };
     expect(tableCellAdjustments(op, op)).toEqual([]);
   });
@@ -127,12 +127,12 @@ describe("tableCellAdjustments", () => {
             { row: 12, col: 4, rowKey: "URS-12", insertText: "" },
           ],
         },
-        (col) => (col === 4 ? "Reference – Section" : null)
+        (col) => (col === 4 ? "Reference – IQ" : null)
       )
     );
     expect(message).toContain("URS-1");
-    expect(message).toContain("Left blank: URS-6 Reference – Section");
-    expect(message).toContain("URS-12 Reference – Section");
+    expect(message).toContain("Left blank: URS-6 Reference – IQ");
+    expect(message).toContain("URS-12 Reference – IQ");
     expect(message).toContain(
       "do not list requested URS rows whose saved Section is empty"
     );
@@ -189,5 +189,55 @@ describe("tableCellAdjustments", () => {
     expect(message).toContain("dropped from the card: URS-6, URS-12");
     expect(message).toContain("Do not list droppedRowKeys as updated");
     expect(message).toContain("Wrap-up may name only proposedRowKeys");
+  });
+
+  it("replaces wrap-up reasoning when the card dropped requested rows", () => {
+    const meta = tableEditProposalMeta(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+          { row: 1, col: 7, rowKey: "URS-1", insertText: "Complies" },
+          { row: 63, col: 4, rowKey: "URS-63", insertText: "8.8 – Agitator" },
+        ],
+      },
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+        ],
+      }
+    );
+    const summary = tableEditLandedSummary(
+      "Add one-line test explanation to all remaining Reference – IQ and Remarks cells in Table 5.",
+      meta
+    );
+    expect(summary).toContain("Landed 1 cell(s) on URS-1 only");
+    expect(summary).toContain("Dropped from the card: URS-63");
+    expect(summary).not.toContain("Add one-line test explanation");
+  });
+
+  it("keeps the model reasoning when every requested row landed", () => {
+    const meta = tableEditProposalMeta(
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+        ],
+      },
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 4, rowKey: "URS-1", insertText: "8.2.3 – Heating Trial" },
+        ],
+      }
+    );
+    expect(tableEditLandedSummary("Elaborate URS-1 Section.", meta)).toBe(
+      "Elaborate URS-1 Section."
+    );
   });
 });

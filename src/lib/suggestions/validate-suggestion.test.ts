@@ -76,6 +76,26 @@ describe("validateSuggestionLocate", () => {
     expect(v.canApply).toBe(true);
   });
 
+  it("treats a header identity card as locatable without section JSON", () => {
+    const comment = aiFixComment({
+      section: "identity" as CommentRecord["section"],
+      sectionId: null,
+      contentPath: "documentNo",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "Report No.: QSR/1",
+        reasoning: "fill",
+        identityOperation: {
+          fields: [{ key: "documentNo", value: "QSR/1" }],
+        },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "identity" as never, {});
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
+  });
+
   it("previews a frozen replace when merge identity hid a still-pending edit", () => {
     const current = doc(
       para("The purpose of this revision is to present results.")
@@ -456,6 +476,29 @@ describe("countOpenSuggestionsForReport", () => {
     );
     expect(counts.total).toBe(2);
     expect(counts.locatable).toBe(1);
+  });
+
+  it("still counts an open suggestion on a section missing from the card order", () => {
+    const comments = [
+      aiFixComment({
+        id: "acro",
+        section: "qsr_acronyms",
+        contentPath: "table",
+        anchorText: "URS",
+        content: serializeAiFixCommentContent({
+          deleteText: "",
+          insertText: " User Requirement Specification",
+          reasoning: "",
+        }),
+      }),
+    ];
+    const counts = countOpenSuggestionsForReport(
+      ["qsr_objective"],
+      comments,
+      [],
+      () => undefined
+    );
+    expect(counts.total).toBe(1);
   });
 });
 

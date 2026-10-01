@@ -86,7 +86,10 @@ import {
   tocHeadingSpecsForDocumentType,
 } from "@/lib/export/docx-toc-headings";
 import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
-import { threeXperCitationsAppendixXml } from "@/lib/export/3xper-citations-table";
+import {
+  threeXperCitationIdentityKey,
+  threeXperCitationsAppendixXml,
+} from "@/lib/export/3xper-citations-table";
 import {
   elrCitationsAppendixXml,
   insertXmlBeforeLastSectPr,
@@ -569,7 +572,10 @@ export async function generateReportDocx({
       report.documentType === "vendor_qualification"
         ? VQ_SECTION_KEYS
         : QSR_SECTION_KEYS;
-    const unified = unifyReportCitationsForExport(exportSections, sectionKeys);
+    const unified = unifyReportCitationsForExport(exportSections, sectionKeys, {
+      sourceIdentity: (source) =>
+        threeXperCitationIdentityKey(source, exportSections),
+    });
     exportSections = unified.sections;
     citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
       sections: exportSections,

@@ -5,6 +5,10 @@ import {
   getEvaluatableSections,
   getWorkspaceSections,
 } from "@/lib/document-types";
+import {
+  CHAT_IDENTITY_SECTION,
+  hasChatIdentity,
+} from "@/lib/ai/chat/identity";
 
 export type CriterionRow = EvaluationRecord & {
   /** True when this row is just a placeholder for a criterion that has never been evaluated. */
@@ -88,10 +92,15 @@ export function suggestionCardSectionKeys(
   documentType: DocumentType = "investigation_report"
 ): SectionType[] {
   const evaluatable = evaluatableSectionKeys(documentType);
-  if (evaluatable.length > 0) return evaluatable;
-  return getWorkspaceSections(documentType)
-    .filter((section) => section.editable)
-    .map((section) => section.key);
+  const keys =
+    evaluatable.length > 0
+      ? evaluatable
+      : getWorkspaceSections(documentType)
+          .filter((section) => section.editable)
+          .map((section) => section.key);
+  if (!hasChatIdentity(documentType)) return keys;
+  const identity = CHAT_IDENTITY_SECTION as SectionType;
+  return [identity, ...keys.filter((key) => key !== identity)];
 }
 
 export function aggregateStatus(rows: EvaluationRecord[]): CriterionStatus {

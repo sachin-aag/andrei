@@ -270,6 +270,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 |------|------------------|
 | does not blank Define while the gutter Apply is in flight | Seeded insert stays in the live editor for every sampled frame until it becomes ordinary text |
 | does not blank Define while inline Accept is in flight | Same for the inline Accept control on the highlighted span |
+| shows Apply all and Dismiss all for a single pending suggestion | Header bulk actions stay for one open card |
+| keeps Apply all and Dismiss all after dismissing one of two suggestions | Dismissing the first card leaves Apply all 1 / Dismiss all and the remaining inline preview |
 
 </details>
 

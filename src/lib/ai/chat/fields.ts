@@ -18,6 +18,12 @@ import {
 } from "@/lib/ai/chat/section-images";
 import { elrPlanRequiredFields } from "@/lib/document-types/elr/plan-complete";
 import { tableHasEmptyIdentityValueCells } from "@/lib/ai/chat/identity-cells";
+import {
+  CHAT_IDENTITY_SECTION,
+  chatIdentityLabel,
+  hasChatIdentity,
+  isChatIdentitySection,
+} from "@/lib/ai/chat/identity";
 
 /** Sections the drafting chat can read + edit (type-owned, not DMAIC-only). */
 export function chatEditableSections(
@@ -38,6 +44,34 @@ export function isChatEditableSection(
   documentType: DocumentType = "investigation_report"
 ): value is SectionType {
   return (chatEditableSections(documentType) as readonly string[]).includes(value);
+}
+
+/** Body sections plus the synthetic cover/header identity block. */
+export function isChatMentionableSection(
+  value: string,
+  documentType: DocumentType = "investigation_report"
+): boolean {
+  return (
+    isChatEditableSection(value, documentType) ||
+    (isChatIdentitySection(value) && hasChatIdentity(documentType))
+  );
+}
+
+/** Composer @ menu: identity first when the type has a cover/header form. */
+export function chatMentionableSectionCandidates(
+  documentType: DocumentType = "investigation_report"
+): Array<{ id: string; label: string }> {
+  const items: Array<{ id: string; label: string }> = [];
+  if (hasChatIdentity(documentType)) {
+    items.push({
+      id: CHAT_IDENTITY_SECTION,
+      label: chatIdentityLabel(documentType),
+    });
+  }
+  for (const section of chatEditableSections(documentType)) {
+    items.push({ id: section, label: sectionLabel(section) });
+  }
+  return items;
 }
 
 /** Sections included in prompt/tools for the current focus. */
@@ -179,6 +213,18 @@ function isBlankTableCellText(text: string): boolean {
   return text === "(empty)" || text.trim() === "";
 }
 
+/** First-column URS-N on an RTM is a row key, not drafted requirement text. */
+const URS_ID_SCAFFOLD_RE = /^URS-\d+$/i;
+
+function isUrsIdScaffoldCell(
+  cell: { col: number; text: string },
+  headers: readonly string[]
+): boolean {
+  if (cell.col !== 0) return false;
+  if (!/^urs id$/i.test((headers[0] ?? "").trim())) return false;
+  return URS_ID_SCAFFOLD_RE.test(normalizeScaffoldCellText(cell.text));
+}
+
 function isElrTrendsRecapScaffold(doc: JSONContent): boolean {
   const tables = summarizeTablesInDoc(doc);
   if (tables.length === 0) return false;
@@ -235,7 +281,7 @@ function emptyContentForSection(
   return undefined;
 }
 
-function seedFieldDoc(
+export function seedFieldDoc(
   section: SectionType,
   targetField: string
 ): JSONContent | undefined {
@@ -283,12 +329,10 @@ export function isEmptyTableScaffoldDoc(
   const seedTables = seedDoc ? summarizeTablesInDoc(seedDoc) : [];
   for (const table of tables) {
     const seedTable = seedTables[table.tableIndex];
-    if (seedTable && table.dataRowCount > seedTable.dataRowCount) {
-      return false;
-    }
     for (const cell of table.cells) {
       if (cell.row === 0) continue;
       if (isBlankTableCellText(cell.text)) continue;
+      if (isUrsIdScaffoldCell(cell, table.headers)) continue;
       if (seedTable && cellMatchesSeedText(cell, seedTable.cells)) continue;
       return false;
     }
@@ -541,6 +585,7 @@ const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
 
 /** Human label for a section (registry, then shared map, then title-cased key). */
 export function sectionLabel(section: SectionType): string {
+  if (section === CHAT_IDENTITY_SECTION) return "Cover identity";
   for (const type of Object.keys(ALL_DOCUMENT_TYPES) as DocumentType[]) {
     const match = getDocumentType(type).sections.find((s) => s.key === section);
     if (match) return match.label;

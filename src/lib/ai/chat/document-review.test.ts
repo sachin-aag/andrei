@@ -535,6 +535,7 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("edit_table");
     expect(planTools).not.toHaveProperty("update_plan");
     expect(PLAN_MODE_CHAT_TOOL_NAMES).not.toContain("update_plan");
+    expect(planTools).not.toHaveProperty("draft_identity");
   });
 });
 

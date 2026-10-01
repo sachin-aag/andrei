@@ -1,5 +1,6 @@
 import type { CriterionStatus } from "@/db/schema";
 import { textHasSourceCitation } from "@/lib/citations/cell-has-source";
+import { parseElrIdentityDate } from "@/lib/document-types/elr/financial-year";
 import type { EvaluationContext } from "@/lib/document-types/types";
 import { findDirectedContradictions } from "@/lib/eval/contradictions";
 import { recordTypeReferenceMismatch } from "@/lib/eval/record-type";
@@ -384,11 +385,16 @@ export function checkQraReview(ctx: EvaluationContext) {
   );
 }
 
-/** Identity-block dates are `<input type="date">` values, so ISO and sortable. */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** Identity-block dates are free text (`01-Apr-2025` or ISO). */
 function isoDate(value: unknown): string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
-    ? value.trim()
-    : "";
+  if (typeof value !== "string") return "";
+  const parsed = parseElrIdentityDate(value);
+  if (!parsed) return "";
+  return `${parsed.year}-${pad2(parsed.month)}-${pad2(parsed.day)}`;
 }
 
 function metadataField(ctx: EvaluationContext, key: string): string {

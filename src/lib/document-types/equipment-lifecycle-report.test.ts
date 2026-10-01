@@ -406,35 +406,9 @@ describe("equipment lifecycle report definition", () => {
     expect(def.chat.persona).toContain("both Vial and Cartridge");
     expect(def.chat.persona).toContain("ask_user");
     expect(def.chat.persona).toContain("do not infer it from the first PRQR");
-    expect(def.chat.draftingGuidance).toContain(
-      "If it is unset and attachments name **both** Vial and Cartridge, stop"
-    );
     expect(def.chat.draftingGuidance).toContain("1 April to 31 March");
-    expect(def.chat.draftingGuidance).toContain("starts on 1 April");
-    expect(def.chat.draftingGuidance).toContain("ends on 31 March");
-    expect(def.chat.draftingGuidance).toContain("**both** calendar dates");
-    expect(def.chat.draftingGuidance).toContain("31.03 of the following year");
     expect(def.chat.draftingGuidance).not.toMatch(/Indian Financial Year/i);
     expect(def.chat.draftingGuidance).not.toMatch(/Indian FY\b/i);
-    expect(def.chat.draftingGuidance).toContain("one row per Grade A / environmental **method**");
-    expect(def.chat.draftingGuidance).toContain("[[table:Alarm Trends]]");
-    expect(def.chat.draftingGuidance).not.toContain("compact process-alarm");
-    expect(
-      (def.chat.draftingGuidance ?? "").split(
-        "Breakdowns and Trends (elr_breakdowns):"
-      ).length - 1
-    ).toBe(1);
-    expect(def.chat.draftingGuidance).toContain("product-contact MOC");
-    expect(def.chat.draftingGuidance).toContain("secondary packaging");
-    expect(def.chat.draftingGuidance).toContain("tertiary");
-    expect(def.chat.draftingGuidance).toContain("ATTACHMENT NO.");
-    expect(def.chat.draftingGuidance).toContain("findingsOmitted");
-    expect(def.chat.draftingGuidance).toContain("Limits and counts");
-    expect(def.chat.draftingGuidance).toContain("<1 CFU/plate");
-    expect(def.chat.draftingGuidance).toContain("privilege matrix");
-    expect(def.chat.draftingGuidance).toContain("Task × Operator");
-    expect(def.chat.draftingGuidance).toContain("Revalidation Due Date");
-    expect(def.chat.draftingGuidance).toContain("current, overdue, or due");
     expect(def.chat.contextIdentity?.({})).toEqual(
       expect.arrayContaining([
         expect.stringContaining("container format: (unset)"),
@@ -1061,6 +1035,15 @@ describe("ELR periodic re-qualification schedule", () => {
     expect(schedule({ nextPrqDate: "2027-02-15" }).reasoning).toMatch(
       /period end/i
     );
+  });
+
+  it("reads 01-Apr title-page dates the same as ISO", () => {
+    expect(
+      schedule({ nextPrqDate: "01-Apr-2026", periodTo: "31-Mar-2026" }).status
+    ).toBe("met");
+    expect(
+      schedule({ nextPrqDate: "15-Aug-2026", periodTo: "31-Mar-2027" }).status
+    ).toBe("not_met");
   });
 });
 

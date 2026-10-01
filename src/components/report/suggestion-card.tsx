@@ -31,6 +31,7 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
+  sectionOrderWithOpenSuggestions,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
@@ -56,9 +57,15 @@ import {
   applyRelatedSectionUpdates,
   dismissSuggestion,
   CommentPersistError,
+  IdentityDuplicateError,
   PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  applyIdentityPatchToReport,
+  identityCurrentFromReport,
+  isIdentitySuggestion,
+} from "@/lib/suggestions/identity-suggestion";
 import {
   formatSupersedesBadge,
   supersededSuggestionIdsFromContent,
@@ -69,6 +76,8 @@ import {
   measureSuggestionGutterParkCenterY,
   scrollToSuggestionComment,
 } from "@/lib/suggestions/navigate-suggestion";
+import { useReviewGutterColumnPainted } from "./review-gutter-painted";
+import { showDocumentSuggestionCard } from "./show-document-suggestion-card";
 import {
   countStaleOpenSuggestions,
   preferredOpenSuggestion,
@@ -629,10 +638,11 @@ export function SectionSuggestionCard({
   hideWhenEmpty = false,
 }: {
   section: SectionType;
-  /** In-section slot. The review margin is the other copy while Comments is on. */
+  /** In-section slot. Hidden while the review margin already shows this card. */
   hideWhenEmpty?: boolean;
 }) {
-  const { report, readOnly, currentUserId, refresh } = useReportData();
+  const gutterColumnPainted = useReviewGutterColumnPainted();
+  const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
     !readOnly &&
@@ -644,6 +654,7 @@ export function SectionSuggestionCard({
     enterSuggestionQueueBridge,
     endSuggestionApplyTransition,
     suggestionApplyTransition,
+    gutterSuggestionCommentForSection,
   } = useReportEvaluations();
   const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -656,8 +667,12 @@ export function SectionSuggestionCard({
   const enterRef = useRef<HTMLDivElement>(null);
 
   const sectionOrder = useMemo(
-    () => suggestionCardSectionKeys(report.documentType),
-    [report.documentType]
+    () =>
+      sectionOrderWithOpenSuggestions(
+        suggestionCardSectionKeys(report.documentType),
+        comments
+      ),
+    [report.documentType, comments]
   );
 
   const queue = useMemo(
@@ -875,11 +890,12 @@ export function SectionSuggestionCard({
         reportId: report.id,
         section,
         comment: snapshot.comment,
-        sectionContent: sections[section] as Record<string, unknown>,
+        sectionContent: (sections[section] as Record<string, unknown>) ?? {},
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
         openComments: comments.filter((c) => c.status === "open" && !c.parentId),
         documentType: report.documentType,
         reportSections: sections,
+        identityCurrent: identityCurrentFromReport(report),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -899,17 +915,29 @@ export function SectionSuggestionCard({
         if (result.reason === "placeholder_conflict") {
           throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
         }
+        if (result.reason === "duplicate_document_no") {
+          throw (
+            result.error instanceof IdentityDuplicateError
+              ? result.error
+              : new IdentityDuplicateError()
+          );
+        }
         throw new Error("Suggestion could not be located");
       }
-      replaceSection(section, result.nextSection as unknown);
-      applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
+      if (result.nextIdentity) {
+        setReport((prev) => applyIdentityPatchToReport(prev, result.nextIdentity!));
+      } else if (!isIdentitySuggestion(snapshot.comment)) {
+        replaceSection(section, result.nextSection as unknown);
+        applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
+      }
 
       setComments((prev) =>
         prev
           .map((c) => {
-            if (c.id === commentId) return { ...c, status: "resolved" as const };
             const dismissed = result.dismissed.find((row) => row.id === c.id);
-            return dismissed ?? c;
+            if (dismissed) return dismissed;
+            if (c.id === commentId) return { ...c, status: "resolved" as const };
+            return c;
           })
           .filter((c) => c.status !== "dismissed")
       );
@@ -929,13 +957,15 @@ export function SectionSuggestionCard({
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof SectionPersistError
+        err instanceof IdentityDuplicateError
           ? err.message
-          : err instanceof CommentPersistError
-            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
-              ? err.message
-              : "Could not apply suggestion"
+          : err instanceof SectionPersistError
+            ? err.message
+            : err instanceof CommentPersistError
+              ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+              : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
+                ? err.message
+                : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -959,6 +989,8 @@ export function SectionSuggestionCard({
     sectionOrder,
     report.id,
     report.documentType,
+    report,
+    setReport,
     replaceSection,
     animateQueueTransition,
     setComments,
@@ -997,7 +1029,7 @@ export function SectionSuggestionCard({
         reportId: report.id,
         section,
         comment: snapshot.comment,
-        sectionContent: sections[section] as Record<string, unknown>,
+        sectionContent: (sections[section] as Record<string, unknown>) ?? {},
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -1072,6 +1104,15 @@ export function SectionSuggestionCard({
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
+
+  const hideBecauseGutterShowsThisCard =
+    hideWhenEmpty &&
+    !showDocumentSuggestionCard({
+      documentSlot: true,
+      gutterColumnPainted,
+      sectionHasGutterCard: Boolean(gutterSuggestionCommentForSection(section)),
+    });
+  if (hideBecauseGutterShowsThisCard) return null;
 
   if (showBridge && bridgeNext) {
     const nextSection =

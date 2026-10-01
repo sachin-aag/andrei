@@ -224,6 +224,27 @@ describe("useAutoSave", () => {
     fetchSpy.mockRestore();
   });
 
+  it("clears Saving… when the value matches the last persisted snapshot", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 1_000 }),
+      { initialProps: { value: "initial" } }
+    );
+
+    rerender({ value: "typed" });
+    expect(result.current.status).toBe("saving");
+    expect(result.current.needsFlush()).toBe(true);
+
+    rerender({ value: "initial" });
+    expect(result.current.status).toBe("idle");
+    expect(result.current.needsFlush()).toBe(false);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("clears Saving… when disabled with a pending edit, then flushes on re-enable", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const { rerender, result } = renderHook(
@@ -359,15 +380,20 @@ describe("useAutoSave", () => {
   it("aborts an in-flight save when debounce is paused", async () => {
     let capturedSignal: AbortSignal | undefined;
     let resolveSave: (() => void) | undefined;
+    let saveCalls = 0;
     const onSave = vi.fn(
       (_value: string, context?: { signal?: AbortSignal }) => {
         capturedSignal = context?.signal;
-        return new Promise<void>((resolve) => {
-          resolveSave = resolve;
-        });
+        saveCalls += 1;
+        if (saveCalls === 1) {
+          return new Promise<void>((resolve) => {
+            resolveSave = resolve;
+          });
+        }
+        return Promise.resolve();
       }
     );
-    const { rerender } = renderHook(
+    const { rerender, result } = renderHook(
       ({ value, enabled }) =>
         useAutoSave({ value, onSave, delayMs: 100, enabled }),
       { initialProps: { value: "initial", enabled: true } }
@@ -382,10 +408,20 @@ describe("useAutoSave", () => {
 
     rerender({ value: "stale", enabled: false });
     expect(capturedSignal?.aborted).toBe(true);
+    expect(result.current.status).toBe("idle");
 
     await act(async () => {
       resolveSave?.();
     });
+    expect(result.current.status).toBe("idle");
+
+    rerender({ value: "stale", enabled: true });
+    expect(result.current.status).toBe("saving");
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("saved");
   });
 
   it("posts dirty value on pagehide while debounce is paused for apply", () => {

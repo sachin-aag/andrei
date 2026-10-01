@@ -2,7 +2,11 @@ import path from "node:path";
 import { QSR_PROMPT_VERSION } from "@/lib/customers/packs";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
-import { qsrChatContextIdentity } from "./qsr/chat-identity";
+import {
+  QSR_IDENTITY_FIELDS,
+  QSR_IDENTITY_LABEL,
+  qsrChatContextIdentity,
+} from "./qsr/chat-identity";
 import { checkNarrativePresent, tableValuesCheck } from "./qsr/deterministic-checks";
 import { QSR_DRAFTING_GUIDANCE } from "./qsr/drafting-guidance";
 import {
@@ -10,11 +14,14 @@ import {
   QSR_DEFAULT_METADATA,
   QSR_SECTION_KEYS,
   QSR_SECTION_LABELS,
+  ensureRtmFamilyColumns,
   ensureVolumetricFormRows,
   isQsrSectionKey,
   isQsrTableSectionKey,
   qsrMetadataFrom,
+  QSR_TABLE_HEADERS,
   type QsrSectionKey,
+  type QsrTableSectionKey,
 } from "./qsr/sections";
 
 function llm(key: string, label: string, description: string): CriterionDefinition {
@@ -53,8 +60,8 @@ function rtmCriteria(prefix: string, label: string): CriterionDefinition[] {
     tableFilled(prefix, label, 5),
     llm(
       `${prefix}.traceable`,
-      `${label} are traced to a qualification stage`,
-      "Does every URS row name the qualification stage (DQ/IQ/OQ/PQ) and protocol section that verified it?"
+      `${label} are traced to DQ / IQ / OQ / PQ`,
+      "Does every URS row fill Reference – DQ / IQ / OQ / PQ (section line or NA) and Remarks from the cited protocols?"
     ),
   ];
 }
@@ -121,6 +128,11 @@ function mergeQsrSection(key: string, raw: unknown): unknown {
   if (key === "qsr_volumetric_details") {
     return { [field]: ensureVolumetricFormRows(doc) };
   }
+  if (isQsrTableSectionKey(key) && key.startsWith("qsr_rtm_")) {
+    return {
+      [field]: ensureRtmFamilyColumns(doc, QSR_TABLE_HEADERS[key as QsrTableSectionKey]),
+    };
+  }
   return { [field]: doc };
 }
 
@@ -175,6 +187,8 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ],
     },
     contextIdentity: qsrChatContextIdentity,
+    identityFields: QSR_IDENTITY_FIELDS,
+    identityLabel: QSR_IDENTITY_LABEL,
     inventorySections: [
       "qsr_qualification_documents",
       "qsr_rtm_process",
@@ -193,11 +207,11 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["qsr_background", [/\bbackground\b/i, /\b2\.2\b/]],
       [
         "qsr_qualification_documents",
-        [/\bqualification documents?\b/i, /\blifecycle\b/i, /\btable\s*3\b/i],
+        [/\bqualification documents?\b/i, /\blifecycle\b/i],
       ],
       [
         "qsr_sops",
-        [/\bsops?\b/i, /\bstandard operati\w* procedures?\b/i, /\btable\s*4\b/i],
+        [/\bsops?\b/i, /\bstandard operati\w* procedures?\b/i],
       ],
       ["qsr_rtm_process", [/\bprocess requirements?\b/i, /\btraceability\b/i, /\brtm\b/i, /\b5\.1\b/]],
       ["qsr_rtm_control", [/\bcontrol philosophy\b/i, /\b5\.2\b/]],

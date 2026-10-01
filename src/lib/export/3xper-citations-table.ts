@@ -6,6 +6,7 @@ import {
   type DocxRunStyle,
 } from "@/lib/export/docx-export-context";
 import {
+  citationSourceIdentityKey,
   citationsHeadingParagraphXml,
   type ElrBibliographyEntry,
 } from "@/lib/export/elr-unified-citations";
@@ -291,6 +292,24 @@ function pageLabelFromSource(source: string): string {
     .replace(/\s+/g, " ")
     .trim();
   return pages ? `Page # ${pages}` : `Page # ${parsed.pages[0]}`;
+}
+
+/**
+ * Collapse equivalent 3xper cites: same catalog document number + page, or
+ * the same description + page when there is no number. Falls back to file +
+ * page so VQ rows without a catalog still dedupe.
+ */
+export function threeXperCitationIdentityKey(
+  source: string,
+  sections: readonly ReportSectionRecord[] = []
+): string {
+  const [row] = threeXperCitationRows([{ number: 1, source }], sections);
+  const page = (row?.referencePage ?? "").trim().toLowerCase();
+  const ref = row?.documentReference.trim() ?? "";
+  if (ref) return `ref:${compactId(ref)}\0${page}`;
+  const description = normalizeLabel(row?.description ?? "");
+  if (description) return `desc:${description}\0${page}`;
+  return citationSourceIdentityKey(source);
 }
 
 export function threeXperCitationRows(

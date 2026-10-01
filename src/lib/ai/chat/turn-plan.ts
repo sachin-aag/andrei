@@ -65,7 +65,8 @@ export function assembleChatTurnPlan(
   });
   const sectionIntent = detectSectionIntentFromText(
     input.userText,
-    documentType
+    documentType,
+    { sections: input.sections }
   );
   const alreadyDrafted = detectAlreadyDraftedSection({
     userText: input.userText,

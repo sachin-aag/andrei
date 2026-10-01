@@ -149,6 +149,7 @@ import {
 import { createSearchGate } from "@/lib/ai/chat/search-loop";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import { compactChatToolHistoryForModel, compactInTurnModelMessages } from "@/lib/ai/chat/compact-tool-history";
+import { geminiSafeModelMessages } from "@/lib/ai/chat/gemini-messages";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   captureChatAssistantFailure,
@@ -394,6 +395,14 @@ async function handleChatPost(
       documentType: report.documentType,
       sections: mergedSections,
       promptVersion: CHAT_PROMPT_VERSION,
+      report: {
+        documentNo: report.documentNo,
+        date: report.date,
+        metadata:
+          report.metadata && typeof report.metadata === "object"
+            ? (report.metadata as Record<string, unknown>)
+            : null,
+      },
     });
     const toSave = persistablePendingPlan(pendingPlan);
     if (JSON.stringify(toSave) !== JSON.stringify(existingPlan)) {
@@ -738,9 +747,11 @@ async function handleChatPost(
     if (!isTestStubChat()) {
       await assertAiBudgetAvailable();
     }
-    const modelMessages = messagesWithComposerModeReminder(
-      await convertToModelMessages(messages),
-      mode
+    const modelMessages = geminiSafeModelMessages(
+      messagesWithComposerModeReminder(
+        await convertToModelMessages(messages),
+        mode
+      )
     );
     setRouteObservationIO({
       input: {
@@ -775,6 +786,9 @@ async function handleChatPost(
         streamText({
       model,
       system,
+      // Gemini rejects system-role messages after the first turn. Instructions
+      // stay on `system`; allowSystemInMessages throws if any slip back in.
+      allowSystemInMessages: false,
       messages: modelMessages,
       tools,
       activeTools: advertisedTools,
@@ -828,7 +842,9 @@ async function handleChatPost(
         });
         return {
           ...decision,
-          messages: compactInTurnModelMessages(messages),
+          messages: geminiSafeModelMessages(
+            compactInTurnModelMessages(messages)
+          ),
         };
       },
       abortSignal: turnAbort.signal,

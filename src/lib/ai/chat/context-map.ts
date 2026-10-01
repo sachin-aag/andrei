@@ -136,6 +136,14 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     for (const line of identity) {
       lines.push(`- ${line}`);
     }
+    if (def.chat.identityFields && def.chat.identityFields.length > 0) {
+      const unitHint = def.chat.identityFields.some((field) => field.keepUnits)
+        ? " Capacity / Size keeps the printed unit (8000 L, 3.0 KL)."
+        : "";
+      lines.push(
+        `- Fill unset identity with draft_identity from attachments (one suggestion card for the whole header; Apply / Dismiss). Duplicate document numbers fail at propose. Remaining-section treats a complete proposal as done. Plain scalars only — never citations.${unitHint}`
+      );
+    }
   }
   lines.push(
     "Sections (empty = draft after searching attachments; filled/partial = already drafted — read_section first):",

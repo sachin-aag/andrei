@@ -94,6 +94,70 @@ describe("unifyElrCitationsForExport", () => {
     expect(JSON.stringify(next)).not.toContain("Citations:");
   });
 
+  it("dedupes the same file and page across case, spacing, and download stamps", () => {
+    const { bibliography, sections: next } = unifyElrCitationsForExport([
+      section("elr_objective", {
+        narrative: citedDoc("The URS was approved [1].", [
+          "1. [URS.PDF, p. 2]",
+        ]),
+      }),
+      section("elr_monitoring", {
+        narrative: citedDoc("Same page still applies [1].", [
+          "1. [urs.pdf, p.2]",
+        ]),
+      }),
+      section("elr_qualification", {
+        narrative: citedDoc("Stamped copy of the same page [1].", [
+          "1. [URS_20250320092518.pdf, p. 2]",
+        ]),
+      }),
+    ]);
+    expect(bibliography).toEqual([{ number: 1, source: "[URS.PDF, p. 2]" }]);
+    const byKey = Object.fromEntries(next.map((row) => [row.section, row]));
+    expect(
+      bodyText(
+        (byKey.elr_objective?.content as { narrative: JSONContent }).narrative
+      )
+    ).toBe("The URS was approved [1].");
+    expect(
+      bodyText(
+        (byKey.elr_monitoring?.content as { narrative: JSONContent }).narrative
+      )
+    ).toBe("Same page still applies [1].");
+    expect(
+      bodyText(
+        (byKey.elr_qualification?.content as { narrative: JSONContent })
+          .narrative
+      )
+    ).toBe("Stamped copy of the same page [1].");
+  });
+
+  it("keeps different pages of the same file as separate entries", () => {
+    const { bibliography, sections: next } = unifyElrCitationsForExport([
+      section("elr_objective", {
+        narrative: citedDoc("Cover [1].", ["1. [urs.pdf, p. 1]"]),
+      }),
+      section("elr_monitoring", {
+        narrative: citedDoc("Scope [1].", ["1. [urs.pdf, p. 2]"]),
+      }),
+    ]);
+    expect(bibliography.map((entry) => entry.source)).toEqual([
+      "[urs.pdf, p. 1]",
+      "[urs.pdf, p. 2]",
+    ]);
+    const byKey = Object.fromEntries(next.map((row) => [row.section, row]));
+    expect(
+      bodyText(
+        (byKey.elr_objective?.content as { narrative: JSONContent }).narrative
+      )
+    ).toBe("Cover [1].");
+    expect(
+      bodyText(
+        (byKey.elr_monitoring?.content as { narrative: JSONContent }).narrative
+      )
+    ).toBe("Scope [2].");
+  });
+
   it("keeps independent field numbering from colliding inside one section", () => {
     const { bibliography, sections: next } = unifyElrCitationsForExport([
       section("elr_monitoring", {
