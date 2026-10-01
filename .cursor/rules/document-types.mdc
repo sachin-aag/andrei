@@ -41,8 +41,10 @@ const sections = getWorkspaceSections(report.documentType);
 - Chat editable sections: `chatEditableSections(documentType)` in
   `src/lib/ai/chat/fields.ts`. Cover/header identity is synthetic (`identity`)
   — mentionable, not a TipTap section, filled with `draft_identity` from
-  type-owned `chat.identityFields` (no citations on those cover scalars;
-  QSR Capacity / Size keeps the printed unit). Do not add `identity` to
+  type-owned `chat.identityFields` (one suggestion card for the whole header;
+  no citations on those cover scalars; duplicate document numbers fail at
+  propose and at Apply; remaining-section treats a complete proposal as done).
+  QSR Capacity / Size keeps the printed unit. Do not add `identity` to
   `SUGGEST_TARGET_FIELD_PATTERNS`. Do not reuse investigation field maps on DV.
   Title-page identity that chat needs (ELR `formatScope`) is
   `chat.contextIdentity` on the type — do not hardcode metadata keys in

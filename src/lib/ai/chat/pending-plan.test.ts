@@ -917,7 +917,7 @@ describe("plan prompt and metadata", () => {
         type: "tool-draft_identity",
         state: "output-available",
         input: { fields: [{ key: "equipmentName", value: "Reactor" }] },
-        output: { status: "applied", complete: false, remainingRequired: ["documentNo"] },
+        output: { status: "proposed", complete: false, remainingRequired: ["documentNo"] },
       },
     ]);
     expect(partial.draftedSectionKeys).toEqual([]);
@@ -926,7 +926,7 @@ describe("plan prompt and metadata", () => {
         type: "tool-draft_identity",
         state: "output-available",
         input: { fields: [{ key: "equipmentName", value: "Reactor" }] },
-        output: { status: "applied", complete: true, remainingRequired: [] },
+        output: { status: "proposed", complete: true, remainingRequired: [] },
       },
     ]);
     expect(complete.draftedSectionKeys).toEqual(["identity"]);

@@ -77,8 +77,10 @@ the attachments (ELR: both Vial and Cartridge, `formatScope` unset) is a
 fork: `ask_user` once before drafting. That is not a fact already in
 retrieved evidence. Type-owned `chat.contextIdentity` surfaces those fields
 and `chat.identityFields` lists the scalars Agent fills with `draft_identity`
-(lands immediately on `reports.documentNo` / `date` / `metadata`; no
-citations — those fields print on the cover and running header). QSR
+(one suggestion card for the whole header — Apply / Dismiss; remaining-section
+treats a complete proposal as done; duplicate document numbers fail at
+propose and at Apply; no citations — those fields print on the cover and
+running header). QSR
 Capacity / Size (`keepUnits`) restores the printed unit from this turn's
 cited quotes when the model writes a bare number (`8000` → `8000 L`);
 conflicting units stay bare, and 8000 is not converted to 8 KL.

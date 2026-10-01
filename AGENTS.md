@@ -223,7 +223,10 @@ asks (`draft 5.2, 5.3, 5.4`) seed only those named empty sections before
 the whole-report leftover queue. Cover/header
 identity (equipment name, document number, …) is prepended when any required
 identity scalar is blank — it is not a TipTap section; Agent fills it with
-`draft_identity` from attachments (lands immediately, no citations). Each turn drafts
+`draft_identity` from attachments (one suggestion card for the whole header;
+Apply / Dismiss; remaining-section counts a complete proposal as done, same
+as other Agent writes). Duplicate document numbers fail at propose and at
+Apply. No citations. Each turn drafts
 the current item (or two adjacent non-inventory sections). MJ ELR evidence
 sections stay in progress until that turn also drafts the assessment with a
 count (and `trend` / `overallGrade` / `recommendation` siblings); Access Control

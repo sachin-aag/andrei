@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v171-identity-fill");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v172-identity-suggest");
   });
 
   it("pins QSR RTM same-ID window and stock-remarks rules", () => {
@@ -778,14 +778,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("written to the document immediately");
   });
 
-  it("tells Agent that cover identity lands immediately on types that have it", () => {
+  it("tells Agent that cover identity is one suggestion card on types that have it", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
       documentType: "qualification_summary_report",
     });
     expect(prompt).toContain(
-      "Cover/header identity (draft_identity) lands immediately in the header"
+      "Cover/header identity (draft_identity) is one suggestion card for the whole header"
+    );
+    expect(prompt).toContain(
+      "Duplicate document numbers fail at propose and at Apply"
     );
     expect(prompt).not.toContain("select_analyze_method");
   });

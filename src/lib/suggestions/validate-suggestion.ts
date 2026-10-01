@@ -136,6 +136,17 @@ export function validateSuggestionLocate(
   documentType: DocumentType = "investigation_report"
 ): SuggestionValidation {
   void documentType;
+  if (comment.kind === "ai_fix") {
+    const payload = parseAiFixCommentContent(comment.content);
+    if (payload.identityOperation) {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: true,
+        canPreview: true,
+      };
+    }
+  }
   const record = sectionContent as Record<string, unknown>;
   const resolved = resolveSuggestionMerge({
     section,
