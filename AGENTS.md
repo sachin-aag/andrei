@@ -75,29 +75,13 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - **Untrusted PDF/DOCX text** (`documentSummary`, `pageContext`, filenames,
   descriptions) goes through `sanitizePromptMetadata` before any prompt.
 - **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
- `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
- `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
- + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
- frozen-diff hash or a `too_large` → `draft_field` funnel. Same-turn
-  `propose_edit` cards in Document and Agent chrome fold when locatable
-  spans sit within 20 characters (no per-field card budget). Both chromes
-  propose; nothing lands until Apply / Dismiss (Apply all / Dismiss all
-  show for one or more open suggestions). One `edit_table` is one card;
-  wrap-up names `proposedRowKeys` only; the card title counts only cells
-  that actually change (identity Remarks Complies is not in N). QSR RTM
-  family columns / Remarks on the card are the grounded cells from chat
-  (`edit_table` insertText) — there is no family ranker that rewrites IQ
-  to PQ or swaps a neighbour heading. Existing Table 5–10 rows stored
-  Stage + Section: open / export / chat merge keeps URS identity and
-  Remarks, drops Stage / Section, and leaves DQ/IQ/OQ/PQ blank so the
-  assistant can refill (no SQL). A page counter (`16`) or logged
-  reading (`12.72 °C`) in Section still clears. Wrap-up quotes
-  `adjustedCells.saved` Section, not a different test heading. "Insert the suggestion" / "edit
-  the document" reads the section, then calls `edit_table` or `propose_edit`
-  — do not claim Agent mode is read-only or paste a markdown table. ELR
-  section numbers in chat are the Contents outline (3.10 Monitoring, 3.12
-  Preventive Maintenance, 3.15 Access Control). Printed Table N is the
-  context-map number, not `tableIndex`.
+  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`,
+  `ANALYTICS_CHAT_PROMPT_VERSION`. Chat suggestions persist `suggestionBase`
+  + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
+  frozen-diff hash or a `too_large` → `draft_field` funnel. Both chromes
+  propose; nothing lands until Apply / Dismiss. QSR/ELR card, grounding, and
+  remaining-section rules live in `.cursor/rules/chat-and-attachments.mdc`
+  (and `.cursor/rules/eval-and-suggestions.mdc` for apply/merge).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan. Internal `unsupported_tool` is the exception
@@ -137,142 +121,24 @@ Neon HTTP cannot `db.transaction()` (ingest + folder moves).
 ### Customer pack
 
 Local default is **demo** (Andrei branding, design verification, conclusion).
-Set both to `mj` to exercise the MJ overlay, both to `convergent` for
-Convergent Dental (DV only), or both to `3xper` for 3xper Innoventure
-(vendor qualification and qualification summary report):
+Set both `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same
+value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set.
+See `docs/whitelabel-vercel-deploy.md` (new pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer); 3xper product notes: `docs/3xper-deployment.md`).
 
 ```bash
 ANDREI_CUSTOMER=mj
 NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 ```
 
-They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
-`docs/whitelabel-vercel-deploy.md` (new pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer); 3xper product notes: `docs/3xper-deployment.md`). Primary sidebar is Reports, then Document
-Document vault (`/vault`), then Insights on demo only (`insightsEnabled`; MJ, Convergent, and 3xper hide the link and `/insights` redirects home). Demo also has Templates (`/templates`, `documentTemplatesEnabled`): always-open groups for Supply Chain, Design, Operations, and Quality, each with document tiles. New Report on demo opens that gallery; other packs keep the document-type dropdown. Vault Archive (bottom
-of the file list) hides files and folders without removing them from reports. The vault explorer is a Finder-style Name / Date / Size / Kind list; the file pane starts wide and a drag handle shrinks it so the document viewer can grow. Check files or folders and Share to grant other workspace users access (a folder shares every file inside it). Recipients see those files on the vault **Shared with me** tab (folder path preserved) and in Add from vault → Shared with me. Add from vault hides files already linked to the open report, and folders there collapse next to their checkboxes. Re-adding a file that was removed from the report restores that link — it does not insert a second row (the unique pair is live and tombstoned rows). Files that are already indexed stay instant; old or unprocessed vault files start ingest after Add from vault returns (the dialog is not held on Adding…). Leftover uploading/processing/queued links on an open report start on the next documents-panel poll. Never-started leftovers are not cancelled as stale; a false “ingestion stopped responding” row is retried on that poll. Ordinary failed ingest is not. They can preview and add them to reports; only the owner can move, archive, or change sharing. A vault scan or upload shows a spinner in the explorer toolbar and in the browser tab. Report workspace
-chrome is Document | Agent.
-New reports open in Agent; returning to a report restores that user's last
-chrome for it. Report | Analytics in the composer is independent of the focused canvas pane in both Document and Agent chrome (locked while a turn is running). Mixed Report + Analytics turns can share a thread; each message is tagged Report or Analytics (`chat_messages.metadata.chatTarget`, stamped by the route). Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. Closing an attachment (header Close or the tab X) restores the canvas tab that was active immediately before that file — not always Report, and not the tab to the left. History is on Report and Analytics (pane-scoped compare). Report compare diffs prose, every table, and added/removed figures; Analytics compare is a cell/plot list. Worksheet versions are `analyticsRevisions`, not `documentRevisions`. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent). The left documents rail is Attachments | Contents on every pack (tabs on the first row, folder/upload on the second while Attachments is selected); Contents is numbered 1. / 1.1 from the Word-recipe outline, or the editor section list when the type has no recipe.
-Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + Tukey boxplot + one-way ANOVA) and is on for demo, MJ,
-Convergent, and 3xper (`statisticalAnalysisEnabled`). Analytics chat uses the same
-shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep; Ask
-searches/extracts only; Agent fills the worksheet and runs plots when the
-report is writable). `@` tags set scope (sections in Document chat; sheets,
-plots, and files in Analytics; Document chat can also tag saved plots) — there is no section/sheet dropdown.
-Scatters: worksheet Plot → Plot measurements (`plot_xy_scatter`) has required
-numeric Y, optional X (omit = vs observation index), optional
-`legendColumnId` to color-code by a grouping column (labels/lots/serials
-are OK for legend, not for X), and a Chart type (scatter, line, line +
-markers, area, column). Column charts stack when a legend is on. **Advanced**
-(collapsed) sets min/max X and Y (blank = auto) and optional axis titles.
-Those display limits are not part of `sourceHash`. Agent
-Analytics chat can create a plot or edit an existing worksheet plot
-(`analysisId` from Results or an `@` tag): replace Y/X, set or clear the
-legend, change chart type, toggle Show LSL/USL, Show mean line, or set the axis window. Ask mode cannot. New plots default to scatter with
-spec lines off. **Show LSL, USL values** under Y is off by default (no spec
-lines until checked or the assistant turns them on). **Show mean line** is
-off by default (not in `sourceHash`): on a scatter it connects mean Y at
-each X (gray individuals when there is no legend; one line per legend
-series); on a boxplot it connects each box’s mean (the median line inside
-the box stays). Columns written from a
-file (`write_column` after extract/scan/read) keep page citations when known,
-or the document name when the page is unavailable, on the column and chart
-spec for CSV download. Plot figures do not show `p. N`.
-Analytics **Export with Excel charts** writes native Excel charts bound to
-numeric source tables (editable in Excel), not PNG snapshots. Histogram
-bars are one column per bin (gap fused). Overall/within fits and LSL/USL
-are an XY overlay on a numeric X axis so spec lines are vertical at the
-true limits and the bell is smooth.
-Editing a cell drops that citation. Attachment extract-and-plot is Analytics chat
-only (`plot_measurements`, or extract → `write_column` → `plot_xy_scatter`).
-There is no Plot-from-attachments menu. Do not substitute sixpack/ANOVA
-for a scatter, boxplot, or histogram.
-Plot → Histogram (`plot_histogram`) is the same frequency chart as the
-sixpack histogram (bars plus optional overall/within normal curves and
-LSL/USL lines). LSL/USL are optional. Overlay checkboxes
-`showDistributionLines`, `showLsl`, and `showUsl` default on; a spec line
-draws only when the value is set and the checkbox is on. Overlay flags
-are display-only (`sourceHash` is column + row selection). Agent Analytics
-chat can create a histogram or edit an existing one with `analysisId`.
-Ask mode cannot.
-Plot → Boxplot (`plot_boxplot`) is a Tukey box-and-whisker of numeric Y.
-Optional category columns (innermost first, closest to the boxes; last is
-the outermost nested axis label) group observed combinations only — not a
-full factorial. Zero categories is one box of all Y. Empty category cells
-are labeled `(blank)`. Agent Analytics chat can create a boxplot or edit
-an existing one with `analysisId` (including `showMeanLine`). Ask mode cannot. Time series is not
-supported.
-Right-click a data-sheet tab to rename it, or to delete it when another sheet
-remains. Double-click the tab, or Data → Rename data sheet, also renames the
-active sheet.
-Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
-assistant write; Agent `write_column` / `manage_worksheet` run one at a time
-per report and re-apply onto the latest sheet on 409 (parallel column dumps
-must not wipe each other). The grid ignores older snapshots and coalesces
-mid-turn reloads so extraction does not flash empty. New extract columns
-claim empty C1–C8 from the left (`write_column`
-and `add_column` without `at`) instead of appending on the right. Pass
-`sheetId` on `write_column` when the destination is not the engineer's
-focused tab (agent writes do not steal focus; `add_sheet` reuses a
-same-named tab). Report and
-Analytics chat have no per-turn tool-step cap (Cancel and the 270s server
-abort still apply). Do not add a tool-call count limit. Report Agent may
-persist a remaining-section queue on `chat_sessions.pending_plan` when the
-engineer asks to fill several empty `draftOrder` sections. Numbered TOC
-asks (`draft 5.2, 5.3, 5.4`) seed only those named empty sections before
-the whole-report leftover queue. Each turn drafts
-the current item (or two adjacent non-inventory sections). MJ ELR evidence
-sections stay in progress until that turn also drafts the assessment with a
-count (and `trend` / `overallGrade` / `recommendation` siblings); Access Control
-also stays in progress until every annexure Sr. row is copied, including the
-continuation page of a Page N of M split; ELR Attachments (`elr_attachments`)
-is rebuilt at Word export from the live file list and is not a remaining-section
-or Agent draft target; investigation
-and DV queues are unchanged. After persist the
-client POSTs `Continue the remaining sections.` with `autoContinue` (one
-live remaining-section widget **below the transcript**, not a user bubble and
-not in the auto-continue slot; collapsed is `N of M —
-current`, expand lists done / running / pending). Do not persist or show
-“The assistant stopped before finishing” when that next POST will run.
-Three remaining-section turns on the same in-progress item without
-completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including review-only
-270s aborts) pause the queue (`same_section_limit`); Resume clears
-attempts. The chip spins only while
-the turn is running; Cancel shows Paused, and a finished queue hides the
-chip. Working… hides when the
-stream is idle (do not leave a leftover send overlay after hydrate). The
-agent-done popup is `Assistant is done with {section}`. Cancel pauses the queue; a new typed prompt also
-pauses it. Reopening the thread does not auto-chain — Resume continues.
-Coverage identity for document review includes the current objective so a
-finished calibration walk does not satisfy monitoring. After a matching
-finish this turn, do not force another `start_document_review` because the
-inventory table is still empty — hide the review tools and draft
-(`edit_table`). When the 270s abort
-fires (not Cancel), capture `ai_chat_failed` with `site: deadline_abort`.
-Do not tell the engineer they ran out of steps or to re-prompt. Loop guards live in `prepareStep` (including `tableSchemaReadStep`
-on write turns whose in-scope section already has a table, and Analytics
-hiding `write_column` after a cited-page grep until a page is read, while
-any file still has extract `morePages` or scan `truncated` (a finished
-extract of file B does not unlock a partial write of file A), after two
-consecutive empty dumps — not after a dump with blank cells, hiding
-`ask_user` on lookups / Skip / after any grep until a page is read (never
-ask which page — search/scan and say found or not), and hiding
-`manage_worksheet` after the first structure call). One complete
-`write_column` per destination sheet — separate extracts per sheet are
-correct; always pass `sheetId`. `write_column` `mode append` adds rows onto
-an existing named column. `delete_row` accepts `rowEnd` for a range. Agent
-Analytics plans multi-table dumps and calls `extract_sheet` once per sheet
-in the same step (parallel workers create or reuse the tab and write; the
-grid stays on the engineer's current tab). Add or remove rows on an
-already-filled sheet with `extract_sheet` `mode edit` (worker appends or
-deletes; it does not replace the whole table unless asked). `write_column`
-trusts and atomically persists the extractor's complete batch without
-per-cell source-token verification. Live matrix
-headers come from the section (`read_section` / context map) — demo
-Traceability is not Convergent Results. Analytics `search_documents` is keyword-first and stops after a cited page —
-it does not reuse Document chat's grep-loop copy. TOC / running-header snippets that only list many requirement IDs are ranked last (`requirementIndex`) and a TOC-only grep retries excluding those pages. Document chat does not treat attachment cover sheets (`divider=true`), split-table hits (`continues=true` / Page N of M), or title lists without identifier values (`identityIncomplete=true`) as a complete cited data page — search stays open so the following page can be read or grep can continue for document / SOP / reference numbers. Analytics still stops after a real cited page. Document `read_document_page` includes the next page as `continuation` when the transcript prints Page N of M with N < M.
-Document chat copies a saved Analytics plot with `insert_image` (`source=analytics`)
-and can propose attachment `plot_measurements` figures on every pack.
+Sidebar is Reports, then Document vault (`/vault`). Insights (`/insights`) and
+Templates (`/templates`) are demo-only (`insightsEnabled` /
+`documentTemplatesEnabled`). Other packs hide those links and keep a
+document-type dropdown for New Report. Report chrome is Document | Agent;
+new reports open in Agent. Composer Report | Analytics is independent of the
+focused canvas pane. Scope is `@` tags. Analytics is on for every pack
+(`statisticalAnalysisEnabled`). Vault, remaining-section, plot, and worksheet
+loop details: `.cursor/rules/chat-and-attachments.mdc` and
+`.claude/skills/analytics-subsystem`.
 
 - `pnpm db:ensure-workspace-users` is Neon HTTP — **skip on local Docker**
   (`127.0.0.1` → `https://api.0.0.1/sql`). Create users with
@@ -326,42 +192,26 @@ Production attachment bytes: GCS (`GCS_BUCKET` + WIF). Local uploads:
 `ATTACHMENT_STORAGE_BACKEND=local` **and** `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`.
 Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
-## Chat + attachments (always-on summary)
+## Chat + attachments
+
+Always-on summary only. Full policy: `.cursor/rules/chat-and-attachments.mdc`
+and `.claude/skills/chat-subsystem`. Grounding incidents replay
+`edit_table` (`qsr-rtm-draft-replay.test.ts`) and `pnpm chat-eval -- --replay`.
 
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
-- Each turn: focused skims may inject `buildAutoEvidence` (≤1.5s, fail-soft).
-  Adaptive/comprehensive skip it so the model greps. Gap tools:
-  `list_attachments` (file-set: count/folders/types/status/filename-topic), `search_documents`
-  (multi-round grep), `document_outline`, `read_document_page`. File-set
-  questions must call `list_attachments` — do not recount the Documents index
-  or grep for an inventory. `searchLoopDirective` does not hide it. Which
-  files mention a fact *inside* a PDF is still `search_documents`.
-- Hybrid search = vector + English FTS (`websearch_to_tsquery`: quoted phrases stay intact, AND across concepts, OR only inside a phrase family such as Media Fill).
-  Identifier queries also match `document_pages.identifiers` (legacy rows fall
-  back to `ILIKE` on `raw_text`) and skip the query embedding when exact hits
-  already fill `limit`. Hits collapse to one chunk per page. The report body is
-  **not** chunk-indexed; use `read_section`. Living plan: `docs/retrieval.md`.
-- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is for complete inventories and open-set work products (e.g. drafting a DV report from a multi-page catalog) when evidence is distributed, and drains remaining pages in one continue with parallel extracts. A sentence/paragraph rewrite is adaptive even on a large catalog, and an earlier “draft the report” turn must not force another full page walk. Comprehensive shape, inventory-section escalation, and all-scope section intent score the latest user turn only (an earlier equipment/UUT draft must not keep “draft the remaining sections” on the adaptive path). Seeded tables whose cells are blank or unchanged from the template are empty, not partial (QSR 6.1 seed labels between tables and 6.3 Other Details Parameter / Details seed rows too; canned 1.2 Scope stays filled). Extra QSR RTM rows that only have `URS-N` in the ID column stay empty. Empty ELR inventory tables need a finished review whose coverage key matches that section (`|obj:`); a qualification walk does not unlock Associated Instruments, and a floor-8 finish that skipped selected files (CSV-OQ headers while the PRQR was not queued) does not unlock `edit_table`. Preferred inventory files with zero scored pages (PRQR/PMC on breakdowns, CCF/CAPA/PRQR on QMS, URS on QSR RTM / Operating Range) are still queued as a stratified sample — not every page of a 200-page CCF folder. QSR RTM / Operating Range reviews page-list the URS only (a 12-page URS is a 12-page walk — not DQ/IQ/OQ/PQ bodies) and skip URS demotion (a 5.1 URS walk unlocks 5.2–5.6; skipping DQ/IQ covers does not keep `edit_table` locked). NL RTM headings (control philosophy, GMP/safety requirements) collapse to `|obj:qsr_rtm` so a Gemini-named finish unlocks 5.2–5.4 instead of bouncing `review_incomplete`. Scored inventory pages then cap at `REVIEW_INVENTORY_WALK_CAP` (48) so remaining-section QMS can finish before the 270s abort; DV catalogs keep the listing cap. QSR Table 3 (`qsr_qualification_documents`) is not ELR qualification: do not demote URS or walk 48 protocol body pages — take cover pages of every attached lifecycle file and omit `attachmentIds`. A mixed review objective that also names another identity (SOP Number, Reference Number) is not a cover walk — collapse `|obj:` only when every named identity shares a page plan. QSR RTM / Operating Range omit `attachmentIds` so the server keeps the URS, not protocol bodies. A truncated matching finish does not restart `start_document_review` on remaining-section auto-continue. Breakdowns and Monitoring drop alarm-trend files and cite the already-drafted Alarm Trends table instead of walking those PDFs. Adaptive idle with an empty in-scope inventory forces `start_document_review`. `alreadyDrafted` does not skip that inventory walk. If `edit_table` returns `review_incomplete`, start the document review — do not empty tools or paste a markdown RTM. Gate empty tables only. `draft_field` of those table fields is refused (`use_edit_table`). Search hits include a ready `citation` bracket (`[filename, p. N]` when the page is known; `[filename]` only if missing or ambiguous). The saved field converts those to numbered `[n]` markers plus a trailing Citations: list on every pack — there is no inline `[filename, p. N]` document style. User-visible chat never quotes 24-character attachment / analysis / suggestion ids — `ChatMarkdown` rewrites them to filenames and plot titles (`rewriteInternalIdsForDisplay`). Do not reject or rewrite a draft that omitted a known page. Shared `searchLoopDirective` hides `search_documents` after a cited hit, locate/read, or two empty greps (not during an active document review, not when a tool returns `keepSearchOpen` / `unsupported_facts`, not when an identifier-only grep hit a protocol family until every attached protocol family (DQ, IQ, OQ, PQ) has been queried (any order), and not when every hit is an attachment cover sheet (`divider=true` / `dividerHits`) or a split table (`continues=true` / `continuationHits`)). Document chat also hides `ask_user` after a grep until `read_document_page`. Document review queues objective-matching pages (floor 8, nearby same-file pages only; `REVIEW_PAGE_FETCH_CAP` is listing safety only). Transcript-backed batches skip the extract LLM. `continue_document_review` drains an 8-wide worker pool in one call and stops starting new batches after ~60s, round-robining across attachments. Rehydrate only a finish with `status=complete` and `truncated !== true`; the `coverageKey` is the selected documents' full page counts plus `|obj:`. `finish_document_review` returns a capped findings sample (split-table / objective-named pages are pinned, then fair-share by attachment — not FIFO); follow-up turns keep a slim `citationDigest` of `[filename, p. N]` plus a short summary (not the full findings array) so a 273-page review cannot 500 the next message. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
-- Hard facts copied from attachments (dates, identifiers, measured numbers, SOP numbers) in `draft_field` / `propose_edit` / `edit_table` must match a quote on a page this turn retrieved (`CitationPageLedger` + `groundDraftText`). That is fact-level, not section-level — Purpose, Responsibilities, assessments, and recaps still cite copied attachment facts. Exempt only title-page / user-confirmed identity, the ELR 1 April–31 March window, and facts already written in this report (sibling table or another section). Inventory tables stay strict. High-collision dates keep the cited file/page instead of stealing the first SOP/PRQ page; identifier mismatches still move. A named date column (Effective Date) must match the source value next to that same label — a signature or observation date on the cited page is not enough. `finish_document_review` seeds the ledger with `reviewedEvidence` (every walked page, not the 60-finding sample) so later drafts can hydrate those transcripts. Empty ledger or pages with no served quotes fail open, except QSR RTM / Operating Range / Qual Docs / References, which fail closed when the URS or source protocol is attached but unread. On those QSR rows a number or description must not come from a neighbour URS-N window (`qsr-row-grounding.ts`) — same-page bag-of-quotes that belongs to another URS ID still bounce. Facts on the URS cover or outside any URS-N window (capacity, MOC) may be copied onto the matching row. A column-major URS page (one or more blocks of IDs, then the requirement sentences) keeps each block's sentences out of the last ID's window and still lets every ID in that block use them, even when another row's parameter shares a word such as glass or thickness. URS-1 does not match URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing. Digits in URS-N are not a measured number. A decimal such as 25.0 is not a measured zero. OCR-split 3 . 5 is 3.5, not a leftover <number> for the engineer to type. Stock Complies / bare Section 13 and a DQ date on a URS row are rejected unless that protocol page names the ID or topic-matches that row's Parameters in the protocol body (not the running header). Verified on the result line counts as a pass; Verified By in a signature block does not. An executed verification record (Actual observation / Verified By columns plus a signature date that is not the Effective Date / Issued On header date) is also a pass even with no pass word — signed IQ spec tables never print Complies; an unexecuted template (no signature date) and any fail / does not meet statement are not. A fail statement vetoes every pass token (`does not meet` is not `meet`). Unsupported family-column / Remarks cells clear instead of blocking the URS copy. An explicit empty `edit_cells` of filled DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when the URS is attached but unread this turn. Protocol N/A becomes Remarks NA only at row level — a labeled Result / Remarks N/A, `not applicable for this …`, or a bare N/A inside that row's URS-N window. A stray `Model Number NA` spec cell on an executed IQ page does not make the row NA. Each family column is `{protocol section number} – {one audit line from that section}` (`8.2.3 – Heating trial at 8000 L working volume` or `8.2.3 – Fill the reactor to 8000 L`; a heading title is not required); the card copies grounded family-column / Remarks from chat, and wrap-up quotes `adjustedCells.saved` not a different test heading; two tests may share `/` or `&` (`8.2.4 / 8.8`); page numbers (`Page 21 of 51` or a bare `16` / `14`) and logged readings (`12.72 °C`) are stripped (`rtmSectionCellText`) — PQ/OQ/IQ keep dotted `8.2.3` / `8.1.1` / `13.6`, never the printed page counter; Stage `[file, p. N]` is the page that prints that heading; header blocks (Capacity/Size, Effective Date), signatures, dates, and cut-off `Gr.` abbreviations are stripped. Wrap-up must not paste a markdown table of requested RTM rows — report `adjustedCells.saved` (empty = left blank), never PQ/OQ as Stage. When `edit_table` saves a cell differently from the request (Remarks cleared), the `proposed` result lists `adjustedCells` (`requested` / `saved`) and the wrap-up must report the saved value, not claim Complies landed. When several protocol families match a row, fill each matching family column from that protocol (NA if searched and not found). The card keeps that grounded family-column text; it does not rewrite IQ into PQ. Empty remaining family cells stay empty until that protocol is queried. Every pack uses `block` (do not persist invented hard facts; return `unsupported_facts`). A blocked write runs one closed-set repair search, seeds new quotes, and re-grounds the original text (not an LLM subagent). Prose leftover `<date>` / `<identifier>` / `<number>` persist after that lookup when the facts are still missing. Table leftovers bounce once (`unsupported_facts` + `keepSearchOpen`) so a subsequent grep can still fill `<Units Filled>` / `<date>`; a retry in the same turn may persist leftover `<date>` / `<identifier>` / `<number>`, but other leftover `<…>` cells are dropped instead of persisting `<remarks>` / `<result>`. Uncited numbers do not `citation_move` onto a coincidental ledger page (unique identifier pin and unique same-file hit still retarget). Analytics `write_column` is not gated. Suggestion cards show Traceability. Audit `claim_verified` / `claim_unsupported`.
-- Clicking a citation in the document, chat, or suggestion Sources opens or reuses that file's canvas tab and scrolls the PDF to the cited page (Word preview cannot jump to a page). Combined `[file A, p. N, file B, p. M]` (two extensions, comma, or semicolon) is two links. Compact `[E-PR-068 and E-PR-071.pdf, p. 1]` is two links only when those files are attached (or on the citation ledger); otherwise it stays one filename. English `and` titles (`QDF-Filling and capping machine.pdf`) stay one link. Missing or ambiguous filenames toast instead of opening a tab. This is an in-app tab, not a browser tab. Open attachment tabs stay mounted while you switch to Report or another file (no “Loading preview…” on return; the PDF stays on the page you left). Closing the tab (header Close or the tab X) restores the last canvas tab you had open and drops the document; a later open may load again, restored to that last page.
-- Follow the latest user message. Ask vs Agent is per send, not the whole thread — a prior assistant note that this conversation is in Ask mode is stale once the composer is Agent (`composer-mode-reminder.ts`; “I switched to Agent” / yes after Ask-mode switch copy is write). Agent mode may edit when they asked to write; empty sections and ready attachments are not a request to draft. A greeting (“hi”) must not search or write — `classifyChatUserIntent` strips tools (Document and Analytics). Ambiguous Agent-mode text (“plan the first 3 sections”) is classified by a gated Flash-Lite call (`resolveChatUserIntent`); greetings and explicit draft/write verbs stay on rules. Document chat also reuses that call when the text looks like a worksheet dump; if Lite is ≥0.75 sure the destination is the Analytics grid, Report chat shows a Switch to Analytics button (clicking it sets Analytics and resends the original request) and does not paste a markdown table. A “go for it” / yes after that switch copy is a write, not small talk. Agent-mode “go for it” / “do it” is write even after a findings dump. Polite leftovers (“can you do the same for @Section”) go to Flash-Lite (`ambiguous_polite_request`); real lookups (`what` / `do you`) stay on rules. Missing-work complaints (“nothing was filled”, “why isn't the table filled”, “I don't see the change”) are write on Agent so Lite is skipped. Retrieval maps those turns to focused (`no_task`) and skips kickoff evidence. A confirmation that carries its own instruction (“yes put it in the data worksheet”) is a **write**: the affirmation prefix is stripped and the remainder classified, and an Analytics worksheet/sheet/column destination counts as a write even when the verb is not in `WRITE_RE`. When intent hides the write tools, the prompt says they start hidden (`intentToolAvailabilityRule`). Agent read keeps them registered on the ToolSet; a remapped `unsupported_tool` unlocks them on the next step (Document and Analytics). `list_suggestions` lists open / approved / dismissed AI cards (section + preview, no comment ids); wrap-up must not claim a fill unless a tool this turn returned proposed, drafted, or applied.
-- Composer scope is `@` tags (`sectionScopeFromMentions` / analytics mentions),
-  not dropdowns. Bare `@` opens a hierarchy: Attachments first (folder tree of
-  ready files), then Document sections or Data sheets depending on Report vs
-  Analytics. Typing filters every leaf with no 8-item cap. Document and
-  Analytics share `ChatPanel`; a composer or tool
-  change must land on both surfaces and both chromes (Hard rules spectrum).
-  Empty-state Document chips are `chat.examplePrompts` on the document type
-  (not DMAIC-hardcoded). Analytics chips stay worksheet/plot copy.
-  Voice dictation is the shared mic (right of the image icon): click to start,
-  click to stop. PCM is buffered while recording (bigger wave + “Transcript
-  appears when you stop”); one Vertex Gemini transcribe (Flash-Lite) runs after
-  stop and fills the composer. No live interim text, no SSE. MJ transcribes English/Hindi/Marathi
-  in native script (Devanagari preferred); other packs are English. The LLM
-  still replies in English. Stub: `ALLOW_TEST_STUB_SPEECH`
+  File-set questions use `list_attachments`; facts *inside* a PDF use
+  `search_documents`. Report body is not chunk-indexed — use `read_section`.
+  Living plan: `docs/retrieval.md`.
+- Search-then-ask. Default retrieval is adaptive. Empty inventory tables need
+  a finished matching document review before `edit_table`. Hard facts in write
+  tools must match a retrieved quote (`groundDraftText`). Every pack uses
+  `unsupportedFactPolicy: block`. Analytics `write_column` is not gated.
+- Saved fields use numbered `[n]` markers plus a trailing Citations list.
+  Clicking a citation opens the in-app attachment tab (not a browser tab).
+- Follow the latest user message. Ask vs Agent is per send. Greetings strip
+  tools. Composer scope is `@` tags. Voice is click start / click stop
+  (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
-- Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
-  tool selection. Spec: `e2e/report-chat.spec.ts`.
 
 ## Turbopack 404
 
@@ -373,13 +223,12 @@ optionally `rm -rf .next`. Not a code bug.
 
 - Vitest: `pnpm test` — mocked env, no DB. Colocate `*.test.ts(x)` next to
   source. When a module is renamed, split, or deleted, rename/split/delete
-  its test file — do not leave `section-scope.test.ts` after `section-scope.ts`
-  is gone, and do not keep tombstone `not.toContain("old dropdown")` tests.
-  Grep the old symbol in `*.test.*` and `e2e/` before calling a removal done.
-  Production grounding incidents (QSR section 5 overblock, mixed-identity
-  cover walks, SOP title lists without numbers): replay `edit_table` through
-  `buildChatTools` (`qsr-rtm-draft-replay.test.ts`) and the git-owned quality
-  floor (`pnpm chat-eval -- --replay`; `scripts/eval/chat-draft-cases.json`).
+  the test file. Assert the current contract. Do not keep tombstone
+  `not.toContain("old dropdown")` tests, and do not pin prompt wording with
+  long `toContain` lists — composition and replay tests own that. Grep the
+  old symbol in `*.test.*` and `e2e/` before calling a removal done.
+  Production grounding incidents: `qsr-rtm-draft-replay.test.ts` and
+  `pnpm chat-eval -- --replay` (`scripts/eval/chat-draft-cases.json`).
   Optional Langfuse dataset `chat-draft-quality-floor` via `--sync` /
   `--experiment`. Playwright stub chat cannot assert tools.
 - Playwright: `pnpm test:e2e` — needs `DATABASE_URL`, serves
