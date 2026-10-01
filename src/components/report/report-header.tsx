@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { useAutoSave } from "@/hooks/use-auto-save";
+import { useAutoSave, type SaveStatus as SaveStatusType } from "@/hooks/use-auto-save";
 import { useIdentityFormSave } from "@/hooks/use-identity-form-save";
 import { SaveStatus } from "./save-status";
 import { IdentitySuggestionField } from "./identity-suggestion-field";
@@ -179,6 +179,23 @@ function IdentityHeaderShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function IdentitySaveRow({
+  readOnly,
+  status,
+  lastSavedAt,
+}: {
+  readOnly: boolean;
+  status: SaveStatusType;
+  lastSavedAt: Date | null;
+}) {
+  if (readOnly) return null;
+  return (
+    <div className="flex justify-end">
+      <SaveStatus status={status} lastSavedAt={lastSavedAt} />
+    </div>
+  );
+}
+
 function mergeIdentityMetadata(
   prev: ReportRecord,
   meta: Record<string, unknown>
@@ -237,15 +254,11 @@ function ElrIdentityForm({
     <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            Identity fields print on the Word title page. Format No.
-            SOP/DP/QA/014/F22-R00 is proposed — the SOP does not yet assign an
-            ELR form number. A separate ELR is compiled for each container format;
-            line-level records are reported in both and marked Line-common.
-          </p>
-          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
-        </div>
+        <IdentitySaveRow
+          readOnly={readOnly}
+          status={status}
+          lastSavedAt={lastSavedAt}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="elr-report-no"
@@ -456,13 +469,11 @@ function QraIdentityForm({
     <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            Identity fields print in the Word header. Pre/post approval are
-            signature placeholders.
-          </p>
-          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
-        </div>
+        <IdentitySaveRow
+          readOnly={readOnly}
+          status={status}
+          lastSavedAt={lastSavedAt}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="qra-ra-no"
@@ -623,13 +634,11 @@ function FirIdentityForm({
     <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            Identity fields print in the R01 header. The assistant searches
-            attachments and can fill unset fields.
-          </p>
-          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
-        </div>
+        <IdentitySaveRow
+          readOnly={readOnly}
+          status={status}
+          lastSavedAt={lastSavedAt}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="fir-source-doc-no"
@@ -743,13 +752,11 @@ function QsrIdentityForm({
     <IdentityHeaderShell>
     <Card>
       <CardContent className="space-y-4 p-5">
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            These fields print on the cover page and in every page header of
-            QAD/016/F06-00.
-          </p>
-          {!readOnly && <SaveStatus status={status} lastSavedAt={lastSavedAt} />}
-        </div>
+        <IdentitySaveRow
+          readOnly={readOnly}
+          status={status}
+          lastSavedAt={lastSavedAt}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <IdentityField
             id="qsr-equipment-name"

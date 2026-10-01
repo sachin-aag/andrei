@@ -69,7 +69,6 @@ export function DvCoverPageEditor() {
     <section id="identity" className="space-y-2">
       <SectionShell
         title="Cover Page"
-        description="Document identity fields used for evaluation and export."
         status={status}
         lastSavedAt={lastSavedAt}
         section="cover_page"
