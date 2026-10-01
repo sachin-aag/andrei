@@ -31,6 +31,7 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
+  sectionOrderWithOpenSuggestions,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
@@ -656,8 +657,12 @@ export function SectionSuggestionCard({
   const enterRef = useRef<HTMLDivElement>(null);
 
   const sectionOrder = useMemo(
-    () => suggestionCardSectionKeys(report.documentType),
-    [report.documentType]
+    () =>
+      sectionOrderWithOpenSuggestions(
+        suggestionCardSectionKeys(report.documentType),
+        comments
+      ),
+    [report.documentType, comments]
   );
 
   const queue = useMemo(
