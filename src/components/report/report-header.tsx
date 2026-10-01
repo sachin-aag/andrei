@@ -136,7 +136,6 @@ function IdentityField({
   label,
   value,
   disabled,
-  placeholder,
   onChange,
   fieldKey,
   type = "text",
@@ -145,7 +144,6 @@ function IdentityField({
   label: string;
   value: string;
   disabled: boolean;
-  placeholder?: string;
   onChange: (next: string) => void;
   fieldKey: string;
   type?: "text" | "date";
@@ -156,7 +154,6 @@ function IdentityField({
       label={label}
       value={value}
       disabled={disabled}
-      placeholder={placeholder}
       onChange={onChange}
       fieldKey={fieldKey}
       type={type}
@@ -249,7 +246,6 @@ function ElrIdentityForm({
             fieldKey="documentNo"
             label="ELR Report No."
             value={documentNo}
-            placeholder="ELR/DP/PR/26/001"
             disabled={readOnly}
             onChange={setDocumentNoLive}
           />
@@ -266,7 +262,6 @@ function ElrIdentityForm({
             fieldKey="equipmentName"
             label="Equipment name"
             value={meta.equipmentName}
-            placeholder="Filling and Capping Machine"
             disabled={readOnly}
             onChange={set("equipmentName")}
           />
@@ -275,7 +270,6 @@ function ElrIdentityForm({
             fieldKey="equipmentMake"
             label="Equipment make"
             value={meta.equipmentMake}
-            placeholder="Steriline SRL"
             disabled={readOnly}
             onChange={set("equipmentMake")}
           />
@@ -284,7 +278,6 @@ function ElrIdentityForm({
             fieldKey="equipmentModel"
             label="Equipment model"
             value={meta.equipmentModel}
-            placeholder="VKFCM168"
             disabled={readOnly}
             onChange={set("equipmentModel")}
           />
@@ -293,7 +286,6 @@ function ElrIdentityForm({
             fieldKey="equipmentId"
             label="Equipment ID"
             value={meta.equipmentId}
-            placeholder="E/PR/070"
             disabled={readOnly}
             onChange={set("equipmentId")}
           />
@@ -302,7 +294,6 @@ function ElrIdentityForm({
             fieldKey="systemId"
             label="Associated computerized system / ID"
             value={meta.systemId}
-            placeholder="SCADA for Filling Line (E/PR/077)"
             disabled={readOnly}
             onChange={set("systemId")}
           />
@@ -311,7 +302,6 @@ function ElrIdentityForm({
             fieldKey="formatScope"
             label="Container format / product scope"
             value={meta.formatScope}
-            placeholder="Vial"
             disabled={readOnly}
             onChange={set("formatScope")}
           />
@@ -320,7 +310,6 @@ function ElrIdentityForm({
             fieldKey="location"
             label="Location / area"
             value={meta.location}
-            placeholder="Filling and capping room (GF-89)"
             disabled={readOnly}
             onChange={set("location")}
           />
@@ -337,7 +326,6 @@ function ElrIdentityForm({
             fieldKey="riskClassification"
             label="System impact (SLIA)"
             value={meta.riskClassification}
-            placeholder="Direct Impact"
             disabled={readOnly}
             onChange={set("riskClassification")}
           />
@@ -346,7 +334,6 @@ function ElrIdentityForm({
             fieldKey="elrFrequency"
             label="ELR frequency (per VMP)"
             value={meta.elrFrequency}
-            placeholder="Half yearly"
             disabled={readOnly}
             onChange={set("elrFrequency")}
           />
@@ -373,7 +360,6 @@ function ElrIdentityForm({
             fieldKey="lastPrqNo"
             label="Last PRQ No."
             value={meta.lastPrqNo}
-            placeholder="PRQR-25-PR-060"
             disabled={readOnly}
             onChange={set("lastPrqNo")}
           />
@@ -483,7 +469,6 @@ function QraIdentityForm({
             fieldKey="documentNo"
             label="RA Number"
             value={documentNo}
-            placeholder="RA/DP/QA/26/001"
             disabled={readOnly}
             onChange={setDocumentNoLive}
           />
@@ -651,7 +636,6 @@ function FirIdentityForm({
             fieldKey="documentNo"
             label="Source Document No."
             value={documentNo}
-            placeholder="ERF/26/022"
             disabled={readOnly}
             onChange={setDocumentNoLive}
           />
@@ -669,7 +653,6 @@ function FirIdentityForm({
             fieldKey="productName"
             label="Product name"
             value={meta.productName}
-            placeholder="r-Insulin Glargine"
             disabled={readOnly}
             onChange={set("productName")}
           />
@@ -678,7 +661,6 @@ function FirIdentityForm({
             fieldKey="batchNo"
             label="Batch No."
             value={meta.batchNo}
-            placeholder="RIG25014"
             disabled={readOnly}
             onChange={set("batchNo")}
           />
@@ -687,7 +669,6 @@ function FirIdentityForm({
             fieldKey="equipmentId"
             label="Equipment ID"
             value={meta.equipmentId}
-            placeholder="L-1901"
             disabled={readOnly}
             onChange={set("equipmentId")}
           />
@@ -782,7 +763,6 @@ function QsrIdentityForm({
             fieldKey="equipmentName"
             label="Equipment / System"
             value={meta.equipmentName}
-            placeholder="Glass Lined Reactor"
             disabled={readOnly}
             onChange={set("equipmentName")}
           />
@@ -791,7 +771,6 @@ function QsrIdentityForm({
             fieldKey="equipmentCode"
             label="Equipment Number"
             value={meta.equipmentCode}
-            placeholder="GLR-1301"
             disabled={readOnly}
             onChange={set("equipmentCode")}
           />
@@ -800,7 +779,6 @@ function QsrIdentityForm({
             fieldKey="capacity"
             label="Capacity / Size"
             value={meta.capacity}
-            placeholder="3.0 KL"
             disabled={readOnly}
             onChange={set("capacity")}
           />
@@ -809,7 +787,6 @@ function QsrIdentityForm({
             fieldKey="plantSection"
             label="Section"
             value={meta.plantSection}
-            placeholder="Production Block-A"
             disabled={readOnly}
             onChange={set("plantSection")}
           />
@@ -818,7 +795,6 @@ function QsrIdentityForm({
             fieldKey="documentNo"
             label="Report No."
             value={documentNo}
-            placeholder="QSR/GLR-1301"
             disabled={readOnly}
             onChange={setDocumentNoLive}
           />
@@ -827,7 +803,6 @@ function QsrIdentityForm({
             fieldKey="revision"
             label="Revision"
             value={meta.revision}
-            placeholder="00"
             disabled={readOnly}
             onChange={set("revision")}
           />
@@ -836,7 +811,6 @@ function QsrIdentityForm({
             fieldKey="revisionDescription"
             label="Revision description"
             value={meta.revisionDescription}
-            placeholder="New Document"
             disabled={readOnly}
             onChange={set("revisionDescription")}
           />

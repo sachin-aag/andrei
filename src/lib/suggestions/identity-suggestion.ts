@@ -10,7 +10,6 @@ import {
 } from "@/lib/ai/chat/identity";
 import type { DocumentType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
-import type { PlainTextPreviewSegment } from "@/lib/suggestions/plain-text-preview";
 
 export type IdentityOperation = {
   fields: IdentityFieldPatch[];
@@ -256,19 +255,6 @@ export function mergeIdentitySuggestion(input: {
     applied: update.applied,
     skipped,
   };
-}
-
-export function identityFieldPreviewSegments(
-  live: string,
-  proposed: string | undefined
-): PlainTextPreviewSegment[] | null {
-  if (proposed === undefined || live === proposed) return null;
-  if (!live) return [{ kind: "insert", text: proposed }];
-  if (!proposed) return [{ kind: "delete", text: live }];
-  return [
-    { kind: "delete", text: live },
-    { kind: "insert", text: proposed },
-  ];
 }
 
 export function identityCurrentFromReport(report: {

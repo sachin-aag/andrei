@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -7,11 +8,9 @@ import {
   useReportEvaluations,
 } from "@/providers/report-provider";
 import {
-  identityFieldPreviewSegments,
   openIdentitySuggestion,
   proposedIdentityValue,
 } from "@/lib/suggestions/identity-suggestion";
-import type { PlainTextPreviewSegment } from "@/lib/suggestions/plain-text-preview";
 
 export function useIdentitySavePaused(): boolean {
   const { comments } = useReportComments();
@@ -22,34 +21,11 @@ export function useIdentitySavePaused(): boolean {
   );
 }
 
-function PreviewRun({
-  segment,
-}: {
-  segment: PlainTextPreviewSegment;
-}) {
-  if (segment.kind === "delete") {
-    return (
-      <span className="suggestion-delete suggestion-delete-ai">
-        {segment.text}
-      </span>
-    );
-  }
-  if (segment.kind === "insert") {
-    return (
-      <span className="suggestion-insert suggestion-insert-ai">
-        {segment.text}
-      </span>
-    );
-  }
-  return <span>{segment.text}</span>;
-}
-
 export function IdentitySuggestionField({
   id,
   label,
   value,
   disabled,
-  placeholder,
   onChange,
   fieldKey,
   type = "text",
@@ -58,16 +34,16 @@ export function IdentitySuggestionField({
   label: string;
   value: string;
   disabled: boolean;
-  placeholder?: string;
   onChange: (next: string) => void;
   fieldKey: string;
   type?: "text" | "date";
 }) {
   const { comments } = useReportComments();
   const proposed = proposedIdentityValue(comments, fieldKey);
-  const segments = identityFieldPreviewSegments(value, proposed);
-  const showOverlay = type === "text" && segments != null;
-  const showDateChip = type === "date" && proposed !== undefined && proposed !== value;
+  const showOverlay =
+    type === "text" && proposed !== undefined && proposed !== value;
+  const showDateChip =
+    type === "date" && proposed !== undefined && proposed !== value;
 
   return (
     <div className="grid gap-1.5" data-field-anchor={`identity.${fieldKey}`}>
@@ -77,26 +53,36 @@ export function IdentitySuggestionField({
           id={id}
           type={type}
           value={value}
-          placeholder={placeholder}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className={showOverlay ? "text-transparent caret-foreground" : undefined}
+          className={
+            showOverlay
+              ? "text-transparent caret-foreground selection:bg-primary/20 selection:text-transparent"
+              : undefined
+          }
+          style={
+            showOverlay
+              ? ({ WebkitTextFillColor: "transparent" } as CSSProperties)
+              : undefined
+          }
         />
         {showOverlay ? (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 flex items-center overflow-hidden px-3 text-sm whitespace-nowrap"
           >
-            {segments.map((segment, index) => (
-              <PreviewRun key={`${segment.kind}-${index}`} segment={segment} />
-            ))}
+            <span className="suggestion-insert suggestion-insert-ai">
+              {proposed}
+            </span>
           </div>
         ) : null}
       </div>
       {showDateChip ? (
         <p className="text-xs text-[var(--muted-foreground)]">
           Proposed{" "}
-          <span className="suggestion-insert suggestion-insert-ai">{proposed}</span>
+          <span className="suggestion-insert suggestion-insert-ai">
+            {proposed}
+          </span>
         </p>
       ) : null}
     </div>

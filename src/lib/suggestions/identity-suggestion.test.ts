@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import {
   foldIdentityPayload,
-  identityFieldPreviewSegments,
   identitySnapshotMap,
   identitySuggestionInsertText,
   mergeIdentitySuggestion,
@@ -194,22 +193,6 @@ describe("remainingRequiredAfterIdentityIntent", () => {
         { equipmentName: "Glass Lined Reactor" }
       )
     ).toContain("documentNo");
-  });
-});
-
-describe("identityFieldPreviewSegments", () => {
-  it("shows insert, delete, or both", () => {
-    expect(identityFieldPreviewSegments("", "QSR/1")).toEqual([
-      { kind: "insert", text: "QSR/1" },
-    ]);
-    expect(identityFieldPreviewSegments("old", "")).toEqual([
-      { kind: "delete", text: "old" },
-    ]);
-    expect(identityFieldPreviewSegments("old", "new")).toEqual([
-      { kind: "delete", text: "old" },
-      { kind: "insert", text: "new" },
-    ]);
-    expect(identityFieldPreviewSegments("same", "same")).toBeNull();
   });
 });
 
