@@ -209,6 +209,18 @@ describe("proposedIdentityValue", () => {
     expect(proposedIdentityValue(comments, "documentNo")).toBe("QSR/1");
     expect(proposedIdentityValue(comments, "equipmentName")).toBeUndefined();
   });
+
+  it("keeps ELR title-page dates as written", () => {
+    const comments = [
+      comment({
+        identityOperation: {
+          fields: [{ key: "periodFrom", value: "01-Apr-2025" }],
+        },
+        suggestionIntent: { periodFrom: "01-Apr-2025" },
+      }),
+    ];
+    expect(proposedIdentityValue(comments, "periodFrom")).toBe("01-Apr-2025");
+  });
 });
 
 describe("identitySnapshotMap", () => {

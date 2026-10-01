@@ -1062,6 +1062,15 @@ describe("ELR periodic re-qualification schedule", () => {
       /period end/i
     );
   });
+
+  it("reads 01-Apr title-page dates the same as ISO", () => {
+    expect(
+      schedule({ nextPrqDate: "01-Apr-2026", periodTo: "31-Mar-2026" }).status
+    ).toBe("met");
+    expect(
+      schedule({ nextPrqDate: "15-Aug-2026", periodTo: "31-Mar-2027" }).status
+    ).toBe("not_met");
+  });
 });
 
 describe("ELR qualification follow-up", () => {

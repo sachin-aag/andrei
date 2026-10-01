@@ -138,7 +138,6 @@ function IdentityField({
   disabled,
   onChange,
   fieldKey,
-  type = "text",
 }: {
   id: string;
   label: string;
@@ -146,7 +145,6 @@ function IdentityField({
   disabled: boolean;
   onChange: (next: string) => void;
   fieldKey: string;
-  type?: "text" | "date";
 }) {
   return (
     <IdentitySuggestionField
@@ -156,7 +154,6 @@ function IdentityField({
       disabled={disabled}
       onChange={onChange}
       fieldKey={fieldKey}
-      type={type}
     />
   );
 }
@@ -340,7 +337,6 @@ function ElrIdentityForm({
           <IdentityField
             id="elr-period-from"
             fieldKey="periodFrom"
-            type="date"
             label="ELR period — from"
             value={meta.periodFrom}
             disabled={readOnly}
@@ -349,7 +345,6 @@ function ElrIdentityForm({
           <IdentityField
             id="elr-period-to"
             fieldKey="periodTo"
-            type="date"
             label="ELR period — to"
             value={meta.periodTo}
             disabled={readOnly}
@@ -366,7 +361,6 @@ function ElrIdentityForm({
           <IdentityField
             id="elr-last-prq-date"
             fieldKey="lastPrqDate"
-            type="date"
             label="Last PRQ completion date"
             value={meta.lastPrqDate}
             disabled={readOnly}
@@ -375,7 +369,6 @@ function ElrIdentityForm({
           <IdentityField
             id="elr-next-prq-date"
             fieldKey="nextPrqDate"
-            type="date"
             label="Next PRQ due date"
             value={meta.nextPrqDate}
             disabled={readOnly}
@@ -475,7 +468,6 @@ function QraIdentityForm({
           <IdentityField
             id="qra-date"
             fieldKey="date"
-            type="date"
             label="Date"
             value={date}
             disabled={readOnly}
@@ -642,7 +634,6 @@ function FirIdentityForm({
           <IdentityField
             id="fir-date"
             fieldKey="date"
-            type="date"
             label="Date of non-conformance"
             value={date}
             disabled={readOnly}

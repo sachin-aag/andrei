@@ -16,6 +16,9 @@ describe("recommendation schedule", () => {
       recommendationHasCalendarDate("CAPA closes on 31 October 2026.")
     ).toBe(true);
     expect(recommendationHasCalendarDate("Review in Oct 2026.")).toBe(true);
+    expect(recommendationHasCalendarDate("Next PRQ is due 01-Apr-2027.")).toBe(
+      true
+    );
     expect(recommendationHasCalendarDate("No action required.")).toBe(false);
   });
 
@@ -51,6 +54,9 @@ describe("recommendation schedule", () => {
     expect(recommendationMentionsDate("due 15/08/2027 annually", "2027-08-15")).toBe(
       true
     );
+    expect(
+      recommendationMentionsDate("Next PRQ is due 01-Apr-2027 annually", "2027-04-01")
+    ).toBe(true);
   });
 
   it("flags vague timing words", () => {
