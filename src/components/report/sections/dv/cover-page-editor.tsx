@@ -16,6 +16,20 @@ import {
 import type { DesignVerificationMetadata } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 
+async function patchIdentityReport(
+  reportId: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+) {
+  const res = await fetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error("Save failed");
+}
+
 export function DvCoverPageEditor() {
   const { report, setReport, readOnly } = useReportData();
   const [documentNo, setDocumentNo] = useState(report.documentNo);
@@ -31,18 +45,14 @@ export function DvCoverPageEditor() {
     enabled: !readOnly && !pauseSave,
     value: { documentNo, meta },
     onSave: async (v, context) => {
-      const res = await fetch(`/api/reports/${report.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await patchIdentityReport(
+        report.id,
+        {
           documentNo: v.documentNo.trim(),
           metadata: v.meta,
-        }),
-        signal: context?.signal,
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
-      setReport(data.report);
+        },
+        context?.signal
+      );
     },
   });
 
@@ -58,7 +68,10 @@ export function DvCoverPageEditor() {
     (key: keyof DesignVerificationMetadata) => (next: string) => {
       setMeta((prev) => {
         const metadata = { ...prev, [key]: next };
-        setReport((r) => ({ ...r, metadata }));
+        setReport((r) => ({
+          ...r,
+          metadata: { ...(r.metadata as Record<string, unknown>), ...metadata },
+        }));
         return metadata;
       });
     },

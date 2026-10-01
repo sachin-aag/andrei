@@ -31,6 +31,31 @@ import {
   type QsrMetadata,
 } from "@/lib/document-types/qsr/sections";
 import type { SectionType } from "@/db/schema";
+import { parseIdentityDate } from "@/lib/ai/chat/identity";
+
+async function patchIdentityReport(
+  reportId: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+) {
+  const res = await fetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new Error("Save failed");
+}
+
+function identityDatePatch(value: string): string | undefined {
+  const isoDay = parseIdentityDate(value);
+  return isoDay ? new Date(`${isoDay}T00:00:00.000Z`).toISOString() : undefined;
+}
+
+/** Keep ISO days as YYYY-MM-DD; leave free-text identity dates intact. */
+function identityDateInputValue(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value;
+}
 
 function ReportHeaderForm({
   report,
@@ -197,18 +222,14 @@ function ElrIdentityForm({
     enabled: !readOnly && !pauseSave,
     value: { documentNo, meta },
     onSave: async (v, context) => {
-      const res = await fetch(`/api/reports/${report.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await patchIdentityReport(
+        report.id,
+        {
           documentNo: v.documentNo.trim(),
           metadata: v.meta,
-        }),
-        signal: context?.signal,
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
-      setReport(data.report);
+        },
+        context?.signal
+      );
     },
   });
 
@@ -219,7 +240,10 @@ function ElrIdentityForm({
   const set = (key: keyof ElrMetadata) => (next: string) => {
     setMeta((prev) => {
       const meta = { ...prev, [key]: next };
-      setReport((r) => ({ ...r, metadata: meta }));
+      setReport((r) => ({
+        ...r,
+        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+      }));
       return meta;
     });
   };
@@ -398,12 +422,12 @@ function QraIdentityForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [date, setDate] = useState(report.date.slice(0, 10));
+  const [date, setDate] = useState(() => identityDateInputValue(report.date));
   const [documentNo, setDocumentNo] = useState(report.documentNo);
   const [meta, setMeta] = useState<QraMetadata>(() => qraMetadata(report));
 
   useEffect(() => {
-    setDate(report.date.slice(0, 10));
+    setDate(identityDateInputValue(report.date));
     setDocumentNo(report.documentNo);
     setMeta(qraMetadata(report));
   }, [report.date, report.documentNo, report.metadata]);
@@ -413,19 +437,16 @@ function QraIdentityForm({
     enabled: !readOnly && !pauseSave,
     value: { date, documentNo, meta },
     onSave: async (v, context) => {
-      const res = await fetch(`/api/reports/${report.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: new Date(v.date).toISOString(),
+      const date = identityDatePatch(v.date);
+      await patchIdentityReport(
+        report.id,
+        {
+          ...(date ? { date } : {}),
           documentNo: v.documentNo.trim(),
           metadata: v.meta,
-        }),
-        signal: context?.signal,
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
-      setReport(data.report);
+        },
+        context?.signal
+      );
     },
   });
 
@@ -440,7 +461,10 @@ function QraIdentityForm({
   const setMetaKey = (key: keyof QraMetadata) => (next: string) => {
     setMeta((prev) => {
       const meta = { ...prev, [key]: next };
-      setReport((r) => ({ ...r, metadata: meta }));
+      setReport((r) => ({
+        ...r,
+        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+      }));
       return meta;
     });
   };
@@ -563,12 +587,12 @@ function FirIdentityForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [date, setDate] = useState(report.date.slice(0, 10));
+  const [date, setDate] = useState(() => identityDateInputValue(report.date));
   const [documentNo, setDocumentNo] = useState(report.documentNo);
   const [meta, setMeta] = useState<FirMetadata>(() => firMetadata(report));
 
   useEffect(() => {
-    setDate(report.date.slice(0, 10));
+    setDate(identityDateInputValue(report.date));
     setDocumentNo(report.documentNo);
     setMeta(firMetadata(report));
   }, [report.date, report.documentNo, report.metadata]);
@@ -578,19 +602,16 @@ function FirIdentityForm({
     enabled: !readOnly && !pauseSave,
     value: { date, documentNo, meta },
     onSave: async (v, context) => {
-      const res = await fetch(`/api/reports/${report.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: new Date(v.date).toISOString(),
+      const date = identityDatePatch(v.date);
+      await patchIdentityReport(
+        report.id,
+        {
+          ...(date ? { date } : {}),
           documentNo: v.documentNo.trim(),
           metadata: v.meta,
-        }),
-        signal: context?.signal,
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
-      setReport(data.report);
+        },
+        context?.signal
+      );
     },
   });
 
@@ -601,7 +622,10 @@ function FirIdentityForm({
   const set = (key: keyof FirMetadata) => (next: string) => {
     setMeta((prev) => {
       const meta = { ...prev, [key]: next };
-      setReport((r) => ({ ...r, metadata: meta }));
+      setReport((r) => ({
+        ...r,
+        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+      }));
       return meta;
     });
   };
@@ -710,18 +734,14 @@ function QsrIdentityForm({
     enabled: !readOnly && !pauseSave,
     value: { documentNo, meta },
     onSave: async (v, context) => {
-      const res = await fetch(`/api/reports/${report.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await patchIdentityReport(
+        report.id,
+        {
           documentNo: v.documentNo.trim(),
           metadata: v.meta,
-        }),
-        signal: context?.signal,
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const data = await res.json();
-      setReport(data.report);
+        },
+        context?.signal
+      );
     },
   });
 
@@ -732,7 +752,10 @@ function QsrIdentityForm({
   const set = (key: keyof QsrMetadata) => (next: string) => {
     setMeta((prev) => {
       const meta = { ...prev, [key]: next };
-      setReport((r) => ({ ...r, metadata: meta }));
+      setReport((r) => ({
+        ...r,
+        metadata: { ...(r.metadata as Record<string, unknown>), ...meta },
+      }));
       return meta;
     });
   };
