@@ -1,5 +1,6 @@
-export const PASSWORD_RESET_SEND_ERROR =
-  "Could not send a reset link. Please try again or contact your admin.";
+import { PASSWORD_RESET_SEND_ERROR } from "@/lib/auth/password-reset-messages";
+
+export { PASSWORD_RESET_SEND_ERROR };
 
 export async function sendPasswordResetEmail(
   email: string

@@ -113,7 +113,7 @@ describe("POST /api/auth-pw/forgot-password", () => {
     expect(sendPasswordResetLink).not.toHaveBeenCalled();
   });
 
-  it("still returns ok when sending fails", async () => {
+  it("returns 503 when sending fails for a known account", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "user-1",
@@ -127,7 +127,17 @@ describe("POST /api/auth-pw/forgot-password", () => {
 
     const response = await POST(jsonRequest({ email: "locked@mjbiopharm.com" }));
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: "Could not send a reset link. Please try again or contact your admin.",
+    });
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: "user-1",
+        action: "auth_password_reset",
+        metadata: { stage: "send_failed" },
+      })
+    );
   });
 });
