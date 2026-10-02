@@ -52,6 +52,11 @@ vi.mock("@/db", () => ({
     select: (...args: unknown[]) => dbSelectMock(...args),
     insert: (...args: unknown[]) => dbInsertMock(...args),
     update: (...args: unknown[]) => dbUpdateMock(...args),
+    query: {
+      aiBudgetSettings: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    },
   },
 }));
 
@@ -373,8 +378,14 @@ async function readDqPage(
   expect(read).toMatchObject({ status: "found" });
 }
 
-function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation {
-  const comment = inserted.find((row) => {
+type InsertedRow = { content?: string; kind?: string };
+
+function insertedAiFixes(rows: InsertedRow[]): InsertedRow[] {
+  return rows.filter((row) => row.kind === "ai_fix");
+}
+
+function proposedTableOp(inserted: InsertedRow[]): TableOperation {
+  const comment = insertedAiFixes(inserted).find((row) => {
     const parsed = parseAiFixCommentContent(String(row.content ?? ""));
     return parsed.tableOperation != null;
   });
@@ -385,7 +396,7 @@ function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation 
 }
 
 describe("QSR RTM section 5 draft replay", () => {
-  const inserted: Array<{ content?: string }> = [];
+  const inserted: InsertedRow[] = [];
 
   beforeEach(() => {
     inserted.length = 0;
@@ -403,9 +414,15 @@ describe("QSR RTM section 5 draft replay", () => {
     searchReportDocumentsManyMock.mockResolvedValue([]);
     listReadyDocumentsForReportMock.mockResolvedValue([ursDoc()]);
     dbInsertMock.mockReturnValue({
-      values: vi.fn().mockImplementation((row: { content?: string }) => {
+      values: vi.fn().mockImplementation((row: InsertedRow) => {
         inserted.push(row);
-        return Promise.resolve();
+        return {
+          returning: vi.fn().mockResolvedValue([row]),
+          then: (
+            resolve: (value: unknown) => unknown,
+            reject?: (reason: unknown) => unknown
+          ) => Promise.resolve().then(resolve, reject),
+        };
       }),
     });
     dbUpdateMock.mockReturnValue({
@@ -2215,10 +2232,16 @@ Complies`,
     );
     expect(first).toMatchObject({ status: "proposed" });
     const firstId = (first as { suggestionId: string }).suggestionId;
-    expect(inserted).toHaveLength(1);
+    expect(insertedAiFixes(inserted)).toHaveLength(1);
     const firstOp = proposedTableOp(inserted);
     expect(firstOp.kind).toBe("insert_rows");
     expect(firstOp.kind === "insert_rows" ? firstOp.rows : []).toHaveLength(1);
+    // emptyQsrContent seeds one blank data row under the header, so the
+    // first insert_rows anchors after that placeholder (afterRow 1), not
+    // after the header (afterRow 0).
+    expect(firstOp.kind === "insert_rows" ? firstOp.afterRow : undefined).toBe(
+      1
+    );
 
     const second = await tools.edit_table!.execute!(
       {
@@ -2246,7 +2269,7 @@ Complies`,
       status: "proposed",
       suggestionId: firstId,
     });
-    expect(inserted).toHaveLength(1);
+    expect(insertedAiFixes(inserted)).toHaveLength(1);
     expect(patched.length).toBeGreaterThan(0);
     const folded = parseAiFixCommentContent(
       String(patched[patched.length - 1]?.content ?? "")
@@ -2264,7 +2287,7 @@ Complies`,
       folded.tableOperation?.kind === "insert_rows"
         ? folded.tableOperation.afterRow
         : undefined
-    ).toBe(0);
+    ).toBe(1);
     expect(
       (second as { proposedRowKeys?: string[] }).proposedRowKeys
     ).toEqual(
