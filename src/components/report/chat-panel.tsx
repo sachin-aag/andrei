@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -52,6 +53,7 @@ import {
   livePlanProgressFromMessages,
   planHasRemainingWork,
 } from "@/lib/ai/chat/pending-plan";
+import { remainingSectionPlanInsertIndex } from "@/lib/ai/chat/plan-progress-placement";
 import { ChatPlanProgress } from "@/components/report/chat-plan-progress";
 import {
   isRedundantInsertImageChip,
@@ -1395,6 +1397,14 @@ export function ChatPanel({
         active={threadBusy || planChaining}
       />
     ) : null;
+  const planInsertIndex = remainingSectionPlanInsertIndex(
+    taggedMessages,
+    pendingPlan
+  );
+  const visiblePlanInsertIndex = Math.min(
+    visibleMessages.length,
+    Math.max(0, planInsertIndex - visibleStartIndex)
+  );
 
   const loadOlderMessages = useCallback(() => {
     if (loadingOlderRef.current) return;
@@ -1785,6 +1795,30 @@ export function ChatPanel({
     [mountedSessions, runningSessionIds, sessions, tabSnapshots]
   );
 
+  const planResumeVisible = planQueueVisible && !planChaining && !threadBusy;
+  const planChrome =
+    planProgress || planResumeVisible ? (
+      <Fragment>
+        {planProgress}
+        {planResumeVisible ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              data-testid="chat-plan-resume"
+              onClick={() =>
+                void send(CHAT_AUTO_CONTINUE_TEXT, [], "report", {
+                  autoContinue: true,
+                })
+              }
+              className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 px-2.5 py-1 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+            >
+              Resume remaining sections
+            </button>
+          </div>
+        ) : null}
+      </Fragment>
+    ) : null;
+
   return (
     <div ref={mentionBoundaryRef} className="flex h-full flex-col" aria-busy={initializing}>
       {mountedSessions.map((session) => (
@@ -1937,45 +1971,51 @@ export function ChatPanel({
             </div>
           </div>
         ) : (
-          visibleMessages.map((m, i) => (
-            <MessageTurn
-              key={m.id}
-              message={m}
-              chatTarget={m.chatTarget}
-              filenameByAttachmentId={filenameByAttachmentId}
-              labelByInternalId={labelByInternalId}
-              onOpenCitation={onOpenCitation}
-              askUserActive={
-                visibleStartIndex + i === displayMessages.length - 1 &&
-                !threadBusy &&
-                !initializing &&
-                !voiceLock
-              }
-              onAnswerQuestions={(answerText) => void send(answerText, [])}
-              streaming={
-                busy &&
-                visibleStartIndex + i === displayMessages.length - 1 &&
-                m.role === "assistant"
-              }
-              showAnalyticsSwitch={
-                statsEnabled &&
-                m.role === "assistant" &&
-                assistantOffersAnalyticsSwitch(
-                  "metadata" in m
-                    ? (m as { metadata?: unknown }).metadata
-                    : undefined
-                )
-              }
-              onSwitchToAnalytics={() => {
-                const replay = textFromChatMessage(visibleMessages[i - 1]);
-                setComposerChatTarget("analytics");
-                if (replay) void send(replay, [], "analytics");
-              }}
-              composerOnAnalytics={targetingAnalytics}
-            />
-          ))
+          <>
+            {visibleMessages.map((m, i) => (
+              <Fragment key={m.id}>
+                {i === visiblePlanInsertIndex ? planChrome : null}
+                <MessageTurn
+                  message={m}
+                  chatTarget={m.chatTarget}
+                  filenameByAttachmentId={filenameByAttachmentId}
+                  labelByInternalId={labelByInternalId}
+                  onOpenCitation={onOpenCitation}
+                  askUserActive={
+                    visibleStartIndex + i === displayMessages.length - 1 &&
+                    !threadBusy &&
+                    !initializing &&
+                    !voiceLock
+                  }
+                  onAnswerQuestions={(answerText) => void send(answerText, [])}
+                  streaming={
+                    busy &&
+                    visibleStartIndex + i === displayMessages.length - 1 &&
+                    m.role === "assistant"
+                  }
+                  showAnalyticsSwitch={
+                    statsEnabled &&
+                    m.role === "assistant" &&
+                    assistantOffersAnalyticsSwitch(
+                      "metadata" in m
+                        ? (m as { metadata?: unknown }).metadata
+                        : undefined
+                    )
+                  }
+                  onSwitchToAnalytics={() => {
+                    const replay = textFromChatMessage(visibleMessages[i - 1]);
+                    setComposerChatTarget("analytics");
+                    if (replay) void send(replay, [], "analytics");
+                  }}
+                  composerOnAnalytics={targetingAnalytics}
+                />
+              </Fragment>
+            ))}
+            {visiblePlanInsertIndex >= visibleMessages.length
+              ? planChrome
+              : null}
+          </>
         )}
-        {planProgress}
         {threadBusy ? (
           <ChatBusyStatus
             mode={mode}
@@ -1987,21 +2027,6 @@ export function ChatPanel({
             })}
             onCancel={stopPendingOrTurn}
           />
-        ) : planQueueVisible && !planChaining ? (
-          <div className="flex justify-center">
-            <button
-              type="button"
-              data-testid="chat-plan-resume"
-              onClick={() =>
-                void send(CHAT_AUTO_CONTINUE_TEXT, [], "report", {
-                  autoContinue: true,
-                })
-              }
-              className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 px-2.5 py-1 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-            >
-              Resume remaining sections
-            </button>
-          </div>
         ) : null}
         {shouldShowChatClientError({
           error,
