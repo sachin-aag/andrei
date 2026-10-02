@@ -52,6 +52,11 @@ vi.mock("@/db", () => ({
     select: (...args: unknown[]) => dbSelectMock(...args),
     insert: (...args: unknown[]) => dbInsertMock(...args),
     update: (...args: unknown[]) => dbUpdateMock(...args),
+    query: {
+      aiBudgetSettings: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    },
   },
 }));
 
@@ -373,8 +378,14 @@ async function readDqPage(
   expect(read).toMatchObject({ status: "found" });
 }
 
-function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation {
-  const comment = inserted.find((row) => {
+type InsertedRow = { content?: string; kind?: string };
+
+function insertedAiFixes(rows: InsertedRow[]): InsertedRow[] {
+  return rows.filter((row) => row.kind === "ai_fix");
+}
+
+function proposedTableOp(inserted: InsertedRow[]): TableOperation {
+  const comment = insertedAiFixes(inserted).find((row) => {
     const parsed = parseAiFixCommentContent(String(row.content ?? ""));
     return parsed.tableOperation != null;
   });
@@ -385,7 +396,7 @@ function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation 
 }
 
 describe("QSR RTM section 5 draft replay", () => {
-  const inserted: Array<{ content?: string }> = [];
+  const inserted: InsertedRow[] = [];
 
   beforeEach(() => {
     inserted.length = 0;
@@ -403,9 +414,15 @@ describe("QSR RTM section 5 draft replay", () => {
     searchReportDocumentsManyMock.mockResolvedValue([]);
     listReadyDocumentsForReportMock.mockResolvedValue([ursDoc()]);
     dbInsertMock.mockReturnValue({
-      values: vi.fn().mockImplementation((row: { content?: string }) => {
+      values: vi.fn().mockImplementation((row: InsertedRow) => {
         inserted.push(row);
-        return Promise.resolve();
+        return {
+          returning: vi.fn().mockResolvedValue([row]),
+          then: (
+            resolve: (value: unknown) => unknown,
+            reject?: (reason: unknown) => unknown
+          ) => Promise.resolve().then(resolve, reject),
+        };
       }),
     });
     dbUpdateMock.mockReturnValue({
@@ -2161,6 +2178,123 @@ Complies`,
     expect(adjusted.filter((adj) => adj.column === "Remarks")).toEqual([]);
     expect(cells.find((c) => c.rowKey === "URS-7" && c.col === 4)?.insertText).toContain(
       "13.3.5"
+    );
+  });
+
+  it("folds later Table 3 insert_rows onto the first open card (GLR-1301)", async () => {
+    mockSection("qsr_qualification_documents");
+    listReadyDocumentsForReportMock.mockResolvedValue([dqDoc(), iqDoc()]);
+    const patched: Array<{ content?: string }> = [];
+    dbUpdateMock.mockReturnValue({
+      set: (values: { content?: string }) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const session = new DocumentReviewSession();
+    session.restoreFromFinishedReview({
+      coverageKey: `${DQ_ID}:40:run,${IQ_ID}:60:run|obj:qsr_qualification_documents`,
+    });
+    const tools = buildTools({
+      section: "qsr_qualification_documents",
+      documentReview: session,
+    });
+    await readDqPage(
+      tools,
+      1,
+      "Design Qualification Protocol No. DQP/GLR-1301 Revision 01 Status Approved Effective Date 30-04-2026"
+    );
+    await readIqPage(
+      tools,
+      1,
+      "Installation Qualification Protocol No. IQP/GLR-1301 Revision 01 Status Approved Effective Date 30-04-2026"
+    );
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "qsr_qualification_documents",
+        targetField: "table",
+        reasoning: "Add the Design Qualification row to Table 3.",
+        operation: {
+          kind: "insert_rows",
+          rows: [
+            [
+              "Design Qualification",
+              `DQP/GLR-1301 [${DQ_FILENAME}, p. 1]`,
+              "01",
+              "Approved",
+              `30-04-2026 [${DQ_FILENAME}, p. 1]`,
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    const firstId = (first as { suggestionId: string }).suggestionId;
+    expect(insertedAiFixes(inserted)).toHaveLength(1);
+    const firstOp = proposedTableOp(inserted);
+    expect(firstOp.kind).toBe("insert_rows");
+    expect(firstOp.kind === "insert_rows" ? firstOp.rows : []).toHaveLength(1);
+    // emptyQsrContent seeds one blank data row under the header, so the
+    // first insert_rows anchors after that placeholder (afterRow 1), not
+    // after the header (afterRow 0).
+    expect(firstOp.kind === "insert_rows" ? firstOp.afterRow : undefined).toBe(
+      1
+    );
+
+    const second = await tools.edit_table!.execute!(
+      {
+        section: "qsr_qualification_documents",
+        targetField: "table",
+        reasoning: "Add the Installation Qualification row to Table 3.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "Design Qualification",
+          rows: [
+            [
+              "Installation Qualification",
+              `IQP/GLR-1301 [${IQ_FILENAME}, p. 1]`,
+              "01",
+              "Approved",
+              `30-04-2026 [${IQ_FILENAME}, p. 1]`,
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    expect(insertedAiFixes(inserted)).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    expect(folded.tableOperation?.kind).toBe("insert_rows");
+    const rows =
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.rows
+        : [];
+    expect(rows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+    ]);
+    expect(
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.afterRow
+        : undefined
+    ).toBe(1);
+    expect(
+      (second as { proposedRowKeys?: string[] }).proposedRowKeys
+    ).toEqual(
+      expect.arrayContaining([
+        "Design Qualification",
+        "Installation Qualification",
+      ])
     );
   });
 });

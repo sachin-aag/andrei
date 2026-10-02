@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v172-identity-suggest");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v174-insert-rows-scaffold-fold");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -28,6 +28,12 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).toContain(
       "not `cells`, not `{ banner }`, and not nested `{ insert_rows: [...] }`"
+    );
+    expect(prompt).toContain(
+      "Sequential insert_rows on the same table (and a first-row edit_cells of the seeded blank row) fold into that open card"
+    );
+    expect(prompt).toContain(
+      "do not assume the first pending row is already in the saved table"
     );
   });
 
