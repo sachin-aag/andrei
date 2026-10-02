@@ -11,6 +11,7 @@ import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import {
   applyTableOperation,
+  type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
@@ -31,6 +32,7 @@ import {
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
   rtmSectionCellText,
+  sectionLookbackPagesToLoad,
   dropQsrRtmPlaceholderCells,
   missingReviewedUrsIds,
   rtmFamilyColumnsNeedProtocolSearch,
@@ -3577,6 +3579,120 @@ function familyCellFor(
         : "",
   };
 }
+
+describe("RTM family section lookback", () => {
+  const cellOp = (insertText: string): TableOperation =>
+    ({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          insertText,
+          rowContext: "URS-1\nReactor Capacity\n8000 L",
+        },
+      ],
+    });
+
+  it("asks for the pages before a cite whose section start was not retrieved", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "iq",
+        quote: IQ_P19_IDENTIFICATION_CONTINUED,
+      },
+    ]);
+    const pages = sectionLookbackPagesToLoad({
+      operation: cellOp(
+        "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
+      ),
+      section: "qsr_rtm_process",
+      ledger,
+    });
+    expect(pages).toEqual([
+      { attachmentId: "iq", pageNumber: 18 },
+      { attachmentId: "iq", pageNumber: 17 },
+      { attachmentId: "iq", pageNumber: 16 },
+    ]);
+  });
+
+  it("asks for nothing when the cited page prints the heading or the start is already retrieved", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 18,
+        attachmentId: "iq",
+        quote: IQ_P18_IDENTIFICATION,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "iq",
+        quote: IQ_P19_IDENTIFICATION_CONTINUED,
+      },
+    ]);
+    const op = (page: number) =>
+      cellOp(
+        `13.3 – Working volume 8000 L [Installation Qualification.PDF, p. ${page}]`
+      );
+    expect(
+      sectionLookbackPagesToLoad({
+        operation: op(19),
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+    expect(
+      sectionLookbackPagesToLoad({
+        operation: op(18),
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+
+  it("keeps the number once the looked-up start page is on the ledger", () => {
+    const { cell } = familyCellFor(
+      [
+        { pageNumber: 17, quote: "INSTALLATION QUALIFICATION Page No. 17 of 60 12.9 Earlier section 1.0 Gasket NA" },
+        { pageNumber: 18, quote: IQ_P18_IDENTIFICATION },
+        { pageNumber: 19, quote: IQ_P19_IDENTIFICATION_CONTINUED },
+      ],
+      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
+    );
+    expect(cell).toContain("13.3");
+    expect(cell).toContain("p. 19");
+  });
+
+  it("does not look back across a page that starts another section", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 19,
+        attachmentId: "iq",
+        quote: IQ_P19_IDENTIFICATION_CONTINUED,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 18,
+        attachmentId: "iq",
+        quote: IQ_P19_NEXT_SECTION,
+      },
+    ]);
+    expect(
+      sectionLookbackPagesToLoad({
+        operation: cellOp(
+          "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
+        ),
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([]);
+  });
+});
 
 describe("RTM family heading/page alignment", () => {
   it("keeps the section number when the cite is on a later page of a section that started earlier", () => {

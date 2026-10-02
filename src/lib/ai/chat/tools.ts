@@ -167,6 +167,7 @@ import {
   prefixTableCaptionMarkdown,
   summarizeTableOperation,
   tableOperationInvalidHint,
+  type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import {
@@ -298,6 +299,7 @@ import {
   qsrTableColumnLabel,
   rtmFamilyColumnsNeedProtocolSearch,
   rtmFamilySearchOpenMessage,
+  sectionLookbackPagesToLoad,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 import {
@@ -1616,6 +1618,30 @@ export function buildChatTools(opts: {
     }).catch((err) => {
       console.error("claim provenance audit failed", err);
     });
+  };
+  // A section can start pages before the page a family cell cites. Load the
+  // few earlier pages of the cited file so grounding can see the heading
+  // instead of dropping the section number.
+  const seedSectionLookbackPages = async (input: {
+    operation: TableOperation;
+    section: string;
+  }) => {
+    const pages = sectionLookbackPagesToLoad({
+      operation: input.operation,
+      section: input.section,
+      ledger: citationLedger,
+    });
+    if (pages.length === 0) return;
+    try {
+      const rows = await loadDocumentPageEvidence({ reportId, pages });
+      for (const row of rows) {
+        citationLedger.record(row.filename, row.pageNumber, row.attachmentId, {
+          quote: row.quote,
+        });
+      }
+    } catch (err) {
+      console.error("section lookback page load failed", err);
+    }
   };
   const emptyRepair = {
     hits: [] as RepairSearchHit[],
@@ -3883,6 +3909,10 @@ export function buildChatTools(opts: {
           fieldDoc,
           parsedOp
         );
+        await seedSectionLookbackPages({
+          operation: originalTableOp,
+          section,
+        });
         const tableGrounding = await writeGrounding(
           section,
           resolvedField,

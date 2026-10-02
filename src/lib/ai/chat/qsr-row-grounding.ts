@@ -2402,6 +2402,55 @@ function sectionStartPageBefore(
 }
 
 /**
+ * Earlier pages of a cited file worth loading so a cite on a later page of
+ * a multi-page section can find the page that prints the heading. Only for
+ * family cells whose cited page is retrieved, prints no conflicting heading,
+ * and has no retrieved start page yet.
+ */
+export function sectionLookbackPagesToLoad(input: {
+  operation: TableOperation;
+  section: string | null | undefined;
+  ledger: CitationPageLedger;
+}): { attachmentId: string; pageNumber: number }[] {
+  const { operation, section, ledger } = input;
+  if (operation.kind !== "edit_cells" || !isQsrRtmSection(section)) return [];
+  const wanted = new Map<string, { attachmentId: string; pageNumber: number }>();
+  for (const cell of operation.cells) {
+    const family = rtmFamilyAtColumn(section, cell.col);
+    if (!family) continue;
+    const text = cell.insertText.trim();
+    if (!text || isRtmNotFoundMarker(text)) continue;
+    const number = rtmCellSectionNumber(text, family);
+    if (!number) continue;
+    const cite = citedPagesFromText(text)[0];
+    if (!cite) continue;
+    const cited = recordedPageByCite(ledger, cite.filename, cite.page);
+    if (!cited || !cited.id) continue;
+    if (headingNumberOnPage(cited.quote, number)) continue;
+    if (pageConflictsWithSection(cited.quote, number)) continue;
+    if (sectionStartPageBefore(ledger, cited, number)) continue;
+    for (let back = 1; back <= SECTION_SPAN_PAGE_LOOKBACK; back++) {
+      const pageNumber = cited.pageNumber - back;
+      if (pageNumber < 1) break;
+      const have = ledger
+        .recordedPages()
+        .find((page) => page.id === cited.id && page.pageNumber === pageNumber);
+      if (have?.quote.trim()) {
+        // Walk back page by page; stop at a retrieved page that already
+        // started another section.
+        if (pageConflictsWithSection(have.quote, number)) break;
+        continue;
+      }
+      wanted.set(`${cited.id}:${pageNumber}`, {
+        attachmentId: cited.id,
+        pageNumber,
+      });
+    }
+  }
+  return [...wanted.values()];
+}
+
+/**
  * A family cell keeps its section number when the cited page prints that
  * heading, or continues it (the heading is on an earlier page of the same
  * file and nothing in between starts another section). A cite on a page

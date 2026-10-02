@@ -220,9 +220,10 @@ dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
 prints that heading, or on a later page of the same section (heading on an
 earlier retrieved page of that file, no other section starting in between).
 Persist the heading title from the start page — do not keep a neighbour
-section name on a page that starts a different section. When no retrieved
-page prints the heading, drop the number but keep the supported description
-and its cite. An explicit empty `edit_cells` of filled
+section name on a page that starts a different section. Before grounding, `edit_table` loads up to 3 earlier pages of the cited
+file (`sectionLookbackPagesToLoad`) so a later-page cite can find its heading.
+When still no retrieved page prints the heading, drop the number but keep the
+supported description and its cite. An explicit empty `edit_cells` of filled
 DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
 only at row level (labeled Result / Remarks N/A, `not applicable for this
