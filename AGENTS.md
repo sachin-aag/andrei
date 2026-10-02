@@ -80,8 +80,10 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   + `suggestionIntent` and merge at apply (`mergeField`); do not restore a
   frozen-diff hash or a `too_large` → `draft_field` funnel. Both chromes
   propose; nothing lands until Apply / Dismiss. Sequential `edit_table`
-  `insert_rows` on the same table fold into the open card; only that
-  same-table `insert_rows` is serialized (`edit_cells` stays parallel).
+  `insert_rows` on the same table fold into the open card, including a
+  first-row `edit_cells` of the seeded blank row; same-table `insert_rows`
+  and scaffold `edit_cells` are serialized (`edit_cells` on other tables
+  stay parallel).
   QSR/ELR card, grounding, and
   remaining-section rules live in `.cursor/rules/chat-and-attachments.mdc`
   (and `.cursor/rules/eval-and-suggestions.mdc` for apply/merge).

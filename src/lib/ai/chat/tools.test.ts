@@ -3293,8 +3293,111 @@ describe("buildChatTools propose edits", () => {
     ]);
   });
 
-  it("does not stall edit_cells behind a pending insert_rows", async () => {
-    const tableDoc = {
+  it("folds first-row edit_cells of a seeded blank row with later insert_rows", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Number"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["", ""].map(() => ({
+                type: "tableCell",
+                content: [{ type: "paragraph" }],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    const inserted: Array<{ content?: string }> = [];
+    const patched: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    dbUpdateMock.mockReturnValue({
+      set: (values: { content?: string }) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Fill the first qualification document.",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            { row: 1, col: 0, insertText: "Design Qualification" },
+            { row: 1, col: 1, insertText: "DQP-1" },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    const firstId = (first as { suggestionId: string }).suggestionId;
+    const second = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "Design Qualification",
+          rows: [["Installation Qualification", "IQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    expect(folded.tableOperation?.kind).toBe("insert_rows");
+    const rows =
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.rows
+        : [];
+    expect(rows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+    ]);
+    expect(
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.afterRow
+        : undefined
+    ).toBe(0);
+  });
+
+  it("keeps a filled-row edit_cells card separate from later insert_rows", async () => {
+    mockDefineSectionSelect({
       type: "doc",
       content: [
         {
@@ -3318,6 +3421,87 @@ describe("buildChatTools propose edits", () => {
                 ],
               })),
             },
+          ],
+        },
+      ],
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const cells = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Revise the existing document number.",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            {
+              row: 1,
+              col: 1,
+              rowKey: "Existing Qualification",
+              insertText: "EQ-1-REV",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(cells).toMatchObject({ status: "proposed" });
+    const cellsId = (cells as { suggestionId: string }).suggestionId;
+    const insertedRows = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Design Qualification", "DQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(insertedRows).toMatchObject({ status: "proposed" });
+    expect((insertedRows as { suggestionId: string }).suggestionId).not.toBe(
+      cellsId
+    );
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("does not stall edit_cells behind a pending insert_rows", async () => {
+    const tableRow = (headers: boolean, cells: string[]) => ({
+      type: "tableRow" as const,
+      content: cells.map((text) => ({
+        type: headers ? ("tableHeader" as const) : ("tableCell" as const),
+        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+      })),
+    });
+    const tableDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            tableRow(true, ["Document", "Number"]),
+            tableRow(false, ["Existing Qualification", "EQ-1"]),
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            tableRow(true, ["Document", "Number"]),
+            tableRow(false, ["Other Document", "OT-1"]),
           ],
         },
       ],
@@ -3378,15 +3562,16 @@ describe("buildChatTools propose edits", () => {
       {
         section: "define",
         targetField: "narrative",
-        reasoning: "Revise the existing document number.",
+        reasoning: "Revise the other table's document number.",
         operation: {
           kind: "edit_cells",
+          tableIndex: 1,
           cells: [
             {
               row: 1,
               col: 1,
-              rowKey: "Existing Qualification",
-              insertText: "EQ-1-REV",
+              rowKey: "Other Document",
+              insertText: "OT-1-REV",
             },
           ],
         },

@@ -2,6 +2,7 @@ import { tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import type { JSONContent } from "@tiptap/core";
 import { db } from "@/db";
 import { comments, reportSections, reports } from "@/db/schema";
 import type {
@@ -205,10 +206,10 @@ import {
   recordTableInsert,
 } from "@/lib/suggestions/same-turn-table-edit";
 import {
-  canFoldInsertRows,
-  incomingInsertRowsToAdd,
+  foldSameTableRowOperations,
+  isFoldableTableRowOperation,
   isInsertRowsOperation,
-  mergeInsertRowsOperations,
+  type EditCellsOperation,
   type InsertRowsOperation,
 } from "@/lib/suggestions/merge-insert-rows";
 import type { SuggestionEdit } from "@/lib/suggestions/locator";
@@ -1151,18 +1152,28 @@ async function loadMergedSection(
   };
 }
 
-type OpenInsertRowsCard = {
+type OpenTableRowCard = {
   suggestionId: string;
-  operation: InsertRowsOperation;
+  operation: InsertRowsOperation | EditCellsOperation;
   payload: ParsedAiFixPayload;
 };
 
-async function loadOpenInsertRowsCard(args: {
+function commentCreatedAtMs(value: Date | string | null | undefined): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+async function loadOpenTableRowCard(args: {
   reportId: string;
   section: SectionType;
   targetField: string;
   tableIndex: number;
-}): Promise<OpenInsertRowsCard | null> {
+  fieldDoc: JSONContent;
+}): Promise<OpenTableRowCard | null> {
   const rows = await db
     .select({
       id: comments.id,
@@ -1184,18 +1195,21 @@ async function loadOpenInsertRowsCard(args: {
     if (!isAiSuggestionKind(row.kind)) return [];
     if (row.contentPath && row.contentPath !== args.targetField) return [];
     const payload = parseAiFixCommentContent(row.content);
-    if (!isInsertRowsOperation(payload.tableOperation)) return [];
-    if (payload.tableOperation.tableIndex !== args.tableIndex) return [];
+    const operation = payload.tableOperation;
+    if (!isFoldableTableRowOperation(operation, args.fieldDoc)) return [];
+    if (operation.tableIndex !== args.tableIndex) return [];
     return [
       {
         suggestionId: row.id,
-        operation: payload.tableOperation,
+        operation,
         payload,
         createdAt: row.createdAt,
       },
     ];
   });
-  const latest = matches.at(-1);
+  const latest = matches.toSorted(
+    (a, b) => commentCreatedAtMs(a.createdAt) - commentCreatedAtMs(b.createdAt)
+  ).at(-1);
   if (!latest) return null;
   return {
     suggestionId: latest.suggestionId,
@@ -3917,9 +3931,9 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        let foldTarget: OpenInsertRowsCard | null = null;
+        let foldTarget: OpenTableRowCard | null = null;
         let captureDoc = fieldDoc;
-        if (isInsertRowsOperation(parsedOp)) {
+        if (isFoldableTableRowOperation(parsedOp, fieldDoc)) {
           const sameTurn = findTableInsertForFold(tableInserts, {
             section,
             targetField: resolvedField,
@@ -3931,11 +3945,12 @@ export function buildChatTools(opts: {
                 operation: sameTurn.operation,
                 payload: sameTurn.payload,
               }
-            : await loadOpenInsertRowsCard({
+            : await loadOpenTableRowCard({
                 reportId,
                 section,
                 targetField: resolvedField,
                 tableIndex: parsedOp.tableIndex,
+                fieldDoc,
               });
           if (foldTarget) {
             const overlaid = applyTableOperation(fieldDoc, foldTarget.operation, {
@@ -4091,28 +4106,21 @@ export function buildChatTools(opts: {
           }
           return { status: applied.status, hint: applied.hint };
         }
-        const incomingInsert = isInsertRowsOperation(stripped.operation)
-          ? stripped.operation
-          : null;
-        if (
-          foldTarget &&
-          incomingInsert &&
-          canFoldInsertRows(foldTarget.operation, incomingInsert)
-        ) {
-          const toAdd = incomingInsertRowsToAdd(
-            foldTarget.operation,
-            incomingInsert
-          );
-          if (toAdd.length === 0) {
-            return {
-              status: "empty_edit",
-              hint: "Those rows are already on the open insert_rows card. Call list_suggestions, or insert_rows with rows that are still missing.",
-            };
-          }
-          const mergedOp = mergeInsertRowsOperations(
-            foldTarget.operation,
-            incomingInsert
-          );
+        const foldedRows = foldTarget
+          ? foldSameTableRowOperations(
+              foldTarget.operation,
+              stripped.operation,
+              fieldDoc
+            )
+          : { status: "no_fold" as const };
+        if (foldedRows.status === "already_present") {
+          return {
+            status: "empty_edit",
+            hint: "Those rows are already on the open table card. Call list_suggestions, or insert_rows with rows that are still missing.",
+          };
+        }
+        if (foldedRows.status === "folded" && foldTarget) {
+          const mergedOp = foldedRows.operation;
           let mergedApplied;
           try {
             const documentContents = await documentContentsForReport(
@@ -4136,7 +4144,11 @@ export function buildChatTools(opts: {
             const foldedSecond = citationsAtEndOfSection
               ? citationAppendPart(stripped.citations, fieldText)
               : undefined;
-            const storedOperation = mergedApplied.appliedOperation ?? mergedOp;
+            const storedOperation = isInsertRowsOperation(
+              mergedApplied.appliedOperation
+            )
+              ? mergedApplied.appliedOperation
+              : mergedOp;
             const nextPayload = attachRecord(
               {
                 ...foldTarget.payload,
@@ -4156,15 +4168,13 @@ export function buildChatTools(opts: {
             await patchFixComment(foldTarget.suggestionId, nextPayload, {
               anchorText: summarizeTableOperation(storedOperation),
             });
-            if (isInsertRowsOperation(storedOperation)) {
-              recordTableInsert(tableInserts, {
-                suggestionId: foldTarget.suggestionId,
-                section,
-                targetField: resolvedField,
-                operation: storedOperation,
-                payload: nextPayload,
-              });
-            }
+            recordTableInsert(tableInserts, {
+              suggestionId: foldTarget.suggestionId,
+              section,
+              targetField: resolvedField,
+              operation: storedOperation,
+              payload: nextPayload,
+            });
             const supersededSuggestionIds = await dismissCovered({
               section,
               sectionContent: loaded.content,
@@ -4220,9 +4230,10 @@ export function buildChatTools(opts: {
             parsedOp
           );
           const persistedOp =
-            incomingInsert && isInsertRowsOperation(persistedCaptured)
+            isInsertRowsOperation(stripped.operation) &&
+            isInsertRowsOperation(persistedCaptured)
               ? {
-                  ...incomingInsert,
+                  ...stripped.operation,
                   afterRow: persistedCaptured.afterRow,
                   afterRowKey: persistedCaptured.afterRowKey,
                   expectedRowAtAfter: persistedCaptured.expectedRowAtAfter,
@@ -4314,7 +4325,7 @@ export function buildChatTools(opts: {
           kind: "ai_fix",
           evaluationId: null,
         });
-        if (isInsertRowsOperation(storedOperation)) {
+        if (isFoldableTableRowOperation(storedOperation, fieldDoc)) {
           recordTableInsert(tableInserts, {
             suggestionId,
             section,
@@ -4380,7 +4391,11 @@ export function buildChatTools(opts: {
           supersededSuggestionIds
         );
         };
-        if (isInsertRowsOperation(parsedForQueue)) {
+        if (
+          parsedForQueue &&
+          (parsedForQueue.kind === "insert_rows" ||
+            parsedForQueue.kind === "edit_cells")
+        ) {
           const queueField =
             resolveTargetField(section, targetField) ?? targetField;
           return enqueueInsertRows(

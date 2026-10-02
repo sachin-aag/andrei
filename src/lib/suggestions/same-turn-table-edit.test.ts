@@ -73,8 +73,37 @@ describe("findTableInsertForFold", () => {
       payload: { ...payload, reasoning: "both" },
     });
     expect(store.inserts).toHaveLength(1);
-    expect(store.inserts[0]?.operation.rows).toHaveLength(2);
+    expect(
+      store.inserts[0]?.operation.kind === "insert_rows"
+        ? store.inserts[0].operation.rows
+        : []
+    ).toHaveLength(2);
     expect(store.inserts[0]?.payload.reasoning).toBe("both");
+  });
+
+  it("returns a same-table scaffold edit_cells card", () => {
+    const store = createSameTurnTableInserts();
+    recordTableInsert(store, {
+      suggestionId: "seed",
+      section: "qsr_qualification_documents",
+      targetField: "table",
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "Design Qualification" },
+          { row: 1, col: 1, insertText: "DQP-1" },
+        ],
+      },
+      payload,
+    });
+    expect(
+      findTableInsertForFold(store, {
+        section: "qsr_qualification_documents",
+        targetField: "table",
+        tableIndex: 0,
+      })?.suggestionId
+    ).toBe("seed");
   });
 });
 

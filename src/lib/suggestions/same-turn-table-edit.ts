@@ -1,17 +1,20 @@
 import type { SectionType } from "@/db/schema";
 import type { ParsedAiFixPayload } from "@/lib/ai/suggestion-gating";
-import type { InsertRowsOperation } from "@/lib/suggestions/merge-insert-rows";
+import type {
+  EditCellsOperation,
+  InsertRowsOperation,
+} from "@/lib/suggestions/merge-insert-rows";
 
 /**
- * Same-turn `edit_table` insert_rows cards. Comment mocks (and a live
- * parallel tool step) often cannot see the first open card yet, so a later
- * insert_rows in the same table folds using this store.
+ * Same-turn `edit_table` insert_rows / scaffold edit_cells cards. Comment
+ * mocks (and a live parallel tool step) often cannot see the first open
+ * card yet, so a later insert_rows in the same table folds using this store.
  */
 export type TurnTableInsert = {
   suggestionId: string;
   section: SectionType;
   targetField: string;
-  operation: InsertRowsOperation;
+  operation: InsertRowsOperation | EditCellsOperation;
   payload: ParsedAiFixPayload;
 };
 
@@ -70,10 +73,10 @@ export function insertRowsQueueKey(
 }
 
 /**
- * Per-table tails so a later same-table `insert_rows` can fold onto the
- * first pending card. `edit_cells` and other `edit_table` ops must not
- * share this queue — a global `edit_table` tail stalls RTM cell fills
- * behind Qual Docs inserts until the 270s abort.
+ * Per-table tails so sequential `insert_rows` / scaffold `edit_cells` on
+ * the same table fold onto one card. Different tables stay parallel —
+ * a global `edit_table` tail stalled RTM cell fills behind Qual Docs
+ * inserts until the 270s abort.
  */
 export type InsertRowsQueues = Map<string, Promise<void>>;
 
