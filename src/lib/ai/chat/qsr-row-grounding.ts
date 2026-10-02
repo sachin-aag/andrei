@@ -2319,18 +2319,27 @@ function headingOnRecordedPage(
 }
 
 function familyCellFromHeadingPage(input: {
+  /** Page the citation points at. */
   page: RecordedCitationPage;
   heading: string;
   requested: string;
   family: RtmStageFamily;
   key: string;
+  /** Earlier page that prints the heading when the section spans pages. */
+  headingPage?: RecordedCitationPage;
 }): string {
   const headingNumber = rtmCellSectionNumber(input.heading, input.family);
   const requestedNumber = rtmCellSectionNumber(input.requested, input.family);
   const keepRequestedDesc =
     Boolean(headingNumber) &&
     headingNumber === requestedNumber &&
-    descriptionSupportedNearKey(input.requested, [input.page.quote], input.key);
+    descriptionSupportedNearKey(
+      input.requested,
+      [input.page.quote, input.headingPage?.quote].filter(
+        (quote): quote is string => Boolean(quote)
+      ),
+      input.key
+    );
   const body = rtmSectionCellText(
     keepRequestedDesc ? input.requested : input.heading,
     { sectionHeading: input.heading, family: input.family }
@@ -2343,9 +2352,63 @@ function familyCellFromHeadingPage(input: {
 }
 
 /**
- * Persist `{heading} – {audit line} [file, p. N]` only when p. N prints
- * that heading. Wrong section names and neighbour-page cites (13.1 on an
- * agitator page) rewrite to the topic-matched protocol page, or drop.
+ * A page "conflicts" with a section when it prints section headings and
+ * none of them is the section, a child, or a parent of it. A page with no
+ * headings (a continuation page) never conflicts.
+ */
+function pageConflictsWithSection(quote: string, number: string): boolean {
+  // `8.0 Design pressure` is a table serial number, not a section heading.
+  const starts = headingStarts(protocolBodyQuote(quote)).filter(
+    (start) => !/\.0$/.test(start.number)
+  );
+  if (starts.length === 0) return false;
+  const parts = number.split(/\s*[\/&]\s*/).filter(Boolean);
+  return !starts.some((start) =>
+    parts.some(
+      (part) =>
+        start.number === part ||
+        start.number.startsWith(`${part}.`) ||
+        part.startsWith(`${start.number}.`)
+    )
+  );
+}
+
+const SECTION_SPAN_PAGE_LOOKBACK = 3;
+
+/**
+ * Nearest earlier page of the same file that prints the heading, when every
+ * recorded page in between still fits that section.
+ */
+function sectionStartPageBefore(
+  ledger: CitationPageLedger,
+  cited: RecordedCitationPage,
+  number: string
+): RecordedCitationPage | undefined {
+  const sameFile = ledger
+    .recordedPages()
+    .filter(
+      (page) =>
+        page.filename.trim().toLowerCase() ===
+          cited.filename.trim().toLowerCase() &&
+        page.pageNumber < cited.pageNumber &&
+        cited.pageNumber - page.pageNumber <= SECTION_SPAN_PAGE_LOOKBACK
+    )
+    .toSorted((left, right) => right.pageNumber - left.pageNumber);
+  for (const page of sameFile) {
+    if (headingNumberOnPage(page.quote, number)) return page;
+    if (pageConflictsWithSection(page.quote, number)) return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * A family cell keeps its section number when the cited page prints that
+ * heading, or continues it (the heading is on an earlier page of the same
+ * file and nothing in between starts another section). A cite on a page
+ * that starts a different section (13.1 on the agitator page) rewrites to
+ * the topic-matched page that prints the heading. When no retrieved page
+ * prints the heading the number is dropped and a supported description
+ * with its cite survives.
  */
 export function alignRtmFamilyCellToCitedHeading(input: {
   cell: string;
@@ -2383,6 +2446,46 @@ export function alignRtmFamilyCellToCitedHeading(input: {
         family: input.family,
         key,
       });
+    }
+  }
+
+  if (
+    citedPage &&
+    !pageConflictsWithSection(citedPage.quote, requestedNumber)
+  ) {
+    const startPage = sectionStartPageBefore(
+      input.ledger,
+      citedPage,
+      requestedNumber
+    );
+    const heading = startPage
+      ? headingOnRecordedPage(
+          startPage,
+          requestedNumber,
+          input.context,
+          input.family
+        )
+      : null;
+    if (startPage && heading) {
+      return familyCellFromHeadingPage({
+        page: citedPage,
+        headingPage: startPage,
+        heading,
+        requested: trimmed,
+        family: input.family,
+        key,
+      });
+    }
+    const desc = rtmCellDescription(trimmed);
+    if (
+      desc &&
+      remainderWorthKeeping(desc, citedPage.quote, key, input.context)
+    ) {
+      return familyCellWithCitation(
+        desc,
+        citedPage.filename,
+        citedPage.pageNumber
+      );
     }
   }
 
@@ -2453,7 +2556,7 @@ export function alignRtmFamilyCellToCitedHeading(input: {
       citedPage.pageNumber
     );
   }
-  if (!hadModelCite) return source;
+  if (!hadModelCite || !citedPage) return source;
   return "";
 }
 

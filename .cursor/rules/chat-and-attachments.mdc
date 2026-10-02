@@ -217,8 +217,12 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
 instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
 `Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
-prints that heading. Persist the heading title from that page — do not
-keep a neighbour section name on the wrong PDF page. An explicit empty `edit_cells` of filled
+prints that heading, or on a later page of the same section (heading on an
+earlier retrieved page of that file, no other section starting in between).
+Persist the heading title from the start page — do not keep a neighbour
+section name on a page that starts a different section. When no retrieved
+page prints the heading, drop the number but keep the supported description
+and its cite. An explicit empty `edit_cells` of filled
 DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
 only at row level (labeled Result / Remarks N/A, `not applicable for this

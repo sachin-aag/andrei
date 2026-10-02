@@ -3534,7 +3534,90 @@ const IQ_P25_AGITATOR_MOTOR =
 const IQ_P18_IDENTIFICATION =
   "Issued By Carat Kumar Yedla 3xper EMPOWERING INNOVAT ON MASTER COPY 3xper Innoventure Limited, Issued On 30/04/202619:20 INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Page No. 18 of 60 Protocol No. IQP/GLR-1301 Revision: 01 Section Production Block-2 Report No. IQR/GLR-1301 Revision: 01 Capacity/Size 8000 L Equipment Number GLR-1301 Effective Date 30-04-2026 13.3. System Identification & technical specification verification 13.3.1. Rationale To check and record the system identity of Equipment Reactor S. No Description Actual Observation Verified By (Sign & Date) 1.0 Name of the equipment Glass Lined Reactor R.Ajita 2.0 Manufacturer Standard Glass Lining Technology Ltd 01-05-2026 RANG 01-05-2026 3.0 Model Number NA RANG 01-05-2076 4.0 Serial Number £250710956 RAjith 01-05-2026 5.0 Capacity / Size 8000L R.Ajith 01-05-2026 6.0 Operating ranges -20°to 220℃ 4.5/FV RA 01-05-2026 7.0 Equipment Identification GLR-1301 RAJ윈도 01-05-2026 Format. No: QAD-SOP-FS-003-F10-00 CONTROLLED COPY";
 
+const IQ_P19_IDENTIFICATION_CONTINUED =
+  "INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Protocol No. IQP/GLR-1301 Page No. 19 of 60 Equipment Number GLR-1301 Capacity/Size 8000 L Effective Date 30-04-2026 8.0 Design pressure 6 bar R.Ajith 01-05-2026 9.0 Working volume 8000 L R.Ajith 01-05-2026 Format. No: QAD-SOP-FS-003-F10-00 CONTROLLED COPY";
+const IQ_P19_NEXT_SECTION =
+  "INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Protocol No. IQP/GLR-1301 Page No. 19 of 60 Equipment Number GLR-1301 13.4. Utilities verification 13.4.1. Rationale To check utilities 1.0 Steam supply 3 bar R.Ajith 01-05-2026";
+
+function familyCellFor(
+  pages: { pageNumber: number; quote: string }[],
+  insertText: string
+): { cell: string; blocked: boolean } {
+  const ledger = ledgerFromPages(
+    pages.map((page) => ({
+      filename: "Installation Qualification.PDF",
+      attachmentId: "iq",
+      ...page,
+    }))
+  );
+  const result = groundTableOperation({
+    operation: {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 4,
+          rowKey: "URS-1",
+          insertText,
+          rowContext: "URS-1\nReactor Capacity\n8000 L",
+        },
+      ],
+    },
+    ledger,
+    policy: "block",
+    grounding: { section: "qsr_rtm_process" },
+    clearOptionalOnBlock: true,
+  });
+  return {
+    blocked: result.blocked,
+    cell:
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]?.insertText ?? ""
+        : "",
+  };
+}
+
 describe("RTM family heading/page alignment", () => {
+  it("keeps the section number when the cite is on a later page of a section that started earlier", () => {
+    const { cell, blocked } = familyCellFor(
+      [
+        { pageNumber: 18, quote: IQ_P18_IDENTIFICATION },
+        { pageNumber: 19, quote: IQ_P19_IDENTIFICATION_CONTINUED },
+      ],
+      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
+    );
+    expect(blocked).toBe(false);
+    expect(cell).toContain("13.3");
+    expect(cell).toContain("p. 19");
+    expect(cell).not.toContain("p. 18");
+    expect(cell).toContain("8000 L");
+  });
+
+  it("keeps the supported description and page, without an unverifiable number, when the start page was not retrieved", () => {
+    const { cell, blocked } = familyCellFor(
+      [{ pageNumber: 19, quote: IQ_P19_IDENTIFICATION_CONTINUED }],
+      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
+    );
+    expect(blocked).toBe(false);
+    expect(cell).not.toContain("13.3");
+    expect(cell).toContain("Working volume 8000 L");
+    expect(cell).toContain("p. 19");
+  });
+
+  it("does not treat a page that starts the next section as a continuation", () => {
+    const { cell } = familyCellFor(
+      [
+        { pageNumber: 18, quote: IQ_P18_IDENTIFICATION },
+        { pageNumber: 19, quote: IQ_P19_NEXT_SECTION },
+      ],
+      "13.3 – System identification [Installation Qualification.PDF, p. 19]"
+    );
+    expect(cell).toContain("13.3");
+    expect(cell).toContain("p. 18");
+    expect(cell).not.toContain("p. 19");
+  });
+
   it("rewrites IQ 13.1 on the agitator page to 13.3 on the identification page for reactor capacity", () => {
     const ledger = ledgerFromPages([
       {
