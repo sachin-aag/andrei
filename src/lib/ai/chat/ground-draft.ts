@@ -58,8 +58,6 @@ import {
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
   rtmFamilyAtColumn,
-  rtmFamilyLocatorMissing,
-  alignRtmFamilyCellToCitedHeading,
   qsrTableColumnLabel,
   rowKeyFromContext,
   editCellsGroupKey,
@@ -80,8 +78,6 @@ export type GroundDraftResult = {
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
-  /** Family cell kept even though the protocol heading was not in this turn's quotes. */
-  locatorMissing?: boolean;
   /** Why a blocked write dropped, for claim_unsupported audit metadata. */
   dropReason?: GroundDropReason;
 };
@@ -642,15 +638,16 @@ export function groundDraftText(input: {
       presenceFallback: keepFact,
     });
   });
-  const familyCol = rtmFamilyAtColumn(
-    input.grounding?.section,
-    input.grounding?.tableCol ?? -1
-  );
   const withMoved = applyMovedCitations(
     cited,
     facts,
     records,
-    Boolean(familyCol)
+    Boolean(
+      rtmFamilyAtColumn(
+        input.grounding?.section,
+        input.grounding?.tableCol ?? -1
+      )
+    )
   );
   const unsourcedFacts = facts.filter((fact, index) => {
     if (records[index]?.status !== "unsourced") return false;
@@ -673,16 +670,6 @@ export function groundDraftText(input: {
   const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;
-  const aligned =
-    !blocked && familyCol
-      ? alignRtmFamilyCellToCitedHeading({
-          cell: withMoved,
-          sourceCell: cited,
-          ledger: input.ledger,
-          family: familyCol,
-          context: input.context ?? withMoved,
-        })
-      : withMoved;
   const text = blocked
     ? replaceFactsWithPlaceholders(
         withMoved,
@@ -694,7 +681,7 @@ export function groundDraftText(input: {
           return shifted ?? fact;
         })
       )
-    : aligned;
+    : withMoved;
 
   // A verified fact with no source is a frame exemption — identity, a date
   // bound, something already in the report — and has nothing to trace. One
@@ -712,20 +699,11 @@ export function groundDraftText(input: {
       : extraUnsupported.length > 0
         ? "qsr_extra"
         : undefined;
-  const locatorMissing =
-    !blocked &&
-    familyCol != null &&
-    rtmFamilyLocatorMissing(
-      text,
-      input.ledger.recordedPages().map((page) => page.quote)
-    );
-
   return {
     text,
     provenance: { claims: provenanceClaims, policy: input.policy },
     unsupported: unsupportedFacts,
     blocked,
-    locatorMissing: locatorMissing || undefined,
     dropReason,
   };
 }
@@ -752,7 +730,6 @@ export function groundTableOperation(input: {
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
-  locatorMissing?: boolean;
   dropReason?: GroundDropReason;
 } {
   const cited = rewriteTableOperationCitations(
@@ -795,7 +772,6 @@ export function groundTableOperation(input: {
   const claims: ClaimProvenanceRecord[] = [];
   const unsupported: HardFact[] = [];
   let blocked = false;
-  let locatorMissing = false;
   let dropReason: GroundDropReason | undefined;
   const groundValue = (
     value: string,
@@ -839,9 +815,6 @@ export function groundTableOperation(input: {
     if (grounded.blocked) {
       blocked = true;
       if (!dropReason && grounded.dropReason) dropReason = grounded.dropReason;
-    }
-    if (grounded.locatorMissing && grounded.text.trim()) {
-      locatorMissing = true;
     }
     return grounded.text;
   };
@@ -966,7 +939,6 @@ export function groundTableOperation(input: {
     provenance: { claims, policy: input.policy },
     unsupported,
     blocked,
-    locatorMissing: locatorMissing || undefined,
     dropReason: blocked ? dropReason : undefined,
   };
 }

@@ -190,13 +190,9 @@ not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
 `3.5`. Integer `1600` matches OCR `1600.0` / `1600.00`, not `1600.5`.
 Do not glue a numbered-list index onto the next measurement (`1. 2.5`
-is not `1.2.5`). Protocol section numbers (`9.3.4`, `7.2`, `8.2.4`) are
-locators — they never block a family-column write; measurements in the
-remainder still must match a quote. Persist the heading title and `p. N`
-from the page that prints that heading (not `13.1 Physical verification`
-on an agitator page). Invented heading + paraphrase without
-facts still fails. Repair search pins to cited files when the draft named
-them. A named date column (Effective Date) matches the source value
+is not `1.2.5`). A protocol section number (`9.3.4`, `7.2`, `8.2.4`)
+persists only when a retrieved page prints it. Repair search pins to
+cited files when the draft named them. A named date column (Effective Date) matches the source value
 next to that same label first; if the exact label is missing, the
 closest date label on the page. A signature or observation date is not
 that field when a closer status label exists. An explicit insert, or a
@@ -217,13 +213,7 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
 instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
 `Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
-prints that heading, or on a later page of the same section (heading on an
-earlier retrieved page of that file, no other section starting in between).
-Persist the heading title from the start page — do not keep a neighbour
-section name on a page that starts a different section. Before grounding, `edit_table` loads up to 10 earlier pages (2 at a time) of the cited
-file (`sectionLookbackPagesToLoad`) so a later-page cite can find its heading.
-When still no retrieved page prints the heading, drop the number but keep the
-supported description and its cite. An explicit empty `edit_cells` of filled
+prints that heading. An explicit empty `edit_cells` of filled
 DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
 only at row level (labeled Result / Remarks N/A, `not applicable for this

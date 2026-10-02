@@ -2248,7 +2248,7 @@ Complies`,
     expect(cells.find((cell) => cell.col === 6)?.insertText).toContain("8.2.4");
   });
 
-  it("keeps OQ temperatures when 9.3.4 is missing from OCR and drops the uncited heading", async () => {
+  it("does not propose an OQ family cell when 9.3.4 is missing from the cited page", async () => {
     mockSection("qsr_rtm_process", {
       table: rtmTableDoc([
         ["URS-3", "Shell Operating temperature", "−15 °C to 130 °C", "", "", "", "", ""],
@@ -2282,12 +2282,7 @@ Complies`,
       },
       TEST_TOOL_OPTIONS
     );
-    expect(result).toMatchObject({ status: "proposed" });
-    const op = proposedTableOp(inserted);
-    const cells = op.kind === "edit_cells" ? op.cells : [];
-    const oq = cells.find((cell) => cell.col === 5)?.insertText ?? "";
-    expect(oq).not.toContain("9.3.4");
-    expect(oq).toContain("120.8");
+    expect(result).toMatchObject({ status: "unsupported_facts" });
   });
 
   it("proposes URS-34 lettered subparts as separate 5.2 rows from the page-9 fixture", async () => {

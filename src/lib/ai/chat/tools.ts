@@ -167,7 +167,6 @@ import {
   prefixTableCaptionMarkdown,
   summarizeTableOperation,
   tableOperationInvalidHint,
-  type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import { loadDocumentContentsForTableNumber } from "@/lib/suggestions/load-document-table-contents";
 import {
@@ -299,8 +298,6 @@ import {
   qsrTableColumnLabel,
   rtmFamilyColumnsNeedProtocolSearch,
   rtmFamilySearchOpenMessage,
-  SECTION_LOOKBACK_MAX_ROUNDS,
-  sectionLookbackPagesToLoad,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 import {
@@ -1594,7 +1591,6 @@ export function buildChatTools(opts: {
     blocked: boolean;
     provenanceClaims: number;
     unsourced: number;
-    locatorMissing?: boolean;
     dropReason?: string;
   }) => {
     if (!actor) return;
@@ -1613,48 +1609,11 @@ export function buildChatTools(opts: {
         provenanceClaims: input.provenanceClaims,
         unsourced: input.unsourced,
         policy: unsupportedFactPolicy,
-        ...(input.locatorMissing ? { locatorMissing: true } : {}),
         ...(input.dropReason ? { dropReason: input.dropReason } : {}),
       },
     }).catch((err) => {
       console.error("claim provenance audit failed", err);
     });
-  };
-  // A section can start pages before the page a family cell cites. Load the
-  // few earlier pages of the cited file so grounding can see the heading
-  // instead of dropping the section number.
-  const seedSectionLookbackPages = async (input: {
-    operation: TableOperation;
-    section: string;
-  }) => {
-    const attempted = new Set<string>();
-    // Walk back in small batches: most sections start 1–2 pages earlier.
-    for (let round = 0; round < SECTION_LOOKBACK_MAX_ROUNDS; round++) {
-      const pages = sectionLookbackPagesToLoad({
-        operation: input.operation,
-        section: input.section,
-        ledger: citationLedger,
-        attempted,
-      });
-      if (pages.length === 0) return;
-      for (const page of pages) {
-        attempted.add(`${page.attachmentId}:${page.pageNumber}`);
-      }
-      try {
-        const rows = await loadDocumentPageEvidence({ reportId, pages });
-        for (const row of rows) {
-          citationLedger.record(
-            row.filename,
-            row.pageNumber,
-            row.attachmentId,
-            { quote: row.quote }
-          );
-        }
-      } catch (err) {
-        console.error("section lookback page load failed", err);
-        return;
-      }
-    }
   };
   const emptyRepair = {
     hits: [] as RepairSearchHit[],
@@ -2838,8 +2797,6 @@ export function buildChatTools(opts: {
               groundedInsert.provenance.claims.length +
               (groundedSecond?.provenance.claims.length ?? 0),
             unsourced: unsupported.length,
-            locatorMissing:
-              groundedInsert.locatorMissing || groundedSecond?.locatorMissing,
             dropReason: groundedInsert.dropReason ?? groundedSecond?.dropReason,
           });
           return unsupportedFactsToolResult({
@@ -3922,10 +3879,6 @@ export function buildChatTools(opts: {
           fieldDoc,
           parsedOp
         );
-        await seedSectionLookbackPages({
-          operation: originalTableOp,
-          section,
-        });
         const tableGrounding = await writeGrounding(
           section,
           resolvedField,
@@ -3980,7 +3933,6 @@ export function buildChatTools(opts: {
             blocked: true,
             provenanceClaims: groundedTable.provenance.claims.length,
             unsourced: groundedTable.unsupported.length,
-            locatorMissing: groundedTable.locatorMissing,
             dropReason: groundedTable.dropReason,
           });
           return unsupportedFactsToolResult({
@@ -4138,7 +4090,6 @@ export function buildChatTools(opts: {
             blocked: false,
             provenanceClaims: groundedTable.provenance.claims.length,
             unsourced: groundedTable.unsupported.length,
-            locatorMissing: groundedTable.locatorMissing,
             dropReason: groundedTable.dropReason,
           });
         }
@@ -4444,7 +4395,6 @@ export function buildChatTools(opts: {
             blocked: true,
             provenanceClaims: groundedDraft.provenance.claims.length,
             unsourced: groundedDraft.unsupported.length,
-            locatorMissing: groundedDraft.locatorMissing,
             dropReason: groundedDraft.dropReason,
           });
           return unsupportedFactsToolResult({
@@ -4503,7 +4453,6 @@ export function buildChatTools(opts: {
             blocked: false,
             provenanceClaims: groundedDraft.provenance.claims.length,
             unsourced: groundedDraft.unsupported.length,
-            locatorMissing: groundedDraft.locatorMissing,
             dropReason: groundedDraft.dropReason,
           });
         }

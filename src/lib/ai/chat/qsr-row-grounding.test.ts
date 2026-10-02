@@ -11,7 +11,6 @@ import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import {
   applyTableOperation,
-  type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
@@ -32,7 +31,6 @@ import {
   rowKeyFromContext,
   rtmReferenceColumnIndexes,
   rtmSectionCellText,
-  sectionLookbackPagesToLoad,
   dropQsrRtmPlaceholderCells,
   missingReviewedUrsIds,
   rtmFamilyColumnsNeedProtocolSearch,
@@ -67,10 +65,6 @@ function ledgerFromPages(
     });
   }
   return ledger;
-}
-
-function rtmCellCore(text: string | undefined): string {
-  return (text ?? "").replace(/\s*\[[^\]]+\]\s*$/g, "").trim();
 }
 
 function rtmProcessDoc(rows: string[][]): JSONContent {
@@ -422,7 +416,7 @@ describe("descriptionSupportedNearKey", () => {
     ).toBe(false);
   });
 
-  it("treats a missing protocol heading as a locator when the remainder has measurements", () => {
+  it("rejects a family cell whose protocol heading was not retrieved, even when the remainder has measurements", () => {
     expect(
       descriptionSupportedNearKey(
         "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C)",
@@ -431,7 +425,7 @@ describe("descriptionSupportedNearKey", () => {
         ],
         "URS-3"
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(
       descriptionSupportedNearKey(
         "7.2 – Overflow volume verification 9320 L",
@@ -440,7 +434,7 @@ describe("descriptionSupportedNearKey", () => {
         ],
         "URS-2"
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
@@ -1043,7 +1037,7 @@ describe("row helpers", () => {
 });
 
 describe("groundTableOperation optional RTM columns", () => {
-  it("drops an OQ heading that is not on the cited page and keeps the temperatures that are", () => {
+  it("blocks an OQ family cell whose heading is not on the cited page", () => {
     const ledger = ledgerFromPages([
       {
         filename: "Operational Qualification.PDF",
@@ -1073,15 +1067,10 @@ describe("groundTableOperation optional RTM columns", () => {
       grounding: { section: "qsr_rtm_process" },
       clearOptionalOnBlock: true,
     });
-    expect(result.blocked).toBe(false);
-    const cell =
-      result.operation.kind === "edit_cells"
-        ? result.operation.cells[0]?.insertText
-        : "";
-    expect(cell).not.toContain("9.3.4");
-    expect(cell).toContain("120.8");
-    expect(cell).toContain("p. 83");
-    expect(result.locatorMissing).toBeUndefined();
+    expect(result.blocked).toBe(true);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.some((cell) => cell.insertText.includes("9.3.4"))).toBe(false);
   });
 
   it("keeps PQ 1600 L from live OCR Qty: 1600.0 L", () => {
@@ -1120,7 +1109,6 @@ describe("groundTableOperation optional RTM columns", () => {
         : "";
     expect(cell).toContain("1600 L");
     expect(cell).toContain("8.2.4");
-    expect(result.locatorMissing).toBeUndefined();
   });
 
   it("clears stock Complies instead of blocking the URS copy", () => {
@@ -2516,9 +2504,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(urs41.map((cell) => cell.insertText).join(" ")).toMatch(/Complies/i);
     expect(urs41.find((cell) => cell.col === 7)?.insertText).toMatch(/Complies/i);
     const section = urs41.find((cell) => cell.col === 4);
-    expect(section?.insertText).toContain("13.6");
-    expect(section?.insertText).toMatch(/gaskets/i);
-    expect(section?.insertText).not.toContain("13.7.5");
+    expect(section?.insertText).toContain("13.7.5");
 
     const preview = buildTableOperationPreviewDoc(table7, result.operation, {
       id: "sug-table7-urs41-complies-outside-id-window",
@@ -3026,8 +3012,7 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(section).toContain("13.8.5.1");
     expect(section).not.toMatch(/\bPQ\b/);
     expect(section).not.toMatch(/^8\.2\.3/);
-    expect(rtmCellCore(section)).toBe(requestedSection);
-    expect(section).toContain("p. 48");
+    expect(section).toBe(requestedSection);
   });
 
   it("replaces a live PQ purpose paragraph with the requested IQ insulation line", () => {
@@ -3076,10 +3061,9 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(result.blocked).toBe(false);
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    expect(rtmCellCore(cells.find((cell) => cell.col === 4)?.insertText)).toBe(
+    expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
       requestedSection
     );
-    expect(cells.find((cell) => cell.col === 4)?.insertText).toContain("p. 21");
     expect(cells.find((cell) => cell.col === 4)?.insertText).not.toMatch(
       /ensures that/i
     );
@@ -3132,10 +3116,9 @@ describe("groundTableOperation optional RTM columns", () => {
     const cells =
       result.operation.kind === "edit_cells" ? result.operation.cells : [];
     expect(cells.find((cell) => cell.col === 3)).toBeUndefined();
-    expect(rtmCellCore(cells.find((cell) => cell.col === 4)?.insertText)).toBe(
+    expect(cells.find((cell) => cell.col === 4)?.insertText).toBe(
       requestedSection
     );
-    expect(cells.find((cell) => cell.col === 4)?.insertText).toContain("p. 49");
   });
 
   it("keeps chat 8.2.4 when the cited page also has an untitled 8.2.3 procedure", () => {
@@ -3535,404 +3518,6 @@ const IQ_P25_AGITATOR_MOTOR =
   "3xper EMPOWERING INNOVATION Issued By MASTER COPY Issued On INSTALLATION QUALIFICATION Carat Kumar Gedla 3xper Innoventure Limited, 30/04/202619:20 Equipment/System Glass Lined Reactor Protocol No. Report No. IQP/GLR-1301 IQR/GLR-1301 Equipment Number GLR-1301 13.3.5.4. Agitator Motor Specifications Revision: 01 Page No. Section Revision: 01 Capacity/Size Effective Date 25 of 60 Production Block-2 8000 L 30-04-2026 Sr. No Parameters 1. Make Actual Verification Verified By Design specifications observations Source (Sign & Date) Design Crompton Crompton 2. Type mounted 3. Motor speed 1470 rpm 14708pm Flame proof, Flange Flame Proof, Analification Afita Design 01-05-2006 01-05-2026 Flange mounted qualification R.Ajita Design qualification R. Ajith 01-05-2026 4. Motor Power 15 HP (11 KW) 15 HP (11kw) GA Drawing R.Alith 01-05-2026";
 const IQ_P18_IDENTIFICATION =
   "Issued By Carat Kumar Yedla 3xper EMPOWERING INNOVAT ON MASTER COPY 3xper Innoventure Limited, Issued On 30/04/202619:20 INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Page No. 18 of 60 Protocol No. IQP/GLR-1301 Revision: 01 Section Production Block-2 Report No. IQR/GLR-1301 Revision: 01 Capacity/Size 8000 L Equipment Number GLR-1301 Effective Date 30-04-2026 13.3. System Identification & technical specification verification 13.3.1. Rationale To check and record the system identity of Equipment Reactor S. No Description Actual Observation Verified By (Sign & Date) 1.0 Name of the equipment Glass Lined Reactor R.Ajita 2.0 Manufacturer Standard Glass Lining Technology Ltd 01-05-2026 RANG 01-05-2026 3.0 Model Number NA RANG 01-05-2076 4.0 Serial Number £250710956 RAjith 01-05-2026 5.0 Capacity / Size 8000L R.Ajith 01-05-2026 6.0 Operating ranges -20°to 220℃ 4.5/FV RA 01-05-2026 7.0 Equipment Identification GLR-1301 RAJ윈도 01-05-2026 Format. No: QAD-SOP-FS-003-F10-00 CONTROLLED COPY";
-
-const IQ_P19_IDENTIFICATION_CONTINUED =
-  "INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Protocol No. IQP/GLR-1301 Page No. 19 of 60 Equipment Number GLR-1301 Capacity/Size 8000 L Effective Date 30-04-2026 8.0 Design pressure 6 bar R.Ajith 01-05-2026 9.0 Working volume 8000 L R.Ajith 01-05-2026 Format. No: QAD-SOP-FS-003-F10-00 CONTROLLED COPY";
-const IQ_P19_NEXT_SECTION =
-  "INSTALLATION QUALIFICATION Equipment/System Glass Lined Reactor Protocol No. IQP/GLR-1301 Page No. 19 of 60 Equipment Number GLR-1301 13.4. Utilities verification 13.4.1. Rationale To check utilities 1.0 Steam supply 3 bar R.Ajith 01-05-2026";
-
-function familyCellFor(
-  pages: { pageNumber: number; quote: string }[],
-  insertText: string
-): { cell: string; blocked: boolean } {
-  const ledger = ledgerFromPages(
-    pages.map((page) => ({
-      filename: "Installation Qualification.PDF",
-      attachmentId: "iq",
-      ...page,
-    }))
-  );
-  const result = groundTableOperation({
-    operation: {
-      kind: "edit_cells",
-      tableIndex: 0,
-      cells: [
-        {
-          row: 1,
-          col: 4,
-          rowKey: "URS-1",
-          insertText,
-          rowContext: "URS-1\nReactor Capacity\n8000 L",
-        },
-      ],
-    },
-    ledger,
-    policy: "block",
-    grounding: { section: "qsr_rtm_process" },
-    clearOptionalOnBlock: true,
-  });
-  return {
-    blocked: result.blocked,
-    cell:
-      result.operation.kind === "edit_cells"
-        ? result.operation.cells[0]?.insertText ?? ""
-        : "",
-  };
-}
-
-describe("RTM family section lookback", () => {
-  const cellOp = (insertText: string): TableOperation =>
-    ({
-      kind: "edit_cells",
-      tableIndex: 0,
-      cells: [
-        {
-          row: 1,
-          col: 4,
-          rowKey: "URS-1",
-          insertText,
-          rowContext: "URS-1\nReactor Capacity\n8000 L",
-        },
-      ],
-    });
-
-  it("asks for the pages before a cite whose section start was not retrieved", () => {
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 19,
-        attachmentId: "iq",
-        quote: IQ_P19_IDENTIFICATION_CONTINUED,
-      },
-    ]);
-    const pages = sectionLookbackPagesToLoad({
-      operation: cellOp(
-        "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
-      ),
-      section: "qsr_rtm_process",
-      ledger,
-    });
-    expect(pages).toEqual([
-      { attachmentId: "iq", pageNumber: 18 },
-      { attachmentId: "iq", pageNumber: 17 },
-    ]);
-  });
-
-  it("walks back in batches and stops after 10 pages or a missing page", () => {
-    const pageNumber = 30;
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber,
-        attachmentId: "iq",
-        quote: IQ_P19_IDENTIFICATION_CONTINUED,
-      },
-      ...[29, 28].map((n) => ({
-        filename: "Installation Qualification.PDF",
-        pageNumber: n,
-        attachmentId: "iq",
-        quote: IQ_P19_IDENTIFICATION_CONTINUED,
-      })),
-    ]);
-    const operation = cellOp(
-      `13.3 – Working volume 8000 L [Installation Qualification.PDF, p. ${pageNumber}]`
-    );
-    expect(
-      sectionLookbackPagesToLoad({
-        operation,
-        section: "qsr_rtm_process",
-        ledger,
-      })
-    ).toEqual([
-      { attachmentId: "iq", pageNumber: 27 },
-      { attachmentId: "iq", pageNumber: 26 },
-    ]);
-    expect(
-      sectionLookbackPagesToLoad({
-        operation,
-        section: "qsr_rtm_process",
-        ledger,
-        attempted: new Set(["iq:27"]),
-      })
-    ).toEqual([]);
-    const far = cellOp(
-      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 12]"
-    );
-    const farLedger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 12,
-        attachmentId: "iq",
-        quote: IQ_P19_IDENTIFICATION_CONTINUED,
-      },
-    ]);
-    const attempted = new Set<string>();
-    let total = 0;
-    for (let round = 0; round < 20; round++) {
-      const pages = sectionLookbackPagesToLoad({
-        operation: far,
-        section: "qsr_rtm_process",
-        ledger: farLedger,
-        attempted,
-      });
-      if (pages.length === 0) break;
-      for (const page of pages) {
-        attempted.add(`${page.attachmentId}:${page.pageNumber}`);
-        farLedger.record(
-          "Installation Qualification.PDF",
-          page.pageNumber,
-          page.attachmentId,
-          { quote: IQ_P19_IDENTIFICATION_CONTINUED }
-        );
-        total++;
-      }
-    }
-    expect(total).toBe(10);
-  });
-
-  it("asks for nothing when the cited page prints the heading or the start is already retrieved", () => {
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 18,
-        attachmentId: "iq",
-        quote: IQ_P18_IDENTIFICATION,
-      },
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 19,
-        attachmentId: "iq",
-        quote: IQ_P19_IDENTIFICATION_CONTINUED,
-      },
-    ]);
-    const op = (page: number) =>
-      cellOp(
-        `13.3 – Working volume 8000 L [Installation Qualification.PDF, p. ${page}]`
-      );
-    expect(
-      sectionLookbackPagesToLoad({
-        operation: op(19),
-        section: "qsr_rtm_process",
-        ledger,
-      })
-    ).toEqual([]);
-    expect(
-      sectionLookbackPagesToLoad({
-        operation: op(18),
-        section: "qsr_rtm_process",
-        ledger,
-      })
-    ).toEqual([]);
-  });
-
-  it("keeps the number once the looked-up start page is on the ledger", () => {
-    const { cell } = familyCellFor(
-      [
-        { pageNumber: 17, quote: "INSTALLATION QUALIFICATION Page No. 17 of 60 12.9 Earlier section 1.0 Gasket NA" },
-        { pageNumber: 18, quote: IQ_P18_IDENTIFICATION },
-        { pageNumber: 19, quote: IQ_P19_IDENTIFICATION_CONTINUED },
-      ],
-      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
-    );
-    expect(cell).toContain("13.3");
-    expect(cell).toContain("p. 19");
-  });
-
-  it("does not look back across a page that starts another section", () => {
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 19,
-        attachmentId: "iq",
-        quote: IQ_P19_IDENTIFICATION_CONTINUED,
-      },
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 18,
-        attachmentId: "iq",
-        quote: IQ_P19_NEXT_SECTION,
-      },
-    ]);
-    expect(
-      sectionLookbackPagesToLoad({
-        operation: cellOp(
-          "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
-        ),
-        section: "qsr_rtm_process",
-        ledger,
-      })
-    ).toEqual([]);
-  });
-});
-
-describe("RTM family heading/page alignment", () => {
-  it("keeps the section number when the cite is on a later page of a section that started earlier", () => {
-    const { cell, blocked } = familyCellFor(
-      [
-        { pageNumber: 18, quote: IQ_P18_IDENTIFICATION },
-        { pageNumber: 19, quote: IQ_P19_IDENTIFICATION_CONTINUED },
-      ],
-      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
-    );
-    expect(blocked).toBe(false);
-    expect(cell).toContain("13.3");
-    expect(cell).toContain("p. 19");
-    expect(cell).not.toContain("p. 18");
-    expect(cell).toContain("8000 L");
-  });
-
-  it("keeps the supported description and page, without an unverifiable number, when the start page was not retrieved", () => {
-    const { cell, blocked } = familyCellFor(
-      [{ pageNumber: 19, quote: IQ_P19_IDENTIFICATION_CONTINUED }],
-      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 19]"
-    );
-    expect(blocked).toBe(false);
-    expect(cell).not.toContain("13.3");
-    expect(cell).toContain("Working volume 8000 L");
-    expect(cell).toContain("p. 19");
-  });
-
-  it("does not treat a page that starts the next section as a continuation", () => {
-    const { cell } = familyCellFor(
-      [
-        { pageNumber: 18, quote: IQ_P18_IDENTIFICATION },
-        { pageNumber: 19, quote: IQ_P19_NEXT_SECTION },
-      ],
-      "13.3 – System identification [Installation Qualification.PDF, p. 19]"
-    );
-    expect(cell).toContain("13.3");
-    expect(cell).toContain("p. 18");
-    expect(cell).not.toContain("p. 19");
-  });
-
-  it("rewrites IQ 13.1 on the agitator page to 13.3 on the identification page for reactor capacity", () => {
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 25,
-        attachmentId: "iq",
-        quote: IQ_P25_AGITATOR_MOTOR,
-      },
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 18,
-        attachmentId: "iq",
-        quote: IQ_P18_IDENTIFICATION,
-      },
-    ]);
-    const result = groundTableOperation({
-      operation: {
-        kind: "edit_cells",
-        tableIndex: 0,
-        cells: [
-          {
-            row: 1,
-            col: 4,
-            rowKey: "URS-1",
-            insertText:
-              "13.1 – Physical verification of equipment [Installation Qualification.PDF, p. 25]",
-            rowContext: "URS-1\nReactor Capacity\n8000 L",
-          },
-        ],
-      },
-      ledger,
-      policy: "block",
-      grounding: { section: "qsr_rtm_process" },
-      clearOptionalOnBlock: true,
-    });
-    expect(result.blocked).toBe(false);
-    const cell =
-      result.operation.kind === "edit_cells"
-        ? result.operation.cells[0]?.insertText ?? ""
-        : "";
-    expect(cell).toContain("13.3");
-    expect(cell).not.toContain("13.1");
-    expect(cell).toMatch(/system identification/i);
-    expect(cell).not.toMatch(/physical verification/i);
-    expect(cell).toContain("p. 18");
-    expect(cell).not.toContain("p. 25");
-  });
-
-  it("does not keep IQ 13.1 citing the agitator page when identification was not retrieved", () => {
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 25,
-        attachmentId: "iq",
-        quote: IQ_P25_AGITATOR_MOTOR,
-      },
-    ]);
-    const result = groundTableOperation({
-      operation: {
-        kind: "edit_cells",
-        tableIndex: 0,
-        cells: [
-          {
-            row: 1,
-            col: 4,
-            rowKey: "URS-1",
-            insertText:
-              "13.1 – Physical verification of equipment [Installation Qualification.PDF, p. 25]",
-            rowContext: "URS-1\nReactor Capacity\n8000 L",
-          },
-        ],
-      },
-      ledger,
-      policy: "block",
-      grounding: { section: "qsr_rtm_process" },
-      clearOptionalOnBlock: true,
-    });
-    // Every optional cell was cleared, so nothing is proposed and the
-    // tool keeps search open for the identification page.
-    expect(result.blocked).toBe(true);
-    const cells =
-      result.operation.kind === "edit_cells" ? result.operation.cells : [];
-    const cell = cells[0]?.insertText ?? "";
-    expect(cell).not.toContain("13.1");
-    expect(cell).not.toMatch(/physical verification/i);
-  });
-
-  it("replaces a wrong IQ heading on the agitator page with 13.3.5.4 Agitator Motor", () => {
-    const ledger = ledgerFromPages([
-      {
-        filename: "Installation Qualification.PDF",
-        pageNumber: 25,
-        attachmentId: "iq",
-        quote: IQ_P25_AGITATOR_MOTOR,
-      },
-    ]);
-    const result = groundTableOperation({
-      operation: {
-        kind: "edit_cells",
-        tableIndex: 0,
-        cells: [
-          {
-            row: 7,
-            col: 4,
-            rowKey: "URS-7",
-            insertText:
-              "13.1 – Physical verification of equipment [Installation Qualification.PDF, p. 25]",
-            rowContext:
-              "URS-7\nAgitator\nAgitator motor flame proof flange mounted",
-          },
-        ],
-      },
-      ledger,
-      policy: "block",
-      grounding: { section: "qsr_rtm_process" },
-      clearOptionalOnBlock: true,
-    });
-    expect(result.blocked).toBe(false);
-    const cell =
-      result.operation.kind === "edit_cells"
-        ? result.operation.cells[0]?.insertText ?? ""
-        : "";
-    expect(cell).toContain("13.3.5.4");
-    expect(cell).toMatch(/agitator motor/i);
-    expect(cell).not.toContain("13.1");
-    expect(cell).toContain("p. 25");
-  });
-});
 
 describe("RTM Remarks from executed protocol records", () => {
   const iqLedger = (quote: string, pageNumber = 25) =>
