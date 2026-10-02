@@ -2163,4 +2163,115 @@ Complies`,
       "13.3.5"
     );
   });
+
+  it("folds later Table 3 insert_rows onto the first open card (GLR-1301)", async () => {
+    mockSection("qsr_qualification_documents");
+    listReadyDocumentsForReportMock.mockResolvedValue([dqDoc(), iqDoc()]);
+    const patched: Array<{ content?: string }> = [];
+    dbUpdateMock.mockReturnValue({
+      set: (values: { content?: string }) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const session = new DocumentReviewSession();
+    session.restoreFromFinishedReview({
+      coverageKey: `${DQ_ID}:40:run,${IQ_ID}:60:run|obj:qsr_qualification_documents`,
+    });
+    const tools = buildTools({
+      section: "qsr_qualification_documents",
+      documentReview: session,
+    });
+    await readDqPage(
+      tools,
+      1,
+      "Design Qualification Protocol No. DQP/GLR-1301 Revision 01 Status Approved Effective Date 30-04-2026"
+    );
+    await readIqPage(
+      tools,
+      1,
+      "Installation Qualification Protocol No. IQP/GLR-1301 Revision 01 Status Approved Effective Date 30-04-2026"
+    );
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "qsr_qualification_documents",
+        targetField: "table",
+        reasoning: "Add the Design Qualification row to Table 3.",
+        operation: {
+          kind: "insert_rows",
+          rows: [
+            [
+              "Design Qualification",
+              `DQP/GLR-1301 [${DQ_FILENAME}, p. 1]`,
+              "01",
+              "Approved",
+              `30-04-2026 [${DQ_FILENAME}, p. 1]`,
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    const firstId = (first as { suggestionId: string }).suggestionId;
+    expect(inserted).toHaveLength(1);
+    const firstOp = proposedTableOp(inserted);
+    expect(firstOp.kind).toBe("insert_rows");
+    expect(firstOp.kind === "insert_rows" ? firstOp.rows : []).toHaveLength(1);
+
+    const second = await tools.edit_table!.execute!(
+      {
+        section: "qsr_qualification_documents",
+        targetField: "table",
+        reasoning: "Add the Installation Qualification row to Table 3.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "Design Qualification",
+          rows: [
+            [
+              "Installation Qualification",
+              `IQP/GLR-1301 [${IQ_FILENAME}, p. 1]`,
+              "01",
+              "Approved",
+              `30-04-2026 [${IQ_FILENAME}, p. 1]`,
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    expect(folded.tableOperation?.kind).toBe("insert_rows");
+    const rows =
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.rows
+        : [];
+    expect(rows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+    ]);
+    expect(
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.afterRow
+        : undefined
+    ).toBe(0);
+    expect(
+      (second as { proposedRowKeys?: string[] }).proposedRowKeys
+    ).toEqual(
+      expect.arrayContaining([
+        "Design Qualification",
+        "Installation Qualification",
+      ])
+    );
+  });
 });

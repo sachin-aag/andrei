@@ -196,6 +196,18 @@ import {
   findNearbyTurnEdit,
   recordNearbyEdit,
 } from "@/lib/suggestions/same-turn-nearby-edit";
+import {
+  createSameTurnTableInserts,
+  findTableInsertForFold,
+  recordTableInsert,
+} from "@/lib/suggestions/same-turn-table-edit";
+import {
+  canFoldInsertRows,
+  incomingInsertRowsToAdd,
+  isInsertRowsOperation,
+  mergeInsertRowsOperations,
+  type InsertRowsOperation,
+} from "@/lib/suggestions/merge-insert-rows";
 import type { SuggestionEdit } from "@/lib/suggestions/locator";
 
 type ReadSectionImageRef = {
@@ -1136,6 +1148,59 @@ async function loadMergedSection(
   };
 }
 
+type OpenInsertRowsCard = {
+  suggestionId: string;
+  operation: InsertRowsOperation;
+  payload: ParsedAiFixPayload;
+};
+
+async function loadOpenInsertRowsCard(args: {
+  reportId: string;
+  section: SectionType;
+  targetField: string;
+  tableIndex: number;
+}): Promise<OpenInsertRowsCard | null> {
+  const rows = await db
+    .select({
+      id: comments.id,
+      content: comments.content,
+      contentPath: comments.contentPath,
+      kind: comments.kind,
+      status: comments.status,
+      createdAt: comments.createdAt,
+    })
+    .from(comments)
+    .where(
+      and(
+        eq(comments.reportId, args.reportId),
+        eq(comments.section, args.section),
+        eq(comments.status, "open")
+      )
+    );
+  const matches = rows.flatMap((row) => {
+    if (!isAiSuggestionKind(row.kind)) return [];
+    if (row.contentPath && row.contentPath !== args.targetField) return [];
+    const payload = parseAiFixCommentContent(row.content);
+    if (!isInsertRowsOperation(payload.tableOperation)) return [];
+    if (payload.tableOperation.tableIndex !== args.tableIndex) return [];
+    return [
+      {
+        suggestionId: row.id,
+        operation: payload.tableOperation,
+        payload,
+        createdAt: row.createdAt,
+      },
+    ];
+  });
+  const latest = matches.at(-1);
+  if (!latest) return null;
+  return {
+    suggestionId: latest.suggestionId,
+    operation: latest.operation,
+    payload: latest.payload,
+  };
+}
+
 async function documentContentsForReport(
   reportId: string,
   documentType: DocumentType
@@ -1356,6 +1421,7 @@ export function buildChatTools(opts: {
   const blockPairing = createSameTurnBlockPairing();
   const imageOps = createSameTurnImageOps();
   const nearbyEdits = createSameTurnNearbyEdits();
+  const tableInserts = createSameTurnTableInserts();
   let listedPlotsThisTurn = false;
   let insertImageTail: Promise<void> = Promise.resolve();
   const enqueueInsertImage = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -1370,6 +1436,15 @@ export function buildChatTools(opts: {
   const enqueueProposeEdit = <T>(fn: () => Promise<T>): Promise<T> => {
     const next = proposeEditTail.then(fn, fn);
     proposeEditTail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  };
+  let editTableTail: Promise<void> = Promise.resolve();
+  const enqueueEditTable = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = editTableTail.then(fn, fn);
+    editTableTail = next.then(
       () => undefined,
       () => undefined
     );
@@ -3779,7 +3854,7 @@ export function buildChatTools(opts: {
         targetField,
         operation,
         reasoning,
-      }): Promise<EditTableResult> => {
+      }): Promise<EditTableResult> => enqueueEditTable(async () => {
         if (!canEdit) {
           return {
             status: "not_editable",
@@ -3845,9 +3920,37 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
+        let foldTarget: OpenInsertRowsCard | null = null;
+        let captureDoc = fieldDoc;
+        if (isInsertRowsOperation(parsedOp)) {
+          const sameTurn = findTableInsertForFold(tableInserts, {
+            section,
+            targetField: resolvedField,
+            tableIndex: parsedOp.tableIndex,
+          });
+          foldTarget = sameTurn
+            ? {
+                suggestionId: sameTurn.suggestionId,
+                operation: sameTurn.operation,
+                payload: sameTurn.payload,
+              }
+            : await loadOpenInsertRowsCard({
+                reportId,
+                section,
+                targetField: resolvedField,
+                tableIndex: parsedOp.tableIndex,
+              });
+          if (foldTarget) {
+            const overlaid = applyTableOperation(fieldDoc, foldTarget.operation, {
+              section,
+              targetField: resolvedField,
+            });
+            if (overlaid.ok) captureDoc = overlaid.doc;
+          }
+        }
         await ensureEvidence();
         const originalTableOp = captureTableOperationSnapshots(
-          fieldDoc,
+          captureDoc,
           parsedOp
         );
         const tableGrounding = await writeGrounding(
@@ -3863,7 +3966,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
-          fieldDoc,
+          fieldDoc: captureDoc,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3882,7 +3985,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
-            fieldDoc,
+            fieldDoc: captureDoc,
           });
         }
         if (groundedTable.blocked) {
@@ -3893,7 +3996,7 @@ export function buildChatTools(opts: {
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
             clearOptionalOnBlock: true,
-            fieldDoc,
+            fieldDoc: captureDoc,
           });
           if (!clearedOptional.blocked) {
             groundedTable = clearedOptional;
@@ -3973,7 +4076,7 @@ export function buildChatTools(opts: {
             reportId,
             documentType
           );
-          applied = applyTableOperation(fieldDoc, stripped.operation, {
+          applied = applyTableOperation(captureDoc, stripped.operation, {
             section,
             targetField: resolvedField,
             documentContents,
@@ -3990,6 +4093,166 @@ export function buildChatTools(opts: {
             return { status: "empty_edit", hint: applied.hint };
           }
           return { status: applied.status, hint: applied.hint };
+        }
+        const incomingInsert = isInsertRowsOperation(stripped.operation)
+          ? stripped.operation
+          : null;
+        if (
+          foldTarget &&
+          incomingInsert &&
+          canFoldInsertRows(foldTarget.operation, incomingInsert)
+        ) {
+          const toAdd = incomingInsertRowsToAdd(
+            foldTarget.operation,
+            incomingInsert
+          );
+          if (toAdd.length === 0) {
+            return {
+              status: "empty_edit",
+              hint: "Those rows are already on the open insert_rows card. Call list_suggestions, or insert_rows with rows that are still missing.",
+            };
+          }
+          const mergedOp = mergeInsertRowsOperations(
+            foldTarget.operation,
+            incomingInsert
+          );
+          let mergedApplied;
+          try {
+            const documentContents = await documentContentsForReport(
+              reportId,
+              documentType
+            );
+            mergedApplied = applyTableOperation(fieldDoc, mergedOp, {
+              section,
+              targetField: resolvedField,
+              documentContents,
+            });
+          } catch (err) {
+            console.error("edit_table fold failed", err);
+            mergedApplied = {
+              ok: false as const,
+              status: "invalid" as const,
+              hint: tableOperationInvalidHint(mergedOp),
+            };
+          }
+          if (mergedApplied.ok) {
+            const foldedSecond = citationsAtEndOfSection
+              ? citationAppendPart(stripped.citations, fieldText)
+              : undefined;
+            const storedOperation = mergedApplied.appliedOperation ?? mergedOp;
+            const nextPayload = attachRecord(
+              {
+                ...foldTarget.payload,
+                reasoning,
+                tableOperation: storedOperation,
+                second: foldedSecond,
+                claimProvenance:
+                  groundedTable.provenance.claims.length > 0
+                    ? groundedTable.provenance
+                    : foldTarget.payload.claimProvenance,
+              },
+              loaded.content as Record<string, unknown>,
+              section,
+              resolvedField,
+              { kind: "table", operation: storedOperation }
+            );
+            await patchFixComment(foldTarget.suggestionId, nextPayload, {
+              anchorText: summarizeTableOperation(storedOperation),
+            });
+            if (isInsertRowsOperation(storedOperation)) {
+              recordTableInsert(tableInserts, {
+                suggestionId: foldTarget.suggestionId,
+                section,
+                targetField: resolvedField,
+                operation: storedOperation,
+                payload: nextPayload,
+              });
+            }
+            const supersededSuggestionIds = await dismissCovered({
+              section,
+              sectionContent: loaded.content,
+              newCommentId: foldTarget.suggestionId,
+            });
+            rememberSameTurnStated(
+              section,
+              resolvedField,
+              repairTextsFromTableOperation(groundedTable.operation).join("\n")
+            );
+            const adjustedCells = tableCellAdjustments(
+              originalTableOp,
+              storedOperation,
+              (col) => qsrTableColumnLabel(section, col)
+            );
+            const proposal = tableEditProposalMeta(
+              originalTableOp,
+              storedOperation
+            );
+            return proposedWithSupersession(
+              {
+                status: "proposed" as const,
+                suggestionId: foldTarget.suggestionId,
+                section,
+                targetField: resolvedField,
+                summary: tableEditLandedSummary(reasoning, proposal),
+                ...(mergedApplied.tableNumber !== undefined
+                  ? { tableNumber: mergedApplied.tableNumber }
+                  : {}),
+                ...(tableOverclaims.warning
+                  ? { warning: tableOverclaims.warning }
+                  : {}),
+                requestedCellCount: proposal.requestedCellCount,
+                proposedCellCount: proposal.proposedCellCount,
+                requestedRowKeys: proposal.requestedRowKeys,
+                proposedRowKeys: proposal.proposedRowKeys,
+                droppedRowKeys: proposal.droppedRowKeys,
+                proposalNote: tableEditProposalMessage(proposal),
+                ...(adjustedCells.length > 0
+                  ? {
+                      adjustedCells,
+                      adjustmentNote: tableCellAdjustmentsMessage(adjustedCells),
+                    }
+                  : {}),
+              },
+              supersededSuggestionIds
+            );
+          }
+        }
+        if (captureDoc !== fieldDoc && isInsertRowsOperation(parsedOp)) {
+          const persistedCaptured = captureTableOperationSnapshots(
+            fieldDoc,
+            parsedOp
+          );
+          const persistedOp = incomingInsert
+            ? {
+                ...incomingInsert,
+                afterRow: persistedCaptured.afterRow,
+                afterRowKey: persistedCaptured.afterRowKey,
+                expectedRowAtAfter: persistedCaptured.expectedRowAtAfter,
+              }
+            : stripped.operation;
+          try {
+            const documentContents = await documentContentsForReport(
+              reportId,
+              documentType
+            );
+            applied = applyTableOperation(fieldDoc, persistedOp, {
+              section,
+              targetField: resolvedField,
+              documentContents,
+            });
+          } catch (err) {
+            console.error("edit_table persisted apply failed", err);
+            return {
+              status: "invalid",
+              hint: tableOperationInvalidHint(persistedOp),
+            };
+          }
+          if (!applied.ok) {
+            if (applied.status === "already_present") {
+              return { status: "empty_edit", hint: applied.hint };
+            }
+            return { status: applied.status, hint: applied.hint };
+          }
         }
         const second = citationsAtEndOfSection
           ? citationAppendPart(stripped.citations, fieldText)
@@ -4031,21 +4294,20 @@ export function buildChatTools(opts: {
             });
           }
         }
+        const recorded = attachRecord(
+          payload,
+          loaded.content as Record<string, unknown>,
+          section,
+          resolvedField,
+          { kind: "table", operation: storedOperation }
+        );
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent(
-            attachRecord(
-              payload,
-              loaded.content as Record<string, unknown>,
-              section,
-              resolvedField,
-              { kind: "table", operation: storedOperation }
-            )
-          ),
+          content: serializeAiFixCommentContent(recorded),
           anchorText: summarizeTableOperation(storedOperation),
           contentPath: resolvedField,
           fromPos: null,
@@ -4054,6 +4316,15 @@ export function buildChatTools(opts: {
           kind: "ai_fix",
           evaluationId: null,
         });
+        if (isInsertRowsOperation(storedOperation)) {
+          recordTableInsert(tableInserts, {
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            operation: storedOperation,
+            payload: recorded,
+          });
+        }
         if (groundedTable.provenance.claims.length > 0) {
           recordClaimAudit({
             suggestionId,
@@ -4110,7 +4381,7 @@ export function buildChatTools(opts: {
           },
           supersededSuggestionIds
         );
-      },
+      }),
     }),
 
     draft_field: tool({

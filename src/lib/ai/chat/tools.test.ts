@@ -3163,6 +3163,136 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).toHaveBeenCalled();
   });
 
+  it("folds sequential insert_rows on an empty table into one card", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Number"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    const inserted: Array<{ content?: string }> = [];
+    const patched: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    dbUpdateMock.mockReturnValue({
+      set: (values: { content?: string }) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the first qualification document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Design Qualification", "DQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    const firstId = (first as { suggestionId: string }).suggestionId;
+    const second = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "Design Qualification",
+          rows: [["Installation Qualification", "IQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    expect(folded.tableOperation?.kind).toBe("insert_rows");
+    const rows =
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.rows
+        : [];
+    expect(rows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+    ]);
+    expect(
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.afterRow
+        : undefined
+    ).toBe(0);
+    expect(
+      (second as { proposedRowKeys?: string[] }).proposedRowKeys
+    ).toEqual(
+      expect.arrayContaining([
+        "Design Qualification",
+        "Installation Qualification",
+      ])
+    );
+
+    const third = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Append the remaining document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Operational Qualification", "OQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(third).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    const appended = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    const appendedRows =
+      appended.tableOperation?.kind === "insert_rows"
+        ? appended.tableOperation.rows
+        : [];
+    expect(appendedRows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+      "Operational Qualification",
+    ]);
+  });
+
   it("coerces nested create_table payloads instead of falling through to draft_field", async () => {
     const tools = buildChatTools({
       reportId: "report-1",

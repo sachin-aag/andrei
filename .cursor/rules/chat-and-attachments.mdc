@@ -157,7 +157,11 @@ when the file set is unknown. Rehydrate only a finish with `status=complete`
 and `truncated !== true`.
 
 `edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
-`afterRow`. `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
+`afterRow`. Sequential `insert_rows` on the same table fold into the open
+card (`mergeInsertRowsOperations`) — the first pending row is not in the
+saved table, so a later `afterRowKey` of that first-cell would otherwise
+`bad_scope`. Same-turn `edit_table` is serialized like `propose_edit`.
+`edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
 over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
 group a batch by a reused dummy numeric row. An already-filled or missing
 `rowKey` sibling is dropped so remaining cells still preview. Do not insert `{ banner }` group rows; existing template banners
