@@ -298,6 +298,7 @@ import {
   qsrTableColumnLabel,
   rtmFamilyColumnsNeedProtocolSearch,
   rtmFamilySearchOpenMessage,
+  qsrReferenceDroppedMessage,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 import {
@@ -4124,10 +4125,15 @@ export function buildChatTools(opts: {
           section,
           attachedFilenames: tableGrounding.attachedFilenames,
         });
-        const keepSearchOpen = missingUrsIds.length > 0 || familyNeedSearch;
+        const referenceDropped =
+          section === "qsr_references" ? proposal.droppedRowKeys : [];
+        const keepSearchOpen =
+          missingUrsIds.length > 0 ||
+          familyNeedSearch ||
+          referenceDropped.length > 0;
         const extraNote = `${missingUrsIdsMessage(missingUrsIds)}${
           familyNeedSearch ? rtmFamilySearchOpenMessage() : ""
-        }`;
+        }${qsrReferenceDroppedMessage(referenceDropped)}`;
         const proposalNote = `${tableEditProposalMessage(proposal)}${extraNote}`;
         return proposedWithSupersession(
           {

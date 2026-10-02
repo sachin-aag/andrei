@@ -57,6 +57,7 @@ import {
   isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
   qsrFailClosedReason,
+  qsrReferenceValueOnCitedPage,
   rtmFamilyAtColumn,
   qsrTableColumnLabel,
   rowKeyFromContext,
@@ -851,6 +852,25 @@ export function groundTableOperation(input: {
           };
         }),
       };
+      if (input.grounding?.section === "qsr_references") {
+        const kept = operation.cells.filter(
+          (cell) =>
+            cell.col !== 1 ||
+            !cell.insertText.trim() ||
+            qsrReferenceValueOnCitedPage(cell.insertText, input.ledger)
+        );
+        if (kept.length === 0 && operation.cells.length > 0) {
+          blocked = true;
+          if (!dropReason) dropReason = "qsr_extra";
+          unsupported.push(
+            syntheticUnsupportedFact(
+              "reference number not printed on the cited page"
+            )
+          );
+        } else {
+          operation = { ...operation, cells: kept };
+        }
+      }
       if (input.clearOptionalOnBlock) {
         const explicitClears = new Set(
           dated.cells

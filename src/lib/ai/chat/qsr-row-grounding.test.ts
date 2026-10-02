@@ -34,6 +34,7 @@ import {
   dropQsrRtmPlaceholderCells,
   missingReviewedUrsIds,
   rtmFamilyColumnsNeedProtocolSearch,
+  qsrReferenceDroppedMessage,
   shouldKeepRtmProtocolSearchOpen,
   ursIdsForRtmSection,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -4075,5 +4076,118 @@ describe("groundTableOperation Qual Docs closest date label", () => {
         : "";
     expect(cell).toContain("30-06-2025");
     expect(cell).not.toContain("<date>");
+  });
+});
+
+describe("qsr references cited page", () => {
+  const iqCover =
+    "INSTALLATION QUALIFICATION Report No. IQR/GLR-1301 Equipment Number GLR-1301 Format. No: QAD-SOP-FS-003-F10-00";
+  const ursCover =
+    "USER REQUIREMENT SPECIFICATION Document Number URS/GLR-1301 Format. No.:-QAD-SOP-FS-003-F03-00";
+  const dqCover =
+    "DESIGN QUALIFICATION Protocol No. DQP/GLR-1301 Report No. DQR/GLR-1301";
+
+  function referencesEdit(
+    cells: { rowKey: string; insertText: string; row: number }[]
+  ) {
+    return groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: cells.map((cell) => ({
+          row: cell.row,
+          col: 1,
+          rowKey: cell.rowKey,
+          insertText: cell.insertText,
+        })),
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 1,
+          attachmentId: "urs",
+          quote: ursCover,
+        },
+        {
+          filename: "Design Qualification.PDF",
+          pageNumber: 1,
+          attachmentId: "dq",
+          quote: dqCover,
+        },
+        {
+          filename: "Installation Qualification.PDF",
+          pageNumber: 1,
+          attachmentId: "iq",
+          quote: iqCover,
+        },
+      ]),
+      policy: "block",
+      grounding: { section: "qsr_references" },
+    });
+  }
+
+  it("keeps numbers printed on the cited cover and drops invented ones", () => {
+    const result = referencesEdit([
+      {
+        row: 1,
+        rowKey: "User Requirement Specification",
+        insertText: "URS/GLR-1301 [User Requirement Specification.PDF, p. 1]",
+      },
+      {
+        row: 3,
+        rowKey: "Design Qualification Report Number",
+        insertText: "DQR/GLR-1301 [Design Qualification.PDF, p. 1]",
+      },
+      {
+        row: 4,
+        rowKey: "Installation Qualification Report Number",
+        insertText: "IQR/GLR-1301 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 2,
+        rowKey: "Design Specification / Data Sheet Document",
+        insertText: "DS/GLR-1301 [User Requirement Specification.PDF, p. 1]",
+      },
+      {
+        row: 5,
+        rowKey: "Purchase Order (P.O)",
+        insertText: "PO/GLR-1301 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 6,
+        rowKey: "Current version of “Validation Master Plan”,",
+        insertText: "VMP-001 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 7,
+        rowKey: "Standard operating procedure for carrying out qualification activity",
+        insertText: "QAD-SOP-FS-003 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 8,
+        rowKey: "ISPE (International Society for Pharmaceutical Engineering)",
+        insertText: "ISPE Baseline Guide [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 9,
+        rowKey: "IPA (Indian Pharmaceutical Association) for Good Engineering Practices",
+        insertText: "IPA GEP Guide [Installation Qualification.PDF, p. 1]",
+      },
+    ]);
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const keys = cells.map((cell) => cell.rowKey);
+    expect(keys).toEqual([
+      "User Requirement Specification",
+      "Design Qualification Report Number",
+      "Installation Qualification Report Number",
+    ]);
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(
+      /PO\/GLR-1301|VMP-001|DS\/GLR-1301|ISPE Baseline|IPA GEP|QAD-SOP-FS-003(?!-F)/
+    );
+    expect(qsrReferenceDroppedMessage(["Purchase Order (P.O)"])).toMatch(
+      /not printed on the cited page/
+    );
   });
 });

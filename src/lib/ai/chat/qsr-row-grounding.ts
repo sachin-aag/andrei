@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  citedPagesFromText,
   extractHardFacts,
   type HardFact,
 } from "@/lib/ai/chat/claim-facts";
@@ -1532,6 +1533,11 @@ export function rtmFamilySearchOpenMessage(): string {
   return " Family columns (Reference – DQ / IQ / OQ / PQ) are still empty. Search attached Design / Installation / Operational / Performance Qualification PDFs this turn and fill them — do not leave them for a follow-up.";
 }
 
+export function qsrReferenceDroppedMessage(rowKeys: readonly string[]): string {
+  if (rowKeys.length === 0) return "";
+  return ` ${rowKeys.join(", ")} were not proposed: the reference number is not printed on the cited page. Search for that document name and propose only a number a retrieved page prints. Do not invent PO/GLR-1301, DS/GLR-1301, or VMP-001 from the equipment id, and do not cite a cover that does not print the number.`;
+}
+
 export function stageFamilyFromCell(
   text: string | null | undefined
 ): RtmStageFamily | null {
@@ -2416,6 +2422,46 @@ function unsignedQuantityWhenEvidenceIsNegative(
     return syntheticUnsupportedFact(cell);
   }
   return null;
+}
+
+/**
+ * A References number has to be printed on the page the cell cites.
+ * `PO/GLR-1301` and `VMP-001` on an IQ cover that only prints `IQR/GLR-1301`
+ * do not land. A format footer (`QAD-SOP-FS-003-F10-00`) does not satisfy
+ * the shorter `QAD-SOP-FS-003`.
+ */
+export function qsrReferenceValueOnCitedPage(
+  cell: string,
+  ledger: CitationPageLedger
+): boolean {
+  const body = cell.replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
+  if (!body) return true;
+  const cited = citedPagesFromText(cell);
+  const recorded = ledger.recordedPages().filter((page) => page.quote.trim());
+  const candidates =
+    cited.length > 0
+      ? recorded.filter((page) =>
+          cited.some(
+            (cite) =>
+              page.filename.trim().toLowerCase() ===
+                cite.filename.trim().toLowerCase() &&
+              page.pageNumber === cite.page
+          )
+        )
+      : recorded;
+  if (candidates.length === 0) return false;
+  return candidates.some((page) => referenceBodyOnQuote(body, page.quote));
+}
+
+function referenceBodyOnQuote(body: string, quote: string): boolean {
+  const needle = body.replace(/\s+/g, " ").trim();
+  if (!needle) return true;
+  const hay = quote.replace(/\s+/g, " ");
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?:^|[^A-Za-z0-9/])${escaped}(?![A-Za-z0-9/-])`,
+    "i"
+  ).test(hay);
 }
 
 export function qsrRevisionUnsupported(
