@@ -960,7 +960,7 @@ describe("groundTableOperation explicit insert keep", () => {
     const dateClaim = result.provenance.claims.find(
       (claim) => claim.kind === "date"
     );
-    expect(dateClaim?.status).toBe("verified");
+    expect(dateClaim?.status).toBe("citation_moved");
     expect(dateClaim?.source?.page).toBe(3);
   });
 
