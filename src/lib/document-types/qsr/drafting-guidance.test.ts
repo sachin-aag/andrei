@@ -15,4 +15,13 @@ describe("QSR_DRAFTING_GUIDANCE", () => {
     );
     expect(QSR_DRAFTING_GUIDANCE).toContain("do not invent FMEA, FAT, or SAT");
   });
+
+  it("fills Table 4 SOPs and URS-34 lettered subparts on first pass", () => {
+    expect(QSR_DRAFTING_GUIDANCE).toContain("Word-form Table 4, not RTM");
+    expect(QSR_DRAFTING_GUIDANCE).toContain(
+      "do not leave family columns for a follow-up"
+    );
+    expect(QSR_DRAFTING_GUIDANCE).toContain("URS-34a / URS-34b");
+    expect(QSR_DRAFTING_GUIDANCE).toContain("URS- 33");
+  });
 });

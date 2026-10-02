@@ -1,19 +1,26 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  citedPagesFromText,
   extractHardFacts,
   type HardFact,
 } from "@/lib/ai/chat/claim-facts";
-import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
+import type {
+  CitationPageLedger,
+  RecordedCitationPage,
+} from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import {
   glueOcrMinusSigns,
   glueOcrUrsIds,
+  URS_ID_TOKEN_SOURCE,
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
   QSR_RTM_FAMILY_HEADERS,
   QSR_TABLE_HEADERS,
 } from "@/lib/document-types/qsr/sections";
+import { parseSourceCitation } from "@/lib/placeholders/citation-bracket";
+import { sourceCitationBracket } from "@/lib/suggestions/citations-at-end";
 import {
   isLeftoverPlaceholderCellText,
   dropLeftoverPlaceholderCells,
@@ -22,7 +29,7 @@ import {
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
 
-const URS_ID_RE = /\bURS-\d+\b/gi;
+const URS_ID_RE = new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi");
 
 const DESCRIPTION_STOPWORDS = new Set([
   "also",
@@ -78,7 +85,9 @@ const RTM_SECTION_DETAIL_CELL_RE = new RegExp(
   "i"
 );
 const SECTION_HEADING_STOP_RE =
-  /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|uncontrolled)\b/i;
+  /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|page\s*no|uncontrolled|revision\s*:|sr\.?\s*no)\b/i;
+const HEADING_BOILERPLATE_RE =
+  /^(?:rationale|objective|purpose|scope|responsibility|responsibilities)\b/i;
 const SAME_AS_PROTOCOL_RE = /\bsame as that of\s+(DQ|IQ|OQ|PQ)\b/i;
 const PASS_TOKEN_RE =
   /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable|verified)\b/i;
@@ -161,7 +170,13 @@ const PROTOCOL_RUNNING_HEADER_RES: readonly RegExp[] = [
   /page\s*no\.?\s*\d{1,3}\s+of\s+\d+/gi,
   // Printed "16 of 51" / "25 of 60" after the Page No. label (not "3 of 5").
   /(?:^|\s)\d{1,3}\s+of\s+\d{2,3}(?=\s|$)/gi,
-  /capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
+  // Running-header Capacity/Size only. Do not strip table row
+  // `5.0 Capacity / Size 8000L` (digit.digit before the label).
+  /(?<!\d\.\d\s)capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
+  /capacity\s*\/\s*size[:\s]*effective\s+date/gi,
+  /equipment\/system[:\s]+[a-z0-9 ]{0,48}/gi,
+  /production\s+block[- ]?\d+/gi,
+  /master copy/gi,
   /\b(?:dqp|iqp|oqp|pqp)\s*\/\s*[a-z0-9-]+/gi,
   /equipment name[:\s]+[a-z0-9 ]{0,48}/gi,
   /equipment id[:\s]+[a-z0-9-]+/gi,
@@ -610,6 +625,11 @@ export function dateSupportedAsLabeledField(
 
 type UrsSpan = { id: string; at: number };
 
+function ursNumericStem(id: string): string {
+  const match = /^URS-(\d+)/i.exec(id);
+  return match?.[1] ?? id.toUpperCase();
+}
+
 /** Glue OCR-split `URS- 33` / `URS-\n33` so window offsets stay on one string. */
 function ursHaystack(quote: string): string {
   return glueOcrUrsIds(quote);
@@ -617,10 +637,12 @@ function ursHaystack(quote: string): string {
 
 function ursSpans(quote: string): UrsSpan[] {
   const hay = ursHaystack(quote);
-  return [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
-    id: match[0]!.toUpperCase(),
-    at: match.index ?? 0,
-  }));
+  return [...hay.matchAll(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"))].map(
+    (match) => ({
+      id: match[0]!.toUpperCase(),
+      at: match.index ?? 0,
+    })
+  );
 }
 
 function isColumnLabelGap(gap: string): boolean {
@@ -653,7 +675,10 @@ function columnRuns(quote: string): ColumnRun[] {
       i < spans.length &&
       isColumnLabelGap(
         hay.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
-      );
+      ) &&
+      // URS-34 / URS-34a / URS-34b are subparts of one requirement, each
+      // with its own text — not a two-column ID list (URS-1, URS-2, URS-3).
+      ursNumericStem(spans[i - 1]!.id) !== ursNumericStem(spans[i]!.id);
     if (continues) continue;
     const runEnd = i - 1;
     if (runEnd - runStart >= 2) {
@@ -712,7 +737,7 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   if (at < 0) return null;
   const needle = key.toUpperCase();
   const after = hay.slice(at + needle.length);
-  const next = after.match(/\bURS-\d+\b/i);
+  const next = after.match(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "i"));
   let end =
     next && next.index != null
       ? at + needle.length + next.index
@@ -778,7 +803,9 @@ export function ursIdsInQuote(quote: string): string[] {
   const hay = ursHaystack(quote);
   return [
     ...new Set(
-      [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
+      [...hay.matchAll(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"))].map(
+        (match) => match[0]!.toUpperCase()
+      )
     ),
   ];
 }
@@ -939,8 +966,9 @@ export function descriptionSupportedNearKey(
   if (SECTION_NUMBER_CELL_RE.test(trimmed)) return true;
   if (isRtmSectionCellText(trimmed) || rtmCellSectionNumber(trimmed)) {
     // A protocol section number is a locator (filename / page / Table N
-    // class), not a claim. Keep the model's heading even when OCR never
-    // printed `9.3.4`. Ground the remainder: measurements still go through
+    // class), not a claim — missing OCR for `9.3.4` does not block the
+    // measurements. Persist the heading only when a retrieved page prints
+    // it (`alignRtmFamilyCellToCitedHeading`).
     // extractHardFacts; invented paraphrase without facts still fails the
     // token gate.
     if (rtmSectionNumbersCited(trimmed, quotes)) return true;
@@ -983,7 +1011,7 @@ function protocolTopicTokens(context: string): string[] {
   const withoutMeta = context
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\b[\w.-]+\.(?:pdf|docx?|xlsx?)\b/gi, " ")
-    .replace(/\bURS-\d+\b/gi, " ")
+    .replace(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"), " ")
     .replace(/\b(?:DQ|IQ|OQ|PQ)\b/g, " ")
     .replace(STOCK_COMPLIES_RE, " ")
     .replace(/\bsection\s+\d+(?:\.\d+)*\b/gi, " ");
@@ -1005,7 +1033,7 @@ function isRtmReferenceMetaLine(line: string): boolean {
   const stripped = line.replace(/\[[^\]]*\]/g, "").trim();
   if (!stripped) return true;
   if (/^<[^<>]+>$/.test(stripped)) return true;
-  if (/^URS-\d+$/i.test(stripped)) return true;
+  if (new RegExp(`^${URS_ID_TOKEN_SOURCE}$`, "i").test(stripped)) return true;
   if (STAGE_ONLY_RE.test(stripped)) return true;
   if (PASS_WORD_CELL_RE.test(stripped)) return true;
   if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
@@ -1039,13 +1067,6 @@ function rtmSectionNumber(text: string): string {
     .replace(/^section\s+/i, "")
     .match(/^(\d+(?:\.\d+)*)/);
   return m?.[1] ?? "";
-}
-
-function sameRtmSectionCell(a: string, b: string): boolean {
-  const left = rtmSectionNumber(a);
-  const right = rtmSectionNumber(b);
-  if (left && right) return left === right;
-  return a.trim() === b.trim();
 }
 
 /**
@@ -1184,6 +1205,354 @@ export function shouldKeepRtmProtocolSearchOpen(
   );
 }
 
+function labeledDateFromQuote(
+  quote: string,
+  columnLabel: string
+): HardFact | null {
+  for (const window of labeledDateWindows(quote, columnLabel)) {
+    const date = firstDateInWindow(window);
+    if (date) return date;
+  }
+  return closestLabeledDate(quote, columnLabel);
+}
+
+function citedLedgerPages(
+  text: string,
+  ledger: CitationPageLedger
+): RecordedCitationPage[] {
+  const filenames = ledger.recordedFilenames();
+  const pages: RecordedCitationPage[] = [];
+  const seen = new Set<string>();
+  const re = /\[[^\]]+\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const parsed = parseSourceCitation(match[0], filenames);
+    if (!parsed) continue;
+    const wantFile = parsed.filename.toLowerCase();
+    for (const page of ledger.recordedPages()) {
+      const key = `${page.filename}:${page.pageNumber}`;
+      if (seen.has(key)) continue;
+      if (page.filename.toLowerCase() !== wantFile) continue;
+      if (
+        parsed.pages.length > 0 &&
+        !parsed.pages.includes(page.pageNumber)
+      ) {
+        continue;
+      }
+      seen.add(key);
+      pages.push(page);
+    }
+  }
+  return pages;
+}
+
+function formatCitedDate(date: HardFact, page: RecordedCitationPage): string {
+  const cite = `[${page.filename}, p. ${page.pageNumber}]`;
+  const trimmed = date.text.replace(/\s+/g, " ").trim();
+  if (trimmed.includes(cite)) return trimmed;
+  return `${trimmed} ${cite}`;
+}
+
+function sopEffectiveDateFromPages(
+  pages: readonly RecordedCitationPage[]
+): string {
+  for (const page of pages) {
+    const date = labeledDateFromQuote(page.quote, "Effective Date");
+    if (date) return formatCitedDate(date, page);
+  }
+  return "";
+}
+
+function backfillSopDateCell(
+  rowTexts: readonly string[],
+  dateCol: number,
+  ledger: CitationPageLedger
+): string {
+  const current = (rowTexts[dateCol] ?? "").trim();
+  if (current) return current;
+  const fromCited = sopEffectiveDateFromPages(
+    citedLedgerPages(rowTexts.join("\n"), ledger)
+  );
+  if (fromCited) return fromCited;
+  const labeled = ledger
+    .recordedPages()
+    .filter((page) => labeledDateFromQuote(page.quote, "Effective Date"));
+  if (labeled.length === 1) {
+    return sopEffectiveDateFromPages(labeled);
+  }
+  return "";
+}
+
+/**
+ * Table 4 SOP rows often copy Name / Number from a protocol body and leave
+ * Effective Date empty. Fill it from that cited page's header Effective Date
+ * (not a signature) so the first insert is complete.
+ */
+export function backfillQsrSopEffectiveDates(
+  operation: TableOperation,
+  ledger: CitationPageLedger,
+  section?: string | null
+): TableOperation {
+  if (section !== "qsr_sops") return operation;
+  if (!ledger.hasQuotedPages()) return operation;
+  const dateCol = QSR_TABLE_HEADERS.qsr_sops.indexOf("Effective Date");
+  if (dateCol < 0) return operation;
+  switch (operation.kind) {
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map((row) => {
+          const next = [...row];
+          const filled = backfillSopDateCell(next, dateCol, ledger);
+          if (filled) next[dateCol] = filled;
+          return next;
+        }),
+      };
+    case "create_table":
+      return {
+        ...operation,
+        rows: (operation.rows ?? []).map((row) => {
+          const next = [...row];
+          const filled = backfillSopDateCell(next, dateCol, ledger);
+          if (filled) next[dateCol] = filled;
+          return next;
+        }),
+      };
+    case "edit_cells": {
+      const groups = new Map<string, string[]>();
+      for (const cell of operation.cells) {
+        const key = editCellsGroupKey(cell);
+        const texts = groups.get(key) ?? [];
+        texts[cell.col] = cell.insertText;
+        groups.set(key, texts);
+      }
+      return {
+        ...operation,
+        cells: operation.cells.map((cell) => {
+          if (cell.col !== dateCol || cell.insertText.trim()) return cell;
+          const filled = backfillSopDateCell(
+            groups.get(editCellsGroupKey(cell)) ?? [],
+            dateCol,
+            ledger
+          );
+          return filled ? { ...cell, insertText: filled } : cell;
+        }),
+      };
+    }
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
+function rtmHeadingLocations(
+  quote: string
+): Array<{ at: number; section: QsrRtmSection }> {
+  const hay = ursHaystack(quote).toLowerCase();
+  const found: Array<{ at: number; section: QsrRtmSection; phrase: string }> =
+    [];
+  for (const section of QSR_RTM_SECTIONS) {
+    for (const phrase of rtmHeadingPhrases(section)) {
+      let from = 0;
+      while (from < hay.length) {
+        const at = hay.indexOf(phrase, from);
+        if (at < 0) break;
+        found.push({ at, section, phrase });
+        from = at + phrase.length;
+      }
+    }
+  }
+  found.sort(
+    (left, right) =>
+      left.at - right.at || right.phrase.length - left.phrase.length
+  );
+  const locations: Array<{ at: number; section: QsrRtmSection }> = [];
+  let lastAt = -1;
+  for (const hit of found) {
+    if (hit.at === lastAt) continue;
+    locations.push({ at: hit.at, section: hit.section });
+    lastAt = hit.at;
+  }
+  return locations;
+}
+
+/**
+ * URS IDs on reviewed pages that belong under this RTM table, sliced by the
+ * URS heading (Instrument Requirement and Control Philosophy both land in
+ * 5.2). Lettered subparts stay distinct rows.
+ */
+export function ursIdsForRtmSection(
+  quotes: readonly string[],
+  section: string
+): string[] {
+  if (!isQsrRtmSection(section)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const quote of quotes) {
+    const hay = ursHaystack(quote);
+    const headings = rtmHeadingLocations(hay);
+    for (const id of ursIdsInQuote(hay)) {
+      const at = indexOfUrsId(hay, id);
+      if (at < 0) continue;
+      let assigned: QsrRtmSection | null = null;
+      for (const heading of headings) {
+        if (heading.at <= at) assigned = heading.section;
+      }
+      if (assigned == null && headings.length === 0) {
+        assigned = "qsr_rtm_process";
+      }
+      if (assigned !== section || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+function addOperationUrsIds(
+  operation: TableOperation,
+  present: Set<string>
+): void {
+  const add = (text: string | undefined) => {
+    const key = rowKeyFromContext(text ?? "");
+    if (key) present.add(key);
+  };
+  switch (operation.kind) {
+    case "edit_cells":
+      for (const cell of operation.cells) {
+        add(cell.rowKey);
+        add(cell.insertText);
+        add(cell.rowContext);
+      }
+      break;
+    case "insert_rows":
+    case "create_table":
+      for (const row of operation.rows ?? []) {
+        add(row[0]);
+      }
+      break;
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      break;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
+/** Reviewed URS IDs for this table that the insert/edit did not include. */
+export function missingReviewedUrsIds(input: {
+  operation: TableOperation;
+  ledger: CitationPageLedger;
+  section?: string | null;
+  fieldDoc?: JSONContent | null;
+}): string[] {
+  if (!isQsrRtmSection(input.section)) return [];
+  const quotes = input.ledger
+    .recordedPages()
+    .filter((page) => isUrsFilename(page.filename))
+    .map((page) => page.quote);
+  if (quotes.length === 0) return [];
+  const expected = ursIdsForRtmSection(quotes, input.section);
+  const present = new Set<string>();
+  for (const key of liveTableRowContextByKey(input.fieldDoc).keys()) {
+    present.add(key);
+  }
+  addOperationUrsIds(input.operation, present);
+  return expected.filter((id) => !present.has(id));
+}
+
+function familyCellFilled(text: string | undefined): boolean {
+  return Boolean((text ?? "").replace(/\[[^\]]*\]/g, "").trim());
+}
+
+function attachedProtocolFilename(
+  filenames: readonly string[] | undefined
+): boolean {
+  return (filenames ?? []).some((name) => {
+    const family = documentFamilyFromFilename(name);
+    return (
+      family != null &&
+      (QSR_RTM_FAMILY_ORDER as readonly string[]).includes(family)
+    );
+  });
+}
+
+/**
+ * First-pass Tables 5–10 often land URS ID / Parameters / User requirements
+ * and leave DQ/IQ/OQ/PQ blank. Keep search open so the same turn fills them.
+ */
+export function rtmFamilyColumnsNeedProtocolSearch(input: {
+  operation: TableOperation;
+  section?: string | null;
+  attachedFilenames?: readonly string[];
+}): boolean {
+  if (!isQsrRtmSection(input.section)) return false;
+  if (!attachedProtocolFilename(input.attachedFilenames)) return false;
+  const cols = rtmReferenceColumnIndexes(input.section);
+  if (!cols) return false;
+  const familyCols = [cols.dq, cols.iq, cols.oq, cols.pq];
+  let hasUrsRow = false;
+  const filled = (texts: readonly string[]) =>
+    familyCols.some((col) => familyCellFilled(texts[col]));
+  switch (input.operation.kind) {
+    case "insert_rows":
+    case "create_table":
+      for (const row of input.operation.rows ?? []) {
+        if (!rowKeyFromContext(row[0] ?? "")) continue;
+        hasUrsRow = true;
+        if (filled(row)) return false;
+      }
+      return hasUrsRow;
+    case "edit_cells": {
+      const byKey = new Map<string, string[]>();
+      for (const cell of input.operation.cells) {
+        const key = editCellsGroupKey(cell);
+        const texts = byKey.get(key) ?? [];
+        texts[cell.col] = cell.insertText;
+        byKey.set(key, texts);
+      }
+      for (const [key, texts] of byKey) {
+        if (!rowKeyFromContext(key) && !rowKeyFromContext(texts[0] ?? "")) {
+          continue;
+        }
+        hasUrsRow = true;
+        if (filled(texts)) return false;
+      }
+      return hasUrsRow;
+    }
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return false;
+    default: {
+      const exhaustive: never = input.operation;
+      return exhaustive;
+    }
+  }
+}
+
+export function missingUrsIdsMessage(ids: readonly string[]): string {
+  if (ids.length === 0) return "";
+  const listed = ids.slice(0, 12).join(", ");
+  const more = ids.length > 12 ? ", …" : "";
+  return ` Reviewed URS pages also list ${listed}${more} — insert those rows too. URS-34a / URS-34b are lettered subparts of URS-34 (Instrument Requirement), not extras to skip; they belong in 5.2 with URS-34.`;
+}
+
+export function rtmFamilySearchOpenMessage(): string {
+  return " Family columns (Reference – DQ / IQ / OQ / PQ) are still empty. Search attached Design / Installation / Operational / Performance Qualification PDFs this turn and fill them — do not leave them for a follow-up.";
+}
+
 export function stageFamilyFromCell(
   text: string | null | undefined
 ): RtmStageFamily | null {
@@ -1283,7 +1652,7 @@ function protocolMentionsKey(
 }
 
 function headingTitleAfterNumber(rest: string): string {
-  let text = rest;
+  let text = rest.replace(/^[.:;\s–—-]+/, "");
   const same = SAME_AS_PROTOCOL_RE.exec(text);
   if (same && same.index != null) text = text.slice(0, same.index);
   const sentence = text.search(/\.\s+[A-Z]/);
@@ -1580,23 +1949,6 @@ function headingBlockForNumber(
   return formatRtmSectionHeading(number, block);
 }
 
-function headingFromQuotes(
-  quotes: readonly string[],
-  number: string,
-  family?: RtmStageFamily | null
-): string | null {
-  if (!number) return null;
-  for (const quote of quotes) {
-    const heading = headingBlockForNumber(protocolBodyQuote(quote), number);
-    if (!heading) continue;
-    const found = rtmCellSectionNumber(heading, family);
-    if (found === number || rtmSectionNumberParts(heading).includes(number)) {
-      return heading;
-    }
-  }
-  return null;
-}
-
 /**
  * A family column is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
@@ -1646,11 +1998,6 @@ function rtmCellDescription(text: string): string {
   return cleanRtmSectionDescription(rest);
 }
 
-function rtmSectionNumberParts(text: string): string[] {
-  const number = rtmCellSectionNumber(text);
-  return number ? number.split(/\s*[\/&]\s*/).filter(Boolean) : [];
-}
-
 const MULTI_LEVEL_HEADING_RE =
   /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Za-z])/g;
 
@@ -1660,13 +2007,35 @@ const MULTI_LEVEL_HEADING_RE =
  * numbers). Pick the block whose text names this row's topic so Reactor
  * Capacity is not labelled with the first test on the page.
  */
+function headingStarts(stripped: string): { number: string; at: number }[] {
+  const found: { number: string; at: number }[] = [];
+  const push = (number: string, at: number) => {
+    const title = headingTitleAfterNumber(stripped.slice(at + number.length));
+    if (HEADING_BOILERPLATE_RE.test(title)) return;
+    if (found.some((row) => row.at === at)) return;
+    found.push({ number, at });
+  };
+  for (const match of stripped.matchAll(MULTI_LEVEL_HEADING_RE)) {
+    const number = match[1]!;
+    push(number, match.index! + match[0].indexOf(number));
+  }
+  const twoLevel = /(?:^|\s)(\d+\.\d+)(?!\.\d)\.?\s+(?=[A-Z])/g;
+  for (const match of stripped.matchAll(twoLevel)) {
+    const number = match[1]!;
+    push(number, match.index! + match[0].indexOf(number));
+  }
+  return found.toSorted((left, right) => left.at - right.at);
+}
+
 function rowMatchedSectionHeading(stripped: string, context: string): string | null {
-  const starts = [...stripped.matchAll(MULTI_LEVEL_HEADING_RE)].map((m) => ({
-    number: m[1]!,
-    at: m.index! + m[0].indexOf(m[1]!),
-  }));
-  if (starts.length < 2) return null;
+  const starts = headingStarts(stripped);
+  if (starts.length === 0) return null;
   const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (starts.length === 1) {
+    const start = starts[0]!;
+    const block = stripped.slice(start.at + start.number.length);
+    return formatRtmSectionHeading(start.number, block.replace(/^\.?\s+/, ""));
+  }
   if (tokens.length === 0) return null;
   let best: { number: string; block: string; score: number } | null = null;
   for (let index = 0; index < starts.length; index++) {
@@ -1701,7 +2070,8 @@ function protocolSectionHeading(
   if (
     multiTitle?.[1] &&
     multiTitle[2] &&
-    isUsableProtocolSectionNumber(multiTitle[1], multiTitle[2])
+    isUsableProtocolSectionNumber(multiTitle[1], multiTitle[2]) &&
+    !HEADING_BOILERPLATE_RE.test(headingTitleAfterNumber(multiTitle[2]))
   ) {
     return formatRtmSectionHeading(multiTitle[1], multiTitle[2]);
   }
@@ -1824,7 +2194,12 @@ function citePageForSectionHeading(
     const home = pages.find(
       (page) => number && headingNumberOnPage(page.quote, number)
     );
-    if (home) return { page: home, heading: passHeading };
+    if (home) {
+      const heading =
+        headingBlockForNumber(protocolBodyQuote(home.quote), number) ??
+        passHeading;
+      return { page: home, heading };
+    }
   }
   for (const page of pages) {
     const heading = sectionHeadingFromQuote(
@@ -1839,7 +2214,247 @@ function citePageForSectionHeading(
       return { page, heading };
     }
   }
-  return { page: passPage, heading: passHeading };
+  const passNumber = passHeading
+    ? rtmCellSectionNumber(passHeading, family)
+    : "";
+  return {
+    page: passPage,
+    heading:
+      passNumber && headingNumberOnPage(passPage.quote, passNumber)
+        ? passHeading
+        : null,
+  };
+}
+
+function protocolPageTopicScore(quote: string, context: string): number {
+  const body = protocolBodyQuote(quote);
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (!body || tokens.length === 0) return 0;
+  return tokens.filter((token) => windowHasToken(body, token)).length;
+}
+
+function recordedPageByCite(
+  ledger: CitationPageLedger,
+  filename: string,
+  pageNumber: number
+): RecordedCitationPage | undefined {
+  return ledger.recordedPages().find(
+    (page) =>
+      page.filename.trim().toLowerCase() === filename.trim().toLowerCase() &&
+      page.pageNumber === pageNumber
+  );
+}
+
+function headingHomePage(
+  ledger: CitationPageLedger,
+  family: RtmStageFamily,
+  number: string,
+  context: string
+): RecordedCitationPage | undefined {
+  const homes = ledger.recordedPages().filter(
+    (page) =>
+      filenameMatchesFamily(page.filename, family) &&
+      headingNumberOnPage(page.quote, number)
+  );
+  if (homes.length === 0) return undefined;
+  return homes.toSorted(
+    (left, right) =>
+      protocolPageTopicScore(right.quote, context) -
+      protocolPageTopicScore(left.quote, context)
+  )[0];
+}
+
+function familyCellWithCitation(
+  body: string,
+  filename: string,
+  pageNumber: number
+): string {
+  const clean = body.replace(/\s*\[[^\]]+\]\s*/g, " ").trim();
+  if (!clean) return "";
+  const cite = sourceCitationBracket(filename, pageNumber);
+  return cite ? `${clean} ${cite}` : clean;
+}
+
+function remainderHasPageFacts(desc: string, quote: string): boolean {
+  return extractHardFacts(desc).some(
+    (fact) =>
+      (fact.kind === "number" ||
+        fact.kind === "temperature" ||
+        fact.kind === "duration") &&
+      evidenceContainsFact(quote, fact)
+  );
+}
+
+function remainderWorthKeeping(
+  desc: string,
+  quote: string,
+  key: string,
+  context: string
+): boolean {
+  if (!desc) return false;
+  if (remainderHasPageFacts(desc, quote)) return true;
+  const rowTokens = protocolTopicTokens(protocolTopicSource(context));
+  const descTokens = significantDescriptionTokens(desc).filter((token) =>
+    /[a-z]/.test(token)
+  );
+  if (
+    rowTokens.length > 0 &&
+    !descTokens.some((token) => rowTokens.includes(token))
+  ) {
+    return false;
+  }
+  return descriptionSupportedNearKey(desc, [quote], key);
+}
+
+function headingOnRecordedPage(
+  page: RecordedCitationPage,
+  number: string,
+  context: string,
+  family: RtmStageFamily
+): string | null {
+  return (
+    headingBlockForNumber(protocolBodyQuote(page.quote), number) ??
+    sectionHeadingFromQuote(page.quote, context, family, number)
+  );
+}
+
+function familyCellFromHeadingPage(input: {
+  page: RecordedCitationPage;
+  heading: string;
+  requested: string;
+  family: RtmStageFamily;
+  key: string;
+}): string {
+  const headingNumber = rtmCellSectionNumber(input.heading, input.family);
+  const requestedNumber = rtmCellSectionNumber(input.requested, input.family);
+  const keepRequestedDesc =
+    Boolean(headingNumber) &&
+    headingNumber === requestedNumber &&
+    descriptionSupportedNearKey(input.requested, [input.page.quote], input.key);
+  const body = rtmSectionCellText(
+    keepRequestedDesc ? input.requested : input.heading,
+    { sectionHeading: input.heading, family: input.family }
+  );
+  return familyCellWithCitation(
+    body || input.heading,
+    input.page.filename,
+    input.page.pageNumber
+  );
+}
+
+/**
+ * Persist `{heading} – {audit line} [file, p. N]` only when p. N prints
+ * that heading. Wrong section names and neighbour-page cites (13.1 on an
+ * agitator page) rewrite to the topic-matched protocol page, or drop.
+ */
+export function alignRtmFamilyCellToCitedHeading(input: {
+  cell: string;
+  sourceCell?: string;
+  ledger: CitationPageLedger;
+  family: RtmStageFamily;
+  context: string;
+}): string {
+  const original = input.cell;
+  const trimmed = original.trim();
+  if (!trimmed || isRtmNotFoundMarker(trimmed)) return original;
+  const requestedNumber = rtmCellSectionNumber(trimmed, input.family);
+  if (!requestedNumber) return original;
+
+  const source = (input.sourceCell ?? original).trim();
+  const hadModelCite = citedPagesFromText(source).length > 0;
+  const key = rowKeyFromContext(input.context) ?? "";
+  const cited = citedPagesFromText(trimmed)[0];
+  const citedPage = cited
+    ? recordedPageByCite(input.ledger, cited.filename, cited.page)
+    : undefined;
+
+  if (citedPage && headingNumberOnPage(citedPage.quote, requestedNumber)) {
+    const heading = headingOnRecordedPage(
+      citedPage,
+      requestedNumber,
+      input.context,
+      input.family
+    );
+    if (heading) {
+      return familyCellFromHeadingPage({
+        page: citedPage,
+        heading,
+        requested: trimmed,
+        family: input.family,
+        key,
+      });
+    }
+  }
+
+  const home = headingHomePage(
+    input.ledger,
+    input.family,
+    requestedNumber,
+    input.context
+  );
+  if (home) {
+    const heading = headingOnRecordedPage(
+      home,
+      requestedNumber,
+      input.context,
+      input.family
+    );
+    if (heading) {
+      return familyCellFromHeadingPage({
+        page: home,
+        heading,
+        requested: trimmed,
+        family: input.family,
+        key,
+      });
+    }
+  }
+
+  if (!hadModelCite && !citedPage) return source;
+
+  const pick = key
+    ? pickRtmReference(
+        input.ledger,
+        key,
+        input.context,
+        requestedNumber,
+        input.family
+      )
+    : null;
+  const pickPage = pick
+    ? recordedPageByCite(input.ledger, pick.filename, pick.pageNumber)
+    : undefined;
+  const pickHeading = pick?.sectionHeading ?? "";
+  const pickNumber = rtmCellSectionNumber(pickHeading, input.family);
+  if (
+    pick &&
+    pickPage &&
+    pickNumber &&
+    headingNumberOnPage(pickPage.quote, pickNumber)
+  ) {
+    return familyCellFromHeadingPage({
+      page: pickPage,
+      heading: pickHeading,
+      requested: trimmed,
+      family: input.family,
+      key,
+    });
+  }
+
+  const desc = rtmCellDescription(trimmed);
+  if (
+    citedPage &&
+    desc &&
+    remainderWorthKeeping(desc, citedPage.quote, key, input.context)
+  ) {
+    return familyCellWithCitation(
+      desc,
+      citedPage.filename,
+      citedPage.pageNumber
+    );
+  }
+  if (!hadModelCite) return source;
+  return "";
 }
 
 function firstSectionNumberLine(text: string): string {
@@ -1869,13 +2484,18 @@ export function pickRtmReference(
   for (const family of families) {
     const pages = matchingProtocolPages(ledger, key, family, context);
     if (pages.length === 0) continue;
-    const passPage =
-      pages.find((page) => {
-        const window = pageLevelTokenAroundKey(page.quote, key);
-        if (window && hasProtocolPassToken(window)) return true;
-        const topic = protocolTopicBody(page.quote, context);
-        return topic != null && hasProtocolPassToken(topic);
-      }) ?? pages[0]!;
+    const passing = pages.filter((page) => {
+      const window = pageLevelTokenAroundKey(page.quote, key);
+      if (window && hasProtocolPassToken(window)) return true;
+      const topic = protocolTopicBody(page.quote, context);
+      return topic != null && hasProtocolPassToken(topic);
+    });
+    const ranked = (passing.length > 0 ? passing : pages).toSorted(
+      (left, right) =>
+        protocolPageTopicScore(right.quote, context) -
+        protocolPageTopicScore(left.quote, context)
+    );
+    const passPage = ranked[0] ?? pages[0]!;
     const cited = citePageForSectionHeading(
       pages,
       passPage,
@@ -2228,13 +2848,15 @@ export function rtmHeadingPhrases(
 ): readonly string[] {
   switch (section) {
     case "qsr_rtm_process":
-      return ["process requirements", "user requirement"];
+      // Do not use bare "user requirement" — that is the URS title and the
+      // "User requirements" column header, which would steal 5.2 IDs.
+      return ["process requirements", "process requirement", "operation requirement"];
     case "qsr_rtm_control":
-      return ["control philosophy"];
+      return ["control philosophy", "instrument requirement"];
     case "qsr_rtm_gmp":
-      return ["gmp requirements"];
+      return ["gmp requirements", "gmp requirement"];
     case "qsr_rtm_safety":
-      return ["safety requirements"];
+      return ["safety requirements", "safety requirement"];
     case "qsr_rtm_csv":
       return ["computer system validation", "scada"];
     case "qsr_rtm_maintenance":

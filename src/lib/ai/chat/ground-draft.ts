@@ -46,6 +46,7 @@ import {
 import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
 import {
   attachLiveTableRowContext,
+  backfillQsrSopEffectiveDates,
   dateSupportedAsLabeledField,
   documentFamilyFromContext,
   extraQsrUnsupported,
@@ -58,6 +59,7 @@ import {
   qsrFailClosedReason,
   rtmFamilyAtColumn,
   rtmFamilyLocatorMissing,
+  alignRtmFamilyCellToCitedHeading,
   qsrTableColumnLabel,
   rowKeyFromContext,
   editCellsGroupKey,
@@ -640,16 +642,15 @@ export function groundDraftText(input: {
       presenceFallback: keepFact,
     });
   });
+  const familyCol = rtmFamilyAtColumn(
+    input.grounding?.section,
+    input.grounding?.tableCol ?? -1
+  );
   const withMoved = applyMovedCitations(
     cited,
     facts,
     records,
-    Boolean(
-      rtmFamilyAtColumn(
-        input.grounding?.section,
-        input.grounding?.tableCol ?? -1
-      )
-    )
+    Boolean(familyCol)
   );
   const unsourcedFacts = facts.filter((fact, index) => {
     if (records[index]?.status !== "unsourced") return false;
@@ -672,6 +673,16 @@ export function groundDraftText(input: {
   const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;
+  const aligned =
+    !blocked && familyCol
+      ? alignRtmFamilyCellToCitedHeading({
+          cell: withMoved,
+          sourceCell: cited,
+          ledger: input.ledger,
+          family: familyCol,
+          context: input.context ?? withMoved,
+        })
+      : withMoved;
   const text = blocked
     ? replaceFactsWithPlaceholders(
         withMoved,
@@ -683,7 +694,7 @@ export function groundDraftText(input: {
           return shifted ?? fact;
         })
       )
-    : withMoved;
+    : aligned;
 
   // A verified fact with no source is a frame exemption — identity, a date
   // bound, something already in the report — and has nothing to trace. One
@@ -703,12 +714,9 @@ export function groundDraftText(input: {
         : undefined;
   const locatorMissing =
     !blocked &&
-    rtmFamilyAtColumn(
-      input.grounding?.section,
-      input.grounding?.tableCol ?? -1
-    ) != null &&
+    familyCol != null &&
     rtmFamilyLocatorMissing(
-      cited,
+      text,
       input.ledger.recordedPages().map((page) => page.quote)
     );
 
@@ -778,6 +786,12 @@ export function groundTableOperation(input: {
     };
   }
 
+  const dated = backfillQsrSopEffectiveDates(
+    cited,
+    input.ledger,
+    input.grounding?.section
+  );
+
   const claims: ClaimProvenanceRecord[] = [];
   const unsupported: HardFact[] = [];
   let blocked = false;
@@ -833,12 +847,12 @@ export function groundTableOperation(input: {
   };
 
   let operation: TableOperation;
-  switch (cited.kind) {
+  switch (dated.kind) {
     case "edit_cells":
       operation = {
-        ...cited,
-        cells: cited.cells.map((cell) => {
-          const context = cited.cells
+        ...dated,
+        cells: dated.cells.map((cell) => {
+          const context = dated.cells
             .filter(
               (rowCell) => editCellsGroupKey(rowCell) === editCellsGroupKey(cell)
             )
@@ -866,7 +880,7 @@ export function groundTableOperation(input: {
       };
       if (input.clearOptionalOnBlock) {
         const explicitClears = new Set(
-          cited.cells
+          dated.cells
             .filter(
               (cell) =>
                 isQsrRtmOptionalReferenceColumn(
@@ -891,13 +905,13 @@ export function groundTableOperation(input: {
           return true;
         });
         operation = { ...operation, cells: kept };
-        if (kept.length === 0 && cited.cells.length > 0) blocked = true;
+        if (kept.length === 0 && dated.cells.length > 0) blocked = true;
       }
       break;
     case "insert_rows":
       operation = {
-        ...cited,
-        rows: cited.rows.map((row) => {
+        ...dated,
+        rows: dated.rows.map((row) => {
           const context = row.join("\n");
           return row.map((cell, col) =>
             groundValue(
@@ -915,23 +929,23 @@ export function groundTableOperation(input: {
       break;
     case "insert_column":
       operation = {
-        ...cited,
-        header: groundValue(cited.header, cited.header),
-        values: cited.values?.map((value) =>
-          groundValue(value, `${cited.header}\n${value}`, undefined, cited.header)
+        ...dated,
+        header: groundValue(dated.header, dated.header),
+        values: dated.values?.map((value) =>
+          groundValue(value, `${dated.header}\n${value}`, undefined, dated.header)
         ),
       };
       break;
     case "create_table":
       operation = {
-        ...cited,
-        headers: cited.headers.map((header) =>
-          groundValue(header, cited.headers.join("\n"))
+        ...dated,
+        headers: dated.headers.map((header) =>
+          groundValue(header, dated.headers.join("\n"))
         ),
-        rows: cited.rows?.map((row) => {
-          const context = [...cited.headers, ...row].join("\n");
+        rows: dated.rows?.map((row) => {
+          const context = [...dated.headers, ...row].join("\n");
           return row.map((cell, col) =>
-            groundValue(cell, context, col, cited.headers[col])
+            groundValue(cell, context, col, dated.headers[col])
           );
         }),
       };
@@ -939,10 +953,10 @@ export function groundTableOperation(input: {
     case "delete_rows":
     case "delete_column":
     case "delete_table":
-      operation = cited;
+      operation = dated;
       break;
     default: {
-      const exhaustive: never = cited;
+      const exhaustive: never = dated;
       return exhaustive;
     }
   }

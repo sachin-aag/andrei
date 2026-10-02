@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v173-date-label-keep");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v175-qsr-heading-cite");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {

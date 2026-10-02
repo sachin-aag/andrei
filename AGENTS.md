@@ -213,10 +213,15 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
 - QSR RTM family-column headings (`9.3.4`, `8.2.4`) are locators, not
-  claims: a missing heading does not drop a cell whose measurements match
-  the cited page. Integer `1600` matches OCR `1600.0`. Repair search pins
-  to cited files. Gold: `qsr-rtm-draft-replay.test.ts` and
-  `scripts/eval/chat-draft-cases.json`.
+  claims: a missing heading does not block measurements that match the
+  cited page. Persist the heading title from the page that prints it —
+  do not keep `13.1 Physical verification` on an agitator page, and
+  retarget `p. N` to that heading's page. Integer `1600` matches OCR
+  `1600.0`. Repair search pins to cited files. Word-form Table 4 is
+  SOPs; Tables 5–10 fill family columns on the first insert. URS-34 /
+  34a / 34b are lettered Instrument Requirement subparts in 5.2, not a
+  column-major ID run. Gold: `qsr-rtm-draft-replay.test.ts`, page-9
+  fixture, and `scripts/eval/chat-draft-cases.json`.
 
 ## Turbopack 404
 

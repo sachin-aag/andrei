@@ -336,8 +336,8 @@
   {
     "id": "qsr-rtm-oq-locator-temps",
     "task": "ground_draft",
-    "passCriteria": "OQ family cell keeps 9.3.4 as a locator when the cited page has −7.4 °C / 120.8 °C but never prints 9.3.4.",
-    "notes": "Live GLR-1301 OQ p.83 OCR. Section numbers are locators, not claims.",
+    "passCriteria": "OQ family cell keeps −7.4 °C / 120.8 °C when the cited page never prints 9.3.4, and drops the unprinted heading.",
+    "notes": "Live GLR-1301 OQ p.83 OCR. Section numbers are locators, not claims; persist a heading only when a retrieved page prints it.",
     "input": {
       "text": "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [Operational Qualification.PDF, p. 83]",
       "context": "URS-3\nShell Operating temperature",
@@ -354,7 +354,7 @@
     },
     "expected": {
       "blocked": false,
-      "mustContain": ["9.3.4", "120.8"],
+      "mustContain": ["120.8"],
       "unsupportedMustBeEmpty": true
     }
   },

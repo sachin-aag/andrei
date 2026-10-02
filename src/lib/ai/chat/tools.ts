@@ -293,7 +293,11 @@ import {
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
 import {
+  missingReviewedUrsIds,
+  missingUrsIdsMessage,
   qsrTableColumnLabel,
+  rtmFamilyColumnsNeedProtocolSearch,
+  rtmFamilySearchOpenMessage,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
 import {
@@ -439,6 +443,8 @@ export type EditTableResult =
       proposedRowKeys?: string[];
       droppedRowKeys?: string[];
       proposalNote?: string;
+      keepSearchOpen?: true;
+      missingUrsIds?: string[];
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -4113,6 +4119,22 @@ export function buildChatTools(opts: {
           originalTableOp,
           storedOperation
         );
+        const missingUrsIds = missingReviewedUrsIds({
+          operation: storedOperation,
+          ledger: citationLedger,
+          section,
+          fieldDoc,
+        });
+        const familyNeedSearch = rtmFamilyColumnsNeedProtocolSearch({
+          operation: storedOperation,
+          section,
+          attachedFilenames: tableGrounding.attachedFilenames,
+        });
+        const keepSearchOpen = missingUrsIds.length > 0 || familyNeedSearch;
+        const extraNote = `${missingUrsIdsMessage(missingUrsIds)}${
+          familyNeedSearch ? rtmFamilySearchOpenMessage() : ""
+        }`;
+        const proposalNote = `${tableEditProposalMessage(proposal)}${extraNote}`;
         return proposedWithSupersession(
           {
             status: "proposed" as const,
@@ -4131,13 +4153,15 @@ export function buildChatTools(opts: {
             requestedRowKeys: proposal.requestedRowKeys,
             proposedRowKeys: proposal.proposedRowKeys,
             droppedRowKeys: proposal.droppedRowKeys,
-            proposalNote: tableEditProposalMessage(proposal),
+            proposalNote,
             ...(adjustedCells.length > 0
               ? {
                   adjustedCells,
                   adjustmentNote: tableCellAdjustmentsMessage(adjustedCells),
                 }
               : {}),
+            ...(keepSearchOpen ? { keepSearchOpen: true as const } : {}),
+            ...(missingUrsIds.length > 0 ? { missingUrsIds } : {}),
           },
           supersededSuggestionIds
         );

@@ -181,6 +181,10 @@ sentences) keeps each block's sentences out of the last ID's window and
 still lets every ID in that block use them, even when another row's
 parameter shares a word such as glass or thickness. URS-1 does not match
 URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing.
+Lettered subparts (`URS-34 a` → `URS-34a`) stay distinct windows — same
+numeric stem does not continue a column-major ID run; URS-34 / 34a / 34b
+belong in 5.2 (Instrument Requirement). Gold:
+`glr-1301-urs-page-9.transcript.txt`.
 Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
@@ -188,7 +192,9 @@ to persist `<number>` or ask the engineer to type it. Integer `3` is not
 Do not glue a numbered-list index onto the next measurement (`1. 2.5`
 is not `1.2.5`). Protocol section numbers (`9.3.4`, `7.2`, `8.2.4`) are
 locators — they never block a family-column write; measurements in the
-remainder still must match a quote. Invented heading + paraphrase without
+remainder still must match a quote. Persist the heading title and `p. N`
+from the page that prints that heading (not `13.1 Physical verification`
+on an agitator page). Invented heading + paraphrase without
 facts still fails. Repair search pins to cited files when the draft named
 them. A named date column (Effective Date) matches the source value
 next to that same label first; if the exact label is missing, the
@@ -211,7 +217,8 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
 instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
 `Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
-prints that heading. An explicit empty `edit_cells` of filled
+prints that heading. Persist the heading title from that page — do not
+keep a neighbour section name on the wrong PDF page. An explicit empty `edit_cells` of filled
 DQ / IQ / OQ / PQ / Remarks stays a clear (suggestion card), including when
 the URS is attached but unread this turn. Protocol N/A becomes Remarks NA
 only at row level (labeled Result / Remarks N/A, `not applicable for this

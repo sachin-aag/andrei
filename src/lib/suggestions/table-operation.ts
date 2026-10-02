@@ -716,7 +716,7 @@ export function resolveInsertAfterRow(
   return { ok: true, afterRow };
 }
 
-const URS_ROW_KEY_RE = /\bURS-\d+\b/i;
+const URS_ROW_KEY_RE = /\bURS-\d+[a-z]?\b/i;
 
 function firstContextLine(context: string): string {
   return normalizeTableCellText(context.split(/\n/)[0] ?? "");

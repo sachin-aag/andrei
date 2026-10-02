@@ -15,6 +15,7 @@ import {
   emptyQsrContent,
   ensureRtmFamilyColumns,
   ensureVolumetricFormRows,
+  sectionForQsrFormTableNumber,
 } from "./sections";
 
 function otherDetailsBlob(node: { content?: unknown } | undefined): string {
@@ -374,5 +375,15 @@ describe("QSR volumetric Table 11 seed", () => {
     expect(tableParameters(main)).toContain("Inner Surface area");
     expect(tableParameters(main)).toContain("Equipment Dimensions (L x W x H)");
     expect(tableParameters(auxiliary)).not.toContain("Inner Surface area");
+  });
+});
+
+describe("sectionForQsrFormTableNumber", () => {
+  it("maps Word-form Table N, including empty shells", () => {
+    expect(sectionForQsrFormTableNumber(3)).toBe("qsr_qualification_documents");
+    expect(sectionForQsrFormTableNumber(4)).toBe("qsr_sops");
+    expect(sectionForQsrFormTableNumber(5)).toBe("qsr_rtm_process");
+    expect(sectionForQsrFormTableNumber(6)).toBe("qsr_rtm_control");
+    expect(sectionForQsrFormTableNumber(0)).toBeUndefined();
   });
 });

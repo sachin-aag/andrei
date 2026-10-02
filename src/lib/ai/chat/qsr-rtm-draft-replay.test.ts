@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { comments, reportSections } from "@/db/schema";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
@@ -99,6 +100,13 @@ const NEIGHBOUR_QUOTE =
   "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.";
 const COLUMN_QUOTE =
   "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm 15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
+const INSTRUMENT_QUOTE = readFileSync(
+  new URL(
+    "../../attachments/fixtures/glr-1301-urs-page-9.transcript.txt",
+    import.meta.url
+  ),
+  "utf8"
+);
 
 const URS_PAGES: Record<
   number,
@@ -109,6 +117,7 @@ const URS_PAGES: Record<
   6: { transcript: COLUMN_QUOTE, visualInterpretation: "" },
   8: { transcript: `URS-35 ${VACUUM_QUOTE}`, visualInterpretation: "" },
   9: { transcript: MOC_QUOTE, visualInterpretation: "" },
+  10: { transcript: INSTRUMENT_QUOTE, visualInterpretation: "" },
   12: {
     transcript: "URS-62 Heat Transfer Area NLT 25.0 m² for the jacket.",
     visualInterpretation: "",
@@ -2239,7 +2248,7 @@ Complies`,
     expect(cells.find((cell) => cell.col === 6)?.insertText).toContain("8.2.4");
   });
 
-  it("keeps OQ 9.3.4 as a locator when p.83 has the temperatures but not the heading", async () => {
+  it("keeps OQ temperatures when 9.3.4 is missing from OCR and drops the uncited heading", async () => {
     mockSection("qsr_rtm_process", {
       table: rtmTableDoc([
         ["URS-3", "Shell Operating temperature", "−15 °C to 130 °C", "", "", "", "", ""],
@@ -2277,7 +2286,63 @@ Complies`,
     const op = proposedTableOp(inserted);
     const cells = op.kind === "edit_cells" ? op.cells : [];
     const oq = cells.find((cell) => cell.col === 5)?.insertText ?? "";
-    expect(oq).toContain("9.3.4");
+    expect(oq).not.toContain("9.3.4");
     expect(oq).toContain("120.8");
+  });
+
+  it("proposes URS-34 lettered subparts as separate 5.2 rows from the page-9 fixture", async () => {
+    mockSection("qsr_rtm_control");
+    const tools = buildTools({ section: "qsr_rtm_control" });
+    await readUrsPage(tools, 10);
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_control",
+        targetField: "table",
+        reasoning: "Add Instrument Requirement rows from the URS.",
+        operation: {
+          kind: "insert_rows",
+          rows: [
+            [
+              "URS-34",
+              "Desired level of instruments",
+              "Temperature Indicator & Duplex RTD Sensor",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+            ],
+            ["URS-34A", "For solvent transfer", "Flowmeter", "", "", "", "", "", ""],
+            [
+              "URS-34B",
+              "For cleaning",
+              "Water pressure jet is required",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    const blob = rows.flat().join("\n");
+    expect(blob).toContain("URS-34");
+    expect(blob).toMatch(/URS-34A/i);
+    expect(blob).toMatch(/URS-34B/i);
+    expect(blob).toContain("Flowmeter");
+    expect(blob).toContain("Water pressure jet");
+    expect(blob).not.toContain("<identifier>");
+    expect(
+      (result as { missingUrsIds?: string[] }).missingUrsIds
+    ).toEqual(expect.arrayContaining(["URS-35", "URS-36"]));
   });
 });
