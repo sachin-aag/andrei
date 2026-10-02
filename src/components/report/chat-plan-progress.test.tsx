@@ -38,7 +38,7 @@ describe("ChatPlanProgress", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "1 of 2 — Media Fill / Aseptic Process Simulation",
+        name: "2 remaining",
       })
     ).toBeInTheDocument();
     expect(
@@ -63,7 +63,7 @@ describe("ChatPlanProgress", () => {
       />
     );
     expect(
-      screen.getByRole("button", { name: "2 of 2 — Qualification" })
+      screen.getByRole("button", { name: "1 completed · 1 remaining" })
     ).toBeInTheDocument();
   });
 
@@ -90,7 +90,7 @@ describe("ChatPlanProgress", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "2 of 3 — Media Fill / Aseptic Process Simulation",
+        name: "1 completed · 2 remaining",
       })
     );
 
@@ -126,7 +126,7 @@ describe("ChatPlanProgress", () => {
     expect(screen.getByText("Paused")).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "1 of 1 — Media Fill / Aseptic Process Simulation",
+        name: "1 remaining",
       })
     ).toBeInTheDocument();
     expect(document.querySelector(".animate-spin")).toBeNull();

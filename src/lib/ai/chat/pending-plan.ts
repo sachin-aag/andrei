@@ -675,10 +675,33 @@ export function resolveReviewCoverageObjective(input: {
   return tool || route;
 }
 
+/** Collapsed remaining-section chip: counts only, never the current heading. */
+export function formatPlanProgressChipLabel(input: {
+  completed: number;
+  remaining: number;
+}): string {
+  const completed = Math.max(0, input.completed);
+  const remaining = Math.max(0, input.remaining);
+  const remainingLabel =
+    remaining === 1 ? "1 remaining" : `${remaining} remaining`;
+  if (remaining === 0) {
+    return completed === 1 ? "1 completed" : `${completed} completed`;
+  }
+  if (completed === 0) {
+    return remainingLabel;
+  }
+  const completedLabel =
+    completed === 1 ? "1 completed" : `${completed} completed`;
+  return `${completedLabel} · ${remainingLabel}`;
+}
+
 export function planProgressChipLabel(
   continuation: ChatTurnContinuation
 ): string {
-  return `${continuation.itemIndex} of ${continuation.total} — ${continuation.nextLabel}`;
+  return formatPlanProgressChipLabel({
+    completed: Math.max(0, continuation.total - continuation.remaining),
+    remaining: continuation.remaining,
+  });
 }
 
 /** Section this turn actually drafted, or the in-progress item when live is unknown. */
@@ -799,7 +822,7 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
 /**
  * Remaining-section drafts across the thread, not only the last assistant
  * row. A wrap-up message after the last `edit_table` must not wipe earlier
- * drafted keys (that left the N of N chip spinning after the queue finished).
+ * drafted keys (that left the remaining-section chip spinning after the queue finished).
  */
 export function livePlanProgressFromMessages(
   messages: ReadonlyArray<{ role?: string; parts?: unknown }>
@@ -901,11 +924,15 @@ export function chatPlanProgressView(
   const currentLabel = complete
     ? "done"
     : (focus?.label ?? "next section");
+  const remaining = complete ? 0 : total - done.length;
   return {
     itemIndex: complete ? total : itemIndex,
     total,
     currentLabel,
-    chipLabel: `${complete ? total : itemIndex} of ${total} — ${currentLabel}`,
+    chipLabel: formatPlanProgressChipLabel({
+      completed: done.length,
+      remaining,
+    }),
     paused: plan.paused === true,
     complete,
     done,
