@@ -84,12 +84,13 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   (and `.cursor/rules/eval-and-suggestions.mdc` for apply/merge).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
-  are silently missing in Plan. Internal `unsupported_tool` is the exception
-  — keep it out of the allowlist and `activeTools`; `repairChatToolCall`
-  remaps a hallucinated name such as `edit_table` onto it so
-  `AI_NoSuchToolError` cannot fail the chat. On Agent read, that signal
-  unlocks registered write tools on the next step. `list_suggestions` is on
-  the Plan allowlist.
+  are silently missing in Plan. Write tools (`edit_table`, `draft_rtm_table`,
+  `draft_field`, `propose_edit`) stay off that list. Internal
+  `unsupported_tool` is the exception — keep it out of the allowlist and
+  `activeTools`; `repairChatToolCall` remaps a hallucinated name such as
+  `edit_table` onto it so `AI_NoSuchToolError` cannot fail the chat. On Agent
+  read, that signal unlocks registered write tools on the next step.
+  `list_suggestions` is on the Plan allowlist.
 - Chat/workspace changes walk the **full spectrum**, not just the control you
   clicked: Document **and** Agent chrome, Report chat **and** Analytics chat,
   then UI → request body → route parser → prompt → tools → Plan allowlist →
@@ -196,14 +197,15 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 Always-on summary only. Full policy: `.cursor/rules/chat-and-attachments.mdc`
 and `.claude/skills/chat-subsystem`. Grounding incidents replay
-`edit_table` (`qsr-rtm-draft-replay.test.ts`) and `pnpm chat-eval -- --replay`.
+`edit_table` / `draft_rtm_table` (`qsr-rtm-draft-replay.test.ts`) and
+`pnpm chat-eval -- --replay`.
 
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
   File-set questions use `list_attachments`; facts *inside* a PDF use
   `search_documents`. Report body is not chunk-indexed — use `read_section`.
   Living plan: `docs/retrieval.md`.
 - Search-then-ask. Default retrieval is adaptive. Empty inventory tables need
-  a finished matching document review before `edit_table`. Hard facts in write
+  a finished matching document review before `edit_table` / `draft_rtm_table`. Hard facts in write
   tools must match a retrieved quote (`groundDraftText`). Every pack uses
   `unsupportedFactPolicy: block`. Analytics `write_column` is not gated.
 - Saved fields use numbered `[n]` markers plus a trailing Citations list.
@@ -215,7 +217,9 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
 - A QSR RTM family-column heading persists only when a retrieved page
   prints that section number. Integer `1600` matches OCR `1600.0`.
   Repair search pins to cited files. Word-form Table 4 is SOPs; Tables
-  5–10 fill family columns on the first insert. URS-34 / 34a / 34b are
+  5–10 use `draft_rtm_table` when that table is in `@` scope (every
+  reviewed URS ID, then DQ/IQ/OQ/PQ in parallel). `edit_table` is the
+  single-cell correction path. URS-34 / 34a / 34b are
   lettered Instrument Requirement subparts in 5.2, not a column-major
   ID run. Gold: `qsr-rtm-draft-replay.test.ts`, page-9 fixture, and
   `scripts/eval/chat-draft-cases.json`.

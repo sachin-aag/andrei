@@ -1,10 +1,9 @@
 # QSR RTM Tables 5–10: two-phase drafting plumbing
 
-Living plan. Status: proposed, nothing built yet. Scope is QSR
-(`qualification_summary_report`) Tables 5–10 — `qsr_rtm_process`,
-`qsr_rtm_operating_range`, `qsr_rtm_instrument`, `qsr_rtm_utility`,
-`qsr_rtm_safety`, `qsr_rtm_maintenance`. Everything lands on
-`cursor/qsr-references-search-f517` (PR #455). No second branch, no second PR.
+Living plan. Status: implemented on `cursor/qsr-references-search-f517`
+(PR #455). Scope is QSR (`qualification_summary_report`) Tables 5–10 —
+`qsr_rtm_process`, `qsr_rtm_control`, `qsr_rtm_gmp`, `qsr_rtm_safety`,
+`qsr_rtm_csv`, `qsr_rtm_maintenance`. No second branch, no second PR.
 
 ## 1. The failure we are fixing
 

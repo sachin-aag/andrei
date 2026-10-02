@@ -98,10 +98,10 @@ describe("citationGroundingMode", () => {
     ).toBe("strict");
     expect(
       citationGroundingMode({
-        documentType: "equipment_lifecycle_report",
-        section: "elr_qualification",
+        documentType: "qualification_summary_report",
+        section: "qsr_rtm_process",
         targetField: "table",
-        tool: "draft_field",
+        tool: "draft_rtm_table",
       })
     ).toBe("strict");
   });

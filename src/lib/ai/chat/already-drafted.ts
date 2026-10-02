@@ -166,7 +166,7 @@ Then compare the current text to that section's quality criteria (and AI Check h
 - Gaps found: name the gaps. Do not quiz them for facts already in the section.`
       : `Call read_section on "${already.section}" FIRST. Do not call search_documents or ask_user yet.
 Then compare the current text to that section's quality criteria (and AI Check hints below, if any):
-- They asked to insert, apply, or edit the document (a cell, a row, or wording they already described): that is the change. After read_section, call edit_table for a table or propose_edit for prose. Do not stop at a summary. Do not paste a markdown table or the replacement text for them to copy. Do not say write tools are disabled or that this session is read-only.
+- They asked to insert, apply, or edit the document (a cell, a row, or wording they already described): that is the change. After read_section, call draft_rtm_table when that tool is loaded (QSR Tables 5–10), edit_table for any other table, or propose_edit for prose. Do not stop at a summary. Do not paste a markdown table or the replacement text for them to copy. Do not say write tools are disabled or that this session is read-only.
 - No specific change and no material gaps: do not rewrite and do not ask_user. Reply that the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change.
 - Gaps found, and they did not already name the change: search attachments only for the missing facts, then make a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.`;
 

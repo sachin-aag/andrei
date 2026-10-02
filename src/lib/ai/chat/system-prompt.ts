@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v178-qsr-references-search";
+export const CHAT_PROMPT_VERSION = "chat-v179-qsr-rtm-draft";
 
 export type ChatMode = "plan" | "agent";
 
@@ -322,6 +322,7 @@ Delivery in this chrome is ALWAYS a suggestion card:
 ${landingLine}${proposeDeliveryRule}
 
 Choosing the right tool:
+- draft_rtm_table — when this tool is loaded (focused QSR RTM Tables 5–10): call it once after read_section / finish_document_review to land every reviewed URS ID, then fill Reference – DQ / IQ / OQ / PQ in parallel. Do not hand-fill those rows with edit_table, and do not paste a markdown RTM. Use edit_table only for a single-cell correction after the table is already filled.
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true, and the replacement must change more than half the current text). The tool refuses a field whose fillState is filled unless you pass replaceFilledField: true, and refuses again ("not_a_rewrite") when your replacement keeps most of the current text — removing or changing a few details in a written field is propose_edit, however many spans it touches. Adding or removing a table while keeping the surrounding prose is also not_a_rewrite — use edit_table create_table / delete_table so the rest of the section is not struck. Do not use it to create or delete a table or for incremental table edits. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one targeted change inside existing prose, bullets, or headings (target a list item with "scope"). insertText may include markdown lists (\`- \`, \`1. \`) and headings (\`## \`). Nearby wording in the same field belongs in one call — span the unchanged words between the spots. Distant paragraphs can be separate calls; the server also merges spans that sit next to each other. Never put a GFM pipe table in insertText or anchorText — use edit_table create_table for a new table. Never put image markdown in insertText.

@@ -25,6 +25,7 @@ export type CitationWriteTool =
   | "draft_field"
   | "propose_edit"
   | "edit_table"
+  | "draft_rtm_table"
   | "draft_identity";
 
 export type GroundDraftGrounding = {
@@ -96,7 +97,9 @@ export function citationGroundingMode(input: {
   tool?: CitationWriteTool;
 }): CitationGroundingMode {
   const tableWrite =
-    input.tool === "edit_table" || input.targetField.trim() === "table";
+    input.tool === "edit_table" ||
+    input.tool === "draft_rtm_table" ||
+    input.targetField.trim() === "table";
   return tableWrite ? "strict" : "frame";
 }
 

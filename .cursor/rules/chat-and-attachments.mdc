@@ -47,7 +47,8 @@ table filled", "I don't see the change", "suggestions are not landing",
 "refusing to make an edit", "only summarising") are write on Agent
 (`reason: missing_work`) so Lite is skipped. An explicit "insert the
 suggestion" / "edit the document" turn reads the section first, then the
-next step must call `edit_table` (table in scope) or `propose_edit`. Do not
+next step must call `draft_rtm_table` when a QSR RTM table is in `@`
+scope, `edit_table` for any other table, or `propose_edit`. Do not
 claim Agent mode is read-only or paste a markdown table. ELR section numbers
 in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
 Maintenance, 3.15 Access Control). A printed Table N is only the number on

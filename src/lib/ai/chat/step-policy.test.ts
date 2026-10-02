@@ -506,4 +506,114 @@ describe("shouldForceListAttachments", () => {
       toolChoice: { type: "tool", toolName: "start_document_review" },
     });
   });
+
+  it("forces draft_rtm_table after read_section on a focused RTM table", () => {
+    const advertised = [...ADVERTISED, "draft_rtm_table"];
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          advertisedTools: advertised,
+          inScopeHasTable: true,
+          inScopeRtmSection: true,
+          userIntentKind: "write",
+          steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+        })
+      )
+    ).toEqual({
+      activeTools: ["draft_rtm_table"],
+      toolChoice: { type: "tool", toolName: "draft_rtm_table" },
+    });
+  });
+
+  it("forces draft_rtm_table after read when they asked to land an RTM suggestion", () => {
+    const advertised = [...ADVERTISED, "draft_rtm_table"];
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          advertisedTools: advertised,
+          explicitDocumentEdit: true,
+          inScopeHasTable: true,
+          inScopeRtmSection: true,
+          userIntentKind: "write",
+          steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+        })
+      )
+    ).toEqual({
+      activeTools: ["draft_rtm_table"],
+      toolChoice: { type: "tool", toolName: "draft_rtm_table" },
+    });
+  });
+
+  it("does not force draft_rtm_table while an inventory review is still required", () => {
+    const advertised = [...ADVERTISED, "draft_rtm_table"];
+    const decision = prepareReportChatStep(
+      baseInput({
+        advertisedTools: advertised,
+        inScopeHasTable: true,
+        inScopeRtmSection: true,
+        requireInventoryReview: true,
+        userIntentKind: "write",
+        steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+      })
+    );
+    expect(decision.toolChoice?.toolName).not.toBe("draft_rtm_table");
+  });
+
+  it("forces another draft_rtm_table while reviewed URS IDs are still missing", () => {
+    const advertised = [...ADVERTISED, "draft_rtm_table"];
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          advertisedTools: advertised,
+          inScopeHasTable: true,
+          inScopeRtmSection: true,
+          userIntentKind: "write",
+          steps: [
+            {
+              toolCalls: [
+                { toolName: "draft_rtm_table", toolCallId: "d1" },
+              ],
+              toolResults: [
+                {
+                  toolName: "draft_rtm_table",
+                  toolCallId: "d1",
+                  output: {
+                    status: "proposed",
+                    missingUrsIds: ["URS-21", "URS-22"],
+                  },
+                },
+              ],
+            },
+          ],
+        })
+      )
+    ).toEqual({
+      activeTools: ["draft_rtm_table"],
+      toolChoice: { type: "tool", toolName: "draft_rtm_table" },
+    });
+  });
+
+  it("stops forcing draft_rtm_table after two missing-ID continuations", () => {
+    const advertised = [...ADVERTISED, "draft_rtm_table"];
+    const missingStep = (id: string): SearchLoopStep => ({
+      toolCalls: [{ toolName: "draft_rtm_table", toolCallId: id }],
+      toolResults: [
+        {
+          toolName: "draft_rtm_table",
+          toolCallId: id,
+          output: { status: "proposed", missingUrsIds: ["URS-21"] },
+        },
+      ],
+    });
+    const decision = prepareReportChatStep(
+      baseInput({
+        advertisedTools: advertised,
+        inScopeHasTable: true,
+        inScopeRtmSection: true,
+        userIntentKind: "write",
+        steps: [missingStep("d1"), missingStep("d2"), missingStep("d3")],
+      })
+    );
+    expect(decision.toolChoice?.toolName).not.toBe("draft_rtm_table");
+  });
 });

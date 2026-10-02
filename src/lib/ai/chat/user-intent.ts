@@ -20,6 +20,7 @@ export const DOCUMENT_WRITE_TOOLS = [
   "draft_field",
   "propose_edit",
   "edit_table",
+  "draft_rtm_table",
   "insert_image",
   "remove_image",
   "plot_measurements",
