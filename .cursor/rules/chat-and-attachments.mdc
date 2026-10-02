@@ -332,9 +332,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   drafts persist a `pending_plan` on the chat session. After each turn
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
-  sits **below** the transcript, above Working… / Resume — collapsed
-  `N completed · M remaining` (or `M remaining` when none are done yet),
-  expand for done / running / pending). Do not persist
+  sits **below** the transcript while the queue is running, above Working…
+  / Resume — collapsed `N completed · M remaining` (or `M remaining` when
+  none are done yet), expand for done / running / pending. After Cancel or
+  a new typed prompt pauses the queue, the widget sits **above** that later
+  prompt, not under the whole thread). Do not persist
   or show “The assistant stopped before finishing” when that next POST
   will run. Three remaining-section turns on the same in-progress item
   without completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including
