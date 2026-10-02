@@ -3702,6 +3702,72 @@ describe("dateSupportedAsLabeledField", () => {
       )
     ).toBe(false);
   });
+
+  it("falls back to the closest date label when the exact header is missing", () => {
+    const quote = [
+      "APPROVAL SHEET",
+      "Approved by Quality Assurance",
+      "Date of Approval 30-06-2025",
+      "Prepared by Signature Date 28-06-2025",
+    ].join("\n");
+    const approved = extractHardFacts("30-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("28-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        signature,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+
+  it("falls back to Approved by when the header says Approved date", () => {
+    const quote = "Approved by QA Head 30-06-2025 Sign & Date 28-06-2025";
+    const approved = extractHardFacts("30-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("28-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        signature,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+
+  it("does not treat Sign & Date as closest for an Effective Date column", () => {
+    const fact = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        "Done By Sign & Date 19-05-2026",
+        fact,
+        "Effective Date"
+      )
+    ).toBeNull();
+  });
 });
 
 describe("groundTableOperation QSR SOP Effective Date", () => {
@@ -3808,5 +3874,57 @@ describe("groundTableOperation QSR SOP Effective Date", () => {
         ? result.operation.cells[0]!.insertText
         : "";
     expect(cell).toContain("SOP/PR/OQ/014");
+  });
+});
+
+describe("groundTableOperation Qual Docs closest date label", () => {
+  it("keeps an approval-sheet date when another file prints a different Effective Date", () => {
+    expect(qsrTableColumnLabel("qsr_qualification_documents", 4)).toBe(
+      "Effective Date / Approved date"
+    );
+    const ledger = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 51,
+        attachmentId: "att-oq",
+        quote: OQ_SOP_HEADER_PAGE,
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 3,
+        attachmentId: "att-urs",
+        quote: [
+          "APPROVAL SHEET",
+          "Approved by Quality Assurance",
+          "Date of Approval 30-06-2025",
+        ].join("\n"),
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS",
+            rowContext: "URS User Requirement Specification",
+            insertText:
+              "30-06-2025 [User Requirement Specification.PDF, p. 3]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_qualification_documents" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("30-06-2025");
+    expect(cell).not.toContain("<date>");
   });
 });

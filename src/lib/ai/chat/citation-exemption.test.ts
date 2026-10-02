@@ -5,6 +5,8 @@ import {
   citationGroundingRunsRepair,
   contentWithoutField,
   isExemptFrameFact,
+  isExplicitInsertRequest,
+  shouldKeepUnsupportedFact,
 } from "./citation-exemption";
 import { extractHardFacts } from "./claim-facts";
 
@@ -207,5 +209,51 @@ describe("isExemptFrameFact", () => {
         reportMetadata: { equipmentCode: "QSR/GLR/1301" },
       })
     ).toBe(true);
+  });
+});
+
+describe("isExplicitInsertRequest", () => {
+  it("treats go-ahead and insert-that as keep-without-drop", () => {
+    expect(isExplicitInsertRequest("go ahead and insert that")).toBe(true);
+    expect(isExplicitInsertRequest("insert it")).toBe(true);
+    expect(isExplicitInsertRequest("fill the effective date for URS")).toBe(
+      true
+    );
+    expect(isExplicitInsertRequest("go ahead")).toBe(true);
+  });
+
+  it("does not treat a first-pass draft as an insert command", () => {
+    expect(isExplicitInsertRequest("draft section 3")).toBe(false);
+    expect(isExplicitInsertRequest("fill Table 3")).toBe(false);
+  });
+});
+
+describe("shouldKeepUnsupportedFact", () => {
+  it("keeps a date the prior assistant turn already stated", () => {
+    const fact = extractHardFacts("30-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      shouldKeepUnsupportedFact(fact, {
+        latestUserMessageText: "use that date",
+        recentAssistantTexts: [
+          "The URS approval sheet shows 30-06-2025.",
+        ],
+      })
+    ).toBe(true);
+  });
+
+  it("does not keep an invented date absent from the thread", () => {
+    const fact = extractHardFacts("01-01-2099").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      shouldKeepUnsupportedFact(fact, {
+        latestUserMessageText: "draft the remaining sections",
+        recentAssistantTexts: [
+          "The URS approval sheet shows 30-06-2025.",
+        ],
+      })
+    ).toBe(false);
   });
 });

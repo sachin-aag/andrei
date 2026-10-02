@@ -190,9 +190,11 @@ is not `1.2.5`). Protocol section numbers (`9.3.4`, `7.2`, `8.2.4`) are
 locators — they never block a family-column write; measurements in the
 remainder still must match a quote. Invented heading + paraphrase without
 facts still fails. Repair search pins to cited files when the draft named
-them. A named date column (Effective Date) must match the source value
-next to that same label — presence of a signature or observation date on
-the cited page is not that field. A leading minus is part of the number
+them. A named date column (Effective Date) matches the source value
+next to that same label first; if the exact label is missing, the
+closest date label on the page. A signature or observation date is not
+that field when a closer status label exists. An explicit insert, or a
+fact already in this thread, still cites a page but is not dropped. A leading minus is part of the number
 (`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
 leading tilde is approximate (`~50±10 RPM` is not `−50 ± 10 RPM`). A ±
 window is not independent evidence for the setpoint (`50±10 RPM` is not

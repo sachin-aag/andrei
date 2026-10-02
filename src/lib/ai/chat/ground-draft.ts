@@ -39,6 +39,8 @@ import {
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
   isExemptFrameFact,
+  isExplicitInsertRequest,
+  shouldKeepUnsupportedFact,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
@@ -219,11 +221,13 @@ function pageSupportsFact(
   quote: string,
   fact: HardFact,
   rowKey: string | null,
-  columnLabel?: string
+  columnLabel?: string,
+  presenceFallback = false
 ): boolean {
   if (columnLabel && isLabeledDateColumnLabel(columnLabel)) {
     const labeled = dateSupportedAsLabeledField(quote, fact, columnLabel);
-    if (labeled != null) return labeled;
+    if (labeled === true) return true;
+    if (labeled === false && !presenceFallback) return false;
   }
   if (rowKey && !factIsRowKey(fact, rowKey)) {
     return factSupportedForRowKey(quote, fact, rowKey);
@@ -240,11 +244,13 @@ function resolveFact(
     analyses?: readonly AnalysisEvidence[];
     section?: string;
     columnLabel?: string;
+    presenceFallback?: boolean;
   }
 ): ClaimProvenanceRecord {
   const pages = ledger.recordedPages();
   const rowKey = rowKeyFromContext(extras.context ?? extras.sentence);
   const columnLabel = extras.columnLabel?.trim() || undefined;
+  const presenceFallback = Boolean(extras.presenceFallback);
   const docFamily =
     extras.section === "qsr_qualification_documents" ||
     extras.section === "qsr_references"
@@ -260,7 +266,13 @@ function resolveFact(
   const citedHit = citedPages.find(
     (row) =>
       (!docFamily || filenameMatchesFamily(row.filename, docFamily)) &&
-      pageSupportsFact(row.quote, fact, rowKey, columnLabel)
+      pageSupportsFact(
+        row.quote,
+        fact,
+        rowKey,
+        columnLabel,
+        presenceFallback
+      )
   );
   const primaryCited = citedPages[0] ?? null;
   const identifiers = extractHardFacts(
@@ -285,7 +297,13 @@ function resolveFact(
     if (docFamily && !filenameMatchesFamily(row.filename, docFamily)) {
       return false;
     }
-    return pageSupportsFact(row.quote, fact, rowKey, columnLabel);
+    return pageSupportsFact(
+      row.quote,
+      fact,
+      rowKey,
+      columnLabel,
+      presenceFallback
+    );
   });
   const quotedPageCount = pages.filter((row) => row.quote.trim()).length;
   const ranked = rankMoveTarget({
@@ -297,6 +315,7 @@ function resolveFact(
   });
 
   const labeledDateRejected =
+    !presenceFallback &&
     Boolean(columnLabel) &&
     dateSupportedAsLabeledField(
       primaryCited?.quote ?? "",
@@ -556,11 +575,20 @@ export function groundDraftText(input: {
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
-  const failClosed = qsrFailClosedReason({
-    section: input.grounding?.section,
-    attachedFilenames: input.grounding?.attachedFilenames,
-    ledger: input.ledger,
-  });
+  const keepSource = {
+    latestUserMessageText: input.grounding?.latestUserMessageText,
+    recentAssistantTexts: input.grounding?.recentAssistantTexts,
+  };
+  const keepTurn = isExplicitInsertRequest(
+    input.grounding?.latestUserMessageText ?? ""
+  );
+  const failClosed = keepTurn
+    ? null
+    : qsrFailClosedReason({
+        section: input.grounding?.section,
+        attachedFilenames: input.grounding?.attachedFilenames,
+        ledger: input.ledger,
+      });
   if (failClosed) {
     return {
       text: cited,
@@ -581,6 +609,8 @@ export function groundDraftText(input: {
 
   const facts = extractHardFacts(cited);
   const records = facts.map((fact) => {
+    const keepFact =
+      keepTurn || shouldKeepUnsupportedFact(fact, keepSource);
     if (
       mode === "frame" &&
       isExemptFrameFact(fact, {
@@ -607,6 +637,7 @@ export function groundDraftText(input: {
         col: input.grounding?.tableCol,
         override: input.grounding?.tableColumnLabel,
       }),
+      presenceFallback: keepFact,
     });
   });
   const withMoved = applyMovedCitations(
@@ -620,9 +651,10 @@ export function groundDraftText(input: {
       )
     )
   );
-  const unsourcedFacts = facts.filter(
-    (_, index) => records[index]?.status === "unsourced"
-  );
+  const unsourcedFacts = facts.filter((fact, index) => {
+    if (records[index]?.status !== "unsourced") return false;
+    return !(keepTurn || shouldKeepUnsupportedFact(fact, keepSource));
+  });
   const extraUnsupported = extraQsrUnsupported({
     cell: cited,
     context: input.context ?? cited,
@@ -634,7 +666,9 @@ export function groundDraftText(input: {
       override: input.grounding?.tableColumnLabel,
     }),
     ledger: input.ledger,
-  });
+  }).filter(
+    (fact) => !(keepTurn || shouldKeepUnsupportedFact(fact, keepSource))
+  );
   const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;
@@ -717,16 +751,15 @@ export function groundTableOperation(input: {
     attachLiveTableRowContext(input.operation, input.fieldDoc),
     input.ledger
   );
-  const failClosed = isClearOnlyOptionalRtmEdit(
-    cited,
-    input.grounding?.section
-  )
-    ? null
-    : qsrFailClosedReason({
-        section: input.grounding?.section,
-        attachedFilenames: input.grounding?.attachedFilenames,
-        ledger: input.ledger,
-      });
+  const failClosed =
+    isClearOnlyOptionalRtmEdit(cited, input.grounding?.section) ||
+    isExplicitInsertRequest(input.grounding?.latestUserMessageText ?? "")
+      ? null
+      : qsrFailClosedReason({
+          section: input.grounding?.section,
+          attachedFilenames: input.grounding?.attachedFilenames,
+          ledger: input.ledger,
+        });
   if (failClosed) {
     return {
       operation: cited,

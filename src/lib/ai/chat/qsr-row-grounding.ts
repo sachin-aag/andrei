@@ -409,6 +409,25 @@ const COLUMN_LABEL_GAP_MAX = 80;
 /** First date after a matching source label must sit in this span. */
 const LABELED_DATE_WINDOW = 80;
 
+/** Prefix before a date used when the destination label is not on the page. */
+const DATE_LABEL_PREFIX_MAX = 64;
+
+/** Closest source label must clear this to stand in for the destination header. */
+const DATE_LABEL_CLOSEST_MIN = 0.45;
+
+const DATE_LABEL_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "by",
+  "date",
+  "for",
+  "of",
+  "on",
+  "the",
+  "to",
+]);
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -465,11 +484,112 @@ function firstDateInWindow(window: string): HardFact | null {
   );
 }
 
+function normalizeDateLabel(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function dateLabelTokens(value: string): string[] {
+  return normalizeDateLabel(value).split(/\s+/).filter(Boolean);
+}
+
+function stemDateLabelToken(token: string): string {
+  if (token.startsWith("approv")) return "approv";
+  if (token.startsWith("effect")) return "effect";
+  if (token.startsWith("issu")) return "issu";
+  if (token.startsWith("authoriz")) return "author";
+  if (token.startsWith("sign")) return "sign";
+  if (token.startsWith("observ")) return "observ";
+  if (token.startsWith("check")) return "check";
+  if (token.endsWith("ed") && token.length > 4) return token.slice(0, -2);
+  if (token.endsWith("ion") && token.length > 5) return token.slice(0, -3);
+  return token;
+}
+
+function dateLabelContentStems(tokens: readonly string[]): string[] {
+  return tokens
+    .filter((token) => !DATE_LABEL_STOPWORDS.has(token))
+    .map(stemDateLabelToken);
+}
+
+/** Token overlap plus shared content stems (approved ≈ date of approval). */
+export function dateLabelSimilarity(sourceLabel: string, destLabel: string): number {
+  const sourceNorm = normalizeDateLabel(sourceLabel);
+  const destNorm = normalizeDateLabel(destLabel);
+  if (!sourceNorm || !destNorm) return 0;
+  if (sourceNorm === destNorm) return 1;
+  if (sourceNorm.includes(destNorm) || destNorm.includes(sourceNorm)) return 0.92;
+  const sourceTokens = dateLabelTokens(sourceLabel);
+  const destTokens = dateLabelTokens(destLabel);
+  const sourceSet = new Set(sourceTokens);
+  const destSet = new Set(destTokens);
+  let intersection = 0;
+  for (const token of sourceSet) {
+    if (destSet.has(token)) intersection += 1;
+  }
+  const union = new Set([...sourceSet, ...destSet]).size;
+  const jaccard = union === 0 ? 0 : intersection / union;
+  const sourceContent = new Set(dateLabelContentStems(sourceTokens));
+  const destContent = new Set(dateLabelContentStems(destTokens));
+  if (destContent.size === 0) return jaccard;
+  let contentHits = 0;
+  for (const stem of destContent) {
+    if (sourceContent.has(stem)) contentHits += 1;
+  }
+  const contentScore = contentHits / destContent.size;
+  return Math.max(jaccard, contentScore > 0 ? 0.5 + 0.5 * contentScore : 0);
+}
+
+function dateLabelBefore(quote: string, fact: HardFact): string {
+  const start = Math.max(0, fact.start - DATE_LABEL_PREFIX_MAX);
+  let before = quote.slice(start, fact.start);
+  const lastBreak = Math.max(
+    before.lastIndexOf("\n"),
+    before.lastIndexOf(";"),
+    before.lastIndexOf("|")
+  );
+  if (lastBreak >= 0) before = before.slice(lastBreak + 1);
+  before = before.replace(/[\s:.\-–—|/]+$/g, "").trim();
+  before = before
+    .replace(
+      /(?:\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})\s*$/i,
+      ""
+    )
+    .trim();
+  const words = before.split(/\s+/).filter(Boolean);
+  return words.slice(-6).join(" ");
+}
+
+function closestLabeledDate(quote: string, columnLabel: string): HardFact | null {
+  const destLabels = dateColumnLabels(columnLabel);
+  if (destLabels.length === 0 || !quote.trim()) return null;
+  const dates = extractHardFacts(quote).filter((row) => row.kind === "date");
+  let best: { date: HardFact; score: number } | null = null;
+  for (const date of dates) {
+    const label = dateLabelBefore(quote, date);
+    if (!label) continue;
+    const score = Math.max(
+      ...destLabels.map((dest) => dateLabelSimilarity(label, dest))
+    );
+    if (!best || score > best.score) best = { date, score };
+  }
+  if (!best || best.score < DATE_LABEL_CLOSEST_MIN) return null;
+  return best.date;
+}
+
+function labeledDateMatchesFact(labeled: HardFact, fact: HardFact): boolean {
+  return (
+    evidenceContainsFact(labeled.text, fact) ||
+    evidenceContainsFact(fact.text, labeled)
+  );
+}
+
 /**
  * When the page prints the destination column's own label next to a date,
  * only that date supports the cell. Presence of another date on the same
  * page (signature, observation) is not the same field.
- * `null` = no labeled date on the page, so the caller fails open.
+ * If the exact destination label is missing, the closest date label on the
+ * page stands in (Date of Approval ≈ Approved date). `null` = no usable
+ * labeled date, so the caller fails open.
  */
 export function dateSupportedAsLabeledField(
   quote: string,
@@ -480,12 +600,12 @@ export function dateSupportedAsLabeledField(
   const labeledDates = labeledDateWindows(quote, columnLabel)
     .map(firstDateInWindow)
     .filter((row): row is HardFact => row != null);
-  if (labeledDates.length === 0) return null;
-  return labeledDates.some(
-    (labeled) =>
-      evidenceContainsFact(labeled.text, fact) ||
-      evidenceContainsFact(fact.text, labeled)
-  );
+  if (labeledDates.length > 0) {
+    return labeledDates.some((labeled) => labeledDateMatchesFact(labeled, fact));
+  }
+  const closest = closestLabeledDate(quote, columnLabel);
+  if (!closest) return null;
+  return labeledDateMatchesFact(closest, fact);
 }
 
 type UrsSpan = { id: string; at: number };

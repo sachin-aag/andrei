@@ -65,7 +65,10 @@ import {
   analysisEvidenceForReport,
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
-import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  recentAssistantMessageTexts,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import {
   detectOverclaims,
   permanenceBounceMessage,
@@ -1562,6 +1565,7 @@ export function buildChatTools(opts: {
       }),
       section,
       attachedFilenames: await loadReadyFilenames(),
+      recentAssistantTexts: recentAssistantMessageTexts(messages, 4),
     };
   };
   let evidenceHydrate: Promise<void> | null = null;

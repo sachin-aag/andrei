@@ -2,12 +2,13 @@
  * Attachment citation grounding is fact-level, never section-level.
  * Tables stay strict. All other writes use frame: title-page / user /
  * 1 April–31 March bounds and facts already in this report are exempt; copied
- * attachment facts still need a page quote.
+ * attachment facts still need a page quote. An explicit insert, or a fact
+ * already in this thread, still cites a page but is not dropped.
  */
 
 import type { DocumentType, SectionType } from "@/db/schema";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
-import type { HardFact } from "@/lib/ai/chat/claim-facts";
+import { extractHardFacts, type HardFact } from "@/lib/ai/chat/claim-facts";
 import { contextForPrompt } from "@/lib/ai/section-context";
 import { allIdentityMetadataKeys } from "@/lib/ai/chat/identity";
 import { elrChatContextIdentity } from "@/lib/document-types/elr/chat-identity";
@@ -40,9 +41,12 @@ export type GroundDraftGrounding = {
   tableCol?: number;
   /**
    * Destination column header (Effective Date, …). When set, a date cell
-   * must match the source value next to that same label.
+   * must match the source value next to that same label, or the closest
+   * date label on the page when the exact header is missing.
    */
   tableColumnLabel?: string;
+  /** Prior assistant turns — facts already in chat are not dropped on insert. */
+  recentAssistantTexts?: readonly string[];
 };
 
 const MONTH_INDEX: Record<string, number> = {
@@ -307,4 +311,52 @@ export function isExemptFrameFact(
   return identityHaystacks(source).some((haystack) =>
     evidenceContainsFact(haystack, fact)
   );
+}
+
+const CONFIRM_INSERT_RE =
+  /^(?:yes|yeah|yep|yup|sure|ok|okay|k|go ahead|do it|please do|sounds good|yes please|please|go for it|do that|that works)(?:\s*[!.]*)?$/i;
+
+const INSERT_VERB_RE =
+  /\b(?:insert|put|place|enter|paste|fill(?:\s+(?:in|out))?)\b/i;
+
+/** Go-ahead / insert-that / fill-the-date — keep values, still cite. */
+export function isExplicitInsertRequest(userText: string): boolean {
+  const text = userText.replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (CONFIRM_INSERT_RE.test(text)) return true;
+  if (!INSERT_VERB_RE.test(text)) return false;
+  if (/\b(?:that|this|it)\b/i.test(text)) return true;
+  if (/\bdate\b/i.test(text)) return true;
+  return extractHardFacts(text).some(
+    (fact) => fact.kind === "date" || fact.kind === "identifier"
+  );
+}
+
+export function conversationFactHaystack(source: {
+  latestUserMessageText?: string;
+  recentAssistantTexts?: readonly string[];
+}): string {
+  return [
+    source.latestUserMessageText ?? "",
+    ...(source.recentAssistantTexts ?? []),
+  ]
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Explicit insert keeps every fact in the write. A fact already in this
+ * thread is kept even on a mixed draft. Citations still run; drops do not.
+ */
+export function shouldKeepUnsupportedFact(
+  fact: HardFact,
+  source: {
+    latestUserMessageText?: string;
+    recentAssistantTexts?: readonly string[];
+  }
+): boolean {
+  if (isExplicitInsertRequest(source.latestUserMessageText ?? "")) return true;
+  const haystack = conversationFactHaystack(source);
+  return haystack.length > 0 && evidenceContainsFact(haystack, fact);
 }
