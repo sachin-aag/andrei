@@ -195,6 +195,32 @@ describe("PasswordLoginForm", () => {
     });
   });
 
+  it("shows send-failure copy when Resend rejects a locked-account reset", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ allowed: true, hasPassword: true, locked: true })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ ok: false, error: "nope" }, { status: 503 })
+      );
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "locked@mjbiopharm.com"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /email me a reset link/i })
+    );
+
+    expect(
+      await screen.findByText(/could not send a reset link/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/check your email/i)).not.toBeInTheDocument();
+  });
+
   it("shows invalid password error", async () => {
     vi.mocked(signIn).mockResolvedValueOnce({ error: "CredentialsSignin" } as never);
     vi.mocked(fetch).mockResolvedValue(

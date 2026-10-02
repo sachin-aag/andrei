@@ -412,6 +412,7 @@ File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 - Invalid password error
 - No-password → setup link plus secondary email-link
 - Forgot password and locked-account reset send the reset email immediately
+- Locked-account / forgot-password send failure copy (route 503)
 - Magic link from email step, password step, and locked account
 - Magic-link send failure copy
 

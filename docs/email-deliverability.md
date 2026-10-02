@@ -91,6 +91,7 @@ Redeploy after changing env vars.
 
 ## Debugging
 
-1. Resend dashboard → **Emails** — delivered, bounced, or suppressed?
-2. Vercel → Production → **Environment** — confirm `AUTH_URL` and `AUTH_EMAIL_FROM`
-3. Try password login after `set-workspace-password` to confirm the app works independent of mail
+1. The lock-screen / forgot-password UI now shows an error if Resend rejects the send. A successful “Check your email” screen means the API accepted the message. Audit `auth_password_reset` with `stage: send_failed` means the token was written and the provider failed.
+2. Resend dashboard → **Emails** — delivered, bounced, or suppressed?
+3. Vercel → Production → **Environment** — confirm `AUTH_URL` and `AUTH_EMAIL_FROM` (must match a verified Resend domain). A 403 from an unverified pack From address retries once as `noreply@andreihealth.com`.
+4. Try password login after `set-workspace-password` to confirm the app works independent of mail
