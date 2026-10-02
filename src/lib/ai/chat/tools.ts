@@ -299,6 +299,7 @@ import {
   qsrTableColumnLabel,
   rtmFamilyColumnsNeedProtocolSearch,
   rtmFamilySearchOpenMessage,
+  SECTION_LOOKBACK_MAX_ROUNDS,
   sectionLookbackPagesToLoad,
   shouldKeepRtmProtocolSearchOpen,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -1626,21 +1627,33 @@ export function buildChatTools(opts: {
     operation: TableOperation;
     section: string;
   }) => {
-    const pages = sectionLookbackPagesToLoad({
-      operation: input.operation,
-      section: input.section,
-      ledger: citationLedger,
-    });
-    if (pages.length === 0) return;
-    try {
-      const rows = await loadDocumentPageEvidence({ reportId, pages });
-      for (const row of rows) {
-        citationLedger.record(row.filename, row.pageNumber, row.attachmentId, {
-          quote: row.quote,
-        });
+    const attempted = new Set<string>();
+    // Walk back in small batches: most sections start 1–2 pages earlier.
+    for (let round = 0; round < SECTION_LOOKBACK_MAX_ROUNDS; round++) {
+      const pages = sectionLookbackPagesToLoad({
+        operation: input.operation,
+        section: input.section,
+        ledger: citationLedger,
+        attempted,
+      });
+      if (pages.length === 0) return;
+      for (const page of pages) {
+        attempted.add(`${page.attachmentId}:${page.pageNumber}`);
       }
-    } catch (err) {
-      console.error("section lookback page load failed", err);
+      try {
+        const rows = await loadDocumentPageEvidence({ reportId, pages });
+        for (const row of rows) {
+          citationLedger.record(
+            row.filename,
+            row.pageNumber,
+            row.attachmentId,
+            { quote: row.quote }
+          );
+        }
+      } catch (err) {
+        console.error("section lookback page load failed", err);
+        return;
+      }
     }
   };
   const emptyRepair = {

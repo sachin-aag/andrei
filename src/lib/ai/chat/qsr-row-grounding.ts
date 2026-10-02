@@ -2373,7 +2373,12 @@ function pageConflictsWithSection(quote: string, number: string): boolean {
   );
 }
 
-const SECTION_SPAN_PAGE_LOOKBACK = 3;
+const SECTION_SPAN_PAGE_LOOKBACK = 10;
+/** Pages fetched per lookback round; sections usually start 1–2 pages back. */
+export const SECTION_LOOKBACK_BATCH = 2;
+export const SECTION_LOOKBACK_MAX_ROUNDS = Math.ceil(
+  SECTION_SPAN_PAGE_LOOKBACK / SECTION_LOOKBACK_BATCH
+);
 
 /**
  * Nearest earlier page of the same file that prints the heading, when every
@@ -2411,6 +2416,8 @@ export function sectionLookbackPagesToLoad(input: {
   operation: TableOperation;
   section: string | null | undefined;
   ledger: CitationPageLedger;
+  /** `attachmentId:pageNumber` keys already requested; a miss ends the walk. */
+  attempted?: ReadonlySet<string>;
 }): { attachmentId: string; pageNumber: number }[] {
   const { operation, section, ledger } = input;
   if (operation.kind !== "edit_cells" || !isQsrRtmSection(section)) return [];
@@ -2429,9 +2436,10 @@ export function sectionLookbackPagesToLoad(input: {
     if (headingNumberOnPage(cited.quote, number)) continue;
     if (pageConflictsWithSection(cited.quote, number)) continue;
     if (sectionStartPageBefore(ledger, cited, number)) continue;
+    let queued = 0;
     for (let back = 1; back <= SECTION_SPAN_PAGE_LOOKBACK; back++) {
       const pageNumber = cited.pageNumber - back;
-      if (pageNumber < 1) break;
+      if (pageNumber < 1 || queued >= SECTION_LOOKBACK_BATCH) break;
       const have = ledger
         .recordedPages()
         .find((page) => page.id === cited.id && page.pageNumber === pageNumber);
@@ -2441,10 +2449,10 @@ export function sectionLookbackPagesToLoad(input: {
         if (pageConflictsWithSection(have.quote, number)) break;
         continue;
       }
-      wanted.set(`${cited.id}:${pageNumber}`, {
-        attachmentId: cited.id,
-        pageNumber,
-      });
+      const key = `${cited.id}:${pageNumber}`;
+      if (input.attempted?.has(key)) break;
+      wanted.set(key, { attachmentId: cited.id, pageNumber });
+      queued++;
     }
   }
   return [...wanted.values()];

@@ -3615,8 +3615,79 @@ describe("RTM family section lookback", () => {
     expect(pages).toEqual([
       { attachmentId: "iq", pageNumber: 18 },
       { attachmentId: "iq", pageNumber: 17 },
-      { attachmentId: "iq", pageNumber: 16 },
     ]);
+  });
+
+  it("walks back in batches and stops after 10 pages or a missing page", () => {
+    const pageNumber = 30;
+    const ledger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber,
+        attachmentId: "iq",
+        quote: IQ_P19_IDENTIFICATION_CONTINUED,
+      },
+      ...[29, 28].map((n) => ({
+        filename: "Installation Qualification.PDF",
+        pageNumber: n,
+        attachmentId: "iq",
+        quote: IQ_P19_IDENTIFICATION_CONTINUED,
+      })),
+    ]);
+    const operation = cellOp(
+      `13.3 – Working volume 8000 L [Installation Qualification.PDF, p. ${pageNumber}]`
+    );
+    expect(
+      sectionLookbackPagesToLoad({
+        operation,
+        section: "qsr_rtm_process",
+        ledger,
+      })
+    ).toEqual([
+      { attachmentId: "iq", pageNumber: 27 },
+      { attachmentId: "iq", pageNumber: 26 },
+    ]);
+    expect(
+      sectionLookbackPagesToLoad({
+        operation,
+        section: "qsr_rtm_process",
+        ledger,
+        attempted: new Set(["iq:27"]),
+      })
+    ).toEqual([]);
+    const far = cellOp(
+      "13.3 – Working volume 8000 L [Installation Qualification.PDF, p. 12]"
+    );
+    const farLedger = ledgerFromPages([
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 12,
+        attachmentId: "iq",
+        quote: IQ_P19_IDENTIFICATION_CONTINUED,
+      },
+    ]);
+    const attempted = new Set<string>();
+    let total = 0;
+    for (let round = 0; round < 20; round++) {
+      const pages = sectionLookbackPagesToLoad({
+        operation: far,
+        section: "qsr_rtm_process",
+        ledger: farLedger,
+        attempted,
+      });
+      if (pages.length === 0) break;
+      for (const page of pages) {
+        attempted.add(`${page.attachmentId}:${page.pageNumber}`);
+        farLedger.record(
+          "Installation Qualification.PDF",
+          page.pageNumber,
+          page.attachmentId,
+          { quote: IQ_P19_IDENTIFICATION_CONTINUED }
+        );
+        total++;
+      }
+    }
+    expect(total).toBe(10);
   });
 
   it("asks for nothing when the cited page prints the heading or the start is already retrieved", () => {
