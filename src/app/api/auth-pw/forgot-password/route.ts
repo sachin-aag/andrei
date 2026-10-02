@@ -17,10 +17,12 @@ export async function POST(req: Request) {
   try {
     const wsUser = await db.query.workspaceUsers.findFirst({
       where: eq(workspaceUsers.email, normalizedEmail),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, lockedAt: true, deactivatedAt: true },
     });
 
-    if (wsUser) {
+    // Locked accounts must still receive the email — completing reset clears
+    // lockedAt. Deactivated accounts stay silent (same 200 as unknown emails).
+    if (wsUser && !wsUser.deactivatedAt) {
       await sendPasswordResetLink(normalizedEmail);
       await recordAuditEvent({
         actor: auditActorFromId(wsUser.id, wsUser.name),

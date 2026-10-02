@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MagicLinkSent } from "@/components/auth/magic-link-sent";
+import { PasswordResetSent } from "@/components/auth/password-reset-sent";
 import { sendMagicLinkEmail } from "@/components/auth/send-magic-link";
+import { sendPasswordResetEmail } from "@/components/auth/send-password-reset";
 import { captureEvent } from "@/lib/analytics/events";
 import { DEACTIVATED_ACCOUNT_MESSAGE } from "@/lib/auth/login-status-messages";
 
@@ -27,7 +29,8 @@ type Step =
   | { kind: "email" }
   | { kind: "password"; email: string; locked: boolean }
   | { kind: "no-password"; email: string }
-  | { kind: "magic-link-sent"; email: string };
+  | { kind: "magic-link-sent"; email: string }
+  | { kind: "reset-sent"; email: string };
 
 const EMAIL_CHECK_ERROR =
   "Could not check this email. Please try again or contact your admin.";
@@ -135,6 +138,18 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
     });
   };
 
+  const sendPasswordReset = (targetEmail: string) => {
+    setError(null);
+    startTransition(async () => {
+      const result = await sendPasswordResetEmail(targetEmail);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setStep({ kind: "reset-sent", email: targetEmail });
+    });
+  };
+
   const sendMagicLinkFromEmailStep = () => {
     if (!email.trim()) return;
     setError(null);
@@ -210,6 +225,25 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
           Use a different email
         </button>
       </MagicLinkSent>
+    );
+  }
+
+  if (step.kind === "reset-sent") {
+    return (
+      <PasswordResetSent email={step.email}>
+        <button
+          type="button"
+          className="text-sm text-[var(--brand-600)] hover:underline"
+          onClick={() => {
+            setStep({ kind: "email" });
+            setEmail("");
+            setPassword("");
+            setError(null);
+          }}
+        >
+          Use a different email
+        </button>
+      </PasswordResetSent>
     );
   }
 
@@ -302,26 +336,46 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
           />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button
-          type="button"
-          className="w-full h-11"
-          disabled={step.locked || !password || pending}
-          onClick={submitPassword}
-        >
-          {pending ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <ArrowRight className="mr-2 size-4" />
-          )}
-          Sign in
-        </Button>
-        <div className="flex items-center justify-between gap-3">
-          <Link
-            href={`/forgot-password?email=${encodeURIComponent(step.email)}`}
-            className="text-sm text-[var(--muted-foreground)] hover:underline"
+        {step.locked ? (
+          <Button
+            type="button"
+            className="w-full h-11"
+            disabled={pending}
+            onClick={() => sendPasswordReset(step.email)}
           >
-            Forgot password?
-          </Link>
+            {pending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <ArrowRight className="mr-2 size-4" />
+            )}
+            Email me a reset link
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            className="w-full h-11"
+            disabled={!password || pending}
+            onClick={submitPassword}
+          >
+            {pending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <ArrowRight className="mr-2 size-4" />
+            )}
+            Sign in
+          </Button>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          {step.locked ? null : (
+            <button
+              type="button"
+              className="text-sm text-[var(--muted-foreground)] hover:underline disabled:opacity-50"
+              disabled={pending}
+              onClick={() => sendPasswordReset(step.email)}
+            >
+              Forgot password?
+            </button>
+          )}
           <button
             type="button"
             className="text-sm text-[var(--brand-600)] hover:underline disabled:opacity-50"

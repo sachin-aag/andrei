@@ -144,7 +144,7 @@ describe("PasswordLoginForm", () => {
     expect(await screen.findByLabelText(/^password$/i)).toBeInTheDocument();
   });
 
-  it("moves locked accounts to the password step with reset link", async () => {
+  it("moves locked accounts to the password step with a reset-email action", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({ allowed: true, hasPassword: true, locked: true })
     );
@@ -162,11 +162,37 @@ describe("PasswordLoginForm", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/^password$/i)).toBeDisabled();
     expect(
-      screen.getByRole("link", { name: /forgot password/i })
-    ).toHaveAttribute(
-      "href",
-      expect.stringContaining("/forgot-password?email=locked%40mjbiopharm.com")
+      screen.getByRole("button", { name: /email me a reset link/i })
+    ).toBeEnabled();
+  });
+
+  it("emails a password reset link from a locked account", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ allowed: true, hasPassword: true, locked: true })
+      )
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "locked@mjbiopharm.com"
     );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /email me a reset link/i })
+    );
+
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/password reset link/i)
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/auth-pw/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "locked@mjbiopharm.com" }),
+    });
   });
 
   it("shows invalid password error", async () => {
@@ -212,7 +238,13 @@ describe("PasswordLoginForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("links to forgot password from the password step", async () => {
+  it("emails a password reset link from the password step", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ allowed: true, hasPassword: true, locked: false })
+      )
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
     await user.type(
@@ -220,10 +252,16 @@ describe("PasswordLoginForm", () => {
       "e2e.password@mjbiopharm.com"
     );
     await user.click(screen.getByRole("button", { name: /continue/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /forgot password/i })
+    );
 
-    expect(
-      await screen.findByRole("link", { name: /forgot password/i })
-    ).toHaveAttribute("href", expect.stringContaining("/forgot-password"));
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/auth-pw/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "e2e.password@mjbiopharm.com" }),
+    });
   });
 
   it("sends a magic link from the email step without asking for a password", async () => {

@@ -103,6 +103,11 @@ test.describe("authentication", () => {
     await expect(page.getByText(/account is locked/i)).toBeVisible({
       timeout: 15_000,
     });
+    await page.getByRole("button", { name: /email me a reset link/i }).click();
+    await expect(page.getByText(/check your email/i)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText(/password reset link/i)).toBeVisible();
   });
 
   test("logs in via test-login bypass", async ({ page }) => {

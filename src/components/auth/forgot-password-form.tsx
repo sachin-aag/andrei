@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ArrowRight, Loader2, MailCheck } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { EmailDeliveryHint } from "@/components/auth/email-delivery-hint";
+import { PasswordResetSent } from "@/components/auth/password-reset-sent";
+import { sendPasswordResetEmail } from "@/components/auth/send-password-reset";
 
 export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
   const [email, setEmail] = useState(defaultEmail ?? "");
@@ -18,13 +19,9 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
     if (!email.trim()) return;
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/auth-pw/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      if (!res.ok) {
-        setError("Something went wrong. Please try again.");
+      const result = await sendPasswordResetEmail(email.trim());
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
       setSent(true);
@@ -33,21 +30,14 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
 
   if (sent) {
     return (
-      <div className="text-center space-y-3 py-4">
-        <MailCheck className="size-10 mx-auto text-[var(--brand-600)]" />
-        <h3 className="font-semibold">Check your email</h3>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          If an account exists for <strong>{email}</strong>, we sent a password
-          reset link. Check your inbox.
-        </p>
-        <EmailDeliveryHint email={email} />
+      <PasswordResetSent email={email}>
         <Link
           href="/login"
           className="text-sm text-[var(--brand-600)] hover:underline inline-block"
         >
           Back to sign in
         </Link>
-      </div>
+      </PasswordResetSent>
     );
   }
 
