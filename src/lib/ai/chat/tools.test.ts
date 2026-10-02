@@ -3293,6 +3293,119 @@ describe("buildChatTools propose edits", () => {
     ]);
   });
 
+  it("does not stall edit_cells behind a pending insert_rows", async () => {
+    const tableDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Number"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["Existing Qualification", "EQ-1"].map((text) => ({
+                type: "tableCell",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
+      ],
+    };
+    let releaseSectionLoad!: () => void;
+    const sectionLoadGate = new Promise<void>((resolve) => {
+      releaseSectionLoad = resolve;
+    });
+    let insertEnteredLoad = false;
+    let resolveInsertEntered!: () => void;
+    const insertEnteredLoadGate = new Promise<void>((resolve) => {
+      resolveInsertEntered = resolve;
+    });
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockImplementation(async () => {
+          if (table === comments) return [];
+          if (!insertEnteredLoad) {
+            insertEnteredLoad = true;
+            resolveInsertEntered();
+            await sectionLoadGate;
+          }
+          return [
+            {
+              id: "sec-1",
+              reportId: "report-1",
+              section: "define",
+              content: { narrative: tableDoc },
+            },
+          ];
+        }),
+      }),
+    }));
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const insertPromise = tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Design Qualification", "DQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await insertEnteredLoadGate;
+    const cellsPromise = tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Revise the existing document number.",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            {
+              rowKey: "Existing Qualification",
+              col: 1,
+              insertText: "EQ-1-REV",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      stallTimer = setTimeout(() => {
+        reject(new Error("edit_cells stalled behind insert_rows"));
+      }, 400);
+    });
+    await expect(Promise.race([cellsPromise, stalled])).resolves.toMatchObject({
+      status: "proposed",
+    });
+    if (stallTimer) clearTimeout(stallTimer);
+    releaseSectionLoad();
+    await expect(insertPromise).resolves.toMatchObject({ status: "proposed" });
+  });
+
   it("coerces nested create_table payloads instead of falling through to draft_field", async () => {
     const tools = buildChatTools({
       reportId: "report-1",

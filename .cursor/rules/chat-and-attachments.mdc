@@ -160,7 +160,8 @@ and `truncated !== true`.
 `afterRow`. Sequential `insert_rows` on the same table fold into the open
 card (`mergeInsertRowsOperations`) — the first pending row is not in the
 saved table, so a later `afterRowKey` of that first-cell would otherwise
-`bad_scope`. Same-turn `edit_table` is serialized like `propose_edit`.
+`bad_scope`. Same-turn same-table `insert_rows` is serialized;
+`edit_cells` and other `edit_table` ops stay parallel.
 `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
 over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
 group a batch by a reused dummy numeric row. An already-filled or missing

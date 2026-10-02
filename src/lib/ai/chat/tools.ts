@@ -197,8 +197,11 @@ import {
   recordNearbyEdit,
 } from "@/lib/suggestions/same-turn-nearby-edit";
 import {
+  createInsertRowsQueues,
   createSameTurnTableInserts,
+  enqueueInsertRows,
   findTableInsertForFold,
+  insertRowsQueueKey,
   recordTableInsert,
 } from "@/lib/suggestions/same-turn-table-edit";
 import {
@@ -1441,15 +1444,7 @@ export function buildChatTools(opts: {
     );
     return next;
   };
-  let editTableTail: Promise<void> = Promise.resolve();
-  const enqueueEditTable = <T>(fn: () => Promise<T>): Promise<T> => {
-    const next = editTableTail.then(fn, fn);
-    editTableTail = next.then(
-      () => undefined,
-      () => undefined
-    );
-    return next;
-  };
+  const insertRowsQueues = createInsertRowsQueues();
   const fieldReadSnapshots = new Map<string, unknown>();
   const captureFieldSnapshot = (
     section: SectionType,
@@ -3854,7 +3849,9 @@ export function buildChatTools(opts: {
         targetField,
         operation,
         reasoning,
-      }): Promise<EditTableResult> => enqueueEditTable(async () => {
+      }): Promise<EditTableResult> => {
+        const parsedForQueue = parseTableOperation(operation);
+        const run = async (): Promise<EditTableResult> => {
         if (!canEdit) {
           return {
             status: "not_editable",
@@ -4382,7 +4379,18 @@ export function buildChatTools(opts: {
           },
           supersededSuggestionIds
         );
-      }),
+        };
+        if (isInsertRowsOperation(parsedForQueue)) {
+          const queueField =
+            resolveTargetField(section, targetField) ?? targetField;
+          return enqueueInsertRows(
+            insertRowsQueues,
+            insertRowsQueueKey(section, queueField, parsedForQueue.tableIndex),
+            run
+          );
+        }
+        return run();
+      },
     }),
 
     draft_field: tool({

@@ -119,7 +119,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
   no max-cards budget. Do not fold lead-ins, figures, citation splits, or
   cells. Sequential `edit_table` `insert_rows` on the same table **do**
   fold into the open card (`merge-insert-rows.ts`) so later rows are not
-  resolved against a still-empty saved table.
+  resolved against a still-empty saved table. Same-table `insert_rows`
+  is serialized; `edit_cells` and other table ops stay parallel.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
   Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
 - Whole-field is derived: planned operations cover every merge block
