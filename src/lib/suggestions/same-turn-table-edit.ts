@@ -49,7 +49,7 @@ export function recordTableInsert(
   store.inserts.push(insert);
 }
 
-/** Latest open same-table insert_rows card this turn. */
+/** Latest open same-table insert_rows / scaffold edit_cells card this turn. */
 export function findTableInsertForFold(
   store: SameTurnTableInserts,
   args: {
