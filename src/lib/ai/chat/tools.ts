@@ -300,7 +300,14 @@ import {
   rtmFamilySearchOpenMessage,
   qsrReferenceDroppedMessage,
   shouldKeepRtmProtocolSearchOpen,
+  syntheticUnsupportedFact,
 } from "@/lib/ai/chat/qsr-row-grounding";
+import {
+  qsrReferencesOutstandingSearchCategories,
+  qsrReferencesRowsMissingSearchEvidence,
+  qsrReferencesSearchIncompleteMessage,
+  qsrReferencesSearchStillOpenMessage,
+} from "@/lib/ai/chat/qsr-reference-search";
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
@@ -3876,6 +3883,20 @@ export function buildChatTools(opts: {
           resolvedField
         );
         await ensureEvidence();
+        const missingRefSearch = qsrReferencesRowsMissingSearchEvidence({
+          section,
+          operation: parsedOp,
+          ledger: citationLedger,
+        });
+        if (missingRefSearch.length > 0) {
+          return unsupportedFactsToolResult({
+            unsupported: missingRefSearch.map((label) =>
+              syntheticUnsupportedFact(label)
+            ),
+            draftWithPlaceholders: missingRefSearch.join("; "),
+            message: qsrReferencesSearchIncompleteMessage(missingRefSearch),
+          });
+        }
         const originalTableOp = captureTableOperationSnapshots(
           fieldDoc,
           parsedOp
@@ -4127,13 +4148,24 @@ export function buildChatTools(opts: {
         });
         const referenceDropped =
           section === "qsr_references" ? proposal.droppedRowKeys : [];
+        const referencesSearchOpen =
+          section === "qsr_references" &&
+          proposal.proposedCellCount > 0 &&
+          qsrReferencesOutstandingSearchCategories(citationLedger).length > 0;
         const keepSearchOpen =
           missingUrsIds.length > 0 ||
           familyNeedSearch ||
-          referenceDropped.length > 0;
+          referenceDropped.length > 0 ||
+          referencesSearchOpen;
         const extraNote = `${missingUrsIdsMessage(missingUrsIds)}${
           familyNeedSearch ? rtmFamilySearchOpenMessage() : ""
-        }${qsrReferenceDroppedMessage(referenceDropped)}`;
+        }${qsrReferenceDroppedMessage(referenceDropped)}${
+          referencesSearchOpen
+            ? qsrReferencesSearchStillOpenMessage(
+                qsrReferencesOutstandingSearchCategories(citationLedger)
+              )
+            : ""
+        }`;
         const proposalNote = `${tableEditProposalMessage(proposal)}${extraNote}`;
         return proposedWithSupersession(
           {

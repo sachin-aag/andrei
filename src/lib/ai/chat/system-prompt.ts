@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v177-qsr-reference-page";
+export const CHAT_PROMPT_VERSION = "chat-v178-qsr-references-search";
 
 export type ChatMode = "plan" | "agent";
 
