@@ -4222,14 +4222,15 @@ export function buildChatTools(opts: {
             fieldDoc,
             parsedOp
           );
-          const persistedOp = incomingInsert
-            ? {
-                ...incomingInsert,
-                afterRow: persistedCaptured.afterRow,
-                afterRowKey: persistedCaptured.afterRowKey,
-                expectedRowAtAfter: persistedCaptured.expectedRowAtAfter,
-              }
-            : stripped.operation;
+          const persistedOp =
+            incomingInsert && isInsertRowsOperation(persistedCaptured)
+              ? {
+                  ...incomingInsert,
+                  afterRow: persistedCaptured.afterRow,
+                  afterRowKey: persistedCaptured.afterRowKey,
+                  expectedRowAtAfter: persistedCaptured.expectedRowAtAfter,
+                }
+              : stripped.operation;
           try {
             const documentContents = await documentContentsForReport(
               reportId,
