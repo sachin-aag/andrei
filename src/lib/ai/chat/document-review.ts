@@ -993,6 +993,7 @@ export function prepareDocumentReviewStep(input: {
       // qualification while drafting monitoring) still needs a walk.
       // A matching finish this turn must not restart — even when the
       // truncated walk cannot unlock edit_table (CSV-OQ skip of PRQR).
+      // hideReview (no toolChoice) unlocks the parent to draft or reply.
       if (restartOnComplete) return forceStart();
       return hideReview();
     default: {
