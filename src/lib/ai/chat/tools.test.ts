@@ -3383,8 +3383,9 @@ describe("buildChatTools propose edits", () => {
           kind: "edit_cells",
           cells: [
             {
-              rowKey: "Existing Qualification",
+              row: 1,
               col: 1,
+              rowKey: "Existing Qualification",
               insertText: "EQ-1-REV",
             },
           ],
