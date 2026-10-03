@@ -272,6 +272,37 @@ describe("DocumentReviewSession", () => {
     ).toBe(true);
   });
 
+  it("runs the signed-quantity overlay before extracting findings", async () => {
+    const order: string[] = [];
+    const session = new DocumentReviewSession({
+      overlayPages: async (pages) => {
+        order.push("overlay");
+        return pages.map((reviewPage) => ({
+          ...reviewPage,
+          transcript: reviewPage.transcript.replace("15 °C", "-15 °C"),
+          visualInterpretation: "numeric-sign-look: −15 °C to 130 °C",
+        }));
+      },
+      extractBatch: async ({ pages }) => {
+        order.push("extract");
+        return extractReviewFindingsFromPages(pages);
+      },
+    });
+    session.start({
+      objective: "URS",
+      pages: [
+        page(6, "URS-3 Shell Operating temperature\n15 °C to 130 °C"),
+      ],
+    });
+    await session.continue();
+    const finished = session.finish();
+    expect(order).toEqual(["overlay", "extract"]);
+    expect(finished.identifiers).toContain("URS-3");
+    expect(
+      finished.findings.some((finding) => finding.summary.includes("-15 °C"))
+    ).toBe(true);
+  });
+
   it("stops draining when the turn abort fires and leaves remaining batches", async () => {
     const abort = new AbortController();
     let calls = 0;

@@ -26,6 +26,7 @@ import {
   persistablePendingPlan,
   planCoverageObjective,
   planKeepsComprehensive,
+  formatPlanProgressChipLabel,
   planProgressChipLabel,
   planPromptBlock,
   resolvePlanAtTurnStart,
@@ -785,7 +786,31 @@ describe("plan prompt and metadata", () => {
         itemIndex: 4,
         total: 10,
       })
-    ).toBe("4 of 10 — Monitoring");
+    ).toBe("7 completed · 3 remaining");
+  });
+
+  it("names remaining work without the current section heading", () => {
+    expect(formatPlanProgressChipLabel({ completed: 0, remaining: 5 })).toBe(
+      "5 remaining"
+    );
+    expect(formatPlanProgressChipLabel({ completed: 0, remaining: 1 })).toBe(
+      "1 remaining"
+    );
+    expect(formatPlanProgressChipLabel({ completed: 2, remaining: 3 })).toBe(
+      "2 completed · 3 remaining"
+    );
+    expect(formatPlanProgressChipLabel({ completed: 1, remaining: 1 })).toBe(
+      "1 completed · 1 remaining"
+    );
+    expect(formatPlanProgressChipLabel({ completed: 4, remaining: 1 })).toBe(
+      "4 completed · 1 remaining"
+    );
+    expect(formatPlanProgressChipLabel({ completed: 5, remaining: 0 })).toBe(
+      "5 completed"
+    );
+    expect(formatPlanProgressChipLabel({ completed: 1, remaining: 0 })).toBe(
+      "1 completed"
+    );
   });
 
   it("names the section a remaining-section turn just finished", () => {
@@ -846,9 +871,7 @@ describe("plan prompt and metadata", () => {
       },
     ]);
     const view = chatPlanProgressView(started, "equipment_lifecycle_report");
-    expect(view.chipLabel).toBe(
-      "2 of 3 — Media Fill / Aseptic Process Simulation"
-    );
+    expect(view.chipLabel).toBe("1 completed · 2 remaining");
     expect(view.done.map((item) => item.sectionKey)).toEqual(["elr_objective"]);
     expect(view.current.map((item) => item.sectionKey)).toEqual([
       "elr_media_fill",
@@ -894,9 +917,7 @@ describe("plan prompt and metadata", () => {
       "equipment_lifecycle_report",
       live
     );
-    expect(view.chipLabel).toBe(
-      "1 of 3 — Media Fill / Aseptic Process Simulation"
-    );
+    expect(view.chipLabel).toBe("3 remaining");
     expect(view.done.map((item) => item.label)).toEqual([]);
     expect(view.current.map((item) => item.sectionKey)).toEqual([
       "elr_media_fill",
@@ -968,7 +989,7 @@ describe("plan prompt and metadata", () => {
       "equipment_lifecycle_report",
       live
     );
-    expect(view.chipLabel).toBe("2 of 2 — Qualification");
+    expect(view.chipLabel).toBe("1 completed · 1 remaining");
     expect(view.done.map((item) => item.sectionKey)).toEqual(["elr_media_fill"]);
   });
 
@@ -991,9 +1012,7 @@ describe("plan prompt and metadata", () => {
     );
     const view = chatPlanProgressView(paused, "equipment_lifecycle_report");
     expect(view.paused).toBe(true);
-    expect(view.chipLabel).toBe(
-      "2 of 3 — Media Fill / Aseptic Process Simulation"
-    );
+    expect(view.chipLabel).toBe("1 completed · 2 remaining");
     expect(view.current).toEqual([]);
     expect(view.pending.map((item) => item.sectionKey)).toEqual([
       "elr_media_fill",
@@ -1048,7 +1067,7 @@ describe("plan prompt and metadata", () => {
       live
     );
     expect(view.complete).toBe(true);
-    expect(view.chipLabel).toBe("2 of 2 — done");
+    expect(view.chipLabel).toBe("2 completed");
     expect(view.current).toEqual([]);
     expect(view.pending).toEqual([]);
   });

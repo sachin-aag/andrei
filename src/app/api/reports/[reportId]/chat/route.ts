@@ -30,6 +30,7 @@ import { messagesWithComposerModeReminder } from "@/lib/ai/chat/composer-mode-re
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { isQsrRtmSection } from "@/lib/ai/chat/qsr-row-grounding";
+import { overlayNumericSignsOnReviewPages } from "@/lib/attachments/overlay-stored-pages";
 import { isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import {
@@ -438,7 +439,10 @@ async function handleChatPost(
     policy: turnPlan.retrievalPolicy,
     reason: turnPlan.retrievalReason,
   };
-  const documentReview = new DocumentReviewSession();
+  const documentReview = new DocumentReviewSession({
+    overlayPages: (pages) =>
+      overlayNumericSignsOnReviewPages({ reportId, pages }),
+  });
   const pushback = isRetrievalPushback(userText);
   const coverageObjective = planCoverageObjective(pendingPlan, userText, {
     sectionScope,

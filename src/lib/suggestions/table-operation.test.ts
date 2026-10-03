@@ -257,6 +257,40 @@ describe("applyTableOperation", () => {
     expect(cellText(appended.doc, 3, 0)).toBe("end");
   });
 
+  it("occupies a blank seeded data row when inserting after the header", () => {
+    const seeded = tableDoc(["H1", "H2"], [["", ""]]);
+    const result = applyTableOperation(seeded, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 0,
+      rows: [
+        ["Design Qualification", "DQP-1"],
+        ["Installation Qualification", "IQP-1"],
+      ],
+      expectedRowAtAfter: ["H1", "H2"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(rowCount(result.doc)).toBe(3);
+    expect(cellText(result.doc, 1, 0)).toBe("Design Qualification");
+    expect(cellText(result.doc, 2, 0)).toBe("Installation Qualification");
+  });
+
+  it("does not consume a blank seed when inserting after that seed row", () => {
+    const seeded = tableDoc(["H1", "H2"], [["", ""]]);
+    const result = applyTableOperation(seeded, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      rows: [["Design Qualification", "DQP-1"]],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(rowCount(result.doc)).toBe(3);
+    expect(cellText(result.doc, 1, 0)).toBe("");
+    expect(cellText(result.doc, 2, 0)).toBe("Design Qualification");
+  });
+
   it("sizes insert_rows from the header when the last data row is narrower", () => {
     const ragged = tableDoc(
       [...DV_TRACEABILITY_HEADERS],

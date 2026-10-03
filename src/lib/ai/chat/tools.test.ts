@@ -98,6 +98,19 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/attachments/overlay-stored-pages", () => ({
+  overlayNumericSignsOnReviewPages: async ({
+    pages,
+  }: {
+    pages: unknown[];
+  }) => pages,
+  overlayNumericSignsOnReadPage: async ({
+    page,
+  }: {
+    page: unknown;
+  }) => page,
+}));
+
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
 }));
@@ -3161,6 +3174,435 @@ describe("buildChatTools propose edits", () => {
       targetField: "narrative",
     });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("folds sequential insert_rows on an empty table into one card", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Number"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    const inserted: Array<{ content?: string }> = [];
+    const patched: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    dbUpdateMock.mockReturnValue({
+      set: (values: { content?: string }) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the first qualification document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Design Qualification", "DQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    const firstId = (first as { suggestionId: string }).suggestionId;
+    const second = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "Design Qualification",
+          rows: [["Installation Qualification", "IQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    expect(folded.tableOperation?.kind).toBe("insert_rows");
+    const rows =
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.rows
+        : [];
+    expect(rows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+    ]);
+    expect(
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.afterRow
+        : undefined
+    ).toBe(0);
+    expect(
+      (second as { proposedRowKeys?: string[] }).proposedRowKeys
+    ).toEqual(
+      expect.arrayContaining([
+        "Design Qualification",
+        "Installation Qualification",
+      ])
+    );
+
+    const third = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Append the remaining document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Operational Qualification", "OQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(third).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    const appended = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    const appendedRows =
+      appended.tableOperation?.kind === "insert_rows"
+        ? appended.tableOperation.rows
+        : [];
+    expect(appendedRows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+      "Operational Qualification",
+    ]);
+  });
+
+  it("folds first-row edit_cells of a seeded blank row with later insert_rows", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Number"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["", ""].map(() => ({
+                type: "tableCell",
+                content: [{ type: "paragraph" }],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    const inserted: Array<{ content?: string }> = [];
+    const patched: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    dbUpdateMock.mockReturnValue({
+      set: (values: { content?: string }) => {
+        patched.push(values);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const first = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Fill the first qualification document.",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            { row: 1, col: 0, insertText: "Design Qualification" },
+            { row: 1, col: 1, insertText: "DQP-1" },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(first).toMatchObject({ status: "proposed" });
+    const firstId = (first as { suggestionId: string }).suggestionId;
+    const second = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          afterRowKey: "Design Qualification",
+          rows: [["Installation Qualification", "IQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(second).toMatchObject({
+      status: "proposed",
+      suggestionId: firstId,
+    });
+    expect(inserted).toHaveLength(1);
+    expect(patched.length).toBeGreaterThan(0);
+    const folded = parseAiFixCommentContent(
+      String(patched[patched.length - 1]?.content ?? "")
+    );
+    expect(folded.tableOperation?.kind).toBe("insert_rows");
+    const rows =
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.rows
+        : [];
+    expect(rows.map((row) => row[0])).toEqual([
+      "Design Qualification",
+      "Installation Qualification",
+    ]);
+    expect(
+      folded.tableOperation?.kind === "insert_rows"
+        ? folded.tableOperation.afterRow
+        : undefined
+    ).toBe(0);
+  });
+
+  it("keeps a filled-row edit_cells card separate from later insert_rows", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: ["Document", "Number"].map((text) => ({
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["Existing Qualification", "EQ-1"].map((text) => ({
+                type: "tableCell",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text }] },
+                ],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    const inserted: Array<{ content?: string }> = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: { content?: string }) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const cells = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Revise the existing document number.",
+        operation: {
+          kind: "edit_cells",
+          cells: [
+            {
+              row: 1,
+              col: 1,
+              rowKey: "Existing Qualification",
+              insertText: "EQ-1-REV",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(cells).toMatchObject({ status: "proposed" });
+    const cellsId = (cells as { suggestionId: string }).suggestionId;
+    const insertedRows = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Design Qualification", "DQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(insertedRows).toMatchObject({ status: "proposed" });
+    expect((insertedRows as { suggestionId: string }).suggestionId).not.toBe(
+      cellsId
+    );
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("does not stall edit_cells behind a pending insert_rows", async () => {
+    const tableRow = (headers: boolean, cells: string[]) => ({
+      type: "tableRow" as const,
+      content: cells.map((text) => ({
+        type: headers ? ("tableHeader" as const) : ("tableCell" as const),
+        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+      })),
+    });
+    const tableDoc = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            tableRow(true, ["Document", "Number"]),
+            tableRow(false, ["Existing Qualification", "EQ-1"]),
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            tableRow(true, ["Document", "Number"]),
+            tableRow(false, ["Other Document", "OT-1"]),
+          ],
+        },
+      ],
+    };
+    let releaseSectionLoad!: () => void;
+    const sectionLoadGate = new Promise<void>((resolve) => {
+      releaseSectionLoad = resolve;
+    });
+    let insertEnteredLoad = false;
+    let resolveInsertEntered!: () => void;
+    const insertEnteredLoadGate = new Promise<void>((resolve) => {
+      resolveInsertEntered = resolve;
+    });
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockImplementation(async () => {
+          if (table === comments) return [];
+          if (!insertEnteredLoad) {
+            insertEnteredLoad = true;
+            resolveInsertEntered();
+            await sectionLoadGate;
+          }
+          return [
+            {
+              id: "sec-1",
+              reportId: "report-1",
+              section: "define",
+              content: { narrative: tableDoc },
+            },
+          ];
+        }),
+      }),
+    }));
+    listReadyDocumentsForReportMock.mockResolvedValue([]);
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "block",
+    });
+    const insertPromise = tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the next qualification document.",
+        operation: {
+          kind: "insert_rows",
+          rows: [["Design Qualification", "DQP-1"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    await insertEnteredLoadGate;
+    const cellsPromise = tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Revise the other table's document number.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 1,
+          cells: [
+            {
+              row: 1,
+              col: 1,
+              rowKey: "Other Document",
+              insertText: "OT-1-REV",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      stallTimer = setTimeout(() => {
+        reject(new Error("edit_cells stalled behind insert_rows"));
+      }, 400);
+    });
+    await expect(Promise.race([cellsPromise, stalled])).resolves.toMatchObject({
+      status: "proposed",
+    });
+    if (stallTimer) clearTimeout(stallTimer);
+    releaseSectionLoad();
+    await expect(insertPromise).resolves.toMatchObject({ status: "proposed" });
   });
 
   it("coerces nested create_table payloads instead of falling through to draft_field", async () => {

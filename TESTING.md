@@ -139,6 +139,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | shows error for unknown email | Unregistered email copy |
 | shows password step for known email with password | `e2e.password@mjbiopharm.com` flow |
 | shows error for wrong password | Invalid password message |
+| locks an account after 3 wrong password attempts | Lock copy, then **Email me a reset link** shows check-your-email |
 | logs in via test-login bypass | `loginAsEngineer()` happy path |
 | shows setup password link for no-password account | `e2e.nopassword@mjbiopharm.com` plus secondary email-link button |
 | offers email sign-in link as a secondary option | Password remains primary; magic-link control is visible |
@@ -410,7 +411,8 @@ File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 - Password step advance
 - Invalid password error
 - No-password → setup link plus secondary email-link
-- Forgot password link
+- Forgot password and locked-account reset send the reset email immediately
+- Locked-account / forgot-password send failure copy (route 503)
 - Magic link from email step, password step, and locked account
 - Magic-link send failure copy
 

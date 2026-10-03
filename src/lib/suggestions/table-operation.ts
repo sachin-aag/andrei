@@ -1541,7 +1541,27 @@ function applyInsertRows(
       );
     }
   }
-  const newRows = operation.rows.map((row) => ({
+  const seedRow = rows[afterRow + 1];
+  const consumeSeed =
+    Boolean(seedRow) &&
+    afterRow + 1 > 0 &&
+    !isBannerTableRow(seedRow!) &&
+    rowSnapshot(seedRow!).every((cell) => cell.length === 0);
+
+  const rowsToInsert = consumeSeed ? operation.rows.slice(1) : operation.rows;
+  if (consumeSeed) {
+    const first = operation.rows[0]!;
+    const seedCells = rowCells(seedRow!);
+    for (let col = 0; col < dataCols; col++) {
+      const node = seedCells[col];
+      if (node) setCellText(node, first[col] ?? "");
+    }
+    if (rowsToInsert.length === 0) {
+      return { ok: true, status: "ok", doc };
+    }
+  }
+
+  const newRows = rowsToInsert.map((row) => ({
     type: "tableRow" as const,
     content: row.map((text, col) =>
       makeCell("tableCell", text, dataCellAttrs(templateCells, col))
@@ -1551,7 +1571,8 @@ function applyInsertRows(
   const rowPositions = content
     .map((node, index) => (node.type === "tableRow" ? index : -1))
     .filter((index) => index >= 0);
-  const insertAtContent = (rowPositions[afterRow] ?? 0) + 1;
+  const insertAfter = consumeSeed ? afterRow + 1 : afterRow;
+  const insertAtContent = (rowPositions[insertAfter] ?? 0) + 1;
   content.splice(insertAtContent, 0, ...newRows);
   table.content = content;
   return { ok: true, status: "ok", doc };

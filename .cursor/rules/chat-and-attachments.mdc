@@ -158,7 +158,14 @@ when the file set is unknown. Rehydrate only a finish with `status=complete`
 and `truncated !== true`.
 
 `edit_table` `insert_rows` prefers `afterRowKey` (first-cell text) over
-`afterRow`. `edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
+`afterRow`. Sequential `insert_rows` on the same table fold into the open
+card (`mergeInsertRowsOperations` / `foldSameTableRowOperations`) — a
+first-row `edit_cells` of the seeded blank row folds with later inserts
+the same way. The first pending row is not in the saved table, so a later
+`afterRowKey` of that first-cell would otherwise `bad_scope`. Same-turn
+same-table `insert_rows` and scaffold `edit_cells` are serialized;
+`edit_cells` of a filled row and ops on other tables stay parallel.
+`edit_cells` prefers `rowKey` (first-cell text, e.g. URS-13)
 over `row`. Each `edit_cells` cell rematches by its own `rowKey` — do not
 group a batch by a reused dummy numeric row. An already-filled or missing
 `rowKey` sibling is dropped so remaining cells still preview. Do not insert `{ banner }` group rows; existing template banners
@@ -352,13 +359,16 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   drafts persist a `pending_plan` on the chat session. After each turn
   the client POSTs `Continue the remaining sections.` with `autoContinue`
   (auto-continue user rows stay hidden; one live remaining-section widget
-  sits **below** the transcript, above Working… / Resume — collapsed
-  `N of M — current`, expand for done / running / pending). Do not persist
+  sits **below** the transcript while the queue is running, above Working…
+  / Resume — collapsed `N completed · M remaining` (or `M remaining` when
+  none are done yet), expand for done / running / pending. After Cancel or
+  a new typed prompt pauses the queue, the widget sits **above** that later
+  prompt, not under the whole thread). Do not persist
   or show “The assistant stopped before finishing” when that next POST
   will run. Three remaining-section turns on the same in-progress item
   without completing it (`CHAT_PLAN_SAME_SECTION_TURN_LIMIT`, including
   review-only 270s aborts) pause the queue (`same_section_limit`); Resume
-  clears attempts. The N of N chip
+  clears attempts. The remaining-section chip
   spins only while the turn is running; it shows Paused on Cancel and hides
   when every remaining section is drafted. MJ ELR evidence sections stay
   in progress after `edit_table` until the same turn drafts the assessment
@@ -388,7 +398,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   empty dumps, Analytics `ask_user`
   hide on lookups / Skip / after any grep until a page is read, and
   Analytics `manage_worksheet` hide after the first structure call this
-  turn). Analytics `write_column` trusts and atomically persists the complete
+  turn). Analytics hides `write_column` while gathering on both the
+  orchestrator and sheet workers; forced tool choice (`toolChoice:
+  required`) is sheet workers only — the orchestrator must always be able
+  to end a turn with text. A forced tool call must be one-shot or
+  phase-advancing; `"required"` with several tools available is only valid
+  inside a single-purpose worker. Analytics `write_column` trusts and atomically persists the complete
   extractor batch without per-cell source-token verification. Keep page
   provenance when known, or the document name when no page is available.
   One complete write per destination sheet; separate extracts per sheet
@@ -479,7 +494,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
-  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
+  batches skip the extract LLM; no thought summaries on extract). Unsigned
+  Celsius ranges reuse ingest's PNG signed-quantity overlay (`overlayPages`)
+  before extract — review Flash-Lite is text-only and cannot see a drawn minus.
+  `read_document_page` runs the same overlay. `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and
@@ -500,6 +518,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 
 - Extract + embed is **Vertex-only** (`runDocumentIngest`). Gateway key is not
   enough. Stub with `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
+- Unsigned Celsius ranges (`15 °C to 130 °C`, `15–130 °C`, `15℃`) get ingest's
+  PNG overlay (`overlayNumericSignsOnPdfPages`). Never send the PDF for that
+  look. Empty looks stamp `numeric-sign-look:` so chat does not call Gemini twice.
 - `markAttachmentReadyForTests` must insert a page **and** a chunk or outline /
   keyword search have nothing to find.
 - `documentSummary` / `pageContext` are model output over untrusted PDFs.

@@ -2,6 +2,7 @@ import { tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import type { JSONContent } from "@tiptap/core";
 import { db } from "@/db";
 import { comments, reportSections, reports } from "@/db/schema";
 import type {
@@ -199,6 +200,21 @@ import {
   findNearbyTurnEdit,
   recordNearbyEdit,
 } from "@/lib/suggestions/same-turn-nearby-edit";
+import {
+  createInsertRowsQueues,
+  createSameTurnTableInserts,
+  enqueueInsertRows,
+  findTableInsertForFold,
+  insertRowsQueueKey,
+  recordTableInsert,
+} from "@/lib/suggestions/same-turn-table-edit";
+import {
+  foldSameTableRowOperations,
+  isFoldableTableRowOperation,
+  isInsertRowsOperation,
+  type EditCellsOperation,
+  type InsertRowsOperation,
+} from "@/lib/suggestions/merge-insert-rows";
 import type { SuggestionEdit } from "@/lib/suggestions/locator";
 
 type ReadSectionImageRef = {
@@ -267,6 +283,7 @@ import {
   searchReportDocumentsMany,
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
+import { overlayNumericSignsOnReadPage } from "@/lib/attachments/overlay-stored-pages";
 import {
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
@@ -1156,6 +1173,72 @@ async function loadMergedSection(
   };
 }
 
+type OpenTableRowCard = {
+  suggestionId: string;
+  operation: InsertRowsOperation | EditCellsOperation;
+  payload: ParsedAiFixPayload;
+};
+
+function commentCreatedAtMs(value: Date | string | null | undefined): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+async function loadOpenTableRowCard(args: {
+  reportId: string;
+  section: SectionType;
+  targetField: string;
+  tableIndex: number;
+  fieldDoc: JSONContent;
+}): Promise<OpenTableRowCard | null> {
+  const rows = await db
+    .select({
+      id: comments.id,
+      content: comments.content,
+      contentPath: comments.contentPath,
+      kind: comments.kind,
+      status: comments.status,
+      createdAt: comments.createdAt,
+    })
+    .from(comments)
+    .where(
+      and(
+        eq(comments.reportId, args.reportId),
+        eq(comments.section, args.section),
+        eq(comments.status, "open")
+      )
+    );
+  const matches = rows.flatMap((row) => {
+    if (!isAiSuggestionKind(row.kind)) return [];
+    if (row.contentPath && row.contentPath !== args.targetField) return [];
+    const payload = parseAiFixCommentContent(row.content);
+    const operation = payload.tableOperation;
+    if (!isFoldableTableRowOperation(operation, args.fieldDoc)) return [];
+    if (operation.tableIndex !== args.tableIndex) return [];
+    return [
+      {
+        suggestionId: row.id,
+        operation,
+        payload,
+        createdAt: row.createdAt,
+      },
+    ];
+  });
+  const latest = matches.toSorted(
+    (a, b) => commentCreatedAtMs(a.createdAt) - commentCreatedAtMs(b.createdAt)
+  ).at(-1);
+  if (!latest) return null;
+  return {
+    suggestionId: latest.suggestionId,
+    operation: latest.operation,
+    payload: latest.payload,
+  };
+}
+
 async function documentContentsForReport(
   reportId: string,
   documentType: DocumentType
@@ -1378,6 +1461,7 @@ export function buildChatTools(opts: {
   const blockPairing = createSameTurnBlockPairing();
   const imageOps = createSameTurnImageOps();
   const nearbyEdits = createSameTurnNearbyEdits();
+  const tableInserts = createSameTurnTableInserts();
   let listedPlotsThisTurn = false;
   let insertImageTail: Promise<void> = Promise.resolve();
   const enqueueInsertImage = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -1397,6 +1481,7 @@ export function buildChatTools(opts: {
     );
     return next;
   };
+  const insertRowsQueues = createInsertRowsQueues();
   const fieldReadSnapshots = new Map<string, unknown>();
   const captureFieldSnapshot = (
     section: SectionType,
@@ -2335,8 +2420,12 @@ export function buildChatTools(opts: {
       execute: async ({ attachmentId, pageNumber }) => {
         const outOfScope = attachmentOutOfScope(attachmentId);
         if (outOfScope) return outOfScope;
-        const page = await readDocumentPage({ reportId, attachmentId, pageNumber });
-        if (!page) return { status: "not_found" as const };
+        const loaded = await readDocumentPage({ reportId, attachmentId, pageNumber });
+        if (!loaded) return { status: "not_found" as const };
+        const page = await overlayNumericSignsOnReadPage({
+          reportId,
+          page: loaded,
+        });
         citationLedger.record(page.filename, page.pageNumber, page.attachmentId, {
           quote: [page.transcript, page.visualInterpretation]
             .filter((part) => part.trim().length > 0)
@@ -2361,11 +2450,17 @@ export function buildChatTools(opts: {
             }
           | undefined;
         if (nextPageNumber != null && nextPageNumber !== page.pageNumber) {
-          const nextPage = await readDocumentPage({
+          const loadedNext = await readDocumentPage({
             reportId,
             attachmentId,
             pageNumber: nextPageNumber,
           });
+          const nextPage = loadedNext
+            ? await overlayNumericSignsOnReadPage({
+                reportId,
+                page: loadedNext,
+              })
+            : null;
           if (nextPage) {
             citationLedger.record(
               nextPage.filename,
@@ -3827,6 +3922,8 @@ export function buildChatTools(opts: {
         operation,
         reasoning,
       }): Promise<EditTableResult> => {
+        const parsedForQueue = parseTableOperation(operation);
+        const run = async (): Promise<EditTableResult> => {
         if (!canEdit) {
           return {
             status: "not_editable",
@@ -3892,6 +3989,35 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
+        let foldTarget: OpenTableRowCard | null = null;
+        let captureDoc = fieldDoc;
+        if (isFoldableTableRowOperation(parsedOp, fieldDoc)) {
+          const sameTurn = findTableInsertForFold(tableInserts, {
+            section,
+            targetField: resolvedField,
+            tableIndex: parsedOp.tableIndex,
+          });
+          foldTarget = sameTurn
+            ? {
+                suggestionId: sameTurn.suggestionId,
+                operation: sameTurn.operation,
+                payload: sameTurn.payload,
+              }
+            : await loadOpenTableRowCard({
+                reportId,
+                section,
+                targetField: resolvedField,
+                tableIndex: parsedOp.tableIndex,
+                fieldDoc,
+              });
+          if (foldTarget) {
+            const overlaid = applyTableOperation(fieldDoc, foldTarget.operation, {
+              section,
+              targetField: resolvedField,
+            });
+            if (overlaid.ok) captureDoc = overlaid.doc;
+          }
+        }
         await ensureEvidence();
         const missingRefSearch = qsrReferencesRowsMissingSearchEvidence({
           section,
@@ -3908,7 +4034,7 @@ export function buildChatTools(opts: {
           });
         }
         const originalTableOp = captureTableOperationSnapshots(
-          fieldDoc,
+          captureDoc,
           parsedOp
         );
         const tableGrounding = await writeGrounding(
@@ -3924,7 +4050,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
-          fieldDoc,
+          fieldDoc: captureDoc,
         });
         const tableNeedsRepair =
           citationGroundingRunsRepair(tableGrounding.mode ?? "strict") &&
@@ -3943,7 +4069,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
-            fieldDoc,
+            fieldDoc: captureDoc,
           });
         }
         if (groundedTable.blocked) {
@@ -3954,7 +4080,7 @@ export function buildChatTools(opts: {
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
             clearOptionalOnBlock: true,
-            fieldDoc,
+            fieldDoc: captureDoc,
           });
           if (!clearedOptional.blocked) {
             groundedTable = clearedOptional;
@@ -4035,7 +4161,7 @@ export function buildChatTools(opts: {
             reportId,
             documentType
           );
-          applied = applyTableOperation(fieldDoc, stripped.operation, {
+          applied = applyTableOperation(captureDoc, stripped.operation, {
             section,
             targetField: resolvedField,
             documentContents,
@@ -4052,6 +4178,163 @@ export function buildChatTools(opts: {
             return { status: "empty_edit", hint: applied.hint };
           }
           return { status: applied.status, hint: applied.hint };
+        }
+        const foldedRows = foldTarget
+          ? foldSameTableRowOperations(
+              foldTarget.operation,
+              stripped.operation,
+              fieldDoc
+            )
+          : { status: "no_fold" as const };
+        if (foldedRows.status === "already_present") {
+          return {
+            status: "empty_edit",
+            hint: "Those rows are already on the open table card. Call list_suggestions, or insert_rows with rows that are still missing.",
+          };
+        }
+        if (foldedRows.status === "folded" && foldTarget) {
+          const mergedOp = foldedRows.operation;
+          let mergedApplied;
+          try {
+            const documentContents = await documentContentsForReport(
+              reportId,
+              documentType
+            );
+            mergedApplied = applyTableOperation(fieldDoc, mergedOp, {
+              section,
+              targetField: resolvedField,
+              documentContents,
+            });
+          } catch (err) {
+            console.error("edit_table fold failed", err);
+            mergedApplied = {
+              ok: false as const,
+              status: "invalid" as const,
+              hint: tableOperationInvalidHint(mergedOp),
+            };
+          }
+          if (mergedApplied.ok) {
+            const foldedSecond = citationsAtEndOfSection
+              ? citationAppendPart(stripped.citations, fieldText)
+              : undefined;
+            const storedOperation = isInsertRowsOperation(
+              mergedApplied.appliedOperation
+            )
+              ? mergedApplied.appliedOperation
+              : mergedOp;
+            const nextPayload = attachRecord(
+              {
+                ...foldTarget.payload,
+                reasoning,
+                tableOperation: storedOperation,
+                second: foldedSecond,
+                claimProvenance:
+                  groundedTable.provenance.claims.length > 0
+                    ? groundedTable.provenance
+                    : foldTarget.payload.claimProvenance,
+              },
+              loaded.content as Record<string, unknown>,
+              section,
+              resolvedField,
+              { kind: "table", operation: storedOperation }
+            );
+            await patchFixComment(foldTarget.suggestionId, nextPayload, {
+              anchorText: summarizeTableOperation(storedOperation),
+            });
+            recordTableInsert(tableInserts, {
+              suggestionId: foldTarget.suggestionId,
+              section,
+              targetField: resolvedField,
+              operation: storedOperation,
+              payload: nextPayload,
+            });
+            const supersededSuggestionIds = await dismissCovered({
+              section,
+              sectionContent: loaded.content,
+              newCommentId: foldTarget.suggestionId,
+            });
+            rememberSameTurnStated(
+              section,
+              resolvedField,
+              repairTextsFromTableOperation(groundedTable.operation).join("\n")
+            );
+            const adjustedCells = tableCellAdjustments(
+              originalTableOp,
+              storedOperation,
+              (col) => qsrTableColumnLabel(section, col)
+            );
+            const proposal = tableEditProposalMeta(
+              originalTableOp,
+              storedOperation
+            );
+            return proposedWithSupersession(
+              {
+                status: "proposed" as const,
+                suggestionId: foldTarget.suggestionId,
+                section,
+                targetField: resolvedField,
+                summary: tableEditLandedSummary(reasoning, proposal),
+                ...(mergedApplied.tableNumber !== undefined
+                  ? { tableNumber: mergedApplied.tableNumber }
+                  : {}),
+                ...(tableOverclaims.warning
+                  ? { warning: tableOverclaims.warning }
+                  : {}),
+                requestedCellCount: proposal.requestedCellCount,
+                proposedCellCount: proposal.proposedCellCount,
+                requestedRowKeys: proposal.requestedRowKeys,
+                proposedRowKeys: proposal.proposedRowKeys,
+                droppedRowKeys: proposal.droppedRowKeys,
+                proposalNote: tableEditProposalMessage(proposal),
+                ...(adjustedCells.length > 0
+                  ? {
+                      adjustedCells,
+                      adjustmentNote: tableCellAdjustmentsMessage(adjustedCells),
+                    }
+                  : {}),
+              },
+              supersededSuggestionIds
+            );
+          }
+        }
+        if (captureDoc !== fieldDoc && isInsertRowsOperation(parsedOp)) {
+          const persistedCaptured = captureTableOperationSnapshots(
+            fieldDoc,
+            parsedOp
+          );
+          const persistedOp =
+            isInsertRowsOperation(stripped.operation) &&
+            isInsertRowsOperation(persistedCaptured)
+              ? {
+                  ...stripped.operation,
+                  afterRow: persistedCaptured.afterRow,
+                  afterRowKey: persistedCaptured.afterRowKey,
+                  expectedRowAtAfter: persistedCaptured.expectedRowAtAfter,
+                }
+              : stripped.operation;
+          try {
+            const documentContents = await documentContentsForReport(
+              reportId,
+              documentType
+            );
+            applied = applyTableOperation(fieldDoc, persistedOp, {
+              section,
+              targetField: resolvedField,
+              documentContents,
+            });
+          } catch (err) {
+            console.error("edit_table persisted apply failed", err);
+            return {
+              status: "invalid",
+              hint: tableOperationInvalidHint(persistedOp),
+            };
+          }
+          if (!applied.ok) {
+            if (applied.status === "already_present") {
+              return { status: "empty_edit", hint: applied.hint };
+            }
+            return { status: applied.status, hint: applied.hint };
+          }
         }
         const second = citationsAtEndOfSection
           ? citationAppendPart(stripped.citations, fieldText)
@@ -4093,21 +4376,20 @@ export function buildChatTools(opts: {
             });
           }
         }
+        const recorded = attachRecord(
+          payload,
+          loaded.content as Record<string, unknown>,
+          section,
+          resolvedField,
+          { kind: "table", operation: storedOperation }
+        );
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
           sectionId: loaded.sectionId,
           section,
           authorId: AI_AUTHOR_ID,
-          content: serializeAiFixCommentContent(
-            attachRecord(
-              payload,
-              loaded.content as Record<string, unknown>,
-              section,
-              resolvedField,
-              { kind: "table", operation: storedOperation }
-            )
-          ),
+          content: serializeAiFixCommentContent(recorded),
           anchorText: summarizeTableOperation(storedOperation),
           contentPath: resolvedField,
           fromPos: null,
@@ -4116,6 +4398,15 @@ export function buildChatTools(opts: {
           kind: "ai_fix",
           evaluationId: null,
         });
+        if (isFoldableTableRowOperation(storedOperation, fieldDoc)) {
+          recordTableInsert(tableInserts, {
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            operation: storedOperation,
+            payload: recorded,
+          });
+        }
         if (groundedTable.provenance.claims.length > 0) {
           recordClaimAudit({
             suggestionId,
@@ -4207,6 +4498,21 @@ export function buildChatTools(opts: {
           },
           supersededSuggestionIds
         );
+        };
+        if (
+          parsedForQueue &&
+          (parsedForQueue.kind === "insert_rows" ||
+            parsedForQueue.kind === "edit_cells")
+        ) {
+          const queueField =
+            resolveTargetField(section, targetField) ?? targetField;
+          return enqueueInsertRows(
+            insertRowsQueues,
+            insertRowsQueueKey(section, queueField, parsedForQueue.tableIndex),
+            run
+          );
+        }
+        return run();
       },
     }),
 

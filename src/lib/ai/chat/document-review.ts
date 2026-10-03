@@ -127,6 +127,8 @@ export type ReviewPageSource = {
   ingestRunId?: string | null;
   outlineTitle?: string | null;
   identifiers?: readonly string[] | null;
+  /** Overlay stamp / recovered minus. Included in the review haystack. */
+  visualInterpretation?: string;
 };
 
 export type DocumentReviewFinding = {
@@ -174,6 +176,10 @@ export type ExtractReviewBatchFn = (input: {
   pages: ReviewPageSource[];
   abortSignal?: AbortSignal;
 }) => Promise<DocumentReviewFinding[]>;
+
+export type OverlayReviewPagesFn = (
+  pages: ReviewPageSource[]
+) => Promise<ReviewPageSource[]>;
 
 export type DocumentReviewProgressSnapshot = {
   phase: DocumentReviewPhase;
@@ -232,6 +238,7 @@ export class DocumentReviewSession {
   private reviewedPageList: ReviewedEvidencePage[] = [];
   private totalPages = 0;
   private extractBatch: ExtractReviewBatchFn;
+  private overlayPages: OverlayReviewPagesFn;
   private findingSeq = 0;
   private lastRecommended: RecommendedResultsInventory | null = null;
   private lastContinueStartedAt = 0;
@@ -243,8 +250,12 @@ export class DocumentReviewSession {
   private coverageObjective = "";
   private lastFinishTruncated = false;
 
-  constructor(options?: { extractBatch?: ExtractReviewBatchFn }) {
+  constructor(options?: {
+    extractBatch?: ExtractReviewBatchFn;
+    overlayPages?: OverlayReviewPagesFn;
+  }) {
     this.extractBatch = options?.extractBatch ?? extractReviewBatch;
+    this.overlayPages = options?.overlayPages ?? (async (pages) => pages);
   }
 
   phase(): DocumentReviewPhase {
@@ -500,6 +511,7 @@ export class DocumentReviewSession {
   }
 
   private async drainQueue(abortSignal?: AbortSignal, budgetMs?: number) {
+    await this.applyNumericSignOverlay();
     let started = 0;
     const worker = async () => {
       while (started < REVIEW_DRAIN_MAX_EXTRACTS) {
@@ -538,6 +550,28 @@ export class DocumentReviewSession {
     await Promise.all(
       Array.from({ length: REVIEW_EXTRACT_CONCURRENCY }, () => worker())
     );
+  }
+
+  /**
+   * Same PNG overlay ingest uses for unsigned Celsius ranges. Review Flash-Lite
+   * is text-only and cannot see a drawn minus; this is the Gemini look.
+   */
+  private async applyNumericSignOverlay() {
+    const pages = this.queue.flatMap((batch) => batch.pages);
+    if (pages.length === 0) return;
+    const overlaid = await this.overlayPages(pages);
+    const byKey = new Map(
+      overlaid.map((page) => [
+        `${page.attachmentId}:${page.pageNumber}`,
+        page,
+      ] as const)
+    );
+    this.queue = this.queue.map((batch) => ({
+      ...batch,
+      pages: batch.pages.map(
+        (page) => byKey.get(`${page.attachmentId}:${page.pageNumber}`) ?? page
+      ),
+    }));
   }
 
   private retryOrFailBatch(batch: DocumentReviewBatch) {
@@ -830,7 +864,10 @@ export function extractReviewFindingsFromPages(
   const findings: DocumentReviewFinding[] = [];
   let seq = 0;
   for (const page of pages) {
-    const text = toolResultBudget("pageTranscript", page.transcript);
+    const hay = [page.transcript, page.visualInterpretation ?? ""]
+      .filter((part) => part.trim().length > 0)
+      .join("\n");
+    const text = toolResultBudget("pageTranscript", hay);
     const identifiers = requirementIds(text);
     const heading =
       derivePageOutlineDigest(text).split(" — ")[0]?.trim() ||
@@ -993,6 +1030,7 @@ export function prepareDocumentReviewStep(input: {
       // qualification while drafting monitoring) still needs a walk.
       // A matching finish this turn must not restart — even when the
       // truncated walk cannot unlock edit_table (CSV-OQ skip of PRQR).
+      // hideReview (no toolChoice) unlocks the parent to draft or reply.
       if (restartOnComplete) return forceStart();
       return hideReview();
     default: {
@@ -1028,7 +1066,12 @@ async function extractReviewBatchWithLlm(input: {
 }): Promise<DocumentReviewFinding[]> {
   const pageBlock = input.pages
     .map((page) => {
-      const body = toolResultBudget("pageTranscript", page.transcript);
+      const body = toolResultBudget(
+        "pageTranscript",
+        [page.transcript, page.visualInterpretation ?? ""]
+          .filter((part) => part.trim().length > 0)
+          .join("\n")
+      );
       return `--- ${page.filename} p.${page.pageNumber} ---\n${body}`;
     })
     .join("\n\n");

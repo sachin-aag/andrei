@@ -116,8 +116,13 @@ DV mixes LLM criteria with deterministic `check()` functions.
   unless the caller opted into replacing them.
 - Same-turn `propose_edit` cards (Document and Agent chrome) fold when
   locatable ranges sit within `COALESCING_GAP` (20) characters. There is
-  no max-cards budget. Do not fold lead-ins, tables, figures, citation
-  splits, or cells.
+  no max-cards budget. Do not fold lead-ins, figures, citation splits, or
+  cells. Sequential `edit_table` `insert_rows` on the same table **do**
+  fold into the open card (`merge-insert-rows.ts`), including a first-row
+  `edit_cells` of the seeded blank data row, so later rows are not
+  resolved against a still-empty saved table. Same-table `insert_rows`
+  and scaffold `edit_cells` are serialized; filled-row `edit_cells` and
+  other table ops stay parallel.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
   Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
 - Whole-field is derived: planned operations cover every merge block
