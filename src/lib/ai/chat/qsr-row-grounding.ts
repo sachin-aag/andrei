@@ -2080,6 +2080,29 @@ function protocolSectionHeading(
   return null;
 }
 
+/**
+ * Protocol title / contents sheets list "Section 8" but are not the test.
+ * Body pages keep a dotted heading (13.3.5.1 Jacket Specifications) even
+ * when the running header still says UNCONTROLLED COPY.
+ */
+export function quoteLooksLikeProtocolCoverOrContents(quote: string): boolean {
+  const body = protocolBodyQuote(quote);
+  if (headingStarts(body).length > 0) return false;
+  const sectionLabels = body.match(/\bsection\s+\d+(?:\.\d+)*\b/gi) ?? [];
+  if (sectionLabels.length >= 3) return true;
+  if (/\b(?:table of )?contents\b/i.test(quote) && sectionLabels.length > 0) {
+    return true;
+  }
+  const pageOne = /\bpage\s+1\s+of\s+\d+\b/i.test(quote);
+  const chrome =
+    /\bcapacity\s*\/\s*size\b/i.test(quote) ||
+    /\bequipment\s+name\b/i.test(quote) ||
+    /\buncontrolled\s+copy\b/i.test(quote);
+  if (pageOne && chrome) return true;
+  if (pageOne && !body.trim()) return true;
+  return false;
+}
+
 function matchingProtocolPages(
   ledger: CitationPageLedger,
   key: string,
@@ -2088,6 +2111,7 @@ function matchingProtocolPages(
 ) {
   return ledger.recordedPages().filter((page) => {
     if (!filenameMatchesFamily(page.filename, family)) return false;
+    if (quoteLooksLikeProtocolCoverOrContents(page.quote)) return false;
     if (quoteWindowAroundKey(page.quote, key) != null) return true;
     return protocolTopicBody(page.quote, context) != null;
   });
@@ -2270,6 +2294,108 @@ export function pickRtmReference(
     };
   }
   return null;
+}
+
+function rtmFamilyCellHasAuditLine(text: string): boolean {
+  return / – /.test(text.replace(/\[[^\]]*\]/g, ""));
+}
+
+function rtmFamilyCellIsPersistable(
+  text: string,
+  family: RtmStageFamily
+): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped) return false;
+  if (isRtmNotFoundMarker(stripped)) return true;
+  if (rtmFamilyCellHasAuditLine(stripped)) return true;
+  return /[A-Za-z]{3,}/.test(stripped) && !rtmCellSectionNumber(stripped, family);
+}
+
+function citedFamilyPagesAreCover(
+  cell: string,
+  family: RtmStageFamily,
+  ledger: CitationPageLedger
+): boolean {
+  const cited = citedLedgerPages(cell, ledger).filter((page) =>
+    filenameMatchesFamily(page.filename, family)
+  );
+  if (cited.length === 0) return false;
+  return cited.every((page) =>
+    quoteLooksLikeProtocolCoverOrContents(page.quote)
+  );
+}
+
+function isLabeledBareSectionCell(text: string): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped || rtmFamilyCellHasAuditLine(stripped)) return false;
+  return /^section\s+\d+/i.test(stripped);
+}
+
+export type ResolveRtmFamilyCellResult =
+  | { action: "keep" }
+  | { action: "clear" }
+  | { action: "replace"; text: string; citation: string };
+
+/**
+ * Family column persist: rewrite cover/contents `Section 8` / `Section 13.2`
+ * onto `{section number} – {audit line}` from the protocol body page that
+ * prints that heading. Grounded dotted numbers (`8.1`, `13.3.5.1`) and
+ * cells that already have an audit line stay on the existing ground path.
+ * Stock `Section 13` still clears.
+ */
+export function resolveRtmFamilyCell(input: {
+  cell: string;
+  family: RtmStageFamily;
+  key: string;
+  context: string;
+  ledger: CitationPageLedger;
+}): ResolveRtmFamilyCellResult {
+  const trimmed = input.cell.replace(/\s*\[[^\]]*\]\s*/g, " ").trim();
+  if (!trimmed) return { action: "keep" };
+  if (isRtmNotFoundMarker(trimmed)) {
+    return { action: "replace", text: "NA", citation: "" };
+  }
+  if (STOCK_BARE_SECTION_13_RE.test(trimmed)) return { action: "clear" };
+
+  const labeledBare = isLabeledBareSectionCell(trimmed);
+  const coverCite = citedFamilyPagesAreCover(
+    input.cell,
+    input.family,
+    input.ledger
+  );
+  const persistable = rtmFamilyCellIsPersistable(trimmed, input.family);
+  if (!labeledBare && !coverCite) return { action: "keep" };
+  if (!input.key) {
+    return labeledBare || coverCite ? { action: "clear" } : { action: "keep" };
+  }
+
+  const preferred = rtmCellSectionNumber(trimmed, input.family) || undefined;
+  const pick = pickRtmReference(
+    input.ledger,
+    input.key,
+    input.context,
+    preferred,
+    input.family
+  );
+  if (!pick) {
+    return labeledBare || coverCite ? { action: "clear" } : { action: "keep" };
+  }
+
+  const citation = `[${pick.filename}, p. ${pick.pageNumber}]`;
+  if (persistable) {
+    return { action: "replace", text: trimmed, citation };
+  }
+
+  const resolved = rtmSectionCellText(trimmed, {
+    family: input.family,
+    sectionHeading: pick.sectionHeading,
+  });
+  const heading = (pick.sectionHeading ?? "").trim();
+  const withLine = [resolved, heading].find((text) =>
+    rtmFamilyCellIsPersistable(text, input.family)
+  );
+  if (!withLine) return { action: "clear" };
+  return { action: "replace", text: withLine, citation };
 }
 
 export function syntheticUnsupportedFact(text: string): HardFact {

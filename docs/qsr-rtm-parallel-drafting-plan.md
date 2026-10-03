@@ -192,7 +192,10 @@ Each worker:
   the ledger when Stage D grounds the composed operation — this is the one piece
   of shared mutable state, and it is append-only;
 - emits `{section number} – {audit line}` text per the existing RTM rule
-  (`rtmSectionCellText` strips page counters and logged readings);
+  (`rtmSectionCellText` strips page counters and logged readings). Persist
+  (`resolveRtmFamilyCell`) rewrites a leftover `Section 8` / cover cite
+  onto the body heading and page, or clears the cell when only a cover
+  is on the ledger;
 - never calls a write tool: the tool set handed to it contains only
   `search_documents`, `read_document_page`, `document_outline`.
 

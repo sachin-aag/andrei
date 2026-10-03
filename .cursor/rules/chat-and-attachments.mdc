@@ -211,7 +211,10 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
   is a pass with no pass word; an unexecuted template (no signature date)
   is not, and a fail / does-not-meet statement vetoes every pass. Unsupported family-column /
   Remarks cells clear
-instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
+instead of blocking the URS copy. Persist rewrites family cells to
+`{section} – {audit line}` from the protocol body page that prints
+that heading and drops cover/contents `Section 8` / `13.2` cites.
+PQ/OQ/IQ family-column numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
 `Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
 prints that heading. An explicit empty `edit_cells` of filled

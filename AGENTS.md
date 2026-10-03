@@ -214,8 +214,9 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   tools. Composer scope is `@` tags. Voice is click start / click stop
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
-- A QSR RTM family-column heading persists only when a retrieved page
-  prints that section number. Integer `1600` matches OCR `1600.0`.
+- A QSR RTM family-column cell persists as `{section} – {audit line}`
+  from the protocol body page that prints that heading — not a
+  cover/contents `Section 8` cite. Integer `1600` matches OCR `1600.0`.
   Repair search pins to cited files. Word-form Table 4 is SOPs; Tables
   5–10 use `draft_rtm_table` when that table is in `@` scope (every
   reviewed URS ID, then DQ/IQ/OQ/PQ in parallel). `edit_table` is the

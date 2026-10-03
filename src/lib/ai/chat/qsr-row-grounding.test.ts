@@ -23,6 +23,8 @@ import {
   factSupportedForRowKey,
   isQsrRtmOptionalReferenceColumn,
   pickRtmReference,
+  quoteLooksLikeProtocolCoverOrContents,
+  resolveRtmFamilyCell,
   qsrFailClosedReason,
   qsrRtmCellUnsupported,
   qsrTableColumnLabel,
@@ -1296,6 +1298,139 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[1]).toBe("Reactor Capacity");
     expect(keptRow[2]).toContain("8000 L");
     expect(keptRow.slice(3)).toEqual(["", "", "", "", ""]);
+  });
+
+  it("rewrites a cover-page Section 8 cell onto the DQ body heading and page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity. Equipment Name Glass Lined Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "dq-cover",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 1 Section 2 Section 8",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq-body",
+        quote:
+          "12.1 Capacity verified as 8000 L working volume. Result: Verified",
+      },
+    ]);
+    expect(
+      quoteLooksLikeProtocolCoverOrContents(
+        "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 1 Section 2 Section 8"
+      )
+    ).toBe(true);
+    expect(
+      quoteLooksLikeProtocolCoverOrContents(
+        "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220"
+      )
+    ).toBe(false);
+    const resolved = resolveRtmFamilyCell({
+      cell: "Section 8 [Design Qualification.PDF, p. 1]",
+      family: "dq",
+      key: "URS-1",
+      context: "URS-1\nReactor Capacity\n8000 L",
+      ledger,
+    });
+    expect(resolved.action).toBe("replace");
+    if (resolved.action === "replace") {
+      expect(resolved.text).toMatch(/^12\.1 – /);
+      expect(resolved.text).toMatch(/Capacity/i);
+      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 11]");
+    }
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "Section 8 [Design Qualification.PDF, p. 1]",
+            "",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/12\.1 – /);
+    expect(keptRow[3]).toMatch(/Capacity/i);
+    expect(keptRow[3]).not.toMatch(/Section 8/i);
+    expect(keptRow[3]).toMatch(/p\.\s*11|Design Qualification/i);
+    expect(keptRow[3]).not.toMatch(/p\.\s*1\b/);
+  });
+
+  it("clears a family cell when the only protocol page is the cover", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote: "URS-1 Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "dq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 8",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-1",
+        "URS-1\nReactor Capacity\n8000 L",
+        "8",
+        "dq"
+      )
+    ).toBeNull();
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "Section 8 [Design Qualification.PDF, p. 1]",
+            "Section 13.2 [Installation Qualification.PDF, p. 1]",
+            "Section 8.2 [Operational Qualification.PDF, p. 1]",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-1");
+    expect(keptRow.slice(3, 7)).toEqual(["", "", "", ""]);
   });
 
   it("clears Stage on edit_cells when IQ is only the running header", () => {

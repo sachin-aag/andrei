@@ -56,8 +56,10 @@ import {
   isClearOnlyOptionalRtmEdit,
   isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
+  isRtmNotFoundMarker,
   qsrFailClosedReason,
   qsrReferenceValueOnCitedPage,
+  resolveRtmFamilyCell,
   rtmFamilyAtColumn,
   qsrTableColumnLabel,
   rowKeyFromContext,
@@ -787,8 +789,41 @@ export function groundTableOperation(input: {
     ) {
       return "";
     }
+    const family =
+      col != null
+        ? rtmFamilyAtColumn(input.grounding?.section, col)
+        : null;
+    let next = value;
+    if (family) {
+      if (isRtmNotFoundMarker(value)) return "NA";
+      const key = rowKeyFromContext(context ?? "") ?? "";
+      const resolved = resolveRtmFamilyCell({
+        cell: value,
+        family,
+        key,
+        context: context ?? "",
+        ledger: input.ledger,
+      });
+      switch (resolved.action) {
+        case "clear":
+          return "";
+        case "replace":
+          if (!resolved.text) return "";
+          next =
+            resolved.citation && !resolved.text.includes(resolved.citation)
+              ? `${resolved.text} ${resolved.citation}`
+              : resolved.text;
+          break;
+        case "keep":
+          break;
+        default: {
+          const exhaustive: never = resolved;
+          return exhaustive;
+        }
+      }
+    }
     const grounded = groundDraftText({
-      text: value,
+      text: next,
       ledger: input.ledger,
       policy: input.policy,
       grounding: {
