@@ -1380,7 +1380,38 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[3]).not.toMatch(/p\.\s*1\b/);
   });
 
-  it("rewrites number-only 12.1 onto the topic-matched DQ body heading", () => {
+  it("rewrites number-only 12.1 onto the same-number DQ audit line", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-35 Vacuum gauge To measure the vacuum produced 0 to 760 mmHg",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 14,
+        attachmentId: "dq-body",
+        quote:
+          "12.1 Vacuum gauge specifications verified. Range 0 to 760 mmHg. Result: Verified",
+      },
+    ]);
+    const resolved = resolveRtmFamilyCell({
+      cell: "12.1 [Design Qualification.PDF, p. 14]",
+      family: "dq",
+      key: "URS-35",
+      context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
+      ledger,
+    });
+    expect(resolved.action).toBe("replace");
+    if (resolved.action === "replace") {
+      expect(resolved.text).toMatch(/^12\.1 – /);
+      expect(resolved.text).toMatch(/Vacuum gauge/i);
+      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 14]");
+    }
+  });
+
+  it("does not swap number-only 12.1 onto a neighbour 12.4 heading", () => {
     const ledger = ledgerFromPages([
       {
         filename: "User Requirement Specification.PDF",
@@ -1396,19 +1427,15 @@ describe("groundTableOperation optional RTM columns", () => {
           "12.4 Vacuum gauge specifications verified. Range 0 to 760 mmHg. Result: Verified",
       },
     ]);
-    const resolved = resolveRtmFamilyCell({
-      cell: "12.1 [Design Qualification.PDF, p. 14]",
-      family: "dq",
-      key: "URS-35",
-      context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
-      ledger,
-    });
-    expect(resolved.action).toBe("replace");
-    if (resolved.action === "replace") {
-      expect(resolved.text).toMatch(/^12\.4 – /);
-      expect(resolved.text).toMatch(/Vacuum gauge/i);
-      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 14]");
-    }
+    expect(
+      resolveRtmFamilyCell({
+        cell: "12.1 [Design Qualification.PDF, p. 14]",
+        family: "dq",
+        key: "URS-35",
+        context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
+        ledger,
+      })
+    ).toEqual({ action: "keep" });
   });
 
   it("keeps number-only 12.1 when no topic-matched protocol heading exists", () => {

@@ -208,10 +208,10 @@ it grounded.
 (`{section} – {audit line}` that names this row's Parameters, or NA).
 Number-only `12.1` / `Section 8`, empty, and a rupture-disk heading on a
 vacuum-gauge row are rejected and `remaining` stays open, so Flash-Lite
-cannot finish after one chapter grep. Persist then rewrites leftover
-number-only cells only when `pickRtmReference` has a persistable
-topic-matched heading for that row (keep `8.1` / `12.1` if pick is null;
-do not fill empty leftovers).
+cannot finish after one chapter grep. Persist then attaches an audit
+line to leftover number-only cells only when that same section number
+is on the ledger (keep `8.1` / `12.1` if pick is null; do not swap
+`12.1` onto `12.4`; do not fill empty leftovers).
 
 ### Stage D — compose once, ground once, one card
 

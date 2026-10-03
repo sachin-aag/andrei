@@ -218,8 +218,9 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   from the protocol body page that prints that heading — not a
   cover/contents `Section 8` cite, and not a reused number-only `12.1`.
   Family workers keep grepping until each row has that audit line (or
-  NA); persist rewrites leftover `12.1` only when that row's heading is
-  on the ledger. Integer `1600` matches OCR `1600.0`.
+  NA); persist attaches an audit line to leftover `12.1` only when that
+  same section number is on the ledger (it does not swap `12.1` onto
+  `12.4`). Integer `1600` matches OCR `1600.0`.
   Repair search pins to cited files. Word-form Table 4 is SOPs; Tables
   5–10 use `draft_rtm_table` when that table is in `@` scope (every
   reviewed URS ID, then DQ/IQ/OQ/PQ in parallel). `edit_table` is the

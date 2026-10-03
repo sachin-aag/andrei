@@ -2311,6 +2311,19 @@ export function rtmFamilyCellIsPersistable(
   return /[A-Za-z]{3,}/.test(stripped) && !rtmCellSectionNumber(stripped, family);
 }
 
+function rtmSectionNumbersAlign(requested: string, picked: string): boolean {
+  const reqParts = requested.split(/\s*[\/&]\s*/).filter(Boolean);
+  const pickParts = picked.split(/\s*[\/&]\s*/).filter(Boolean);
+  return reqParts.some((requestedPart) =>
+    pickParts.some(
+      (pickedPart) =>
+        pickedPart === requestedPart ||
+        pickedPart.startsWith(`${requestedPart}.`) ||
+        requestedPart.startsWith(`${pickedPart}.`)
+    )
+  );
+}
+
 function isNumberOnlyFamilyCell(
   text: string,
   family: RtmStageFamily
@@ -2386,12 +2399,12 @@ export type ResolveRtmFamilyCellResult =
 
 /**
  * Family column persist: rewrite cover/contents `Section 8` / `Section 13.2`
- * and number-only `12.1` onto `{section number} – {audit line}` from the
- * protocol body page that prints a topic-matched heading for this row.
- * When pick is null, grounded dotted numbers (`8.1`, `12.1`) stay; labeled
- * cover `Section N` still clears. Cells that already have an audit line
- * stay on the existing ground path. Stock `Section 13` still clears.
- * Empty leftovers are not filled.
+ * and number-only `12.1` onto `{same section number} – {audit line}`
+ * when that number's heading is on the ledger. Do not swap `12.1` onto
+ * a neighbour `12.4` / `13.6`. When pick is null, grounded dotted
+ * numbers (`8.1`, `12.1`) stay; labeled cover `Section N` still clears.
+ * Cells that already have an audit line stay on the existing ground
+ * path. Stock `Section 13` still clears. Empty leftovers are not filled.
  */
 export function resolveRtmFamilyCell(input: {
   cell: string;
@@ -2448,6 +2461,17 @@ export function resolveRtmFamilyCell(input: {
   );
   if (!withLine) {
     return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+  if (numberOnly && !mustHavePick) {
+    const requested = rtmCellSectionNumber(trimmed, input.family);
+    const picked = rtmCellSectionNumber(withLine, input.family);
+    if (
+      requested &&
+      picked &&
+      !rtmSectionNumbersAlign(requested, picked)
+    ) {
+      return { action: "keep" };
+    }
   }
   return { action: "replace", text: withLine, citation };
 }

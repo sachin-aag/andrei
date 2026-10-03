@@ -214,8 +214,9 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
 instead of blocking the URS copy. Persist rewrites family cells to
 `{section} – {audit line}` from the protocol body page that prints
 that heading, drops cover/contents `Section 8` / `13.2` cites, and
-rewrites leftover number-only `12.1` only when that row's heading is
-on the ledger (keep `8.1` / `12.1` if pick is null). Family workers
+attaches an audit line to leftover number-only `12.1` only when that
+same section number is on the ledger (keep `8.1` / `12.1` if pick is
+null; do not swap onto a neighbour `12.4`). Family workers
 reject number-only and off-topic submits so one grep cannot finish
 the column.
 PQ/OQ/IQ family-column numbers are
