@@ -3,7 +3,12 @@
 Living plan. Status: implemented on `cursor/qsr-references-search-f517`
 (PR #455). Scope is QSR (`qualification_summary_report`) Tables 5–10 —
 `qsr_rtm_process`, `qsr_rtm_control`, `qsr_rtm_gmp`, `qsr_rtm_safety`,
-`qsr_rtm_csv`, `qsr_rtm_maintenance`. No second branch, no second PR.
+`qsr_rtm_csv`, `qsr_rtm_maintenance`.
+
+Identity-first + one card stays. Nested Flash-Lite family jobs (90s,
+`submit_family_cells`) are not the destination for DQ / IQ / OQ / PQ —
+see `docs/dag-orchestrator.md` for the later DAG + Agent-quality subagent
+work. Do not reopen PR #413.
 
 ## 1. The failure we are fixing
 
