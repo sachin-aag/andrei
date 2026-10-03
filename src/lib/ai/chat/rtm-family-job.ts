@@ -13,7 +13,7 @@ import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-genera
 import { assertAiBudgetAvailable, recordAiUsage } from "@/lib/ai/usage";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import {
-  rtmSectionCellText,
+  rtmFamilySubmitAccepts,
   type QsrRtmSection,
   type RtmStageFamily,
 } from "@/lib/ai/chat/qsr-row-grounding";
@@ -70,7 +70,7 @@ export async function runRtmFamilyJob(
   const workerTools: ToolSet = {
     ...input.tools,
     submit_family_cells: tool({
-      description: `Submit the ${input.family.toUpperCase()} cell for every URS ID. Empty string = leave blank. NA = searched, not found. Text is "{section number} – {one audit line}".`,
+      description: `Submit persistable ${input.family.toUpperCase()} cells. Each text must be "{dotted section} – {audit line that names this row's parameter}" or NA. Number-only (12.1, Section 8) and empty are rejected — those URS IDs stay open. Do not reuse one heading across rows.`,
       inputSchema: z.object({
         cells: z.array(
           z.object({
@@ -81,24 +81,41 @@ export async function runRtmFamilyJob(
         ),
       }),
       execute: async ({ cells }) => {
+        const accepted: string[] = [];
+        const rejected: Array<{ ursId: string; reason: string }> = [];
+        const byId = new Map(
+          input.rows.map((row) => [row.ursId.toUpperCase(), row])
+        );
         for (const cell of cells) {
           const id = cell.ursId.trim().toUpperCase();
           if (!id.startsWith("URS-")) continue;
-          const cleaned = rtmSectionCellText(cell.text, {
+          const row = byId.get(id);
+          const result = rtmFamilySubmitAccepts({
+            text: cell.text,
             family: input.family,
+            parameters: row?.parameters,
+            userRequirement: row?.userRequirement,
           });
-          const marker = cell.text.replace(/\[[^\]]*\]/g, "").trim();
-          const text =
-            /^n\/?a$/i.test(marker) || /^n\.a\.$/i.test(marker)
-              ? "NA"
-              : cleaned;
+          if (!result.ok) {
+            rejected.push({ ursId: id, reason: result.reason });
+            continue;
+          }
           submitted.set(id, {
             ursId: id,
-            text,
-            citation: text ? cell.citation.trim() : "",
+            text: result.text,
+            citation: result.text === "NA" ? "" : cell.citation.trim(),
           });
+          accepted.push(id);
         }
-        return { status: "ok", count: submitted.size };
+        const remaining = input.rows
+          .filter((row) => !submitted.has(row.ursId))
+          .map((row) => row.ursId);
+        return {
+          status: remaining.length === 0 ? "ok" : "incomplete",
+          accepted,
+          rejected,
+          remaining,
+        };
       },
     }),
   };
@@ -121,13 +138,14 @@ export async function runRtmFamilyJob(
           `You fill the Reference – ${input.family.toUpperCase()} column of a QSR RTM table.`,
           `Search only the attached ${FAMILY_LABEL[input.family]} protocol.`,
           "Each cell is `{dotted section number} – {one audit line}` (about 18 words).",
-          "Example: `12.1 – Capacity verified as 8000 L`. Bare `Section 8` or `13.2` is invalid.",
-          "Cover / contents pages (Page 1 of N, table of contents, divider=true) are not evidence.",
-          "Grep the parameter, then read_document_page on a body page that prints the dotted heading and the test. If every hit is divider=true, read nextPage.",
+          "Example: `12.4 – Vacuum gauge specifications verified`. Bare `Section 8` or `12.1` is rejected.",
+          "Grep each row's Parameters (the instrument / topic), then read_document_page on the body page that names that parameter. One chapter grep is not enough for every row.",
+          "Do not reuse one section number across rows unless that heading names this row's parameter. Rupture disk is not a vacuum gauge.",
+          "Cover / contents pages (Page 1 of N, table of contents, divider=true) are not evidence. If every hit is divider=true, read nextPage.",
           "Cite that body page, not the cover. Do not copy page counters, logged readings, running headers, or dates.",
-          "If the protocol was searched and the parameter is absent, submit NA.",
-          "If you did not search that row, submit an empty string.",
-          "Call submit_family_cells with every checklist URS ID.",
+          "If the protocol body was searched and the parameter is absent, submit NA.",
+          "Do not submit empty or number-only cells — those URS IDs stay open. Submit persistable cells as you find them, then continue remaining.",
+          "Call submit_family_cells again until remaining is empty or the budget ends.",
         ].join("\n"),
         prompt: [
           `Section: ${input.section}`,

@@ -204,6 +204,15 @@ Budget: `RTM_WORKER_BUDGET_MS = 90_000` per worker, plus the shared
 models. A worker that runs out returns `status: "partial"` with whatever cells
 it grounded.
 
+`submit_family_cells` only stores a row when the cell is persistable
+(`{section} – {audit line}` that names this row's Parameters, or NA).
+Number-only `12.1` / `Section 8`, empty, and a rupture-disk heading on a
+vacuum-gauge row are rejected and `remaining` stays open, so Flash-Lite
+cannot finish after one chapter grep. Persist then rewrites leftover
+number-only cells only when `pickRtmReference` has a persistable
+topic-matched heading for that row (keep `8.1` / `12.1` if pick is null;
+do not fill empty leftovers).
+
 ### Stage D — compose once, ground once, one card
 
 ```ts

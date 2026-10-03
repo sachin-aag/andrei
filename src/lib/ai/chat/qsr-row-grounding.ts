@@ -2300,7 +2300,7 @@ function rtmFamilyCellHasAuditLine(text: string): boolean {
   return / – /.test(text.replace(/\[[^\]]*\]/g, ""));
 }
 
-function rtmFamilyCellIsPersistable(
+export function rtmFamilyCellIsPersistable(
   text: string,
   family: RtmStageFamily
 ): boolean {
@@ -2309,6 +2309,54 @@ function rtmFamilyCellIsPersistable(
   if (isRtmNotFoundMarker(stripped)) return true;
   if (rtmFamilyCellHasAuditLine(stripped)) return true;
   return /[A-Za-z]{3,}/.test(stripped) && !rtmCellSectionNumber(stripped, family);
+}
+
+function isNumberOnlyFamilyCell(
+  text: string,
+  family: RtmStageFamily
+): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped || isRtmNotFoundMarker(stripped)) return false;
+  if (rtmFamilyCellHasAuditLine(stripped)) return false;
+  return Boolean(rtmCellSectionNumber(stripped, family));
+}
+
+export type RtmFamilySubmitAccept =
+  | { ok: true; text: string }
+  | { ok: false; reason: "empty" | "number_only" | "topic_mismatch" };
+
+/**
+ * Family-worker submit gate. Number-only (`12.1`, `Section 8`) is not
+ * done — Flash-Lite must keep grepping. An audit line that names none of
+ * this row's Parameters / Purpose tokens is the rupture-disk-on-vacuum
+ * reuse. NA is always accepted. Empty means "did not search" and stays
+ * open.
+ */
+export function rtmFamilySubmitAccepts(input: {
+  text: string;
+  family: RtmStageFamily;
+  parameters?: string;
+  userRequirement?: string;
+}): RtmFamilySubmitAccept {
+  const marker = input.text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!marker) return { ok: false, reason: "empty" };
+  if (isRtmNotFoundMarker(marker)) return { ok: true, text: "NA" };
+  const cleaned = rtmSectionCellText(input.text, { family: input.family });
+  if (!cleaned) return { ok: false, reason: "empty" };
+  if (!rtmFamilyCellIsPersistable(cleaned, input.family)) {
+    return { ok: false, reason: "number_only" };
+  }
+  const context = [input.parameters ?? "", input.userRequirement ?? ""]
+    .filter(Boolean)
+    .join("\n");
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (
+    tokens.length > 0 &&
+    tokens.every((token) => !windowHasToken(cleaned, token))
+  ) {
+    return { ok: false, reason: "topic_mismatch" };
+  }
+  return { ok: true, text: cleaned };
 }
 
 function citedFamilyPagesAreCover(
@@ -2338,10 +2386,12 @@ export type ResolveRtmFamilyCellResult =
 
 /**
  * Family column persist: rewrite cover/contents `Section 8` / `Section 13.2`
- * onto `{section number} – {audit line}` from the protocol body page that
- * prints that heading. Grounded dotted numbers (`8.1`, `13.3.5.1`) and
- * cells that already have an audit line stay on the existing ground path.
- * Stock `Section 13` still clears.
+ * and number-only `12.1` onto `{section number} – {audit line}` from the
+ * protocol body page that prints a topic-matched heading for this row.
+ * When pick is null, grounded dotted numbers (`8.1`, `12.1`) stay; labeled
+ * cover `Section N` still clears. Cells that already have an audit line
+ * stay on the existing ground path. Stock `Section 13` still clears.
+ * Empty leftovers are not filled.
  */
 export function resolveRtmFamilyCell(input: {
   cell: string;
@@ -2363,10 +2413,12 @@ export function resolveRtmFamilyCell(input: {
     input.family,
     input.ledger
   );
+  const numberOnly = isNumberOnlyFamilyCell(trimmed, input.family);
   const persistable = rtmFamilyCellIsPersistable(trimmed, input.family);
-  if (!labeledBare && !coverCite) return { action: "keep" };
+  if (!labeledBare && !coverCite && !numberOnly) return { action: "keep" };
+  const mustHavePick = labeledBare || coverCite;
   if (!input.key) {
-    return labeledBare || coverCite ? { action: "clear" } : { action: "keep" };
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
   }
 
   const preferred = rtmCellSectionNumber(trimmed, input.family) || undefined;
@@ -2378,7 +2430,7 @@ export function resolveRtmFamilyCell(input: {
     input.family
   );
   if (!pick) {
-    return labeledBare || coverCite ? { action: "clear" } : { action: "keep" };
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
   }
 
   const citation = `[${pick.filename}, p. ${pick.pageNumber}]`;
@@ -2394,7 +2446,9 @@ export function resolveRtmFamilyCell(input: {
   const withLine = [resolved, heading].find((text) =>
     rtmFamilyCellIsPersistable(text, input.family)
   );
-  if (!withLine) return { action: "clear" };
+  if (!withLine) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
   return { action: "replace", text: withLine, citation };
 }
 
