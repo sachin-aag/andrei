@@ -140,7 +140,7 @@ describe("selectRetrievalEvalCorpus", () => {
     expect(selected.files).toEqual(gcsFiles);
   });
 
-  it("generates locally when GCS PDFs predate gold slash-ID anchors", async () => {
+  it("generates locally when GCS PDFs predate gold slash-ID or URS-minus anchors", async () => {
     const generated = await buildRetrievalCorpus();
     const protocol = generated.find(
       (file) => file.filename === PROTOCOL_EQUIPMENT_FILENAME
@@ -154,7 +154,7 @@ describe("selectRetrievalEvalCorpus", () => {
       },
     ];
     await expect(assertCorpusAnchors(staleGcs)).rejects.toThrow(
-      /software p\.2 is missing "PMC\/PR\/014"/
+      /Corpus PDF is missing page 3|software p\.2 is missing "PMC\/PR\/014"/
     );
 
     const selected = await selectRetrievalEvalCorpus(

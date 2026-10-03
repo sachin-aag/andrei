@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
@@ -23,6 +23,8 @@ export const PROTOCOL_PAGES = {
 export const SOFTWARE_PAGES = {
   cover: 1,
   requirements: 2,
+  /** Drawn minus before 15 °C; text layer is unsigned. */
+  ursShell: 3,
 } as const;
 
 /** Phrases the generated PDFs must contain — used by fixture tests and judge criteria. */
@@ -38,6 +40,9 @@ export const CORPUS_ANCHORS = {
   interlock: "Laser interlock latency",
   pmcPr014: "PMC/PR/014",
   sopDpQa014: "SOP/DP/QA/014",
+  urs3: "URS-3",
+  unsignedShellRange: "15 °C to 130 °C",
+  approxRpm: "~50+/-10 RPM",
 } as const;
 
 export type CorpusFile = {
@@ -135,6 +140,38 @@ export async function buildSoftwareRequirementsPdf(): Promise<Buffer> {
     "SW-EVAL-12 Cooling fan watchdog Pass",
   ]);
 
+  const urs = doc.addPage([612, 792]);
+  const ursLines = [
+    "User Requirement Specification — temperature operating range",
+    ...Array.from(
+      { length: 12 },
+      (_, index) =>
+        `URS table boilerplate line ${index + 1} of verification evidence for born-digital extract`
+    ),
+    `${CORPUS_ANCHORS.urs3} Shell Operating temperature`,
+  ];
+  drawLines(urs, font, ursLines);
+  const rangeY = 740 - ursLines.length * 14;
+  // Printed minus is a stroke, not a text glyph — the parser sees unsigned 15 °C.
+  urs.drawLine({
+    start: { x: 48, y: rangeY + 5 },
+    end: { x: 66, y: rangeY + 5 },
+    thickness: 3,
+    color: rgb(0, 0, 0),
+  });
+  urs.drawText(CORPUS_ANCHORS.unsignedShellRange, {
+    x: 72,
+    y: rangeY,
+    size: 14,
+    font,
+  });
+  urs.drawText(CORPUS_ANCHORS.approxRpm, {
+    x: 48,
+    y: rangeY - 22,
+    size: 11,
+    font,
+  });
+
   return Buffer.from(await doc.save());
 }
 
@@ -172,6 +209,7 @@ export async function assertCorpusAnchors(
     softwareLayer.pages,
     SOFTWARE_PAGES.requirements
   );
+  const ursShellPage = pageText(softwareLayer.pages, SOFTWARE_PAGES.ursShell);
 
   assertContains(requiredPage, CORPUS_ANCHORS.requiredTable, "protocol p.2");
   assertContains(requiredPage, CORPUS_ANCHORS.spectrumAnalyzer, "protocol p.2");
@@ -184,6 +222,14 @@ export async function assertCorpusAnchors(
   assertContains(requirementsPage, CORPUS_ANCHORS.interlock, "software p.2");
   assertContains(requirementsPage, CORPUS_ANCHORS.pmcPr014, "software p.2");
   assertContains(requirementsPage, CORPUS_ANCHORS.sopDpQa014, "software p.2");
+  assertContains(ursShellPage, CORPUS_ANCHORS.urs3, "software p.3");
+  assertContains(
+    ursShellPage,
+    CORPUS_ANCHORS.unsignedShellRange,
+    "software p.3"
+  );
+  assertContains(ursShellPage, CORPUS_ANCHORS.approxRpm, "software p.3");
+  assertAbsent(ursShellPage, "-15", "software p.3");
   const protocolCover = pageText(protocolLayer.pages, PROTOCOL_PAGES.header);
   assertAbsent(protocolCover, CORPUS_ANCHORS.pmcPr014, "protocol p.1");
   assertAbsent(protocolCover, CORPUS_ANCHORS.requiredTable, "protocol p.1");
