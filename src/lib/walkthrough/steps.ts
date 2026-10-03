@@ -153,7 +153,7 @@ export function stepsForRole(
         {
           id: "ai-check",
           title: "Run AI Check",
-          body: "When a section has content, Run criteria scores it against the quality checklist (green / yellow / red) and can suggest fixes. Apply or Dismiss each one, or Apply all from the header.",
+          body: "When a section has content, Run criteria scores it against the quality checklist (green / yellow / red) and can suggest fixes. Run all checks in the header opens Review. Apply or Dismiss each fix, or Apply all from the header.",
           startHere: true,
           target: "ai-check",
           match: isReportWorkspace,
@@ -229,8 +229,8 @@ export function stepsForRole(
         },
         {
           id: "assistant",
-          title: "Assistant and criteria",
-          body: "The sidebar still has the Assistant, criteria traffic lights, and comments so you can see what the AI flagged before you decide. Click a citation to open the file.",
+          title: "Assistant and Review",
+          body: "The sidebar still has the Assistant, Review checks, and comments so you can see what the AI flagged before you decide. Click a citation to open the file.",
           target: "assistant",
           match: isReportWorkspace,
         },

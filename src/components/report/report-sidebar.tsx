@@ -2,7 +2,6 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import {
-  FileQuestion,
   ListChecks,
   MessageSquare,
   PanelRightClose,
@@ -11,23 +10,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
-import { useReportPlaceholders, useReportComments, useReportData } from "@/providers/report-provider";
+import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
-import { PlaceholdersPanelContent } from "./placeholders-panel";
-import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
+import { CommentsPanelContent } from "./comments-panel";
 import { ChatPanel } from "./chat-panel";
+import { Review } from "./review";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
-import { getEvaluatableSections } from "@/lib/document-types";
 import { COLLAPSED_RAIL_PX } from "./workspace-layout";
 
-export type SidebarTab =
-  | "assistant"
-  | "placeholders"
-  | "criteria"
-  | "comments";
+export type SidebarTab = "assistant" | "review" | "comments";
 
 type Props = {
   collapsed: boolean;
@@ -39,7 +33,6 @@ type Props = {
   onJumpToComment: (commentId: string) => void;
   hideCollapse?: boolean;
   chrome?: WorkspaceChrome;
-  initialCriteriaSection?: SectionType;
   workProductView?: WorkProductView;
   statsEnabled?: boolean;
   onAnalyticsSettled?: () => void;
@@ -52,8 +45,7 @@ type Props = {
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
   { value: "assistant", label: "Assistant", icon: Sparkles },
-  { value: "placeholders", label: "Placeholders", icon: FileQuestion },
-  { value: "criteria", label: "Criteria", icon: ListChecks },
+  { value: "review", label: "Review", icon: ListChecks },
   { value: "comments", label: "Comments", icon: MessageSquare },
 ];
 
@@ -67,7 +59,6 @@ export function ReportSidebar({
   onJumpToComment,
   hideCollapse = false,
   chrome = "agent",
-  initialCriteriaSection,
   workProductView = "report",
   statsEnabled = false,
   onAnalyticsSettled,
@@ -103,22 +94,16 @@ export function ReportSidebar({
   const parkChat = !chatVisible || holdChatPark;
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
-  const { report } = useReportData();
-  const showCriteria = getEvaluatableSections(report.documentType).length > 0;
-  const visibleTabs = showCriteria
-    ? TABS
-    : TABS.filter((tab) => tab.value !== "criteria");
+  const visibleTabs = TABS;
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
 
   const tabBadge = (tab: SidebarTab): number | null => {
-    if (tab === "placeholders" && pendingPlaceholders.length > 0) {
-      return pendingPlaceholders.length;
-    }
-    if (tab === "criteria" && openSuggestionCount > 0) {
-      return openSuggestionCount;
+    if (tab === "review") {
+      const count = pendingPlaceholders.length + openSuggestionCount;
+      return count > 0 ? count : null;
     }
     if (tab === "comments" && rootCommentCount > 0) {
       return rootCommentCount;
@@ -246,7 +231,7 @@ export function ReportSidebar({
           changes so the thread, composer prefs, and rendered markdown are
           not reset. Hide with visibility (not display:none) so the scroller
           keeps its layout box and scrollTop through the width animation.
-          Criteria / Placeholders / Comments share this flex-1 box; parked
+          Review / Comments share this flex-1 box; parked
           chat is position:absolute so it does not steal the top half. */}
       <div
         className={cn(
@@ -285,15 +270,11 @@ export function ReportSidebar({
             className="h-full min-h-0 overflow-y-auto p-4 min-w-0"
             data-testid="sidebar-tab-panel"
           >
-            {activeTab === "placeholders" && (
-              <PlaceholdersPanelContent
+            {activeTab === "review" && (
+              <Review.Panel
+                onJumpToComment={onJumpToComment}
                 onJumpToPlaceholder={onJumpToPlaceholder}
-              />
-            )}
-            {activeTab === "criteria" && (
-              <CriteriaPanelContent
                 onJumpToSection={onJumpToSection}
-                initialSection={initialCriteriaSection}
               />
             )}
             {activeTab === "comments" && (

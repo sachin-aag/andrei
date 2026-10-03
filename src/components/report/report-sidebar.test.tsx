@@ -28,12 +28,13 @@ vi.mock("@/components/report/chat-panel", () => ({
   },
 }));
 
-vi.mock("@/components/report/placeholders-panel", () => ({
-  PlaceholdersPanelContent: () => <div>placeholders</div>,
+vi.mock("@/components/report/review", () => ({
+  Review: {
+    Panel: () => <div>review</div>,
+  },
 }));
 
-vi.mock("@/components/report/criteria-sheet", () => ({
-  CriteriaPanelContent: () => <div>criteria</div>,
+vi.mock("@/components/report/comments-panel", () => ({
   CommentsPanelContent: () => <div>comments</div>,
 }));
 
@@ -41,7 +42,7 @@ const noop = () => {};
 
 function renderSidebar(
   collapsed: boolean,
-  activeTab: "assistant" | "criteria" | "placeholders" | "comments"
+  activeTab: "assistant" | "review" | "comments"
 ) {
   return render(
     <ReportSidebar
@@ -58,16 +59,16 @@ function renderSidebar(
 
 describe("ReportSidebar chat keep-alive", () => {
   it("shows only the active tab icon when the sidebar is collapsed", () => {
-    renderSidebar(true, "criteria");
-    expect(screen.queryByRole("button", { name: "Placeholders" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Criteria" })).toBeInTheDocument();
+    renderSidebar(true, "review");
+    expect(screen.queryByRole("button", { name: "Comments" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
   });
 
   it("shows all tab buttons when the sidebar is expanded", () => {
     renderSidebar(false, "assistant");
-    expect(screen.getByRole("button", { name: "Criteria" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Placeholders" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Comments" })).toBeInTheDocument();
   });
 
   it("keeps ChatPanel mounted when the sidebar is collapsed", () => {
@@ -137,7 +138,7 @@ describe("ReportSidebar chat keep-alive", () => {
       <ReportSidebar
         collapsed={false}
         onToggleCollapse={noop}
-        activeTab="criteria"
+        activeTab="review"
         onTabChange={noop}
         onJumpToSection={noop}
         onJumpToPlaceholder={noop}
@@ -156,7 +157,7 @@ describe("ReportSidebar chat keep-alive", () => {
     expect(chatPanelMounts).toBe(1);
   });
 
-  it.each(["criteria", "placeholders", "comments"] as const)(
+  it.each(["review", "comments"] as const)(
     "fills the sidebar with %s instead of leaving empty space above it",
     (tab) => {
       renderSidebar(false, tab);
@@ -209,7 +210,7 @@ describe("ReportSidebar chat keep-alive", () => {
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
       "invisible"
     );
-    expect(screen.queryByRole("button", { name: "Criteria" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review" })).not.toBeInTheDocument();
     expect(chatPanelMounts).toBe(1);
   });
 });

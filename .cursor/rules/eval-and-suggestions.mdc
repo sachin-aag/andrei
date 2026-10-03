@@ -125,6 +125,12 @@ DV mixes LLM criteria with deterministic `check()` functions.
   other table ops stay parallel.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
   Bump `CHAT_PROMPT_VERSION` when chat edit-tool copy changes.
+- Review mode (`src/lib/review/`) replaces the Criteria and Placeholders
+  sidebar tabs. `isAiSuggestionKind` includes `ai_grammar` so grammar
+  findings appear in the gutter, bulk Apply all / Dismiss all, and
+  `list_suggestions`. Bump `REVIEW_FDA_PROMPT_VERSION`,
+  `REVIEW_CITATION_PROMPT_VERSION`, or `REVIEW_WRITING_PROMPT_VERSION`
+  when those check prompts change.
 - Whole-field is derived: planned operations cover every merge block
   (`operationsCoverWholeField`), plus `ai_redraft`. Coverage classifies
   edit vs rewrite; `propose_edit` does not refuse large spans.

@@ -85,6 +85,17 @@ describe("formatCommentForExport", () => {
     ).toBe("Imported Word note.");
   });
 
+  it("formats ai_grammar the same way as ai_fix", () => {
+    const content = serializeAiFixCommentContent({
+      deleteText: "was runned",
+      insertText: "was run",
+      reasoning: "Past tense.",
+    });
+    expect(formatCommentForExport({ kind: "ai_grammar", content })).toBe(
+      'Past tense.\nSuggested change: "was runned" → "was run"'
+    );
+  });
+
   it("falls back sanely for malformed ai_fix JSON", () => {
     expect(
       formatCommentForExport({
