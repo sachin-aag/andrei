@@ -1,5 +1,6 @@
 import { authBaseUrl } from "@/lib/auth/auth-base-url";
 import { getCustomerPack } from "@/lib/customers/packs";
+import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
 
 export const DEFAULT_RESEND_FROM = "noreply@andreihealth.com";
 
@@ -48,6 +49,11 @@ async function postResendEmail(opts: {
 }
 
 export async function sendResetEmail(email: string, token: string) {
+  // Playwright / ALLOW_TEST_LOGIN has no Resend key. Persist the token
+  // (caller already wrote it) and skip the provider so lock-screen and
+  // forgot-password can show the success screen instead of a 503.
+  if (isTestLoginEnabled()) return;
+
   const apiKey = resolveResendApiKey();
   if (!apiKey) throw new Error("AUTH_RESEND_KEY is not set");
 

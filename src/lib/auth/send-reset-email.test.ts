@@ -19,6 +19,8 @@ describe("sendResetEmail", () => {
       AUTH_RESEND_KEY: "re_test",
       AUTH_URL: "https://andrei-v2.vercel.app",
       AUTH_EMAIL_FROM: "noreply@andreihealth.com",
+      ALLOW_TEST_LOGIN: "",
+      TEST_AUTH_EMAIL: "",
       ...overrides,
     };
     delete process.env.VERCEL_ENV;
@@ -83,6 +85,20 @@ describe("sendResetEmail", () => {
     ) as { from: string };
     expect(first.from).toBe("noreply@3xper.com");
     expect(second.from).toBe(DEFAULT_RESEND_FROM);
+  });
+
+  it("skips Resend when test login is enabled", async () => {
+    stubAuthEnv({
+      ALLOW_TEST_LOGIN: "true",
+      TEST_AUTH_EMAIL: "test.engineer@mjbiopharm.com",
+      AUTH_RESEND_KEY: "",
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendResetEmail("user@mjbiopharm.com", "token-abc");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not retry a 403 when already using the default from", async () => {
