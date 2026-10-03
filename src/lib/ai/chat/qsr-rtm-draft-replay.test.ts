@@ -54,6 +54,11 @@ vi.mock("@/db", () => ({
     select: (...args: unknown[]) => dbSelectMock(...args),
     insert: (...args: unknown[]) => dbInsertMock(...args),
     update: (...args: unknown[]) => dbUpdateMock(...args),
+    query: {
+      aiBudgetSettings: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    },
   },
 }));
 
@@ -74,6 +79,19 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
       searchReportDocumentsManyMock(...(args as [])),
   };
 });
+
+vi.mock("@/lib/attachments/overlay-stored-pages", () => ({
+  overlayNumericSignsOnReviewPages: async ({
+    pages,
+  }: {
+    pages: unknown[];
+  }) => pages,
+  overlayNumericSignsOnReadPage: async ({
+    page,
+  }: {
+    page: unknown;
+  }) => page,
+}));
 
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
@@ -417,8 +435,14 @@ async function readDqPage(
   expect(read).toMatchObject({ status: "found" });
 }
 
-function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation {
-  const comment = inserted.find((row) => {
+type InsertedRow = { content?: string; kind?: string };
+
+function insertedAiFixes(rows: InsertedRow[]): InsertedRow[] {
+  return rows.filter((row) => row.kind === "ai_fix");
+}
+
+function proposedTableOp(inserted: InsertedRow[]): TableOperation {
+  const comment = insertedAiFixes(inserted).find((row) => {
     const parsed = parseAiFixCommentContent(String(row.content ?? ""));
     return parsed.tableOperation != null;
   });
@@ -429,7 +453,7 @@ function proposedTableOp(inserted: Array<{ content?: string }>): TableOperation 
 }
 
 describe("QSR RTM section 5 draft replay", () => {
-  const inserted: Array<{ content?: string }> = [];
+  const inserted: InsertedRow[] = [];
 
   beforeEach(() => {
     inserted.length = 0;
@@ -447,9 +471,15 @@ describe("QSR RTM section 5 draft replay", () => {
     searchReportDocumentsManyMock.mockResolvedValue([]);
     listReadyDocumentsForReportMock.mockResolvedValue([ursDoc()]);
     dbInsertMock.mockReturnValue({
-      values: vi.fn().mockImplementation((row: { content?: string }) => {
+      values: vi.fn().mockImplementation((row: InsertedRow) => {
         inserted.push(row);
-        return Promise.resolve();
+        return {
+          returning: vi.fn().mockResolvedValue([row]),
+          then: (
+            resolve: (value: unknown) => unknown,
+            reject?: (reason: unknown) => unknown
+          ) => Promise.resolve().then(resolve, reject),
+        };
       }),
     });
     dbUpdateMock.mockReturnValue({
