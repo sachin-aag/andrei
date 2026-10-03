@@ -141,8 +141,9 @@ test.describe("report editor", () => {
     await expect(sidebar.getByText("Placeholders").first()).toBeVisible();
 
     await sidebar.getByTestId("review-check-report.placeholders").click();
+    await expect(sidebar.getByText("You're all caught up!")).toBeVisible();
     await expect(
-      sidebar.getByText(/you're all caught up|no placeholders found/i)
+      sidebar.getByText("No placeholders found in the document.")
     ).toBeVisible();
 
     await seedDefineForEvaluation(page, reportId!);
