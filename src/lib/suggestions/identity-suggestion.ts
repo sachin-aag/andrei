@@ -8,6 +8,7 @@ import {
   type ChatIdentityReport,
   type IdentityFieldPatch,
 } from "@/lib/ai/chat/identity";
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import type { DocumentType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 
@@ -32,10 +33,6 @@ export function parseIdentityOperation(raw: unknown): IdentityOperation | undefi
     return [{ key, value: field.value }];
   });
   return fields.length > 0 ? { fields } : undefined;
-}
-
-function isAiSuggestionKind(kind: string): boolean {
-  return kind === "ai_fix" || kind === "ai_redraft";
 }
 
 export function isIdentitySuggestion(comment: CommentRecord): boolean {

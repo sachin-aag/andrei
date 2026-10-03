@@ -179,6 +179,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "analysis_deleted",
   "claim_verified",
   "claim_unsupported",
+  "review_check_run",
+  "review_finding_verified",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -195,6 +197,7 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "improve_ai",
   "attachment",
   "analytics",
+  "review",
 ]);
 
 export const attachmentProcessingStatusEnum = pgEnum(
@@ -432,6 +435,97 @@ export const criteriaEvaluations = pgTable("criteria_evaluations", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const reviewCheckRunStatusEnum = pgEnum("review_check_run_status", [
+  "running",
+  "completed",
+  "failed",
+]);
+
+export const reviewFindingKindEnum = pgEnum("review_finding_kind", [
+  "fixable",
+  "needs_human",
+]);
+
+export const reviewFindingStatusEnum = pgEnum("review_finding_status", [
+  "open",
+  "resolved",
+  "dismissed",
+  "verified",
+]);
+
+export const reviewFindingSeverityEnum = pgEnum("review_finding_severity", [
+  "info",
+  "warning",
+  "error",
+]);
+
+export const reviewCheckRuns = pgTable(
+  "review_check_runs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    checkId: text("check_id").notNull(),
+    status: reviewCheckRunStatusEnum("status").notNull().default("running"),
+    contentHash: text("content_hash").notNull().default(""),
+    issueCount: integer("issue_count").notNull().default(0),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+  },
+  (t) => ({
+    reportCheckStartedIdx: index("review_check_runs_report_check_started_idx").on(
+      t.reportId,
+      t.checkId,
+      t.startedAt
+    ),
+  })
+);
+
+export const reviewFindings = pgTable(
+  "review_findings",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    checkId: text("check_id").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => reviewCheckRuns.id, { onDelete: "cascade" }),
+    section: text("section"),
+    contentPath: text("content_path"),
+    anchorText: text("anchor_text").notNull().default(""),
+    message: text("message").notNull(),
+    severity: reviewFindingSeverityEnum("severity").notNull().default("warning"),
+    kind: reviewFindingKindEnum("kind").notNull(),
+    commentId: text("comment_id").references((): AnyPgColumn => comments.id, {
+      onDelete: "set null",
+    }),
+    status: reviewFindingStatusEnum("status").notNull().default("open"),
+    verifiedBy: text("verified_by"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportStatusIdx: index("review_findings_report_status_idx").on(
+      t.reportId,
+      t.status
+    ),
+    reportCheckIdx: index("review_findings_report_check_idx").on(
+      t.reportId,
+      t.checkId
+    ),
+  })
+);
+
 export const comments = pgTable("comments", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   reportId: text("report_id")
@@ -476,6 +570,8 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   attachments: many(reportAttachments),
   analytics: one(statisticalWorkspaces),
   analyticsRevisions: many(analyticsRevisions),
+  reviewRuns: many(reviewCheckRuns),
+  reviewFindings: many(reviewFindings),
 }));
 
 export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
@@ -1079,6 +1175,29 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
   replies: many(comments, { relationName: "comment_thread" }),
 }));
 
+export const reviewCheckRunsRelations = relations(reviewCheckRuns, ({ one, many }) => ({
+  report: one(reports, {
+    fields: [reviewCheckRuns.reportId],
+    references: [reports.id],
+  }),
+  findings: many(reviewFindings),
+}));
+
+export const reviewFindingsRelations = relations(reviewFindings, ({ one }) => ({
+  report: one(reports, {
+    fields: [reviewFindings.reportId],
+    references: [reports.id],
+  }),
+  run: one(reviewCheckRuns, {
+    fields: [reviewFindings.runId],
+    references: [reviewCheckRuns.id],
+  }),
+  comment: one(comments, {
+    fields: [reviewFindings.commentId],
+    references: [comments.id],
+  }),
+}));
+
 /**
  * Drafting-assistant chat thread. A report can have many named sessions
  * (like Cursor's chat history), so an engineer can start a fresh conversation
@@ -1295,6 +1414,7 @@ export const aiUsageFeatureEnum = pgEnum("ai_usage_feature", [
   "chart_extraction",
   "docx_image_description",
   "voice_transcribe",
+  "review_check",
 ]);
 
 export const aiBudgetSettings = pgTable("ai_budget_settings", {
@@ -1847,5 +1967,13 @@ export type ProductTourStatus =
 export type DocumentRevisionSource =
   (typeof documentRevisionSourceEnum.enumValues)[number];
 export type AiUsageFeature = (typeof aiUsageFeatureEnum.enumValues)[number];
+export type ReviewCheckRunStatus =
+  (typeof reviewCheckRunStatusEnum.enumValues)[number];
+export type ReviewFindingKind =
+  (typeof reviewFindingKindEnum.enumValues)[number];
+export type ReviewFindingStatus =
+  (typeof reviewFindingStatusEnum.enumValues)[number];
+export type ReviewFindingSeverity =
+  (typeof reviewFindingSeverityEnum.enumValues)[number];
 
 export * from "./auth";

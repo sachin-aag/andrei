@@ -140,7 +140,10 @@ Sidebar is Reports, then Document vault (`/vault`). Insights (`/insights`) and
 Templates (`/templates`) are demo-only (`insightsEnabled` /
 `documentTemplatesEnabled`). Other packs hide those links and keep a
 document-type dropdown for New Report. Report chrome is Document | Agent;
-new reports open in Agent. Composer Report | Analytics is independent of the
+new reports open in Agent. Sidebar tabs are Assistant | Review | Comments
+(Criteria and Placeholders fold into Review: All checks | Report | FDA |
+Citations | Writing). Grammar findings use `ai_grammar` and ride the same
+Apply / Dismiss path as `ai_fix`. Composer Report | Analytics is independent of the
 focused canvas pane. Scope is `@` tags. Analytics is on for every pack
 (`statisticalAnalysisEnabled`). Vault, remaining-section, plot, and worksheet
 loop details: `.cursor/rules/chat-and-attachments.mdc` and
@@ -191,6 +194,7 @@ is still warm. Home-list Open links go straight to `/edit` or `/review`
 | Feature | Needs | Local stub (never Vercel) |
 |---------|--------|---------------------------|
 | AI Check / suggestions | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | `ALLOW_TEST_SKIP_EVALUATION`, `ALLOW_TEST_SKIP_SUGGESTIONS` |
+| Review checks (FDA / citations / writing) | Same resolver as AI Check | `ALLOW_TEST_STUB_REVIEW` |
 | Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
 | Composer voice dictation | Same Gemini resolver as chat (Vertex WIF when `GOOGLE_VERTEX_PROJECT` is set). Native-script transcripts; assistant replies in English. Not Cloud Speech-to-Text | `ALLOW_TEST_STUB_SPEECH` |
 | PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |

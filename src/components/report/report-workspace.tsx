@@ -22,10 +22,11 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
+import { Review } from "./review";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import {
   shouldCollapseAssistantOnSuggestionFocus,
-  shouldRevealCriteriaTab,
+  shouldRevealReviewTab,
   type WorkspaceChrome,
   type WorkProductView,
 } from "./workspace-chrome";
@@ -387,9 +388,6 @@ export function ReportWorkspace({
     forgetDocumentPreview,
     documentOpenEpoch,
   } = useReportAttachments();
-  const [criteriaFocusSection, setCriteriaFocusSection] = useState<
-    SectionType | undefined
-  >();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
@@ -547,7 +545,7 @@ export function ReportWorkspace({
   );
 
   useEffect(() => {
-    const justFinished = shouldRevealCriteriaTab({
+    const justFinished = shouldRevealReviewTab({
       wasEvaluating: wasEvaluatingRef.current,
       isEvaluating,
       chrome,
@@ -555,7 +553,7 @@ export function ReportWorkspace({
     });
     wasEvaluatingRef.current = isEvaluating;
     if (justFinished) {
-      setSidebarTab("criteria");
+      setSidebarTab("review");
     }
   }, [chrome, isEvaluating, workProductView]);
 
@@ -748,7 +746,6 @@ export function ReportWorkspace({
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      setCriteriaFocusSection(section);
       // Leave the assistant as the engineer left it. Collapsing it after
       // Suggest fixes or a document-chrome chat proposal hid the thread as
       // soon as the edit landed. Review margin stays opt-in via the Comments
@@ -1037,6 +1034,7 @@ export function ReportWorkspace({
 
   return (
     <CanvasTabScrollProvider userId={currentUserId} reportId={report.id}>
+    <Review.Provider>
     <div className="flex h-full flex-col">
       <ElectronicSignatureDialog
         open={signDialog != null}
@@ -1088,6 +1086,7 @@ export function ReportWorkspace({
         chrome={chrome}
         onChromeChange={handleChromeChange}
         workProductView={workProductView}
+        onOpenReview={() => setSidebarTab("review")}
       />
 
       {reportSurface ? <ReportEditorToolbar /> : null}
@@ -1430,7 +1429,6 @@ export function ReportWorkspace({
               onJumpToSection={jumpToSection}
               onJumpToPlaceholder={handleJumpToPlaceholder}
               onJumpToComment={jumpToComment}
-              initialCriteriaSection={criteriaFocusSection}
               workProductView={workProductView}
               statsEnabled={statsEnabled}
               onAnalyticsSettled={() =>
@@ -1464,6 +1462,7 @@ export function ReportWorkspace({
         </div>
       </div>
     </div>
+    </Review.Provider>
     </CanvasTabScrollProvider>
   );
 }

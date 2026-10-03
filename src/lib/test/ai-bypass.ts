@@ -43,6 +43,14 @@ export function isTestStubSpeech(): boolean {
   return process.env.ALLOW_TEST_STUB_SPEECH === "true";
 }
 
+/**
+ * Stubs Review-mode citation, writing, and FDA LLM checks.
+ * Never set ALLOW_TEST_STUB_REVIEW on Vercel production or preview.
+ */
+export function isTestStubReview(): boolean {
+  return process.env.ALLOW_TEST_STUB_REVIEW === "true";
+}
+
 export function isTestLoginEnabled(): boolean {
   return (
     process.env.ALLOW_TEST_LOGIN === "true" &&
