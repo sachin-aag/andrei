@@ -87,7 +87,7 @@ const TEMPERATURE_RE = new RegExp(
 );
 
 const IDENTIFIER_RE =
-  /\b(?:URS-\d+|SOP\/[A-Z]{2,}\/[A-Z]{2,}\/\d{3}(?:\s*R\d+)?|[A-Z]\/[A-Z]{2}\/\d{3}|[A-Z]{2,5}-\d{2}-[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z]{2,8}(?:\/[A-Z]{2,8})+\/\d{2,}(?:\/[A-Z0-9]+)*)\b/g;
+  /\b(?:URS-\d+[a-z]?|SOP\/[A-Z]{2,}\/[A-Z]{2,}\/\d{3}(?:\s*R\d+)?|[A-Z]\/[A-Z]{2}\/\d{3}|[A-Z]{2,5}-\d{2}-[A-Z0-9]+(?:-[A-Z0-9]+)+|[A-Z]{2,8}(?:\/[A-Z]{2,8})+\/\d{2,}(?:\/[A-Z0-9]+)*)\b/g;
 
 /**
  * Instrument units matter as much as lab units here: a vacuum reading, a

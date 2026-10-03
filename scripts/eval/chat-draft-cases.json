@@ -336,8 +336,8 @@
   {
     "id": "qsr-rtm-oq-locator-temps",
     "task": "ground_draft",
-    "passCriteria": "OQ family cell keeps 9.3.4 as a locator when the cited page has −7.4 °C / 120.8 °C but never prints 9.3.4.",
-    "notes": "Live GLR-1301 OQ p.83 OCR. Section numbers are locators, not claims.",
+    "passCriteria": "An OQ family cell whose heading 9.3.4 is not on the cited page does not persist.",
+    "notes": "QSR 2 gate: a protocol section number must appear on a retrieved page. Temperatures on that page do not keep an unverified heading.",
     "input": {
       "text": "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [Operational Qualification.PDF, p. 83]",
       "context": "URS-3\nShell Operating temperature",
@@ -353,16 +353,14 @@
       ]
     },
     "expected": {
-      "blocked": false,
-      "mustContain": ["9.3.4", "120.8"],
-      "unsupportedMustBeEmpty": true
+      "blocked": true
     }
   },
   {
     "id": "qsr-rtm-oq-overflow-9320",
     "task": "ground_draft",
-    "passCriteria": "OQ overflow 9320 L persists when the cited page prints (L) 9320 without heading 7.2.",
-    "notes": "Live GLR-1301 OQ p.12 OCR. Missing protocol heading must not drop a grounded quantity.",
+    "passCriteria": "An OQ family cell whose heading 7.2 is not on the cited page does not persist, even when 9320 L is.",
+    "notes": "QSR 2 gate: unverified protocol headings do not land. The quantity stays available for a later cell that cites a page printing 7.2.",
     "input": {
       "text": "7.2 – Overflow volume verification 9320 L [Operational Qualification.PDF, p. 12]",
       "context": "URS-2\nOverflow volume",
@@ -378,9 +376,7 @@
       ]
     },
     "expected": {
-      "blocked": false,
-      "mustContain": ["9320 L"],
-      "unsupportedMustBeEmpty": true
+      "blocked": true
     }
   },
   {

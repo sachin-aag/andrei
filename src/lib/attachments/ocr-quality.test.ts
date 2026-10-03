@@ -170,6 +170,13 @@ describe("isRequirementRowId", () => {
       "CUS-01188",
     ]);
   });
+
+  it("treats a glued URS-34a subpart as a requirement id", () => {
+    expect(requirementIds("URS-34 a For solvent transfer")).toEqual([
+      "URS-34a",
+    ]);
+    expect(isRequirementId("URS-34a")).toBe(true);
+  });
 });
 
 describe("isWeakOcrTranscript", () => {

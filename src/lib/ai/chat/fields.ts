@@ -212,8 +212,8 @@ function isBlankTableCellText(text: string): boolean {
   return text === "(empty)" || text.trim() === "";
 }
 
-/** First-column URS-N on an RTM is a row key, not drafted requirement text. */
-const URS_ID_SCAFFOLD_RE = /^URS-\d+$/i;
+/** First-column URS-N (or URS-34a) on an RTM is a row key, not drafted text. */
+const URS_ID_SCAFFOLD_RE = /^URS-\d+[a-z]?$/i;
 
 function isUrsIdScaffoldCell(
   cell: { col: number; text: string },

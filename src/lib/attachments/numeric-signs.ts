@@ -147,13 +147,18 @@ export function pageNeedsNumericSignLook(text: string): boolean {
   return numericSignLookScore(text) > 0;
 }
 
+/** Bare `URS-33` or a lettered subpart (`URS-34a`). */
+export const URS_ID_TOKEN_SOURCE = String.raw`URS-\d+[a-z]?`;
+
 /**
  * Table/footer wrap often splits `URS-33` into `URS- 33`, `URS-\n33`, or
- * `URS - 33`. Keep the original `URS` casing. Idempotent on a clean ID.
+ * `URS - 33`. Lettered subparts print as `URS-34 a`. Keep the original
+ * `URS` casing. Idempotent on a clean ID.
  */
 export function glueOcrUrsIds(text: string): string {
   return glueOcrMinusSigns(text).replace(
-    /\b(URS)\s*-\s*(\d+)\b/gi,
-    "$1-$2"
+    /\b(URS)\s*-\s*(\d+)(?:\s*([a-z]))?\b/gi,
+    (_all, urs: string, num: string, letter?: string) =>
+      letter ? `${urs}-${num}${letter}` : `${urs}-${num}`
   );
 }

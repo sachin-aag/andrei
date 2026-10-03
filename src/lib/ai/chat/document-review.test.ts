@@ -508,6 +508,7 @@ describe("pickPlanModeChatTools", () => {
       plot_measurements: { kind: "chart" },
       remove_image: { kind: "image-remove" },
       edit_table: { kind: "table" },
+      draft_rtm_table: { kind: "rtm" },
     };
     const planTools = pickPlanModeChatTools(allTools);
     expect(PLAN_MODE_CHAT_TOOL_NAMES).toEqual(
@@ -533,6 +534,7 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
+    expect(planTools).not.toHaveProperty("draft_rtm_table");
     expect(planTools).not.toHaveProperty("draft_identity");
   });
 });
