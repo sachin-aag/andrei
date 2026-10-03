@@ -11,12 +11,21 @@ export const UNICODE_MINUS_SIGN_RE = /[−–—‒―‐‑﹘﹣－]/g;
 /** Optional leading minus in a quantity, including OCR dash lookalikes. */
 export const LEADING_MINUS_CLASS = String.raw`[\-−–—‒―‐‑﹘﹣－]`;
 
+/**
+ * Stamped onto `visualInterpretation` after a PNG overlay look, including
+ * when Gemini reports no signed temperatures. Chat/review skip a second look.
+ */
+export const NUMERIC_SIGN_LOOK_MARK = "numeric-sign-look:";
+
 const DASH_CHARS = String.raw`\-−–—‒―‐‑﹘﹣－`;
 const APPROX_CHARS = String.raw`~≈`;
-const TEMPERATURE_UNIT = String.raw`(?:°\s*C)`;
+/** Degree + C, compact ℃ (U+2103), and OCR lookalikes º / ˚. */
+const TEMPERATURE_UNIT = String.raw`(?:°\s*C|℃|º\s*C|˚\s*C)`;
+/** `to`, en-dash, hyphen, or OCR `°to` between range ends (`15–130 °C`, `20°to 220℃`). */
+const RANGE_SEP = String.raw`(?:°\s*to\s*|\s*to\s*|\s*[–−-]\s*)`;
 
 const SIGNED_TEMPERATURE_RE = new RegExp(
-  `(?<![A-Za-z0-9.])${LEADING_MINUS_CLASS}\\s*(\\d+(?:\\.\\d+)?)\\s*(${TEMPERATURE_UNIT})`,
+  `(?<![A-Za-z0-9.])${LEADING_MINUS_CLASS}\\s*(\\d+(?:\\.\\d+)?)(?:\\s*${TEMPERATURE_UNIT})?(?:${RANGE_SEP}\\d+(?:\\.\\d+)?)?\\s*${TEMPERATURE_UNIT}`,
   "gi"
 );
 
@@ -63,10 +72,11 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * Copy a leading minus onto an unsigned (or dash-then-space) Celsius quantity
- * in `base` only when `evidence` already shows `-N °C`. Never invent a sign.
- * An en-dash range (`15–130 °C`) is not a signed quantity. A leading tilde or
- * ≈ is approximate, not a dropped minus — do not rewrite `~50±10 RPM`.
+ * Copy a leading minus onto an unsigned Celsius quantity in `base` only when
+ * `evidence` already shows `-N °C` (or `-N–M °C` / `-N℃`). Never invent a
+ * sign. A leading tilde or ≈ is approximate, not a dropped minus — do not
+ * rewrite `~50±10 RPM`. The high end of a range is not signed (`130` in
+ * `15–130 °C`).
  */
 export function overlayLeadingMinuses(base: string, evidence: string): string {
   const signed = parseSignedTemperatures(evidence);
@@ -83,13 +93,27 @@ function overlayOneTemperature(
   quantity: SignedTemperature
 ): string {
   const magnitude = escapeRegExp(quantity.magnitude);
-  const unsigned = new RegExp(
-    `(?<![A-Za-z0-9.${DASH_CHARS}${APPROX_CHARS}])(?:${LEADING_MINUS_CLASS}\\s+)?(${magnitude})(\\s*${TEMPERATURE_UNIT})`,
+  const unsignedPrefix = `(?<![A-Za-z0-9.${DASH_CHARS}${APPROX_CHARS}])(?:${LEADING_MINUS_CLASS}\\s+)?(${magnitude})`;
+  const rangeStart = new RegExp(
+    `${unsignedPrefix}(\\s*${TEMPERATURE_UNIT})?(${RANGE_SEP}\\d)`,
     "gi"
   );
-  return text.replace(unsigned, (_full, mag: string, unitText: string) => {
-    return `-${mag}${unitText}`;
-  });
+  const withRange = text.replace(
+    rangeStart,
+    (_full, mag: string, unitText: string | undefined, rest: string) => {
+      return `-${mag}${unitText ?? ""}${rest}`;
+    }
+  );
+  const standalone = new RegExp(
+    `${unsignedPrefix}(?<!to\\s+)(?<![${DASH_CHARS}]\\s*)(\\s*${TEMPERATURE_UNIT})`,
+    "gi"
+  );
+  return withRange.replace(
+    standalone,
+    (_full, mag: string, unitText: string) => {
+      return `-${mag}${unitText}`;
+    }
+  );
 }
 
 /**
@@ -120,14 +144,15 @@ function previousNonSpace(text: string, index: number): string {
 }
 
 /**
- * A `N unit to M unit` Celsius range whose left bound has no leading minus.
- * Live URS pages drop a drawn minus so the text is `15 °C to 130 °C`. Overlay
- * looks at the page image; it still does not invent a sign.
+ * An unsigned Celsius range whose left bound has no leading minus. Live URS
+ * pages drop a drawn minus so the text is `15 °C to 130 °C`, `15–130 °C`, or
+ * `15℃ to 130℃`. Overlay looks at the page image; it still does not invent
+ * a sign.
  */
 export function unsignedQuantityRangeCount(text: string): number {
   const hay = glueImmediateMinusSigns(text);
   const rangeRe = new RegExp(
-    `(?<![A-Za-z0-9.${DASH_CHARS}])(\\d+(?:\\.\\d+)?)(\\s*${TEMPERATURE_UNIT})?\\s+to\\s+(\\d+(?:\\.\\d+)?)(\\s*${TEMPERATURE_UNIT})?`,
+    `(?<![A-Za-z0-9.${DASH_CHARS}])(\\d+(?:\\.\\d+)?)(\\s*${TEMPERATURE_UNIT})?${RANGE_SEP}(\\d+(?:\\.\\d+)?)(\\s*${TEMPERATURE_UNIT})?`,
     "gi"
   );
   let count = 0;
@@ -143,8 +168,24 @@ export function numericSignLookScore(text: string): number {
   return leftover + unsignedQuantityRangeCount(text);
 }
 
-export function pageNeedsNumericSignLook(text: string): boolean {
+export function pageHadNumericSignLook(visual: string): boolean {
+  return visual.toLowerCase().includes(NUMERIC_SIGN_LOOK_MARK);
+}
+
+export function pageNeedsNumericSignLook(
+  text: string,
+  visual = ""
+): boolean {
+  if (pageHadNumericSignLook(visual)) return false;
   return numericSignLookScore(text) > 0;
+}
+
+export function stampNumericSignLook(visual: string, evidence: string): string {
+  if (pageHadNumericSignLook(visual)) return visual;
+  const detail = evidence.trim() || "none";
+  const line = `${NUMERIC_SIGN_LOOK_MARK} ${detail}`;
+  const base = visual.trim();
+  return base ? `${base}\n${line}` : line;
 }
 
 /**

@@ -474,7 +474,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
-  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
+  batches skip the extract LLM; no thought summaries on extract). Unsigned
+  Celsius ranges reuse ingest's PNG signed-quantity overlay (`overlayPages`)
+  before extract — review Flash-Lite is text-only and cannot see a drawn minus.
+  `read_document_page` runs the same overlay. `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and
@@ -495,6 +498,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 
 - Extract + embed is **Vertex-only** (`runDocumentIngest`). Gateway key is not
   enough. Stub with `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
+- Unsigned Celsius ranges (`15 °C to 130 °C`, `15–130 °C`, `15℃`) get ingest's
+  PNG overlay (`overlayNumericSignsOnPdfPages`). Never send the PDF for that
+  look. Empty looks stamp `numeric-sign-look:` so chat does not call Gemini twice.
 - `markAttachmentReadyForTests` must insert a page **and** a chunk or outline /
   keyword search have nothing to find.
 - `documentSummary` / `pageContext` are model output over untrusted PDFs.

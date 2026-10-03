@@ -972,6 +972,8 @@ describe("extractPdfBatch signed-quantity overlay", () => {
     expect(result.pages[5]?.transcript).toContain("~50+/-10 RPM");
     expect(result.pages[8]?.transcript).toContain("-20 °C to 150 °C");
     expect(result.pages[8]?.transcript).not.toMatch(/(?<![-\d])20 °C to 150 °C/);
+    expect(result.pages[5]?.visualInterpretation).toMatch(/numeric-sign-look:/i);
+    expect(result.pages[8]?.visualInterpretation).toMatch(/numeric-sign-look:/i);
   });
 
   it("keeps ~50+/-10 RPM when the overlay hallucinates −50 RPM", async () => {
@@ -1041,6 +1043,7 @@ describe("extractPdfBatch signed-quantity overlay", () => {
     expect(result.pages[0]?.transcript).toMatch(/15 °C to 130 °C/);
     expect(result.pages[0]?.transcript).not.toContain("-15 °C to 130 °C");
     expect(result.pages[0]?.transcript).toContain("~50+/-10 RPM");
+    expect(result.pages[0]?.visualInterpretation).toMatch(/numeric-sign-look:\s*none/i);
   });
 
   it("records a raster failure and does not invent a minus", async () => {
@@ -1076,6 +1079,9 @@ describe("extractPdfBatch signed-quantity overlay", () => {
     expect(result.pages[0]?.transcript).toMatch(/15 °C to 130 °C/);
     expect(result.pages[0]?.transcript).not.toContain("-15 °C to 130 °C");
     expect(result.pages[0]?.transcript).toContain("~50+/-10 RPM");
+    expect(result.pages[0]?.visualInterpretation ?? "").not.toMatch(
+      /numeric-sign-look:/i
+    );
   });
 
   it("skips Document AI on unsigned-range pages and still sends a PNG", async () => {
