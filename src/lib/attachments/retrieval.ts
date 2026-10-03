@@ -1714,6 +1714,7 @@ export async function listDocumentPagesForReview({
           outlineTitle: documentPages.outlineTitle,
           identifiers: documentPages.identifiers,
           ingestRunId: reportAttachments.activeIngestRunId,
+          visualInterpretation: documentPages.visualInterpretation,
         })
         .from(reportAttachments)
         .innerJoin(documentPages, reportAttachmentPageJoin())
@@ -1741,6 +1742,7 @@ export async function listDocumentPagesForReview({
     ingestRunId: page.ingestRunId,
     outlineTitle: page.outlineTitle ?? null,
     identifiers: page.identifiers ?? [],
+    visualInterpretation: page.visualInterpretation ?? "",
   }));
 }
 

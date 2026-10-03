@@ -280,6 +280,7 @@ import {
   searchReportDocumentsMany,
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
+import { overlayNumericSignsOnReadPage } from "@/lib/attachments/overlay-stored-pages";
 import {
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
@@ -2379,8 +2380,12 @@ export function buildChatTools(opts: {
       execute: async ({ attachmentId, pageNumber }) => {
         const outOfScope = attachmentOutOfScope(attachmentId);
         if (outOfScope) return outOfScope;
-        const page = await readDocumentPage({ reportId, attachmentId, pageNumber });
-        if (!page) return { status: "not_found" as const };
+        const loaded = await readDocumentPage({ reportId, attachmentId, pageNumber });
+        if (!loaded) return { status: "not_found" as const };
+        const page = await overlayNumericSignsOnReadPage({
+          reportId,
+          page: loaded,
+        });
         citationLedger.record(page.filename, page.pageNumber, page.attachmentId, {
           quote: [page.transcript, page.visualInterpretation]
             .filter((part) => part.trim().length > 0)
@@ -2405,11 +2410,17 @@ export function buildChatTools(opts: {
             }
           | undefined;
         if (nextPageNumber != null && nextPageNumber !== page.pageNumber) {
-          const nextPage = await readDocumentPage({
+          const loadedNext = await readDocumentPage({
             reportId,
             attachmentId,
             pageNumber: nextPageNumber,
           });
+          const nextPage = loadedNext
+            ? await overlayNumericSignsOnReadPage({
+                reportId,
+                page: loadedNext,
+              })
+            : null;
           if (nextPage) {
             citationLedger.record(
               nextPage.filename,

@@ -28,6 +28,7 @@ import {
   numericSignLookScore,
   overlayLeadingMinuses,
   pageNeedsNumericSignLook,
+  stampNumericSignLook,
 } from "@/lib/attachments/numeric-signs";
 import { renderPdfPagePng } from "@/lib/attachments/pdf-page-image";
 import {
@@ -54,7 +55,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v13";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v14";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -134,6 +135,13 @@ export type ExtractedPage = {
   confidence: number | null;
   hasTable: boolean | null;
   hasFigure: boolean | null;
+};
+
+/** Transcript + visual fields the signed-quantity overlay mutates. */
+export type NumericSignOverlayPage = {
+  pageNumber: number;
+  transcript: string;
+  visualInterpretation: string;
 };
 
 const UNCLASSIFIED_VISUAL = visualPresenceFlags({ classified: false });
@@ -1288,11 +1296,17 @@ function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
   return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
 }
 
-function pagesNeedingNumericSignLook(pages: ExtractedPage[]): ExtractedPage[] {
-  return pages.filter((page) => pageNeedsNumericSignLook(page.transcript));
+function pagesNeedingNumericSignLook<T extends NumericSignOverlayPage>(
+  pages: T[]
+): T[] {
+  return pages.filter((page) =>
+    pageNeedsNumericSignLook(page.transcript, page.visualInterpretation)
+  );
 }
 
-function selectNumericSignOverlayPages(pages: ExtractedPage[]): ExtractedPage[] {
+function selectNumericSignOverlayPages<T extends NumericSignOverlayPage>(
+  pages: T[]
+): T[] {
   const needed = pagesNeedingNumericSignLook(pages);
   if (needed.length <= MAX_NUMERIC_SIGN_OVERLAY_PAGES) return needed;
   return needed
@@ -1310,10 +1324,54 @@ function selectNumericSignOverlayPages(pages: ExtractedPage[]): ExtractedPage[] 
  * already saw a signed temperature. Parser transcript stays the source of
  * truth — overlay copies a minus onto matching unsigned °C quantities only.
  * A tilde / ≈ is approximate, not a minus. Never invent a sign.
+ *
+ * Chat/review reuse this same look for pages ingest left unsigned. Always
+ * send a PNG, never the PDF (Gemini would reread the unsigned text layer).
+ */
+export async function overlayNumericSignsOnPdfPages(input: {
+  pdfBuffer: Buffer;
+  filename: string;
+  modelId: string;
+  pages: NumericSignOverlayPage[];
+  /** Absolute page number of `pdfBuffer`'s first page. Default 1. */
+  pageStart?: number;
+  model?: LanguageModel;
+}): Promise<{
+  pages: NumericSignOverlayPage[];
+  overlayErrors?: string[];
+}> {
+  const pageStart = input.pageStart ?? 1;
+  const lastPage = input.pages.reduce(
+    (max, page) => Math.max(max, page.pageNumber),
+    pageStart
+  );
+  const model = input.model ?? resolveDocumentExtractModel(input.modelId);
+  const pages = input.pages.map((page) => ({ ...page }));
+  const overlayErrors = await overlayAmbiguousNumericSigns(
+    {
+      pdfBuffer: input.pdfBuffer,
+      filename: input.filename,
+      modelId: input.modelId,
+      pageStart,
+      pageEnd: lastPage,
+      model,
+    },
+    pages
+  );
+  return overlayErrors && overlayErrors.length > 0
+    ? { pages, overlayErrors }
+    : { pages };
+}
+
+/**
+ * Restore a leading Celsius minus when insight visuals or a PNG page look
+ * already saw a signed temperature. Parser transcript stays the source of
+ * truth — overlay copies a minus onto matching unsigned °C quantities only.
+ * A tilde / ≈ is approximate, not a minus. Never invent a sign.
  */
 async function overlayAmbiguousNumericSigns(
   input: ResolvedInput,
-  pages: ExtractedPage[]
+  pages: NumericSignOverlayPage[]
 ): Promise<string[] | undefined> {
   for (const page of pages) {
     page.transcript = overlayLeadingMinuses(
@@ -1335,7 +1393,7 @@ async function overlayAmbiguousNumericSigns(
  */
 async function overlayAmbiguousNumericSignsFromVision(
   input: ResolvedInput,
-  pages: ExtractedPage[]
+  pages: NumericSignOverlayPage[]
 ): Promise<string[] | undefined> {
   const selected = selectNumericSignOverlayPages(pages);
   if (selected.length === 0) return undefined;
@@ -1361,14 +1419,17 @@ async function overlayAmbiguousNumericSignsFromVision(
         pageEnd: page.pageNumber,
         pageImage,
       });
-      if (!evidence) continue;
-      page.transcript = overlayLeadingMinuses(page.transcript, evidence);
-      if (evidence.trim()) {
-        const visual = page.visualInterpretation.trim();
-        page.visualInterpretation = visual
-          ? `${visual}\n${evidence}`
-          : evidence;
+      if (evidence === null) {
+        overlayErrors.push(
+          `page ${page.pageNumber}: overlay returned no structured output`
+        );
+        continue;
       }
+      page.transcript = overlayLeadingMinuses(page.transcript, evidence);
+      page.visualInterpretation = stampNumericSignLook(
+        page.visualInterpretation,
+        evidence
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       overlayErrors.push(`page ${page.pageNumber}: ${message}`);
@@ -1428,11 +1489,10 @@ async function requestSignedQuantityOverlay(
       usage,
     });
     if (!structured) return null;
-    const evidence = structured.data.signedQuantities
+    return structured.data.signedQuantities
       .map((value) => value.trim())
       .filter(Boolean)
       .join("\n");
-    return evidence || null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(
@@ -1526,9 +1586,9 @@ function buildSignedQuantityOverlayPrompt(input: {
 }): string {
   return `Look at this PNG raster of page ${input.pageStart} of ${input.filename}. Read the pixels. Do not use a PDF text layer.
 
-List every visibly signed quantity that is a negative Celsius temperature: a leading minus, hyphen, or short stroke drawn immediately before the number in a table cell (−15 °C, −20 °C). The text layer often drops that stroke.
+List every visibly signed quantity that is a negative Celsius temperature: a leading minus, hyphen, or short stroke drawn immediately before the number in a table cell (−15 °C, −15–130 °C, −15℃, −20 °C). The text layer often drops that stroke.
 
-A leading tilde or ≈ is approximate, not a minus. Do not report ~50 RPM as −50 RPM. A bullet, list dash, or range separator (15–130 °C) is not a sign.
+A leading tilde or ≈ is approximate, not a minus. Do not report ~50 RPM as −50 RPM. A bullet, list dash, or the dash between range ends (15–130 °C) is not a sign. A leading minus before that range is a sign.
 
 Return signed temperature strings only. Empty list when none are visible. Do not invent a minus.
 

@@ -78,6 +78,19 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/attachments/overlay-stored-pages", () => ({
+  overlayNumericSignsOnReviewPages: async ({
+    pages,
+  }: {
+    pages: unknown[];
+  }) => pages,
+  overlayNumericSignsOnReadPage: async ({
+    page,
+  }: {
+    page: unknown;
+  }) => page,
+}));
+
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
 }));

@@ -733,6 +733,7 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
         recovery: extracted.recovery,
         pageCount: extracted.pages.length,
         usage: extracted.usage,
+        overlayErrors: extracted.overlayErrors,
       }
     );
 
