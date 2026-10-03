@@ -2080,6 +2080,29 @@ function protocolSectionHeading(
   return null;
 }
 
+/**
+ * Protocol title / contents sheets list "Section 8" but are not the test.
+ * Body pages keep a dotted heading (13.3.5.1 Jacket Specifications) even
+ * when the running header still says UNCONTROLLED COPY.
+ */
+export function quoteLooksLikeProtocolCoverOrContents(quote: string): boolean {
+  const body = protocolBodyQuote(quote);
+  if (headingStarts(body).length > 0) return false;
+  const sectionLabels = body.match(/\bsection\s+\d+(?:\.\d+)*\b/gi) ?? [];
+  if (sectionLabels.length >= 3) return true;
+  if (/\b(?:table of )?contents\b/i.test(quote) && sectionLabels.length > 0) {
+    return true;
+  }
+  const pageOne = /\bpage\s+1\s+of\s+\d+\b/i.test(quote);
+  const chrome =
+    /\bcapacity\s*\/\s*size\b/i.test(quote) ||
+    /\bequipment\s+name\b/i.test(quote) ||
+    /\buncontrolled\s+copy\b/i.test(quote);
+  if (pageOne && chrome) return true;
+  if (pageOne && !body.trim()) return true;
+  return false;
+}
+
 function matchingProtocolPages(
   ledger: CitationPageLedger,
   key: string,
@@ -2088,6 +2111,7 @@ function matchingProtocolPages(
 ) {
   return ledger.recordedPages().filter((page) => {
     if (!filenameMatchesFamily(page.filename, family)) return false;
+    if (quoteLooksLikeProtocolCoverOrContents(page.quote)) return false;
     if (quoteWindowAroundKey(page.quote, key) != null) return true;
     return protocolTopicBody(page.quote, context) != null;
   });
@@ -2270,6 +2294,186 @@ export function pickRtmReference(
     };
   }
   return null;
+}
+
+function rtmFamilyCellHasAuditLine(text: string): boolean {
+  return / – /.test(text.replace(/\[[^\]]*\]/g, ""));
+}
+
+export function rtmFamilyCellIsPersistable(
+  text: string,
+  family: RtmStageFamily
+): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped) return false;
+  if (isRtmNotFoundMarker(stripped)) return true;
+  if (rtmFamilyCellHasAuditLine(stripped)) return true;
+  return /[A-Za-z]{3,}/.test(stripped) && !rtmCellSectionNumber(stripped, family);
+}
+
+function rtmSectionNumbersAlign(requested: string, picked: string): boolean {
+  const reqParts = requested.split(/\s*[\/&]\s*/).filter(Boolean);
+  const pickParts = picked.split(/\s*[\/&]\s*/).filter(Boolean);
+  return reqParts.some((requestedPart) =>
+    pickParts.some(
+      (pickedPart) =>
+        pickedPart === requestedPart ||
+        pickedPart.startsWith(`${requestedPart}.`) ||
+        requestedPart.startsWith(`${pickedPart}.`)
+    )
+  );
+}
+
+function isNumberOnlyFamilyCell(
+  text: string,
+  family: RtmStageFamily
+): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped || isRtmNotFoundMarker(stripped)) return false;
+  if (rtmFamilyCellHasAuditLine(stripped)) return false;
+  return Boolean(rtmCellSectionNumber(stripped, family));
+}
+
+export type RtmFamilySubmitAccept =
+  | { ok: true; text: string }
+  | { ok: false; reason: "empty" | "number_only" | "topic_mismatch" };
+
+/**
+ * Family-worker submit gate. Number-only (`12.1`, `Section 8`) is not
+ * done — Flash-Lite must keep grepping. An audit line that names none of
+ * this row's Parameters / Purpose tokens is the rupture-disk-on-vacuum
+ * reuse. NA is always accepted. Empty means "did not search" and stays
+ * open.
+ */
+export function rtmFamilySubmitAccepts(input: {
+  text: string;
+  family: RtmStageFamily;
+  parameters?: string;
+  userRequirement?: string;
+}): RtmFamilySubmitAccept {
+  const marker = input.text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!marker) return { ok: false, reason: "empty" };
+  if (isRtmNotFoundMarker(marker)) return { ok: true, text: "NA" };
+  const cleaned = rtmSectionCellText(input.text, { family: input.family });
+  if (!cleaned) return { ok: false, reason: "empty" };
+  if (!rtmFamilyCellIsPersistable(cleaned, input.family)) {
+    return { ok: false, reason: "number_only" };
+  }
+  const context = [input.parameters ?? "", input.userRequirement ?? ""]
+    .filter(Boolean)
+    .join("\n");
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (
+    tokens.length > 0 &&
+    tokens.every((token) => !windowHasToken(cleaned, token))
+  ) {
+    return { ok: false, reason: "topic_mismatch" };
+  }
+  return { ok: true, text: cleaned };
+}
+
+function citedFamilyPagesAreCover(
+  cell: string,
+  family: RtmStageFamily,
+  ledger: CitationPageLedger
+): boolean {
+  const cited = citedLedgerPages(cell, ledger).filter((page) =>
+    filenameMatchesFamily(page.filename, family)
+  );
+  if (cited.length === 0) return false;
+  return cited.every((page) =>
+    quoteLooksLikeProtocolCoverOrContents(page.quote)
+  );
+}
+
+function isLabeledBareSectionCell(text: string): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped || rtmFamilyCellHasAuditLine(stripped)) return false;
+  return /^section\s+\d+/i.test(stripped);
+}
+
+export type ResolveRtmFamilyCellResult =
+  | { action: "keep" }
+  | { action: "clear" }
+  | { action: "replace"; text: string; citation: string };
+
+/**
+ * Family column persist: rewrite cover/contents `Section 8` / `Section 13.2`
+ * and number-only `12.1` onto `{same section number} – {audit line}`
+ * when that number's heading is on the ledger. Do not swap `12.1` onto
+ * a neighbour `12.4` / `13.6`. When pick is null, grounded dotted
+ * numbers (`8.1`, `12.1`) stay; labeled cover `Section N` still clears.
+ * Cells that already have an audit line stay on the existing ground
+ * path. Stock `Section 13` still clears. Empty leftovers are not filled.
+ */
+export function resolveRtmFamilyCell(input: {
+  cell: string;
+  family: RtmStageFamily;
+  key: string;
+  context: string;
+  ledger: CitationPageLedger;
+}): ResolveRtmFamilyCellResult {
+  const trimmed = input.cell.replace(/\s*\[[^\]]*\]\s*/g, " ").trim();
+  if (!trimmed) return { action: "keep" };
+  if (isRtmNotFoundMarker(trimmed)) {
+    return { action: "replace", text: "NA", citation: "" };
+  }
+  if (STOCK_BARE_SECTION_13_RE.test(trimmed)) return { action: "clear" };
+
+  const labeledBare = isLabeledBareSectionCell(trimmed);
+  const coverCite = citedFamilyPagesAreCover(
+    input.cell,
+    input.family,
+    input.ledger
+  );
+  const numberOnly = isNumberOnlyFamilyCell(trimmed, input.family);
+  const persistable = rtmFamilyCellIsPersistable(trimmed, input.family);
+  if (!labeledBare && !coverCite && !numberOnly) return { action: "keep" };
+  const mustHavePick = labeledBare || coverCite;
+  if (!input.key) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+
+  const preferred = rtmCellSectionNumber(trimmed, input.family) || undefined;
+  const pick = pickRtmReference(
+    input.ledger,
+    input.key,
+    input.context,
+    preferred,
+    input.family
+  );
+  if (!pick) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+
+  const citation = `[${pick.filename}, p. ${pick.pageNumber}]`;
+  if (persistable) {
+    return { action: "replace", text: trimmed, citation };
+  }
+
+  const resolved = rtmSectionCellText(trimmed, {
+    family: input.family,
+    sectionHeading: pick.sectionHeading,
+  });
+  const heading = (pick.sectionHeading ?? "").trim();
+  const withLine = [resolved, heading].find((text) =>
+    rtmFamilyCellIsPersistable(text, input.family)
+  );
+  if (!withLine) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+  if (numberOnly && !mustHavePick) {
+    const requested = rtmCellSectionNumber(trimmed, input.family);
+    const picked = rtmCellSectionNumber(withLine, input.family);
+    if (
+      requested &&
+      picked &&
+      !rtmSectionNumbersAlign(requested, picked)
+    ) {
+      return { action: "keep" };
+    }
+  }
+  return { action: "replace", text: withLine, citation };
 }
 
 export function syntheticUnsupportedFact(text: string): HardFact {

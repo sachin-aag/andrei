@@ -23,6 +23,9 @@ import {
   factSupportedForRowKey,
   isQsrRtmOptionalReferenceColumn,
   pickRtmReference,
+  quoteLooksLikeProtocolCoverOrContents,
+  resolveRtmFamilyCell,
+  rtmFamilySubmitAccepts,
   qsrFailClosedReason,
   qsrRtmCellUnsupported,
   qsrTableColumnLabel,
@@ -1296,6 +1299,302 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[1]).toBe("Reactor Capacity");
     expect(keptRow[2]).toContain("8000 L");
     expect(keptRow.slice(3)).toEqual(["", "", "", "", ""]);
+  });
+
+  it("rewrites a cover-page Section 8 cell onto the DQ body heading and page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity. Equipment Name Glass Lined Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "dq-cover",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 1 Section 2 Section 8",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq-body",
+        quote:
+          "12.1 Capacity verified as 8000 L working volume. Result: Verified",
+      },
+    ]);
+    expect(
+      quoteLooksLikeProtocolCoverOrContents(
+        "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 1 Section 2 Section 8"
+      )
+    ).toBe(true);
+    expect(
+      quoteLooksLikeProtocolCoverOrContents(
+        "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220"
+      )
+    ).toBe(false);
+    const resolved = resolveRtmFamilyCell({
+      cell: "Section 8 [Design Qualification.PDF, p. 1]",
+      family: "dq",
+      key: "URS-1",
+      context: "URS-1\nReactor Capacity\n8000 L",
+      ledger,
+    });
+    expect(resolved.action).toBe("replace");
+    if (resolved.action === "replace") {
+      expect(resolved.text).toMatch(/^12\.1 – /);
+      expect(resolved.text).toMatch(/Capacity/i);
+      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 11]");
+    }
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "Section 8 [Design Qualification.PDF, p. 1]",
+            "",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/12\.1 – /);
+    expect(keptRow[3]).toMatch(/Capacity/i);
+    expect(keptRow[3]).not.toMatch(/Section 8/i);
+    expect(keptRow[3]).toMatch(/p\.\s*11|Design Qualification/i);
+    expect(keptRow[3]).not.toMatch(/p\.\s*1\b/);
+  });
+
+  it("rewrites number-only 12.1 onto the same-number DQ audit line", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-35 Vacuum gauge To measure the vacuum produced 0 to 760 mmHg",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 14,
+        attachmentId: "dq-body",
+        quote:
+          "12.1 Vacuum gauge specifications verified. Range 0 to 760 mmHg. Result: Verified",
+      },
+    ]);
+    const resolved = resolveRtmFamilyCell({
+      cell: "12.1 [Design Qualification.PDF, p. 14]",
+      family: "dq",
+      key: "URS-35",
+      context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
+      ledger,
+    });
+    expect(resolved.action).toBe("replace");
+    if (resolved.action === "replace") {
+      expect(resolved.text).toMatch(/^12\.1 – /);
+      expect(resolved.text).toMatch(/Vacuum gauge/i);
+      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 14]");
+    }
+  });
+
+  it("does not swap number-only 12.1 onto a neighbour 12.4 heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-35 Vacuum gauge To measure the vacuum produced 0 to 760 mmHg",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 14,
+        attachmentId: "dq-body",
+        quote:
+          "12.4 Vacuum gauge specifications verified. Range 0 to 760 mmHg. Result: Verified",
+      },
+    ]);
+    expect(
+      resolveRtmFamilyCell({
+        cell: "12.1 [Design Qualification.PDF, p. 14]",
+        family: "dq",
+        key: "URS-35",
+        context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
+        ledger,
+      })
+    ).toEqual({ action: "keep" });
+  });
+
+  it("keeps number-only 12.1 when no topic-matched protocol heading exists", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-2 MOC High-quality Glass Lining and thickness should not be less than 1 mm",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq",
+        quote: "12.1 Material of Construction MOC SA 516 Gr.70 for the shell",
+      },
+    ]);
+    const resolved = resolveRtmFamilyCell({
+      cell: "12.1",
+      family: "dq",
+      key: "URS-2",
+      context:
+        "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm",
+      ledger,
+    });
+    expect(resolved).toEqual({ action: "keep" });
+  });
+
+  it("does not fill an empty leftover family cell from a neighbour heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    expect(
+      resolveRtmFamilyCell({
+        cell: "",
+        family: "iq",
+        key: "URS-5",
+        context: "URS-5\nJacket temperature\n20-25 °C",
+        ledger,
+      })
+    ).toEqual({ action: "keep" });
+  });
+
+  it("rejects number-only and off-topic family submits so the worker stays open", () => {
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "12.1",
+        family: "dq",
+        parameters: "Vacuum gauge",
+        userRequirement: "To measure the vacuum produced",
+      })
+    ).toEqual({ ok: false, reason: "number_only" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "Section 8 [Design Qualification.PDF, p. 1]",
+        family: "dq",
+        parameters: "Vacuum gauge",
+      })
+    ).toEqual({ ok: false, reason: "number_only" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "13.8.5.4 – Rupture disk (ID No: Sr",
+        family: "iq",
+        parameters: "Pressure Gauge",
+        userRequirement: "To measure the pressure produced",
+      })
+    ).toEqual({ ok: false, reason: "topic_mismatch" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "",
+        family: "oq",
+        parameters: "Rota meter",
+      })
+    ).toEqual({ ok: false, reason: "empty" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "12.4 – Vacuum gauge specifications verified",
+        family: "dq",
+        parameters: "Vacuum gauge",
+        userRequirement: "To measure the vacuum produced",
+      })
+    ).toEqual({
+      ok: true,
+      text: "12.4 – Vacuum gauge specifications verified",
+    });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "NA",
+        family: "pq",
+        parameters: "Rota meter",
+      })
+    ).toEqual({ ok: true, text: "NA" });
+  });
+
+  it("clears a family cell when the only protocol page is the cover", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote: "URS-1 Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "dq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 8",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-1",
+        "URS-1\nReactor Capacity\n8000 L",
+        "8",
+        "dq"
+      )
+    ).toBeNull();
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "Section 8 [Design Qualification.PDF, p. 1]",
+            "Section 13.2 [Installation Qualification.PDF, p. 1]",
+            "Section 8.2 [Operational Qualification.PDF, p. 1]",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-1");
+    expect(keptRow.slice(3, 7)).toEqual(["", "", "", ""]);
   });
 
   it("clears Stage on edit_cells when IQ is only the running header", () => {

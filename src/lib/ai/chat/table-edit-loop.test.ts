@@ -167,4 +167,24 @@ describe("tableEditLoopDirective", () => {
       ])
     ).toBe("continue");
   });
+
+  it("treats a successful draft_rtm_table as a landed table edit", () => {
+    expect(
+      tableEditLoopDirective([
+        step(
+          [{ id: "rtm-1", name: "draft_rtm_table" }],
+          [
+            {
+              id: "rtm-1",
+              name: "draft_rtm_table",
+              output: {
+                status: "proposed",
+                missingUrsIds: ["URS-21"],
+              },
+            },
+          ]
+        ),
+      ])
+    ).toBe("continue");
+  });
 });

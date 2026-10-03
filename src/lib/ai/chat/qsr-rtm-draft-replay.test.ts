@@ -9,6 +9,7 @@ import {
   extractReviewFindingsFromPages,
 } from "@/lib/ai/chat/document-review";
 import { buildChatTools } from "@/lib/ai/chat/tools";
+import { rowKeyFromContext } from "@/lib/ai/chat/qsr-row-grounding";
 import { emptyQsrContent, QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import type { QsrSectionKey } from "@/lib/document-types/qsr/sections";
 import type { JSONContent } from "@tiptap/core";
@@ -2339,5 +2340,51 @@ Complies`,
     expect(
       (result as { missingUrsIds?: string[] }).missingUrsIds
     ).toEqual(expect.arrayContaining(["URS-35", "URS-36"]));
+  });
+
+  it("loads draft_rtm_table only when a single RTM table is in scope", () => {
+    expect(buildTools({ section: "qsr_rtm_process" }).draft_rtm_table).toBeDefined();
+    expect(
+      buildChatTools({
+        reportId: REPORT_ID,
+        canEdit: true,
+        actor: ACTOR,
+        documentType: "qualification_summary_report",
+        sectionScope: "all",
+        documentReview: matchingRtmReview(),
+        unsupportedFactPolicy: "block",
+        retrievalPolicy: "adaptive",
+      }).draft_rtm_table
+    ).toBeUndefined();
+  });
+
+  it("draft_rtm_table lands every reviewed process URS ID from a column-major page", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 6);
+    const result = await tools.draft_rtm_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        reasoning: "Draft table 5 from the URS.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    const ids = rows.map((row) => {
+      const raw = String(row[0] ?? "")
+        .replace(/\s*\[[^\]]*\]\s*/g, " ")
+        .trim();
+      return rowKeyFromContext(raw) ?? raw;
+    });
+    expect(ids).toEqual(expect.arrayContaining(["URS-2", "URS-3", "URS-4", "URS-12"]));
+    expect(ids).not.toContain("URS-1");
+    const blob = rows.flat().join(" ");
+    expect(blob).toMatch(/MOC|Glass|8000|Vacuum|3\.5/i);
+    expect(
+      (result as { missingUrsIds?: string[] }).missingUrsIds ?? []
+    ).not.toEqual(expect.arrayContaining(["URS-2", "URS-3", "URS-4", "URS-12"]));
   });
 });

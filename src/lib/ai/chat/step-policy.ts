@@ -22,6 +22,7 @@ import {
   tableEditLoopDirective,
   type ChatStepWithTools,
 } from "@/lib/ai/chat/table-edit-loop";
+import { rtmDraftLoopDirective } from "@/lib/ai/chat/rtm-draft-loop";
 import {
   DOCUMENT_WRITE_TOOL_SET,
   type ChatUserIntentKind,
@@ -80,6 +81,11 @@ export type PrepareReportChatStepInput = {
    * After read_section, the next step must call the write tool.
    */
   explicitDocumentEdit?: boolean;
+  /**
+   * Focused section is one QSR RTM table (Tables 5–10). Force
+   * `draft_rtm_table` on the first write instead of `edit_table`.
+   */
+  inScopeRtmSection?: boolean;
 };
 
 function stepsIncludeTool(
@@ -123,13 +129,56 @@ function explicitDocumentEditStep(
       toolChoice: { type: "tool", toolName: "read_section" },
     };
   }
-  const writeTool = input.inScopeHasTable ? "edit_table" : "propose_edit";
-  if (stepsIncludeTool(input.steps, writeTool) || !toolIsAvailable(input, writeTool)) {
+  const writeTool = input.inScopeRtmSection
+    ? "draft_rtm_table"
+    : input.inScopeHasTable
+      ? "edit_table"
+      : "propose_edit";
+  if (
+    stepsIncludeTool(input.steps, writeTool) ||
+    !toolIsAvailable(input, writeTool)
+  ) {
     return undefined;
   }
   return {
     activeTools: [writeTool],
     toolChoice: { type: "tool", toolName: writeTool },
+  };
+}
+
+/**
+ * Empty / partial RTM table: after read_section, run the dispatcher instead
+ * of letting the orchestrator hand-fill family columns with edit_table.
+ */
+function rtmFirstWriteStep(
+  input: PrepareReportChatStepInput
+): ChatStepDecision | undefined {
+  if (
+    !input.inScopeRtmSection ||
+    input.userIntentKind !== "write" ||
+    !toolIsAvailable(input, "draft_rtm_table")
+  ) {
+    return undefined;
+  }
+  if (input.requireInventoryReview) return undefined;
+  if (
+    input.reviewPhase === "in_progress" ||
+    input.reviewPhase === "ready_to_finish"
+  ) {
+    return undefined;
+  }
+  if (
+    stepsIncludeTool(input.steps, "draft_rtm_table") ||
+    stepsIncludeTool(input.steps, "edit_table")
+  ) {
+    return undefined;
+  }
+  if (input.hasReadSectionTool && !stepsIncludeTool(input.steps, "read_section")) {
+    return undefined;
+  }
+  return {
+    activeTools: ["draft_rtm_table"],
+    toolChoice: { type: "tool", toolName: "draft_rtm_table" },
   };
 }
 
@@ -278,6 +327,16 @@ export function prepareReportChatStep(
     };
   }
 
+  if (
+    rtmDraftLoopDirective(input.steps) === "force" &&
+    toolIsAvailable(input, "draft_rtm_table")
+  ) {
+    return {
+      activeTools: ["draft_rtm_table"],
+      toolChoice: { type: "tool", toolName: "draft_rtm_table" },
+    };
+  }
+
   const alreadyDraftedStep = alreadyDraftedReadStep({
     stepsTaken: input.steps.length,
     alreadyDrafted: input.alreadyDrafted,
@@ -295,6 +354,9 @@ export function prepareReportChatStep(
 
   const deliverEdit = explicitDocumentEditStep(input);
   if (deliverEdit) return deliverEdit;
+
+  const rtmWrite = rtmFirstWriteStep(input);
+  if (rtmWrite) return rtmWrite;
 
   if (
     input.forceListAttachments &&

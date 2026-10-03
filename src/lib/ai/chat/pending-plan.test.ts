@@ -1370,6 +1370,22 @@ describe("plan prompt and metadata", () => {
         finishedCoverageKey: null,
       })
     ).toBe(true);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_references",
+        content: emptyQsrContent("qsr_references"),
+        finishedCoverageKey: null,
+      })
+    ).toBe(true);
+    expect(
+      emptyInventoryNeedsMatchingReview({
+        documentType: "qualification_summary_report",
+        section: "qsr_references",
+        content: emptyQsrContent("qsr_references"),
+        finishedCoverageKey: "att:1:2|obj:qsr_references",
+      })
+    ).toBe(false);
     const extraUrsIds = structuredClone(
       emptyQsrContent("qsr_rtm_process")
     ) as { table: { content?: Array<{ content?: unknown[] }> } };
