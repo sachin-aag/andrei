@@ -54,7 +54,7 @@ ready files are left alone.
 
 | Phase | What | Status |
 | --- | --- | --- |
-| 0 | Retrieval eval harness | **partial** — CI gates the synthetic nine; overlay is a laptop `--report-id` path. That is not proof the 273-page Convergent file is fixed (see [Harness status](#harness-status-phase-0)) |
+| 0 | Retrieval eval harness | **partial** — CI gates the synthetic public set (including live URS −15 °C overlay); private overlay is a laptop `--report-id` path. That is not proof the 273-page Convergent file is fixed (see [Harness status](#harness-status-phase-0)) |
 | 1 | Persist deterministic page metadata | **done** |
 | 2 | Persist outline spans; outline reads prefer stored spans | **done** |
 | 3 | Exact-identifier retrieval, page collapse, skip embed when exact fills `limit` | **done** |
@@ -79,11 +79,11 @@ plumbing:
 
 | Item | Status |
 | --- | --- |
-| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — optional. Public set uses it on the two truncation cases (`equipment-executed-log-negative`, `equipment-page-2-locator`). The LLM judge + `passCriteria` grades the rest; paraphrase is allowed |
+| `mustContain` / `excerptHitAtK` (excerpt, not just filename+page) | **done** — optional. Public set uses it on the two truncation cases (`equipment-executed-log-negative`, `equipment-page-2-locator`) and live ingest overlay (`urs-3-recovered-minus`: text layer is unsigned `15 °C`; Vertex PNG overlay must put `-15` in the excerpt). The LLM judge + `passCriteria` grades the rest; paraphrase is allowed |
 | `mustNotContainAnywhere` / `noFalsePositiveAtK` | **done** |
 | LLM judge + required `passCriteria` | **done** (added after the metric work) |
 | Path-gated Vitest + live `pnpm retrieval-eval -- --from-gcs` in CI | **done** |
-| Synthetic GCS corpus (two born-digital PDFs, nine cases) | **done** — replaced the sample-PDF gold |
+| Synthetic GCS corpus (two born-digital PDFs, public cases) | **done** — replaced the sample-PDF gold. `software-requirements.pdf` page 3 is a URS temperature row whose text layer dropped a printed minus; `--from-gcs` / `--live` ingest must recover `-15` |
 | GitHub OIDC WIF (no JSON SA key); CI download-only (no seed/upload) | **done** |
 | Phase 3.5 product fix (match-centered snippet, best chunk per page, lexical fast path, quote over `visual_interpretation`, locator ranking) | **done** — this was the product tangent that the harness was meant to gate |
 | Six Langfuse-mined cases (`retrieval-cases.local.example.json`) | **done as a template** — copy to gitignored `retrieval-cases.local.json` for a laptop `--report-id` run. Not CI |
@@ -92,7 +92,7 @@ plumbing:
 | CI `--report-id` against a production-shaped report | **dropped** — `--report-id` stays a laptop path |
 | CI run-artifact / Recall@5 trend across PRs | **dropped** — CI already uploads `retrieval-runs/` JSON; a trend series is not leftover for this architecture |
 
-Phase 0 stays **partial** because the synthetic nine is not the 273-page
+Phase 0 stays **partial** because the synthetic public set is not the 273-page
 Convergent file. Run that file with the overlay + `--report-id` on a
 laptop. Do not treat a green CI job as proof that production excerpt
 truncation is gone.
