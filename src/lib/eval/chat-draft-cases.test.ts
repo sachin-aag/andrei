@@ -73,6 +73,10 @@ describe("chat-draft-cases.json", () => {
     expect(ids.has("qsr-table-3-only-still-cover-walk")).toBe(true);
     expect(ids.has("qsr-sop-title-list-keeps-search-open")).toBe(true);
     expect(ids.has("harness-greeting-no-tools")).toBe(true);
+    expect(ids.has("qsr-rtm-pq-1600-ocr-decimal")).toBe(true);
+    expect(ids.has("qsr-rtm-oq-locator-temps")).toBe(true);
+    expect(ids.has("qsr-rtm-oq-overflow-9320")).toBe(true);
+    expect(ids.has("qsr-or-list-index-2.5")).toBe(true);
   });
 
   it("replays every public case against the current gate", () => {

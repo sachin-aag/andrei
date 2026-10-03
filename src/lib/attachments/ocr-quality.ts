@@ -22,7 +22,7 @@ export const REQUIREMENT_ID_RECALL_PAGE = 31;
  * `SYS-FN-037`, silently losing its prefix.
  */
 const REQUIREMENT_ID_RE =
-  /\b[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)*-\d+(?:\.\d+)*\b/g;
+  /\b[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)*-\d+(?:\.\d+)*[a-z]?\b/g;
 
 /** MJ-style document numbers (`PMC/PR/014`, `SOP/DP/QA/014`). Query-time only. */
 const SLASH_DOCUMENT_ID_RE =

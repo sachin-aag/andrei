@@ -190,6 +190,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
     identityFields: QSR_IDENTITY_FIELDS,
     identityLabel: QSR_IDENTITY_LABEL,
     inventorySections: [
+      "qsr_references",
       "qsr_qualification_documents",
       "qsr_rtm_process",
       "qsr_rtm_control",

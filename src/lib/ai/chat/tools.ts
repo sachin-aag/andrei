@@ -66,7 +66,10 @@ import {
   analysisEvidenceForReport,
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
-import type { ChatUserIntentKind } from "@/lib/ai/chat/user-intent";
+import {
+  recentAssistantMessageTexts,
+  type ChatUserIntentKind,
+} from "@/lib/ai/chat/user-intent";
 import {
   detectOverclaims,
   permanenceBounceMessage,
@@ -297,7 +300,7 @@ import {
   DocumentReviewSession,
   documentReviewCoverageKey,
 } from "@/lib/ai/chat/document-review";
-import type { SearchGate } from "@/lib/ai/chat/search-loop";
+import { createSearchGate, type SearchGate } from "@/lib/ai/chat/search-loop";
 import {
   inventoryReadyIdsForObjective,
   isElrInventoryReviewObjective,
@@ -307,9 +310,23 @@ import {
   qsrInventoryReadyIdsForObjective,
 } from "@/lib/ai/chat/review-page-plan";
 import {
+  isQsrRtmSection,
+  missingReviewedUrsIds,
+  missingUrsIdsMessage,
   qsrTableColumnLabel,
+  rtmFamilyColumnsNeedProtocolSearch,
+  rtmFamilySearchOpenMessage,
+  qsrReferenceDroppedMessage,
   shouldKeepRtmProtocolSearchOpen,
+  syntheticUnsupportedFact,
 } from "@/lib/ai/chat/qsr-row-grounding";
+import { runRtmDraft, rtmDraftProposalNote } from "@/lib/ai/chat/rtm-draft";
+import {
+  qsrReferencesOutstandingSearchCategories,
+  qsrReferencesRowsMissingSearchEvidence,
+  qsrReferencesSearchIncompleteMessage,
+  qsrReferencesSearchStillOpenMessage,
+} from "@/lib/ai/chat/qsr-reference-search";
 import {
   tableCellAdjustments,
   tableCellAdjustmentsMessage,
@@ -350,6 +367,7 @@ import {
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import {
+  repairSearchAttachmentIds,
   repairSearchQueries,
   repairTextsFromTableOperation,
   searchUnsupportedFactsRepair,
@@ -452,6 +470,8 @@ export type EditTableResult =
       proposedRowKeys?: string[];
       droppedRowKeys?: string[];
       proposalNote?: string;
+      keepSearchOpen?: true;
+      missingUrsIds?: string[];
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -1416,6 +1436,8 @@ export function buildChatTools(opts: {
    * hand a write turn back to the write tool instead of ending on findings.
    */
   userIntentKind?: ChatUserIntentKind;
+  /** Wall-clock start of this assistant turn — RTM family workers share it. */
+  turnStartedAtMs?: number;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1646,6 +1668,7 @@ export function buildChatTools(opts: {
       }),
       section,
       attachedFilenames: await loadReadyFilenames(),
+      recentAssistantTexts: recentAssistantMessageTexts(messages, 4),
     };
   };
   let evidenceHydrate: Promise<void> | null = null;
@@ -1665,6 +1688,7 @@ export function buildChatTools(opts: {
     blocked: boolean;
     provenanceClaims: number;
     unsourced: number;
+    dropReason?: string;
   }) => {
     if (!actor) return;
     void recordAuditEvent({
@@ -1682,6 +1706,7 @@ export function buildChatTools(opts: {
         provenanceClaims: input.provenanceClaims,
         unsourced: input.unsourced,
         policy: unsupportedFactPolicy,
+        ...(input.dropReason ? { dropReason: input.dropReason } : {}),
       },
     }).catch((err) => {
       console.error("claim provenance audit failed", err);
@@ -1697,11 +1722,26 @@ export function buildChatTools(opts: {
     if (unsupportedFactPolicy !== "block") return emptyRepair;
     const queries = repairSearchQueries(input);
     if (queries.length === 0) return emptyRepair;
+    let readyDocuments: { attachmentId: string; filename: string }[] = [];
+    try {
+      readyDocuments = (await listReadyDocumentsForReport(reportId)).map(
+        (doc) => ({
+          attachmentId: doc.attachmentId,
+          filename: doc.filename,
+        })
+      );
+    } catch (err) {
+      console.error("unsupported-facts repair ready documents failed", err);
+    }
     const hits = await searchUnsupportedFactsRepair({
       reportId,
       queries,
-      attachmentIds:
-        pinnedAttachmentIds.length > 0 ? pinnedAttachmentIds : undefined,
+      attachmentIds: repairSearchAttachmentIds({
+        texts: input.texts,
+        ledger: citationLedger,
+        readyDocuments,
+        pinnedAttachmentIds,
+      }),
     });
     // Seed quotes so re-ground can fill invented facts. Prose leftover
     // <date>/<identifier>/<number> after that pass persist. Table leftovers
@@ -2633,11 +2673,17 @@ export function buildChatTools(opts: {
           // the natural thing to do with one is describe it. That is how a
           // finished draft gets printed into chat instead of the document.
           ...(canEdit && opts.userIntentKind === "write"
-            ? {
-                deliverNow: "draft_field | propose_edit | edit_table",
-                deliverNote:
-                  "The review is finished — this was the last read step of a write turn. Call the write tool NOW: draft_field for an empty field, propose_edit for a filled one, edit_table for a table. Printing the draft in chat does not put it in the document and never ends a write turn.",
-              }
+            ? isQsrRtmSection(sectionScope)
+              ? {
+                  deliverNow: "draft_rtm_table",
+                  deliverNote:
+                    "The review is finished — this was the last read step of a write turn. Call draft_rtm_table NOW to land every reviewed URS ID (then DQ/IQ/OQ/PQ in parallel). Printing the RTM in chat does not put it in the document and never ends a write turn.",
+                }
+              : {
+                  deliverNow: "draft_field | propose_edit | edit_table",
+                  deliverNote:
+                    "The review is finished — this was the last read step of a write turn. Call the write tool NOW: draft_field for an empty field, propose_edit for a filled one, edit_table for a table. Printing the draft in chat does not put it in the document and never ends a write turn.",
+                }
             : {}),
         };
       },
@@ -2864,6 +2910,7 @@ export function buildChatTools(opts: {
               groundedInsert.provenance.claims.length +
               (groundedSecond?.provenance.claims.length ?? 0),
             unsourced: unsupported.length,
+            dropReason: groundedInsert.dropReason ?? groundedSecond?.dropReason,
           });
           return unsupportedFactsToolResult({
             unsupported,
@@ -3972,6 +4019,20 @@ export function buildChatTools(opts: {
           }
         }
         await ensureEvidence();
+        const missingRefSearch = qsrReferencesRowsMissingSearchEvidence({
+          section,
+          operation: parsedOp,
+          ledger: citationLedger,
+        });
+        if (missingRefSearch.length > 0) {
+          return unsupportedFactsToolResult({
+            unsupported: missingRefSearch.map((label) =>
+              syntheticUnsupportedFact(label)
+            ),
+            draftWithPlaceholders: missingRefSearch.join("; "),
+            message: qsrReferencesSearchIncompleteMessage(missingRefSearch),
+          });
+        }
         const originalTableOp = captureTableOperationSnapshots(
           captureDoc,
           parsedOp
@@ -4030,6 +4091,7 @@ export function buildChatTools(opts: {
             blocked: true,
             provenanceClaims: groundedTable.provenance.claims.length,
             unsourced: groundedTable.unsupported.length,
+            dropReason: groundedTable.dropReason,
           });
           return unsupportedFactsToolResult({
             unsupported: groundedTable.unsupported,
@@ -4351,6 +4413,7 @@ export function buildChatTools(opts: {
             blocked: false,
             provenanceClaims: groundedTable.provenance.claims.length,
             unsourced: groundedTable.unsupported.length,
+            dropReason: groundedTable.dropReason,
           });
         }
 
@@ -4373,6 +4436,38 @@ export function buildChatTools(opts: {
           originalTableOp,
           storedOperation
         );
+        const missingUrsIds = missingReviewedUrsIds({
+          operation: storedOperation,
+          ledger: citationLedger,
+          section,
+          fieldDoc,
+        });
+        const familyNeedSearch = rtmFamilyColumnsNeedProtocolSearch({
+          operation: storedOperation,
+          section,
+          attachedFilenames: tableGrounding.attachedFilenames,
+        });
+        const referenceDropped =
+          section === "qsr_references" ? proposal.droppedRowKeys : [];
+        const referencesSearchOpen =
+          section === "qsr_references" &&
+          proposal.proposedCellCount > 0 &&
+          qsrReferencesOutstandingSearchCategories(citationLedger).length > 0;
+        const keepSearchOpen =
+          missingUrsIds.length > 0 ||
+          familyNeedSearch ||
+          referenceDropped.length > 0 ||
+          referencesSearchOpen;
+        const extraNote = `${missingUrsIdsMessage(missingUrsIds)}${
+          familyNeedSearch ? rtmFamilySearchOpenMessage() : ""
+        }${qsrReferenceDroppedMessage(referenceDropped)}${
+          referencesSearchOpen
+            ? qsrReferencesSearchStillOpenMessage(
+                qsrReferencesOutstandingSearchCategories(citationLedger)
+              )
+            : ""
+        }`;
+        const proposalNote = `${tableEditProposalMessage(proposal)}${extraNote}`;
         return proposedWithSupersession(
           {
             status: "proposed" as const,
@@ -4391,13 +4486,15 @@ export function buildChatTools(opts: {
             requestedRowKeys: proposal.requestedRowKeys,
             proposedRowKeys: proposal.proposedRowKeys,
             droppedRowKeys: proposal.droppedRowKeys,
-            proposalNote: tableEditProposalMessage(proposal),
+            proposalNote,
             ...(adjustedCells.length > 0
               ? {
                   adjustedCells,
                   adjustmentNote: tableCellAdjustmentsMessage(adjustedCells),
                 }
               : {}),
+            ...(keepSearchOpen ? { keepSearchOpen: true as const } : {}),
+            ...(missingUrsIds.length > 0 ? { missingUrsIds } : {}),
           },
           supersededSuggestionIds
         );
@@ -4652,6 +4749,7 @@ export function buildChatTools(opts: {
             blocked: true,
             provenanceClaims: groundedDraft.provenance.claims.length,
             unsourced: groundedDraft.unsupported.length,
+            dropReason: groundedDraft.dropReason,
           });
           return unsupportedFactsToolResult({
             unsupported: groundedDraft.unsupported,
@@ -4709,6 +4807,7 @@ export function buildChatTools(opts: {
             blocked: false,
             provenanceClaims: groundedDraft.provenance.claims.length,
             unsourced: groundedDraft.unsupported.length,
+            dropReason: groundedDraft.dropReason,
           });
         }
 
@@ -5144,6 +5243,135 @@ export function buildChatTools(opts: {
           draftFields: plan.draftFields,
           leaveBlankFields: plan.leaveBlankFields,
         };
+      },
+    });
+  }
+
+  if (isQsrRtmSection(sectionScope)) {
+    tools.draft_rtm_table = tool({
+      description: `Fill every reviewed URS ID in this RTM table (Tables 5–10). Lands identity (URS ID / Parameters / User requirements) from reviewed URS pages, then fills Reference – DQ / IQ / OQ / PQ in parallel. One suggestion card. Call this once after read_section / finish_document_review when they asked to draft the table. Do not hand-fill those rows with edit_table. Use edit_table only for a single-cell correction after the table is already filled.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe(
+            "One short sentence explaining the table fill (shown to the engineer). Use the section names they see. Never mention recipe, SAMPLE, omit-if, targetField names, or tool names."
+          ),
+      }),
+      execute: async ({ section, reasoning }, options) => {
+        if (!canEdit) {
+          return {
+            status: "not_editable",
+            message:
+              "This report is not editable in its current state, so table edits cannot be proposed.",
+          };
+        }
+        if (
+          shouldGateInProgressOrComprehensive({ retrievalPolicy, documentReview })
+        ) {
+          return {
+            status: "review_incomplete",
+            message: REVIEW_INCOMPLETE_MESSAGE,
+          };
+        }
+        if (!isQsrRtmSection(section) || !isChatEditableSection(section, documentType)) {
+          return {
+            status: "invalid_section",
+            message: `Unknown RTM section '${section}'.`,
+          };
+        }
+        if (section !== sectionScope) {
+          return {
+            status: "invalid_section",
+            message: `Only section '${sectionScope}' is in scope for this chat.`,
+          };
+        }
+        const loaded = await loadMergedSection(reportId, section);
+        if (!loaded) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+        if (
+          emptyInventoryNeedsMatchingReview({
+            documentType,
+            section,
+            content: loaded.content,
+            finishedCoverageKey: documentReview.finishedCoverageKey(),
+            inventoryFinishSatisfiesDraft:
+              documentReview.inventoryFinishSatisfiesDraft(),
+          })
+        ) {
+          return {
+            status: "review_incomplete",
+            message: REVIEW_INCOMPLETE_MESSAGE,
+          };
+        }
+        const fieldDoc = getRichFieldValue(
+          loaded.content as Record<string, unknown>,
+          "table"
+        );
+        await ensureEvidence();
+        const grounding = await writeGrounding(
+          section,
+          "table",
+          "draft_rtm_table",
+          loaded.content as Record<string, unknown>
+        );
+        const result = await runRtmDraft({
+          reportId,
+          section,
+          ledger: citationLedger,
+          fieldDoc,
+          familyTools: (_family, attachmentIds) => ({
+            search_documents: buildSearchDocumentsTool({
+              reportId,
+              pinnedAttachmentIds: [...attachmentIds],
+              citationRule,
+              citationLedger,
+              searchGate: createSearchGate(),
+              sectionScope: opts.sectionScope,
+              reviewCoverageObjective: opts.reviewCoverageObjective,
+            }),
+            ...(tools.read_document_page
+              ? { read_document_page: tools.read_document_page }
+              : {}),
+            ...(tools.document_outline
+              ? { document_outline: tools.document_outline }
+              : {}),
+          }),
+          persist: async (operation) => {
+            const execute = tools.edit_table?.execute;
+            if (!execute) {
+              return { status: "invalid", message: "edit_table is not loaded." };
+            }
+            return (await execute(
+              {
+                section,
+                targetField: "table",
+                operation,
+                reasoning,
+              },
+              options
+            )) as {
+              status: string;
+              suggestionId?: string;
+              missingUrsIds?: string[];
+              keepSearchOpen?: true;
+              adjustedCells?: unknown[];
+              proposalNote?: string;
+              proposedRowKeys?: string[];
+              message?: string;
+            };
+          },
+          grounding,
+          policy: unsupportedFactPolicy,
+          abortSignal: options.abortSignal,
+          turnStartedAtMs: opts.turnStartedAtMs,
+        });
+        const note = [rtmDraftProposalNote(result), result.proposalNote]
+          .filter((part) => part.trim() !== "")
+          .join(" ");
+        return { ...result, proposalNote: note };
       },
     });
   }

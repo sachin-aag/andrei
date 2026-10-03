@@ -103,7 +103,13 @@ test.describe("authentication", () => {
     await expect(page.getByText(/account is locked/i)).toBeVisible({
       timeout: 15_000,
     });
+    const resetResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/auth-pw/forgot-password") &&
+        response.request().method() === "POST"
+    );
     await page.getByRole("button", { name: /email me a reset link/i }).click();
+    await expect((await resetResponse).ok()).toBeTruthy();
     await expect(page.getByText(/check your email/i)).toBeVisible({
       timeout: 15_000,
     });

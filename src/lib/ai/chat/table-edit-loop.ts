@@ -59,7 +59,9 @@ export function tableEditLoopDirective(
         latestStartReviewStep = stepIndex;
         continue;
       }
-      if (call.toolName !== "edit_table") continue;
+      if (call.toolName !== "edit_table" && call.toolName !== "draft_rtm_table") {
+        continue;
+      }
 
       const result = resultByCallId.get(call.toolCallId);
       const status = outputStatus(result?.output);

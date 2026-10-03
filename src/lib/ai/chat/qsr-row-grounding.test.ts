@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
@@ -22,6 +23,9 @@ import {
   factSupportedForRowKey,
   isQsrRtmOptionalReferenceColumn,
   pickRtmReference,
+  quoteLooksLikeProtocolCoverOrContents,
+  resolveRtmFamilyCell,
+  rtmFamilySubmitAccepts,
   qsrFailClosedReason,
   qsrRtmCellUnsupported,
   qsrTableColumnLabel,
@@ -31,8 +35,20 @@ import {
   rtmReferenceColumnIndexes,
   rtmSectionCellText,
   dropQsrRtmPlaceholderCells,
+  missingReviewedUrsIds,
+  rtmFamilyColumnsNeedProtocolSearch,
+  qsrReferenceDroppedMessage,
   shouldKeepRtmProtocolSearchOpen,
+  ursIdsForRtmSection,
 } from "@/lib/ai/chat/qsr-row-grounding";
+
+const GLR_1301_URS_PAGE_9 = readFileSync(
+  new URL(
+    "../../attachments/fixtures/glr-1301-urs-page-9.transcript.txt",
+    import.meta.url
+  ),
+  "utf8"
+);
 
 /** Synthetic neighbour-window page. Live GLR-1301 URS-37 is −20 °C to 150 °C. */
 const SHARED_URS_PAGE =
@@ -176,6 +192,39 @@ describe("quoteWindowAroundKey column-major URS pages", () => {
         "URS-33"
       )
     ).toBe(true);
+  });
+
+  it("keeps URS-34 lettered subparts as their own windows, not a column-major run", () => {
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34")).toContain(
+      "Desired level of instruments"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34")).toContain(
+      "Temperature Indicator"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34")).not.toContain(
+      "Flowmeter"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34A")).toContain(
+      "For solvent transfer"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34A")).toContain(
+      "Flowmeter"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34A")).not.toContain(
+      "Water pressure jet"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34B")).toContain(
+      "For cleaning"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34B")).toContain(
+      "Water pressure jet"
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-34B")).not.toMatch(
+      /URS-35/i
+    );
+    expect(quoteWindowAroundKey(GLR_1301_URS_PAGE_9, "URS-35")).toContain(
+      "Vacuum gauge"
+    );
   });
 
   it("still rejects a range that sits inside a neighbour URS sentence", () => {
@@ -370,6 +419,27 @@ describe("descriptionSupportedNearKey", () => {
       )
     ).toBe(false);
   });
+
+  it("rejects a family cell whose protocol heading was not retrieved, even when the remainder has measurements", () => {
+    expect(
+      descriptionSupportedNearKey(
+        "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C)",
+        [
+          "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No.",
+        ],
+        "URS-3"
+      )
+    ).toBe(false);
+    expect(
+      descriptionSupportedNearKey(
+        "7.2 – Overflow volume verification 9320 L",
+        [
+          "cable 1200 NA 5 Full volume (L) 8000 6 Over flow volume (L) 9320 Format No.",
+        ],
+        "URS-2"
+      )
+    ).toBe(false);
+  });
 });
 
 describe("protocolBodyQuote", () => {
@@ -399,6 +469,14 @@ describe("protocolBodyQuote", () => {
     expect(body).toContain("jacket");
     expect(body).toContain("temperature");
     expect(body).not.toContain("capacity");
+  });
+
+  it("strips Capacity/Size Effective Date chrome so every IQ page is not a capacity match", () => {
+    const page =
+      "Equipment Number GLR-1301 13.3.5.4. Agitator Motor Specifications Capacity/Size Effective Date 25 of 60 Production Block-2 8000 L 30-04-2026 Make Crompton";
+    const body = protocolBodyQuote(page).toLowerCase();
+    expect(body).toContain("agitator");
+    expect(body).not.toMatch(/\bcapacity\b/);
   });
 });
 
@@ -963,6 +1041,80 @@ describe("row helpers", () => {
 });
 
 describe("groundTableOperation optional RTM columns", () => {
+  it("blocks an OQ family cell whose heading is not on the cited page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 83,
+        attachmentId: "oq",
+        quote:
+          "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No.",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 5,
+            rowKey: "URS-3",
+            insertText:
+              "9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [Operational Qualification.PDF, p. 83]",
+            rowContext: "URS-3\nShell Operating temperature",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(true);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    expect(cells.some((cell) => cell.insertText.includes("9.3.4"))).toBe(false);
+  });
+
+  it("keeps PQ 1600 L from live OCR Qty: 1600.0 L", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "Performance Qualification.PDF",
+        pageNumber: 17,
+        attachmentId: "pq",
+        quote: "8.2.4 Simulation. Qty: 1600.0 L 2. Note: Close the manhole",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 6,
+            rowKey: "URS-10",
+            insertText:
+              "8.2.4 – Simulation trial 1600 L [Performance Qualification.PDF, p. 17]",
+            rowContext: "URS-10\nWorking volume",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]?.insertText
+        : "";
+    expect(cell).toContain("1600 L");
+    expect(cell).toContain("8.2.4");
+  });
+
   it("clears stock Complies instead of blocking the URS copy", () => {
     const ledger = ledgerFromPages([
       {
@@ -1147,6 +1299,302 @@ describe("groundTableOperation optional RTM columns", () => {
     expect(keptRow[1]).toBe("Reactor Capacity");
     expect(keptRow[2]).toContain("8000 L");
     expect(keptRow.slice(3)).toEqual(["", "", "", "", ""]);
+  });
+
+  it("rewrites a cover-page Section 8 cell onto the DQ body heading and page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote:
+          "URS-1 Reactor Capacity. Equipment Name Glass Lined Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "dq-cover",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 1 Section 2 Section 8",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq-body",
+        quote:
+          "12.1 Capacity verified as 8000 L working volume. Result: Verified",
+      },
+    ]);
+    expect(
+      quoteLooksLikeProtocolCoverOrContents(
+        "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 1 Section 2 Section 8"
+      )
+    ).toBe(true);
+    expect(
+      quoteLooksLikeProtocolCoverOrContents(
+        "Glass Lined Reactor Capacity/Size 8000 L IQP/GLR-1301 Page 22 of 60 UNCONTROLLED COPY 13.3.5.1. Jacket Specifications Temperature −28.8/220"
+      )
+    ).toBe(false);
+    const resolved = resolveRtmFamilyCell({
+      cell: "Section 8 [Design Qualification.PDF, p. 1]",
+      family: "dq",
+      key: "URS-1",
+      context: "URS-1\nReactor Capacity\n8000 L",
+      ledger,
+    });
+    expect(resolved.action).toBe("replace");
+    if (resolved.action === "replace") {
+      expect(resolved.text).toMatch(/^12\.1 – /);
+      expect(resolved.text).toMatch(/Capacity/i);
+      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 11]");
+    }
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "Section 8 [Design Qualification.PDF, p. 1]",
+            "",
+            "",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[3]).toMatch(/12\.1 – /);
+    expect(keptRow[3]).toMatch(/Capacity/i);
+    expect(keptRow[3]).not.toMatch(/Section 8/i);
+    expect(keptRow[3]).toMatch(/p\.\s*11|Design Qualification/i);
+    expect(keptRow[3]).not.toMatch(/p\.\s*1\b/);
+  });
+
+  it("rewrites number-only 12.1 onto the same-number DQ audit line", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-35 Vacuum gauge To measure the vacuum produced 0 to 760 mmHg",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 14,
+        attachmentId: "dq-body",
+        quote:
+          "12.1 Vacuum gauge specifications verified. Range 0 to 760 mmHg. Result: Verified",
+      },
+    ]);
+    const resolved = resolveRtmFamilyCell({
+      cell: "12.1 [Design Qualification.PDF, p. 14]",
+      family: "dq",
+      key: "URS-35",
+      context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
+      ledger,
+    });
+    expect(resolved.action).toBe("replace");
+    if (resolved.action === "replace") {
+      expect(resolved.text).toMatch(/^12\.1 – /);
+      expect(resolved.text).toMatch(/Vacuum gauge/i);
+      expect(resolved.citation).toBe("[Design Qualification.PDF, p. 14]");
+    }
+  });
+
+  it("does not swap number-only 12.1 onto a neighbour 12.4 heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 8,
+        attachmentId: "urs",
+        quote: "URS-35 Vacuum gauge To measure the vacuum produced 0 to 760 mmHg",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 14,
+        attachmentId: "dq-body",
+        quote:
+          "12.4 Vacuum gauge specifications verified. Range 0 to 760 mmHg. Result: Verified",
+      },
+    ]);
+    expect(
+      resolveRtmFamilyCell({
+        cell: "12.1 [Design Qualification.PDF, p. 14]",
+        family: "dq",
+        key: "URS-35",
+        context: "URS-35\nVacuum gauge\nTo measure the vacuum produced",
+        ledger,
+      })
+    ).toEqual({ action: "keep" });
+  });
+
+  it("keeps number-only 12.1 when no topic-matched protocol heading exists", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 6,
+        attachmentId: "urs",
+        quote:
+          "URS-2 MOC High-quality Glass Lining and thickness should not be less than 1 mm",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 11,
+        attachmentId: "dq",
+        quote: "12.1 Material of Construction MOC SA 516 Gr.70 for the shell",
+      },
+    ]);
+    const resolved = resolveRtmFamilyCell({
+      cell: "12.1",
+      family: "dq",
+      key: "URS-2",
+      context:
+        "URS-2\nMOC\nHigh-quality Glass Lining and thickness should not be less than 1 mm",
+      ledger,
+    });
+    expect(resolved).toEqual({ action: "keep" });
+  });
+
+  it("does not fill an empty leftover family cell from a neighbour heading", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 4,
+        attachmentId: "urs",
+        quote: SHARED_URS_PAGE,
+      },
+      {
+        filename: "Installation Qualification.PDF",
+        pageNumber: 22,
+        attachmentId: "iq",
+        quote:
+          "13.3.5.1. Jacket Specifications Temperature −28.8/220 Result: Verified",
+      },
+    ]);
+    expect(
+      resolveRtmFamilyCell({
+        cell: "",
+        family: "iq",
+        key: "URS-5",
+        context: "URS-5\nJacket temperature\n20-25 °C",
+        ledger,
+      })
+    ).toEqual({ action: "keep" });
+  });
+
+  it("rejects number-only and off-topic family submits so the worker stays open", () => {
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "12.1",
+        family: "dq",
+        parameters: "Vacuum gauge",
+        userRequirement: "To measure the vacuum produced",
+      })
+    ).toEqual({ ok: false, reason: "number_only" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "Section 8 [Design Qualification.PDF, p. 1]",
+        family: "dq",
+        parameters: "Vacuum gauge",
+      })
+    ).toEqual({ ok: false, reason: "number_only" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "13.8.5.4 – Rupture disk (ID No: Sr",
+        family: "iq",
+        parameters: "Pressure Gauge",
+        userRequirement: "To measure the pressure produced",
+      })
+    ).toEqual({ ok: false, reason: "topic_mismatch" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "",
+        family: "oq",
+        parameters: "Rota meter",
+      })
+    ).toEqual({ ok: false, reason: "empty" });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "12.4 – Vacuum gauge specifications verified",
+        family: "dq",
+        parameters: "Vacuum gauge",
+        userRequirement: "To measure the vacuum produced",
+      })
+    ).toEqual({
+      ok: true,
+      text: "12.4 – Vacuum gauge specifications verified",
+    });
+    expect(
+      rtmFamilySubmitAccepts({
+        text: "NA",
+        family: "pq",
+        parameters: "Rota meter",
+      })
+    ).toEqual({ ok: true, text: "NA" });
+  });
+
+  it("clears a family cell when the only protocol page is the cover", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "urs",
+        quote: "URS-1 Reactor Capacity 8000 L",
+      },
+      {
+        filename: "Design Qualification.PDF",
+        pageNumber: 1,
+        attachmentId: "dq",
+        quote:
+          "Glass Lined Reactor Capacity/Size 8000 L DQP/GLR-1301 Page 1 of 40 UNCONTROLLED COPY Equipment Name Glass Lined Reactor Table of contents Section 8",
+      },
+    ]);
+    expect(
+      pickRtmReference(
+        ledger,
+        "URS-1",
+        "URS-1\nReactor Capacity\n8000 L",
+        "8",
+        "dq"
+      )
+    ).toBeNull();
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "URS-1",
+            "Reactor Capacity",
+            "8000 L",
+            "Section 8 [Design Qualification.PDF, p. 1]",
+            "Section 13.2 [Installation Qualification.PDF, p. 1]",
+            "Section 8.2 [Operational Qualification.PDF, p. 1]",
+            "",
+            "",
+          ],
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_rtm_process" },
+      clearOptionalOnBlock: true,
+    });
+    expect(result.blocked).toBe(false);
+    const keptRow =
+      result.operation.kind === "insert_rows" ? result.operation.rows[0]! : [];
+    expect(keptRow[0]).toContain("URS-1");
+    expect(keptRow.slice(3, 7)).toEqual(["", "", "", ""]);
   });
 
   it("clears Stage on edit_cells when IQ is only the running header", () => {
@@ -3503,7 +3951,7 @@ describe("shouldKeepRtmProtocolSearchOpen", () => {
 
 const OQ_SOP_HEADER_PAGE = [
   "Operational Qualification Glass Lined Reactor",
-  "Document No. OQP/GLR-1301 Effective Date 16-05-2026 Format No. QAD-SOP-FS-003-F02 Page 51 of 85",
+  "SOP Number SOP/PR/OQ/014 Document No. OQP/GLR-1301 Effective Date 16-05-2026 Format No. QAD-SOP-FS-003-F02 Page 51 of 85",
   "Observation: visual inspection completed. Date 19 May 2026",
   "Done By Sign & Date 19-05-2026 Checked By Sign & Date 19-05-2026",
 ].join("\n");
@@ -3594,6 +4042,72 @@ describe("dateSupportedAsLabeledField", () => {
         "Effective Date / Approved date"
       )
     ).toBe(false);
+  });
+
+  it("falls back to the closest date label when the exact header is missing", () => {
+    const quote = [
+      "APPROVAL SHEET",
+      "Approved by Quality Assurance",
+      "Date of Approval 30-06-2025",
+      "Prepared by Signature Date 28-06-2025",
+    ].join("\n");
+    const approved = extractHardFacts("30-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("28-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        signature,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+
+  it("falls back to Approved by when the header says Approved date", () => {
+    const quote = "Approved by QA Head 30-06-2025 Sign & Date 28-06-2025";
+    const approved = extractHardFacts("30-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    const signature = extractHardFacts("28-06-2025").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        approved,
+        "Effective Date / Approved date"
+      )
+    ).toBe(true);
+    expect(
+      dateSupportedAsLabeledField(
+        quote,
+        signature,
+        "Effective Date / Approved date"
+      )
+    ).toBe(false);
+  });
+
+  it("does not treat Sign & Date as closest for an Effective Date column", () => {
+    const fact = extractHardFacts("19-05-2026").find(
+      (row) => row.kind === "date"
+    )!;
+    expect(
+      dateSupportedAsLabeledField(
+        "Done By Sign & Date 19-05-2026",
+        fact,
+        "Effective Date"
+      )
+    ).toBeNull();
   });
 });
 
@@ -3701,5 +4215,278 @@ describe("groundTableOperation QSR SOP Effective Date", () => {
         ? result.operation.cells[0]!.insertText
         : "";
     expect(cell).toContain("SOP/PR/OQ/014");
+  });
+
+  it("backfills an empty Effective Date on a Table 4 insert from the cited header", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        rows: [
+          [
+            "Operational Qualification",
+            "SOP/PR/OQ/014 [Operational Qualification.PDF, p. 51]",
+            "",
+          ],
+        ],
+      },
+      ledger: ledger(),
+      policy: "block",
+      grounding: { section: "qsr_sops" },
+    });
+    expect(result.blocked).toBe(false);
+    const rows =
+      result.operation.kind === "insert_rows" ? result.operation.rows : [];
+    expect(rows[0]?.[2]).toContain("16-05-2026");
+    expect(rows[0]?.[2]).not.toContain("19-05-2026");
+  });
+});
+
+describe("ursIdsForRtmSection heading slice", () => {
+  it("puts URS-34 / 34a / 34b and control IDs in 5.2, GMP IDs in 5.3", () => {
+    const quotes = [GLR_1301_URS_PAGE_9];
+    expect(ursIdsForRtmSection(quotes, "qsr_rtm_control")).toEqual([
+      "URS-34",
+      "URS-34A",
+      "URS-34B",
+      "URS-35",
+      "URS-36",
+      "URS-37",
+      "URS-38",
+    ]);
+    expect(ursIdsForRtmSection(quotes, "qsr_rtm_gmp")).toEqual([
+      "URS-39",
+      "URS-40",
+      "URS-41",
+    ]);
+    expect(ursIdsForRtmSection(quotes, "qsr_rtm_process")).toEqual([]);
+  });
+});
+
+describe("missingReviewedUrsIds", () => {
+  it("names URS-34 subparts skipped on a 5.2 insert", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 9,
+        attachmentId: "att-urs",
+        quote: GLR_1301_URS_PAGE_9,
+      },
+    ]);
+    expect(
+      missingReviewedUrsIds({
+        operation: {
+          kind: "insert_rows",
+          tableIndex: 0,
+          rows: [["URS-35", "Vacuum gauge", "0 to 760 mmHg"]],
+        },
+        ledger,
+        section: "qsr_rtm_control",
+      })
+    ).toEqual([
+      "URS-34",
+      "URS-34A",
+      "URS-34B",
+      "URS-36",
+      "URS-37",
+      "URS-38",
+    ]);
+  });
+});
+
+describe("rtmFamilyColumnsNeedProtocolSearch", () => {
+  it("stays open when a first-pass RTM insert left family columns blank", () => {
+    expect(
+      rtmFamilyColumnsNeedProtocolSearch({
+        operation: {
+          kind: "insert_rows",
+          tableIndex: 0,
+          rows: [["URS-1", "Capacity", "8000 L", "", "", "", "", ""]],
+        },
+        section: "qsr_rtm_process",
+        attachedFilenames: ["Installation Qualification.PDF"],
+      })
+    ).toBe(true);
+  });
+
+  it("closes when any family column on that insert is filled", () => {
+    expect(
+      rtmFamilyColumnsNeedProtocolSearch({
+        operation: {
+          kind: "insert_rows",
+          tableIndex: 0,
+          rows: [
+            ["URS-1", "Capacity", "8000 L", "", "13.3 – Capacity check", "", "", ""],
+          ],
+        },
+        section: "qsr_rtm_process",
+        attachedFilenames: ["Installation Qualification.PDF"],
+      })
+    ).toBe(false);
+  });
+});
+
+describe("groundTableOperation Qual Docs closest date label", () => {
+  it("keeps an approval-sheet date when another file prints a different Effective Date", () => {
+    expect(qsrTableColumnLabel("qsr_qualification_documents", 4)).toBe(
+      "Effective Date / Approved date"
+    );
+    const ledger = ledgerFromPages([
+      {
+        filename: "Operational Qualification.PDF",
+        pageNumber: 51,
+        attachmentId: "att-oq",
+        quote: OQ_SOP_HEADER_PAGE,
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 3,
+        attachmentId: "att-urs",
+        quote: [
+          "APPROVAL SHEET",
+          "Approved by Quality Assurance",
+          "Date of Approval 30-06-2025",
+        ].join("\n"),
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS",
+            rowContext: "URS User Requirement Specification",
+            insertText:
+              "30-06-2025 [User Requirement Specification.PDF, p. 3]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: { section: "qsr_qualification_documents" },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("30-06-2025");
+    expect(cell).not.toContain("<date>");
+  });
+});
+
+describe("qsr references cited page", () => {
+  const iqCover =
+    "INSTALLATION QUALIFICATION Report No. IQR/GLR-1301 Equipment Number GLR-1301 Format. No: QAD-SOP-FS-003-F10-00";
+  const ursCover =
+    "USER REQUIREMENT SPECIFICATION Document Number URS/GLR-1301 Format. No.:-QAD-SOP-FS-003-F03-00";
+  const dqCover =
+    "DESIGN QUALIFICATION Protocol No. DQP/GLR-1301 Report No. DQR/GLR-1301";
+
+  function referencesEdit(
+    cells: { rowKey: string; insertText: string; row: number }[]
+  ) {
+    return groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: cells.map((cell) => ({
+          row: cell.row,
+          col: 1,
+          rowKey: cell.rowKey,
+          insertText: cell.insertText,
+        })),
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 1,
+          attachmentId: "urs",
+          quote: ursCover,
+        },
+        {
+          filename: "Design Qualification.PDF",
+          pageNumber: 1,
+          attachmentId: "dq",
+          quote: dqCover,
+        },
+        {
+          filename: "Installation Qualification.PDF",
+          pageNumber: 1,
+          attachmentId: "iq",
+          quote: iqCover,
+        },
+      ]),
+      policy: "block",
+      grounding: { section: "qsr_references" },
+    });
+  }
+
+  it("keeps numbers printed on the cited cover and drops invented ones", () => {
+    const result = referencesEdit([
+      {
+        row: 1,
+        rowKey: "User Requirement Specification",
+        insertText: "URS/GLR-1301 [User Requirement Specification.PDF, p. 1]",
+      },
+      {
+        row: 3,
+        rowKey: "Design Qualification Report Number",
+        insertText: "DQR/GLR-1301 [Design Qualification.PDF, p. 1]",
+      },
+      {
+        row: 4,
+        rowKey: "Installation Qualification Report Number",
+        insertText: "IQR/GLR-1301 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 2,
+        rowKey: "Design Specification / Data Sheet Document",
+        insertText: "DS/GLR-1301 [User Requirement Specification.PDF, p. 1]",
+      },
+      {
+        row: 5,
+        rowKey: "Purchase Order (P.O)",
+        insertText: "PO/GLR-1301 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 6,
+        rowKey: "Current version of “Validation Master Plan”,",
+        insertText: "VMP-001 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 7,
+        rowKey: "Standard operating procedure for carrying out qualification activity",
+        insertText: "QAD-SOP-FS-003 [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 8,
+        rowKey: "ISPE (International Society for Pharmaceutical Engineering)",
+        insertText: "ISPE Baseline Guide [Installation Qualification.PDF, p. 1]",
+      },
+      {
+        row: 9,
+        rowKey: "IPA (Indian Pharmaceutical Association) for Good Engineering Practices",
+        insertText: "IPA GEP Guide [Installation Qualification.PDF, p. 1]",
+      },
+    ]);
+    expect(result.blocked).toBe(false);
+    const cells =
+      result.operation.kind === "edit_cells" ? result.operation.cells : [];
+    const keys = cells.map((cell) => cell.rowKey);
+    expect(keys).toEqual([
+      "User Requirement Specification",
+      "Design Qualification Report Number",
+      "Installation Qualification Report Number",
+    ]);
+    expect(cells.map((cell) => cell.insertText).join(" ")).not.toMatch(
+      /PO\/GLR-1301|VMP-001|DS\/GLR-1301|ISPE Baseline|IPA GEP|QAD-SOP-FS-003(?!-F)/
+    );
+    expect(qsrReferenceDroppedMessage(["Purchase Order (P.O)"])).toMatch(
+      /not printed on the cited page/
+    );
   });
 });

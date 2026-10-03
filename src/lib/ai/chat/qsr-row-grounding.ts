@@ -1,19 +1,25 @@
 import type { JSONContent } from "@tiptap/core";
 import {
+  citedPagesFromText,
   extractHardFacts,
   type HardFact,
 } from "@/lib/ai/chat/claim-facts";
-import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
+import type {
+  CitationPageLedger,
+  RecordedCitationPage,
+} from "@/lib/ai/chat/citation-grounding";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import {
   glueOcrMinusSigns,
   glueOcrUrsIds,
+  URS_ID_TOKEN_SOURCE,
 } from "@/lib/attachments/numeric-signs";
 import {
   isQsrTableSectionKey,
   QSR_RTM_FAMILY_HEADERS,
   QSR_TABLE_HEADERS,
 } from "@/lib/document-types/qsr/sections";
+import { parseSourceCitation } from "@/lib/placeholders/citation-bracket";
 import {
   isLeftoverPlaceholderCellText,
   dropLeftoverPlaceholderCells,
@@ -22,7 +28,7 @@ import {
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
 
-const URS_ID_RE = /\bURS-\d+\b/gi;
+const URS_ID_RE = new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi");
 
 const DESCRIPTION_STOPWORDS = new Set([
   "also",
@@ -78,7 +84,9 @@ const RTM_SECTION_DETAIL_CELL_RE = new RegExp(
   "i"
 );
 const SECTION_HEADING_STOP_RE =
-  /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|uncontrolled)\b/i;
+  /\b(?:results?|verified|acceptance\s+criteria|design\s+pressure|operating\s+pressure|page\s+\d+|page\s*no|uncontrolled|revision\s*:|sr\.?\s*no)\b/i;
+const HEADING_BOILERPLATE_RE =
+  /^(?:rationale|objective|purpose|scope|responsibility|responsibilities)\b/i;
 const SAME_AS_PROTOCOL_RE = /\bsame as that of\s+(DQ|IQ|OQ|PQ)\b/i;
 const PASS_TOKEN_RE =
   /\b(?:complies|complied|meet(?:s|ing)?|met|pass(?:ed|es)?|satisfactory|accepted|acceptable|verified)\b/i;
@@ -161,7 +169,13 @@ const PROTOCOL_RUNNING_HEADER_RES: readonly RegExp[] = [
   /page\s*no\.?\s*\d{1,3}\s+of\s+\d+/gi,
   // Printed "16 of 51" / "25 of 60" after the Page No. label (not "3 of 5").
   /(?:^|\s)\d{1,3}\s+of\s+\d{2,3}(?=\s|$)/gi,
-  /capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
+  // Running-header Capacity/Size only. Do not strip table row
+  // `5.0 Capacity / Size 8000L` (digit.digit before the label).
+  /(?<!\d\.\d\s)capacity\s*\/\s*size[:\s]*[0-9.,]+\s*l?/gi,
+  /capacity\s*\/\s*size[:\s]*effective\s+date/gi,
+  /equipment\/system[:\s]+[a-z0-9 ]{0,48}/gi,
+  /production\s+block[- ]?\d+/gi,
+  /master copy/gi,
   /\b(?:dqp|iqp|oqp|pqp)\s*\/\s*[a-z0-9-]+/gi,
   /equipment name[:\s]+[a-z0-9 ]{0,48}/gi,
   /equipment id[:\s]+[a-z0-9-]+/gi,
@@ -409,6 +423,25 @@ const COLUMN_LABEL_GAP_MAX = 80;
 /** First date after a matching source label must sit in this span. */
 const LABELED_DATE_WINDOW = 80;
 
+/** Prefix before a date used when the destination label is not on the page. */
+const DATE_LABEL_PREFIX_MAX = 64;
+
+/** Closest source label must clear this to stand in for the destination header. */
+const DATE_LABEL_CLOSEST_MIN = 0.45;
+
+const DATE_LABEL_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "by",
+  "date",
+  "for",
+  "of",
+  "on",
+  "the",
+  "to",
+]);
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -465,11 +498,112 @@ function firstDateInWindow(window: string): HardFact | null {
   );
 }
 
+function normalizeDateLabel(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function dateLabelTokens(value: string): string[] {
+  return normalizeDateLabel(value).split(/\s+/).filter(Boolean);
+}
+
+function stemDateLabelToken(token: string): string {
+  if (token.startsWith("approv")) return "approv";
+  if (token.startsWith("effect")) return "effect";
+  if (token.startsWith("issu")) return "issu";
+  if (token.startsWith("authoriz")) return "author";
+  if (token.startsWith("sign")) return "sign";
+  if (token.startsWith("observ")) return "observ";
+  if (token.startsWith("check")) return "check";
+  if (token.endsWith("ed") && token.length > 4) return token.slice(0, -2);
+  if (token.endsWith("ion") && token.length > 5) return token.slice(0, -3);
+  return token;
+}
+
+function dateLabelContentStems(tokens: readonly string[]): string[] {
+  return tokens
+    .filter((token) => !DATE_LABEL_STOPWORDS.has(token))
+    .map(stemDateLabelToken);
+}
+
+/** Token overlap plus shared content stems (approved ≈ date of approval). */
+export function dateLabelSimilarity(sourceLabel: string, destLabel: string): number {
+  const sourceNorm = normalizeDateLabel(sourceLabel);
+  const destNorm = normalizeDateLabel(destLabel);
+  if (!sourceNorm || !destNorm) return 0;
+  if (sourceNorm === destNorm) return 1;
+  if (sourceNorm.includes(destNorm) || destNorm.includes(sourceNorm)) return 0.92;
+  const sourceTokens = dateLabelTokens(sourceLabel);
+  const destTokens = dateLabelTokens(destLabel);
+  const sourceSet = new Set(sourceTokens);
+  const destSet = new Set(destTokens);
+  let intersection = 0;
+  for (const token of sourceSet) {
+    if (destSet.has(token)) intersection += 1;
+  }
+  const union = new Set([...sourceSet, ...destSet]).size;
+  const jaccard = union === 0 ? 0 : intersection / union;
+  const sourceContent = new Set(dateLabelContentStems(sourceTokens));
+  const destContent = new Set(dateLabelContentStems(destTokens));
+  if (destContent.size === 0) return jaccard;
+  let contentHits = 0;
+  for (const stem of destContent) {
+    if (sourceContent.has(stem)) contentHits += 1;
+  }
+  const contentScore = contentHits / destContent.size;
+  return Math.max(jaccard, contentScore > 0 ? 0.5 + 0.5 * contentScore : 0);
+}
+
+function dateLabelBefore(quote: string, fact: HardFact): string {
+  const start = Math.max(0, fact.start - DATE_LABEL_PREFIX_MAX);
+  let before = quote.slice(start, fact.start);
+  const lastBreak = Math.max(
+    before.lastIndexOf("\n"),
+    before.lastIndexOf(";"),
+    before.lastIndexOf("|")
+  );
+  if (lastBreak >= 0) before = before.slice(lastBreak + 1);
+  before = before.replace(/[\s:.\-–—|/]+$/g, "").trim();
+  before = before
+    .replace(
+      /(?:\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})\s*$/i,
+      ""
+    )
+    .trim();
+  const words = before.split(/\s+/).filter(Boolean);
+  return words.slice(-6).join(" ");
+}
+
+function closestLabeledDate(quote: string, columnLabel: string): HardFact | null {
+  const destLabels = dateColumnLabels(columnLabel);
+  if (destLabels.length === 0 || !quote.trim()) return null;
+  const dates = extractHardFacts(quote).filter((row) => row.kind === "date");
+  let best: { date: HardFact; score: number } | null = null;
+  for (const date of dates) {
+    const label = dateLabelBefore(quote, date);
+    if (!label) continue;
+    const score = Math.max(
+      ...destLabels.map((dest) => dateLabelSimilarity(label, dest))
+    );
+    if (!best || score > best.score) best = { date, score };
+  }
+  if (!best || best.score < DATE_LABEL_CLOSEST_MIN) return null;
+  return best.date;
+}
+
+function labeledDateMatchesFact(labeled: HardFact, fact: HardFact): boolean {
+  return (
+    evidenceContainsFact(labeled.text, fact) ||
+    evidenceContainsFact(fact.text, labeled)
+  );
+}
+
 /**
  * When the page prints the destination column's own label next to a date,
  * only that date supports the cell. Presence of another date on the same
  * page (signature, observation) is not the same field.
- * `null` = no labeled date on the page, so the caller fails open.
+ * If the exact destination label is missing, the closest date label on the
+ * page stands in (Date of Approval ≈ Approved date). `null` = no usable
+ * labeled date, so the caller fails open.
  */
 export function dateSupportedAsLabeledField(
   quote: string,
@@ -480,15 +614,20 @@ export function dateSupportedAsLabeledField(
   const labeledDates = labeledDateWindows(quote, columnLabel)
     .map(firstDateInWindow)
     .filter((row): row is HardFact => row != null);
-  if (labeledDates.length === 0) return null;
-  return labeledDates.some(
-    (labeled) =>
-      evidenceContainsFact(labeled.text, fact) ||
-      evidenceContainsFact(fact.text, labeled)
-  );
+  if (labeledDates.length > 0) {
+    return labeledDates.some((labeled) => labeledDateMatchesFact(labeled, fact));
+  }
+  const closest = closestLabeledDate(quote, columnLabel);
+  if (!closest) return null;
+  return labeledDateMatchesFact(closest, fact);
 }
 
 type UrsSpan = { id: string; at: number };
+
+function ursNumericStem(id: string): string {
+  const match = /^URS-(\d+)/i.exec(id);
+  return match?.[1] ?? id.toUpperCase();
+}
 
 /** Glue OCR-split `URS- 33` / `URS-\n33` so window offsets stay on one string. */
 function ursHaystack(quote: string): string {
@@ -497,10 +636,12 @@ function ursHaystack(quote: string): string {
 
 function ursSpans(quote: string): UrsSpan[] {
   const hay = ursHaystack(quote);
-  return [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => ({
-    id: match[0]!.toUpperCase(),
-    at: match.index ?? 0,
-  }));
+  return [...hay.matchAll(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"))].map(
+    (match) => ({
+      id: match[0]!.toUpperCase(),
+      at: match.index ?? 0,
+    })
+  );
 }
 
 function isColumnLabelGap(gap: string): boolean {
@@ -533,7 +674,10 @@ function columnRuns(quote: string): ColumnRun[] {
       i < spans.length &&
       isColumnLabelGap(
         hay.slice(spans[i - 1]!.at + spans[i - 1]!.id.length, spans[i]!.at)
-      );
+      ) &&
+      // URS-34 / URS-34a / URS-34b are subparts of one requirement, each
+      // with its own text — not a two-column ID list (URS-1, URS-2, URS-3).
+      ursNumericStem(spans[i - 1]!.id) !== ursNumericStem(spans[i]!.id);
     if (continues) continue;
     const runEnd = i - 1;
     if (runEnd - runStart >= 2) {
@@ -592,7 +736,7 @@ export function quoteWindowAroundKey(quote: string, key: string): string | null 
   if (at < 0) return null;
   const needle = key.toUpperCase();
   const after = hay.slice(at + needle.length);
-  const next = after.match(/\bURS-\d+\b/i);
+  const next = after.match(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "i"));
   let end =
     next && next.index != null
       ? at + needle.length + next.index
@@ -658,7 +802,9 @@ export function ursIdsInQuote(quote: string): string[] {
   const hay = ursHaystack(quote);
   return [
     ...new Set(
-      [...hay.matchAll(/\bURS-\d+\b/gi)].map((match) => match[0]!.toUpperCase())
+      [...hay.matchAll(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"))].map(
+        (match) => match[0]!.toUpperCase()
+      )
     ),
   ];
 }
@@ -845,7 +991,7 @@ function protocolTopicTokens(context: string): string[] {
   const withoutMeta = context
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\b[\w.-]+\.(?:pdf|docx?|xlsx?)\b/gi, " ")
-    .replace(/\bURS-\d+\b/gi, " ")
+    .replace(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"), " ")
     .replace(/\b(?:DQ|IQ|OQ|PQ)\b/g, " ")
     .replace(STOCK_COMPLIES_RE, " ")
     .replace(/\bsection\s+\d+(?:\.\d+)*\b/gi, " ");
@@ -867,7 +1013,7 @@ function isRtmReferenceMetaLine(line: string): boolean {
   const stripped = line.replace(/\[[^\]]*\]/g, "").trim();
   if (!stripped) return true;
   if (/^<[^<>]+>$/.test(stripped)) return true;
-  if (/^URS-\d+$/i.test(stripped)) return true;
+  if (new RegExp(`^${URS_ID_TOKEN_SOURCE}$`, "i").test(stripped)) return true;
   if (STAGE_ONLY_RE.test(stripped)) return true;
   if (PASS_WORD_CELL_RE.test(stripped)) return true;
   if (STOCK_BARE_SECTION_13_RE.test(stripped)) return true;
@@ -901,13 +1047,6 @@ function rtmSectionNumber(text: string): string {
     .replace(/^section\s+/i, "")
     .match(/^(\d+(?:\.\d+)*)/);
   return m?.[1] ?? "";
-}
-
-function sameRtmSectionCell(a: string, b: string): boolean {
-  const left = rtmSectionNumber(a);
-  const right = rtmSectionNumber(b);
-  if (left && right) return left === right;
-  return a.trim() === b.trim();
 }
 
 /**
@@ -1046,6 +1185,359 @@ export function shouldKeepRtmProtocolSearchOpen(
   );
 }
 
+function labeledDateFromQuote(
+  quote: string,
+  columnLabel: string
+): HardFact | null {
+  for (const window of labeledDateWindows(quote, columnLabel)) {
+    const date = firstDateInWindow(window);
+    if (date) return date;
+  }
+  return closestLabeledDate(quote, columnLabel);
+}
+
+function citedLedgerPages(
+  text: string,
+  ledger: CitationPageLedger
+): RecordedCitationPage[] {
+  const filenames = ledger.recordedFilenames();
+  const pages: RecordedCitationPage[] = [];
+  const seen = new Set<string>();
+  const re = /\[[^\]]+\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const parsed = parseSourceCitation(match[0], filenames);
+    if (!parsed) continue;
+    const wantFile = parsed.filename.toLowerCase();
+    for (const page of ledger.recordedPages()) {
+      const key = `${page.filename}:${page.pageNumber}`;
+      if (seen.has(key)) continue;
+      if (page.filename.toLowerCase() !== wantFile) continue;
+      if (
+        parsed.pages.length > 0 &&
+        !parsed.pages.includes(page.pageNumber)
+      ) {
+        continue;
+      }
+      seen.add(key);
+      pages.push(page);
+    }
+  }
+  return pages;
+}
+
+function formatCitedDate(date: HardFact, page: RecordedCitationPage): string {
+  const cite = `[${page.filename}, p. ${page.pageNumber}]`;
+  const trimmed = date.text.replace(/\s+/g, " ").trim();
+  if (trimmed.includes(cite)) return trimmed;
+  return `${trimmed} ${cite}`;
+}
+
+function sopEffectiveDateFromPages(
+  pages: readonly RecordedCitationPage[]
+): string {
+  for (const page of pages) {
+    const date = labeledDateFromQuote(page.quote, "Effective Date");
+    if (date) return formatCitedDate(date, page);
+  }
+  return "";
+}
+
+function backfillSopDateCell(
+  rowTexts: readonly string[],
+  dateCol: number,
+  ledger: CitationPageLedger
+): string {
+  const current = (rowTexts[dateCol] ?? "").trim();
+  if (current) return current;
+  const fromCited = sopEffectiveDateFromPages(
+    citedLedgerPages(rowTexts.join("\n"), ledger)
+  );
+  if (fromCited) return fromCited;
+  const labeled = ledger
+    .recordedPages()
+    .filter((page) => labeledDateFromQuote(page.quote, "Effective Date"));
+  if (labeled.length === 1) {
+    return sopEffectiveDateFromPages(labeled);
+  }
+  return "";
+}
+
+/**
+ * Table 4 SOP rows often copy Name / Number from a protocol body and leave
+ * Effective Date empty. Fill it from that cited page's header Effective Date
+ * (not a signature) so the first insert is complete.
+ */
+export function backfillQsrSopEffectiveDates(
+  operation: TableOperation,
+  ledger: CitationPageLedger,
+  section?: string | null
+): TableOperation {
+  if (section !== "qsr_sops") return operation;
+  if (!ledger.hasQuotedPages()) return operation;
+  const dateCol = QSR_TABLE_HEADERS.qsr_sops.indexOf("Effective Date");
+  if (dateCol < 0) return operation;
+  switch (operation.kind) {
+    case "insert_rows":
+      return {
+        ...operation,
+        rows: operation.rows.map((row) => {
+          const next = [...row];
+          const filled = backfillSopDateCell(next, dateCol, ledger);
+          if (filled) next[dateCol] = filled;
+          return next;
+        }),
+      };
+    case "create_table":
+      return {
+        ...operation,
+        rows: (operation.rows ?? []).map((row) => {
+          const next = [...row];
+          const filled = backfillSopDateCell(next, dateCol, ledger);
+          if (filled) next[dateCol] = filled;
+          return next;
+        }),
+      };
+    case "edit_cells": {
+      const groups = new Map<string, string[]>();
+      for (const cell of operation.cells) {
+        const key = editCellsGroupKey(cell);
+        const texts = groups.get(key) ?? [];
+        texts[cell.col] = cell.insertText;
+        groups.set(key, texts);
+      }
+      return {
+        ...operation,
+        cells: operation.cells.map((cell) => {
+          if (cell.col !== dateCol || cell.insertText.trim()) return cell;
+          const filled = backfillSopDateCell(
+            groups.get(editCellsGroupKey(cell)) ?? [],
+            dateCol,
+            ledger
+          );
+          return filled ? { ...cell, insertText: filled } : cell;
+        }),
+      };
+    }
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return operation;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
+function rtmHeadingLocations(
+  quote: string
+): Array<{ at: number; section: QsrRtmSection }> {
+  const hay = ursHaystack(quote).toLowerCase();
+  const found: Array<{ at: number; section: QsrRtmSection; phrase: string }> =
+    [];
+  for (const section of QSR_RTM_SECTIONS) {
+    for (const phrase of rtmHeadingPhrases(section)) {
+      let from = 0;
+      while (from < hay.length) {
+        const at = hay.indexOf(phrase, from);
+        if (at < 0) break;
+        found.push({ at, section, phrase });
+        from = at + phrase.length;
+      }
+    }
+  }
+  found.sort(
+    (left, right) =>
+      left.at - right.at || right.phrase.length - left.phrase.length
+  );
+  const locations: Array<{ at: number; section: QsrRtmSection }> = [];
+  let lastAt = -1;
+  for (const hit of found) {
+    if (hit.at === lastAt) continue;
+    locations.push({ at: hit.at, section: hit.section });
+    lastAt = hit.at;
+  }
+  return locations;
+}
+
+/**
+ * URS IDs on reviewed pages that belong under this RTM table, sliced by the
+ * URS heading (Instrument Requirement and Control Philosophy both land in
+ * 5.2). Lettered subparts stay distinct rows.
+ */
+export function ursIdsForRtmSection(
+  quotes: readonly string[],
+  section: string
+): string[] {
+  if (!isQsrRtmSection(section)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const quote of quotes) {
+    const hay = ursHaystack(quote);
+    const headings = rtmHeadingLocations(hay);
+    for (const id of ursIdsInQuote(hay)) {
+      const at = indexOfUrsId(hay, id);
+      if (at < 0) continue;
+      let assigned: QsrRtmSection | null = null;
+      for (const heading of headings) {
+        if (heading.at <= at) assigned = heading.section;
+      }
+      if (assigned == null && headings.length === 0) {
+        assigned = "qsr_rtm_process";
+      }
+      if (assigned !== section || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+function addOperationUrsIds(
+  operation: TableOperation,
+  present: Set<string>
+): void {
+  const add = (text: string | undefined) => {
+    const key = rowKeyFromContext(text ?? "");
+    if (key) present.add(key);
+  };
+  switch (operation.kind) {
+    case "edit_cells":
+      for (const cell of operation.cells) {
+        add(cell.rowKey);
+        add(cell.insertText);
+        add(cell.rowContext);
+      }
+      break;
+    case "insert_rows":
+    case "create_table":
+      for (const row of operation.rows ?? []) {
+        add(row[0]);
+      }
+      break;
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      break;
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
+/** Reviewed URS IDs for this table that the insert/edit did not include. */
+export function missingReviewedUrsIds(input: {
+  operation: TableOperation;
+  ledger: CitationPageLedger;
+  section?: string | null;
+  fieldDoc?: JSONContent | null;
+}): string[] {
+  if (!isQsrRtmSection(input.section)) return [];
+  const quotes = input.ledger
+    .recordedPages()
+    .filter((page) => isUrsFilename(page.filename))
+    .map((page) => page.quote);
+  if (quotes.length === 0) return [];
+  const expected = ursIdsForRtmSection(quotes, input.section);
+  const present = new Set<string>();
+  for (const key of liveTableRowContextByKey(input.fieldDoc).keys()) {
+    present.add(key);
+  }
+  addOperationUrsIds(input.operation, present);
+  return expected.filter((id) => !present.has(id));
+}
+
+function familyCellFilled(text: string | undefined): boolean {
+  return Boolean((text ?? "").replace(/\[[^\]]*\]/g, "").trim());
+}
+
+function attachedProtocolFilename(
+  filenames: readonly string[] | undefined
+): boolean {
+  return (filenames ?? []).some((name) => {
+    const family = documentFamilyFromFilename(name);
+    return (
+      family != null &&
+      (QSR_RTM_FAMILY_ORDER as readonly string[]).includes(family)
+    );
+  });
+}
+
+/**
+ * First-pass Tables 5–10 often land URS ID / Parameters / User requirements
+ * and leave DQ/IQ/OQ/PQ blank. Keep search open so the same turn fills them.
+ */
+export function rtmFamilyColumnsNeedProtocolSearch(input: {
+  operation: TableOperation;
+  section?: string | null;
+  attachedFilenames?: readonly string[];
+}): boolean {
+  if (!isQsrRtmSection(input.section)) return false;
+  if (!attachedProtocolFilename(input.attachedFilenames)) return false;
+  const cols = rtmReferenceColumnIndexes(input.section);
+  if (!cols) return false;
+  const familyCols = [cols.dq, cols.iq, cols.oq, cols.pq];
+  let hasUrsRow = false;
+  const filled = (texts: readonly string[]) =>
+    familyCols.some((col) => familyCellFilled(texts[col]));
+  switch (input.operation.kind) {
+    case "insert_rows":
+    case "create_table":
+      for (const row of input.operation.rows ?? []) {
+        if (!rowKeyFromContext(row[0] ?? "")) continue;
+        hasUrsRow = true;
+        if (filled(row)) return false;
+      }
+      return hasUrsRow;
+    case "edit_cells": {
+      const byKey = new Map<string, string[]>();
+      for (const cell of input.operation.cells) {
+        const key = editCellsGroupKey(cell);
+        const texts = byKey.get(key) ?? [];
+        texts[cell.col] = cell.insertText;
+        byKey.set(key, texts);
+      }
+      for (const [key, texts] of byKey) {
+        if (!rowKeyFromContext(key) && !rowKeyFromContext(texts[0] ?? "")) {
+          continue;
+        }
+        hasUrsRow = true;
+        if (filled(texts)) return false;
+      }
+      return hasUrsRow;
+    }
+    case "insert_column":
+    case "delete_rows":
+    case "delete_column":
+    case "delete_table":
+      return false;
+    default: {
+      const exhaustive: never = input.operation;
+      return exhaustive;
+    }
+  }
+}
+
+export function missingUrsIdsMessage(ids: readonly string[]): string {
+  if (ids.length === 0) return "";
+  const listed = ids.slice(0, 12).join(", ");
+  const more = ids.length > 12 ? ", …" : "";
+  return ` Reviewed URS pages also list ${listed}${more} — insert those rows too. URS-34a / URS-34b are lettered subparts of URS-34 (Instrument Requirement), not extras to skip; they belong in 5.2 with URS-34.`;
+}
+
+export function rtmFamilySearchOpenMessage(): string {
+  return " Family columns (Reference – DQ / IQ / OQ / PQ) are still empty. Search attached Design / Installation / Operational / Performance Qualification PDFs this turn and fill them — do not leave them for a follow-up.";
+}
+
+export function qsrReferenceDroppedMessage(rowKeys: readonly string[]): string {
+  if (rowKeys.length === 0) return "";
+  return ` ${rowKeys.join(", ")} were not proposed: the reference number is not printed on the cited page. Search for that document name and propose only a number a retrieved page prints. Do not invent PO/GLR-1301, DS/GLR-1301, or VMP-001 from the equipment id, and do not cite a cover that does not print the number.`;
+}
+
 export function stageFamilyFromCell(
   text: string | null | undefined
 ): RtmStageFamily | null {
@@ -1145,7 +1637,7 @@ function protocolMentionsKey(
 }
 
 function headingTitleAfterNumber(rest: string): string {
-  let text = rest;
+  let text = rest.replace(/^[.:;\s–—-]+/, "");
   const same = SAME_AS_PROTOCOL_RE.exec(text);
   if (same && same.index != null) text = text.slice(0, same.index);
   const sentence = text.search(/\.\s+[A-Z]/);
@@ -1432,23 +1924,6 @@ function headingBlockForNumber(
   return formatRtmSectionHeading(number, block);
 }
 
-function headingFromQuotes(
-  quotes: readonly string[],
-  number: string,
-  family?: RtmStageFamily | null
-): string | null {
-  if (!number) return null;
-  for (const quote of quotes) {
-    const heading = headingBlockForNumber(protocolBodyQuote(quote), number);
-    if (!heading) continue;
-    const found = rtmCellSectionNumber(heading, family);
-    if (found === number || rtmSectionNumberParts(heading).includes(number)) {
-      return heading;
-    }
-  }
-  return null;
-}
-
 /**
  * A family column is `{protocol section number} – {one line about the
  * test}`. The number comes from the matched protocol heading when there is
@@ -1498,11 +1973,6 @@ function rtmCellDescription(text: string): string {
   return cleanRtmSectionDescription(rest);
 }
 
-function rtmSectionNumberParts(text: string): string[] {
-  const number = rtmCellSectionNumber(text);
-  return number ? number.split(/\s*[\/&]\s*/).filter(Boolean) : [];
-}
-
 const MULTI_LEVEL_HEADING_RE =
   /(?:^|\s)(\d+(?:\.\d+){2,4})\.?\s+(?=[A-Za-z])/g;
 
@@ -1512,13 +1982,35 @@ const MULTI_LEVEL_HEADING_RE =
  * numbers). Pick the block whose text names this row's topic so Reactor
  * Capacity is not labelled with the first test on the page.
  */
+function headingStarts(stripped: string): { number: string; at: number }[] {
+  const found: { number: string; at: number }[] = [];
+  const push = (number: string, at: number) => {
+    const title = headingTitleAfterNumber(stripped.slice(at + number.length));
+    if (HEADING_BOILERPLATE_RE.test(title)) return;
+    if (found.some((row) => row.at === at)) return;
+    found.push({ number, at });
+  };
+  for (const match of stripped.matchAll(MULTI_LEVEL_HEADING_RE)) {
+    const number = match[1]!;
+    push(number, match.index! + match[0].indexOf(number));
+  }
+  const twoLevel = /(?:^|\s)(\d+\.\d+)(?!\.\d)\.?\s+(?=[A-Z])/g;
+  for (const match of stripped.matchAll(twoLevel)) {
+    const number = match[1]!;
+    push(number, match.index! + match[0].indexOf(number));
+  }
+  return found.toSorted((left, right) => left.at - right.at);
+}
+
 function rowMatchedSectionHeading(stripped: string, context: string): string | null {
-  const starts = [...stripped.matchAll(MULTI_LEVEL_HEADING_RE)].map((m) => ({
-    number: m[1]!,
-    at: m.index! + m[0].indexOf(m[1]!),
-  }));
-  if (starts.length < 2) return null;
+  const starts = headingStarts(stripped);
+  if (starts.length === 0) return null;
   const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (starts.length === 1) {
+    const start = starts[0]!;
+    const block = stripped.slice(start.at + start.number.length);
+    return formatRtmSectionHeading(start.number, block.replace(/^\.?\s+/, ""));
+  }
   if (tokens.length === 0) return null;
   let best: { number: string; block: string; score: number } | null = null;
   for (let index = 0; index < starts.length; index++) {
@@ -1553,7 +2045,8 @@ function protocolSectionHeading(
   if (
     multiTitle?.[1] &&
     multiTitle[2] &&
-    isUsableProtocolSectionNumber(multiTitle[1], multiTitle[2])
+    isUsableProtocolSectionNumber(multiTitle[1], multiTitle[2]) &&
+    !HEADING_BOILERPLATE_RE.test(headingTitleAfterNumber(multiTitle[2]))
   ) {
     return formatRtmSectionHeading(multiTitle[1], multiTitle[2]);
   }
@@ -1587,6 +2080,29 @@ function protocolSectionHeading(
   return null;
 }
 
+/**
+ * Protocol title / contents sheets list "Section 8" but are not the test.
+ * Body pages keep a dotted heading (13.3.5.1 Jacket Specifications) even
+ * when the running header still says UNCONTROLLED COPY.
+ */
+export function quoteLooksLikeProtocolCoverOrContents(quote: string): boolean {
+  const body = protocolBodyQuote(quote);
+  if (headingStarts(body).length > 0) return false;
+  const sectionLabels = body.match(/\bsection\s+\d+(?:\.\d+)*\b/gi) ?? [];
+  if (sectionLabels.length >= 3) return true;
+  if (/\b(?:table of )?contents\b/i.test(quote) && sectionLabels.length > 0) {
+    return true;
+  }
+  const pageOne = /\bpage\s+1\s+of\s+\d+\b/i.test(quote);
+  const chrome =
+    /\bcapacity\s*\/\s*size\b/i.test(quote) ||
+    /\bequipment\s+name\b/i.test(quote) ||
+    /\buncontrolled\s+copy\b/i.test(quote);
+  if (pageOne && chrome) return true;
+  if (pageOne && !body.trim()) return true;
+  return false;
+}
+
 function matchingProtocolPages(
   ledger: CitationPageLedger,
   key: string,
@@ -1595,6 +2111,7 @@ function matchingProtocolPages(
 ) {
   return ledger.recordedPages().filter((page) => {
     if (!filenameMatchesFamily(page.filename, family)) return false;
+    if (quoteLooksLikeProtocolCoverOrContents(page.quote)) return false;
     if (quoteWindowAroundKey(page.quote, key) != null) return true;
     return protocolTopicBody(page.quote, context) != null;
   });
@@ -1676,7 +2193,12 @@ function citePageForSectionHeading(
     const home = pages.find(
       (page) => number && headingNumberOnPage(page.quote, number)
     );
-    if (home) return { page: home, heading: passHeading };
+    if (home) {
+      const heading =
+        headingBlockForNumber(protocolBodyQuote(home.quote), number) ??
+        passHeading;
+      return { page: home, heading };
+    }
   }
   for (const page of pages) {
     const heading = sectionHeadingFromQuote(
@@ -1691,7 +2213,23 @@ function citePageForSectionHeading(
       return { page, heading };
     }
   }
-  return { page: passPage, heading: passHeading };
+  const passNumber = passHeading
+    ? rtmCellSectionNumber(passHeading, family)
+    : "";
+  return {
+    page: passPage,
+    heading:
+      passNumber && headingNumberOnPage(passPage.quote, passNumber)
+        ? passHeading
+        : null,
+  };
+}
+
+function protocolPageTopicScore(quote: string, context: string): number {
+  const body = protocolBodyQuote(quote);
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (!body || tokens.length === 0) return 0;
+  return tokens.filter((token) => windowHasToken(body, token)).length;
 }
 
 function firstSectionNumberLine(text: string): string {
@@ -1721,13 +2259,18 @@ export function pickRtmReference(
   for (const family of families) {
     const pages = matchingProtocolPages(ledger, key, family, context);
     if (pages.length === 0) continue;
-    const passPage =
-      pages.find((page) => {
-        const window = pageLevelTokenAroundKey(page.quote, key);
-        if (window && hasProtocolPassToken(window)) return true;
-        const topic = protocolTopicBody(page.quote, context);
-        return topic != null && hasProtocolPassToken(topic);
-      }) ?? pages[0]!;
+    const passing = pages.filter((page) => {
+      const window = pageLevelTokenAroundKey(page.quote, key);
+      if (window && hasProtocolPassToken(window)) return true;
+      const topic = protocolTopicBody(page.quote, context);
+      return topic != null && hasProtocolPassToken(topic);
+    });
+    const ranked = (passing.length > 0 ? passing : pages).toSorted(
+      (left, right) =>
+        protocolPageTopicScore(right.quote, context) -
+        protocolPageTopicScore(left.quote, context)
+    );
+    const passPage = ranked[0] ?? pages[0]!;
     const cited = citePageForSectionHeading(
       pages,
       passPage,
@@ -1751,6 +2294,186 @@ export function pickRtmReference(
     };
   }
   return null;
+}
+
+function rtmFamilyCellHasAuditLine(text: string): boolean {
+  return / – /.test(text.replace(/\[[^\]]*\]/g, ""));
+}
+
+export function rtmFamilyCellIsPersistable(
+  text: string,
+  family: RtmStageFamily
+): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped) return false;
+  if (isRtmNotFoundMarker(stripped)) return true;
+  if (rtmFamilyCellHasAuditLine(stripped)) return true;
+  return /[A-Za-z]{3,}/.test(stripped) && !rtmCellSectionNumber(stripped, family);
+}
+
+function rtmSectionNumbersAlign(requested: string, picked: string): boolean {
+  const reqParts = requested.split(/\s*[\/&]\s*/).filter(Boolean);
+  const pickParts = picked.split(/\s*[\/&]\s*/).filter(Boolean);
+  return reqParts.some((requestedPart) =>
+    pickParts.some(
+      (pickedPart) =>
+        pickedPart === requestedPart ||
+        pickedPart.startsWith(`${requestedPart}.`) ||
+        requestedPart.startsWith(`${pickedPart}.`)
+    )
+  );
+}
+
+function isNumberOnlyFamilyCell(
+  text: string,
+  family: RtmStageFamily
+): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped || isRtmNotFoundMarker(stripped)) return false;
+  if (rtmFamilyCellHasAuditLine(stripped)) return false;
+  return Boolean(rtmCellSectionNumber(stripped, family));
+}
+
+export type RtmFamilySubmitAccept =
+  | { ok: true; text: string }
+  | { ok: false; reason: "empty" | "number_only" | "topic_mismatch" };
+
+/**
+ * Family-worker submit gate. Number-only (`12.1`, `Section 8`) is not
+ * done — Flash-Lite must keep grepping. An audit line that names none of
+ * this row's Parameters / Purpose tokens is the rupture-disk-on-vacuum
+ * reuse. NA is always accepted. Empty means "did not search" and stays
+ * open.
+ */
+export function rtmFamilySubmitAccepts(input: {
+  text: string;
+  family: RtmStageFamily;
+  parameters?: string;
+  userRequirement?: string;
+}): RtmFamilySubmitAccept {
+  const marker = input.text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!marker) return { ok: false, reason: "empty" };
+  if (isRtmNotFoundMarker(marker)) return { ok: true, text: "NA" };
+  const cleaned = rtmSectionCellText(input.text, { family: input.family });
+  if (!cleaned) return { ok: false, reason: "empty" };
+  if (!rtmFamilyCellIsPersistable(cleaned, input.family)) {
+    return { ok: false, reason: "number_only" };
+  }
+  const context = [input.parameters ?? "", input.userRequirement ?? ""]
+    .filter(Boolean)
+    .join("\n");
+  const tokens = protocolTopicTokens(protocolTopicSource(context));
+  if (
+    tokens.length > 0 &&
+    tokens.every((token) => !windowHasToken(cleaned, token))
+  ) {
+    return { ok: false, reason: "topic_mismatch" };
+  }
+  return { ok: true, text: cleaned };
+}
+
+function citedFamilyPagesAreCover(
+  cell: string,
+  family: RtmStageFamily,
+  ledger: CitationPageLedger
+): boolean {
+  const cited = citedLedgerPages(cell, ledger).filter((page) =>
+    filenameMatchesFamily(page.filename, family)
+  );
+  if (cited.length === 0) return false;
+  return cited.every((page) =>
+    quoteLooksLikeProtocolCoverOrContents(page.quote)
+  );
+}
+
+function isLabeledBareSectionCell(text: string): boolean {
+  const stripped = text.replace(/\[[^\]]*\]/g, "").trim();
+  if (!stripped || rtmFamilyCellHasAuditLine(stripped)) return false;
+  return /^section\s+\d+/i.test(stripped);
+}
+
+export type ResolveRtmFamilyCellResult =
+  | { action: "keep" }
+  | { action: "clear" }
+  | { action: "replace"; text: string; citation: string };
+
+/**
+ * Family column persist: rewrite cover/contents `Section 8` / `Section 13.2`
+ * and number-only `12.1` onto `{same section number} – {audit line}`
+ * when that number's heading is on the ledger. Do not swap `12.1` onto
+ * a neighbour `12.4` / `13.6`. When pick is null, grounded dotted
+ * numbers (`8.1`, `12.1`) stay; labeled cover `Section N` still clears.
+ * Cells that already have an audit line stay on the existing ground
+ * path. Stock `Section 13` still clears. Empty leftovers are not filled.
+ */
+export function resolveRtmFamilyCell(input: {
+  cell: string;
+  family: RtmStageFamily;
+  key: string;
+  context: string;
+  ledger: CitationPageLedger;
+}): ResolveRtmFamilyCellResult {
+  const trimmed = input.cell.replace(/\s*\[[^\]]*\]\s*/g, " ").trim();
+  if (!trimmed) return { action: "keep" };
+  if (isRtmNotFoundMarker(trimmed)) {
+    return { action: "replace", text: "NA", citation: "" };
+  }
+  if (STOCK_BARE_SECTION_13_RE.test(trimmed)) return { action: "clear" };
+
+  const labeledBare = isLabeledBareSectionCell(trimmed);
+  const coverCite = citedFamilyPagesAreCover(
+    input.cell,
+    input.family,
+    input.ledger
+  );
+  const numberOnly = isNumberOnlyFamilyCell(trimmed, input.family);
+  const persistable = rtmFamilyCellIsPersistable(trimmed, input.family);
+  if (!labeledBare && !coverCite && !numberOnly) return { action: "keep" };
+  const mustHavePick = labeledBare || coverCite;
+  if (!input.key) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+
+  const preferred = rtmCellSectionNumber(trimmed, input.family) || undefined;
+  const pick = pickRtmReference(
+    input.ledger,
+    input.key,
+    input.context,
+    preferred,
+    input.family
+  );
+  if (!pick) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+
+  const citation = `[${pick.filename}, p. ${pick.pageNumber}]`;
+  if (persistable) {
+    return { action: "replace", text: trimmed, citation };
+  }
+
+  const resolved = rtmSectionCellText(trimmed, {
+    family: input.family,
+    sectionHeading: pick.sectionHeading,
+  });
+  const heading = (pick.sectionHeading ?? "").trim();
+  const withLine = [resolved, heading].find((text) =>
+    rtmFamilyCellIsPersistable(text, input.family)
+  );
+  if (!withLine) {
+    return mustHavePick ? { action: "clear" } : { action: "keep" };
+  }
+  if (numberOnly && !mustHavePick) {
+    const requested = rtmCellSectionNumber(trimmed, input.family);
+    const picked = rtmCellSectionNumber(withLine, input.family);
+    if (
+      requested &&
+      picked &&
+      !rtmSectionNumbersAlign(requested, picked)
+    ) {
+      return { action: "keep" };
+    }
+  }
+  return { action: "replace", text: withLine, citation };
 }
 
 export function syntheticUnsupportedFact(text: string): HardFact {
@@ -1903,6 +2626,46 @@ function unsignedQuantityWhenEvidenceIsNegative(
     return syntheticUnsupportedFact(cell);
   }
   return null;
+}
+
+/**
+ * A References number has to be printed on the page the cell cites.
+ * `PO/GLR-1301` and `VMP-001` on an IQ cover that only prints `IQR/GLR-1301`
+ * do not land. A format footer (`QAD-SOP-FS-003-F10-00`) does not satisfy
+ * the shorter `QAD-SOP-FS-003`.
+ */
+export function qsrReferenceValueOnCitedPage(
+  cell: string,
+  ledger: CitationPageLedger
+): boolean {
+  const body = cell.replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
+  if (!body) return true;
+  const cited = citedPagesFromText(cell);
+  const recorded = ledger.recordedPages().filter((page) => page.quote.trim());
+  const candidates =
+    cited.length > 0
+      ? recorded.filter((page) =>
+          cited.some(
+            (cite) =>
+              page.filename.trim().toLowerCase() ===
+                cite.filename.trim().toLowerCase() &&
+              page.pageNumber === cite.page
+          )
+        )
+      : recorded;
+  if (candidates.length === 0) return false;
+  return candidates.some((page) => referenceBodyOnQuote(body, page.quote));
+}
+
+function referenceBodyOnQuote(body: string, quote: string): boolean {
+  const needle = body.replace(/\s+/g, " ").trim();
+  if (!needle) return true;
+  const hay = quote.replace(/\s+/g, " ");
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?:^|[^A-Za-z0-9/])${escaped}(?![A-Za-z0-9/-])`,
+    "i"
+  ).test(hay);
 }
 
 export function qsrRevisionUnsupported(
@@ -2080,13 +2843,15 @@ export function rtmHeadingPhrases(
 ): readonly string[] {
   switch (section) {
     case "qsr_rtm_process":
-      return ["process requirements", "user requirement"];
+      // Do not use bare "user requirement" — that is the URS title and the
+      // "User requirements" column header, which would steal 5.2 IDs.
+      return ["process requirements", "process requirement", "operation requirement"];
     case "qsr_rtm_control":
-      return ["control philosophy"];
+      return ["control philosophy", "instrument requirement"];
     case "qsr_rtm_gmp":
-      return ["gmp requirements"];
+      return ["gmp requirements", "gmp requirement"];
     case "qsr_rtm_safety":
-      return ["safety requirements"];
+      return ["safety requirements", "safety requirement"];
     case "qsr_rtm_csv":
       return ["computer system validation", "scada"];
     case "qsr_rtm_maintenance":

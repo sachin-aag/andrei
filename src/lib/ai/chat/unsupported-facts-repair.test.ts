@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CitationPageLedger } from "./citation-grounding";
 import {
+  repairSearchAttachmentIds,
   repairSearchQueries,
   repairTextsFromTableOperation,
   searchUnsupportedFactsRepair,
@@ -14,6 +15,63 @@ vi.mock("@/lib/attachments/retrieval", () => ({
 }));
 
 import { searchReportDocumentsMany } from "@/lib/attachments/retrieval";
+
+describe("repairSearchAttachmentIds", () => {
+  it("pins repair to cited protocol files instead of the whole report", () => {
+    const ledger = new CitationPageLedger();
+    ledger.record("Operational Qualification.PDF", 83, "att_oq", {
+      quote: "Minimum Temperature GLR-1301 -7.4c",
+    });
+    ledger.record("Installation Qualification.PDF", 1, "att_iq", {
+      quote: "Capacity/Size 8000 L",
+    });
+    expect(
+      repairSearchAttachmentIds({
+        texts: [
+          "9.3.4 – Operating range [Operational Qualification.PDF, p. 83]",
+        ],
+        ledger,
+        readyDocuments: [
+          {
+            attachmentId: "att_oq",
+            filename: "Operational Qualification.PDF",
+          },
+          {
+            attachmentId: "att_iq",
+            filename: "Installation Qualification.PDF",
+          },
+        ],
+      })
+    ).toEqual(["att_oq"]);
+  });
+
+  it("keeps pinned ids when the draft cited no files", () => {
+    const ledger = new CitationPageLedger();
+    expect(
+      repairSearchAttachmentIds({
+        texts: ["Fill leftover <number>"],
+        ledger,
+        readyDocuments: [
+          { attachmentId: "att_iq", filename: "Installation Qualification.PDF" },
+        ],
+        pinnedAttachmentIds: ["att_iq"],
+      })
+    ).toEqual(["att_iq"]);
+  });
+
+  it("searches the whole report when nothing is cited or pinned", () => {
+    const ledger = new CitationPageLedger();
+    expect(
+      repairSearchAttachmentIds({
+        texts: ["Fill leftover <number>"],
+        ledger,
+        readyDocuments: [
+          { attachmentId: "att_iq", filename: "Installation Qualification.PDF" },
+        ],
+      })
+    ).toBeUndefined();
+  });
+});
 
 describe("repairSearchQueries", () => {
   it("uses unsourced fact text so a blocked ID can be grepped", () => {
