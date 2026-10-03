@@ -40,6 +40,7 @@ export type ChatDraftGroundDraftCase = {
     attachedFilenames?: string[];
     pages: ChatDraftPage[];
     policy?: "block" | "flag";
+    tableCol?: number;
   };
   expected: {
     blocked: boolean;
@@ -281,6 +282,13 @@ function parseCase(value: unknown, index: number): ChatDraftEvalCase {
     if (policy !== undefined && policy !== "block" && policy !== "flag") {
       throw new Error(`${id}: input.policy must be block or flag`);
     }
+    const tableCol = value.input.tableCol;
+    if (
+      tableCol !== undefined &&
+      (typeof tableCol !== "number" || !Number.isInteger(tableCol) || tableCol < 0)
+    ) {
+      throw new Error(`${id}: input.tableCol must be a non-negative integer`);
+    }
     return {
       id,
       task,
@@ -294,6 +302,7 @@ function parseCase(value: unknown, index: number): ChatDraftEvalCase {
         attachedFilenames: attached,
         pages: parsePages(value.input.pages, id),
         policy,
+        tableCol,
       },
       expected: {
         blocked: value.expected.blocked,
@@ -500,6 +509,7 @@ export function runChatDraftCase(entry: ChatDraftEvalCase): ChatDraftCaseOutput 
         grounding: {
           section: entry.input.section,
           attachedFilenames: entry.input.attachedFilenames,
+          tableCol: entry.input.tableCol,
         },
       });
       return {

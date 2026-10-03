@@ -84,6 +84,7 @@ export function selectReviewPages<T extends { attachmentId: string }>(
 /** QSR-specific RTM headings. Do not use bare "user requirement" — that is every URS. */
 const QSR_RTM_OBJECTIVE_PHRASES = [
   "control philosophy",
+  "instrument requirement",
   "process requirements",
   "gmp requirements",
   "safety requirements",
@@ -139,7 +140,9 @@ function addQualDocIdentity(normalized: string, found: Set<string>): void {
 function addSopIdentity(normalized: string, found: Set<string>): void {
   if (
     normalized === "qsr_sops" ||
-    normalized.includes("qsr_sops")
+    normalized.includes("qsr_sops") ||
+    normalized.includes("standard operating procedure") ||
+    normalized.includes("standard operation procedure")
   ) {
     found.add("qsr_sops");
   }

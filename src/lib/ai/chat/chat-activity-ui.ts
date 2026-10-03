@@ -65,6 +65,7 @@ const DOCUMENT_ACTIVITY_TOOLS = new Set([
 const EDIT_TOOLS = new Set([
   "propose_edit",
   "edit_table",
+  "draft_rtm_table",
   "draft_field",
   "insert_image",
   "remove_image",

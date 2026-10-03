@@ -56,6 +56,17 @@ describe("glueOcrUrsIds", () => {
       "URS-1 Reactor Capacity URS-13 Jacket Type"
     );
   });
+
+  it("glues a lettered URS-34 subpart", () => {
+    expect(glueOcrUrsIds("URS-34 a For solvent transfer")).toBe(
+      "URS-34a For solvent transfer"
+    );
+    expect(glueOcrUrsIds("URS-34 b\nFor cleaning")).toBe(
+      "URS-34b\nFor cleaning"
+    );
+    expect(glueOcrUrsIds(GLR_1301_URS_PAGE_9)).toMatch(/URS-34a/);
+    expect(glueOcrUrsIds(GLR_1301_URS_PAGE_9)).toMatch(/URS-34b/);
+  });
 });
 
 describe("overlayLeadingMinuses", () => {

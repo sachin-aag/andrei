@@ -1,4 +1,4 @@
-import type { HardFact } from "@/lib/ai/chat/claim-facts";
+import { citedPagesFromText, type HardFact } from "@/lib/ai/chat/claim-facts";
 import type { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { UNSUPPORTED_FACTS_RETRY_MESSAGE } from "@/lib/ai/chat/ground-draft";
 import { stripPlaceholderLabel } from "@/lib/ai/chat/placeholder-fill";
@@ -82,6 +82,69 @@ export function repairTextsFromTableOperation(
       return exhaustive;
     }
   }
+}
+
+function filenamesMatch(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+/**
+ * Pin a blocked-write repair grep to the files the draft cited. Searching the
+ * whole report (or every @-tagged file) lets an IQ cover magnet steal a
+ * protocol-family lookup. Cited filenames that resolve win; otherwise keep
+ * the current pinned / whole-report behavior.
+ */
+export function repairSearchAttachmentIds(input: {
+  texts: readonly string[];
+  ledger: CitationPageLedger;
+  readyDocuments: readonly { attachmentId: string; filename: string }[];
+  pinnedAttachmentIds?: readonly string[];
+}): string[] | undefined {
+  const citedNames = new Set<string>();
+  for (const text of input.texts) {
+    for (const cite of citedPagesFromText(text)) {
+      const name = cite.filename.trim().toLowerCase();
+      if (name) citedNames.add(name);
+    }
+  }
+  const pinned = (input.pinnedAttachmentIds ?? []).filter((id) => id.trim());
+  if (citedNames.size === 0) {
+    return pinned.length > 0 ? pinned : undefined;
+  }
+
+  const byFilename = new Map<string, string>();
+  for (const page of input.ledger.recordedPages()) {
+    const key = page.filename.trim().toLowerCase();
+    if (page.id) byFilename.set(key, page.id);
+  }
+  for (const doc of input.readyDocuments) {
+    const key = doc.filename.trim().toLowerCase();
+    if (!byFilename.has(key) && doc.attachmentId) {
+      byFilename.set(key, doc.attachmentId);
+    }
+  }
+
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  for (const name of citedNames) {
+    let id = byFilename.get(name);
+    if (!id) {
+      const match = input.readyDocuments.find((doc) =>
+        filenamesMatch(doc.filename, name)
+      );
+      id = match?.attachmentId;
+    }
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    resolved.push(id);
+  }
+  if (resolved.length === 0) {
+    return pinned.length > 0 ? pinned : undefined;
+  }
+  if (pinned.length === 0) return resolved;
+  const pinnedSet = new Set(pinned);
+  const intersected = resolved.filter((id) => pinnedSet.has(id));
+  return intersected.length > 0 ? intersected : resolved;
 }
 
 export async function searchUnsupportedFactsRepair(input: {
