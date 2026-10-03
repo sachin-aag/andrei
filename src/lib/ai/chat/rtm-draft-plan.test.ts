@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import { QSR_RTM_HEADERS, emptyQsrContent } from "@/lib/document-types/qsr/sections";
 import type { JSONContent } from "@tiptap/core";
-import { planRtmDraft, rtmDraftNothingToDo } from "./rtm-draft-plan";
+import { planRtmDraft, leftoverMissingUrsIds, rtmDraftNothingToDo } from "./rtm-draft-plan";
 
 const URS_FILENAME = "User Requirement Specification.PDF";
 const PROCESS_QUOTE =
@@ -134,5 +134,54 @@ describe("planRtmDraft", () => {
         fieldDoc: null,
       })
     ).toBeNull();
+  });
+});
+
+describe("leftoverMissingUrsIds", () => {
+  it("does not re-list IDs the insert landed after a follow-up edit_cells", () => {
+    const insert = {
+      kind: "insert_rows" as const,
+      tableIndex: 0,
+      rows: [
+        ["URS-2", "MOC", "Glass lining"],
+        ["URS-3", "Capacity", "8000 L"],
+      ],
+    };
+    const edit = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 1, rowKey: "URS-1", insertText: "Reactor Capacity" },
+      ],
+    };
+    expect(
+      leftoverMissingUrsIds({
+        operations: [insert, edit],
+        ledger: ledgerFrom([
+          { filename: URS_FILENAME, pageNumber: 4, quote: PROCESS_QUOTE },
+        ]),
+        section: "qsr_rtm_process",
+        fieldDoc: null,
+      })
+    ).toEqual([]);
+  });
+
+  it("keeps IDs that neither operation included", () => {
+    expect(
+      leftoverMissingUrsIds({
+        operations: [
+          {
+            kind: "insert_rows",
+            tableIndex: 0,
+            rows: [["URS-2", "Reactor Capacity", "8000 L"]],
+          },
+        ],
+        ledger: ledgerFrom([
+          { filename: URS_FILENAME, pageNumber: 4, quote: PROCESS_QUOTE },
+        ]),
+        section: "qsr_rtm_process",
+        fieldDoc: null,
+      })
+    ).toEqual(["URS-3"]);
   });
 });

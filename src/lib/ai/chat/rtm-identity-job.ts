@@ -152,14 +152,14 @@ export async function runRtmIdentityJob(
         ...langfuseGenerateTextTelemetry({
           functionId: "report-rtm-identity",
           metadata: {
-            feature: "report_chat",
+            feature: "document_chat",
             reportId: input.reportId,
             checklistSize: input.ursIds.length,
           },
         }),
       }).then(async (result) => {
         await recordAiUsage({
-          feature: "report_chat",
+          feature: "document_chat",
           modelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           usage: result.usage,
           reportId: input.reportId,

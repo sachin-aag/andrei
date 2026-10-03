@@ -9,6 +9,7 @@ import {
   extractReviewFindingsFromPages,
 } from "@/lib/ai/chat/document-review";
 import { buildChatTools } from "@/lib/ai/chat/tools";
+import { rowKeyFromContext } from "@/lib/ai/chat/qsr-row-grounding";
 import { emptyQsrContent, QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import type { QsrSectionKey } from "@/lib/document-types/qsr/sections";
 import type { JSONContent } from "@tiptap/core";
@@ -2372,7 +2373,12 @@ Complies`,
     const op = proposedTableOp(inserted);
     expect(op.kind).toBe("insert_rows");
     const rows = op.kind === "insert_rows" ? op.rows : [];
-    const ids = rows.map((row) => String(row[0] ?? ""));
+    const ids = rows.map((row) => {
+      const raw = String(row[0] ?? "")
+        .replace(/\s*\[[^\]]*\]\s*/g, " ")
+        .trim();
+      return rowKeyFromContext(raw) ?? raw;
+    });
     expect(ids).toEqual(expect.arrayContaining(["URS-2", "URS-3", "URS-4", "URS-12"]));
     expect(ids).not.toContain("URS-1");
     const blob = rows.flat().join(" ");

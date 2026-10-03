@@ -4,12 +4,16 @@ import {
   isQsrRtmSection,
   isUrsFilename,
   liveTableRowContextByKey,
+  missingReviewedUrsIds,
   rtmReferenceColumnIndexes,
   rowKeyFromContext,
   ursIdsForRtmSection,
   type QsrRtmSection,
 } from "@/lib/ai/chat/qsr-row-grounding";
-import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
+import {
+  summarizeTablesInDoc,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 export type RtmUrsPage = {
   filename: string;
@@ -132,4 +136,31 @@ export function rtmDraftNothingToDo(plan: RtmDraftPlan): boolean {
     plan.identitySparseIds.length === 0 &&
     plan.familyBlankIds.length === 0
   );
+}
+
+/**
+ * IDs still missing after every composed operation. Intersect per-op gaps so
+ * a follow-up edit_cells of a seeded row cannot re-list IDs the insert landed.
+ */
+export function leftoverMissingUrsIds(input: {
+  operations: readonly TableOperation[];
+  ledger: CitationPageLedger;
+  section: QsrRtmSection;
+  fieldDoc: JSONContent | null;
+}): string[] {
+  if (input.operations.length === 0) return [];
+  let leftover: string[] | null = null;
+  for (const operation of input.operations) {
+    const missing = missingReviewedUrsIds({
+      operation,
+      ledger: input.ledger,
+      section: input.section,
+      fieldDoc: input.fieldDoc,
+    });
+    leftover =
+      leftover == null
+        ? missing
+        : missing.filter((id) => leftover!.includes(id));
+  }
+  return leftover ?? [];
 }

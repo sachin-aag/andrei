@@ -157,7 +157,7 @@ export async function runRtmFamilyJob(
         ...langfuseGenerateTextTelemetry({
           functionId: "report-rtm-family",
           metadata: {
-            feature: "report_chat",
+            feature: "document_chat",
             reportId: input.reportId,
             section: input.section,
             family: input.family,
@@ -166,7 +166,7 @@ export async function runRtmFamilyJob(
         }),
       });
       await recordAiUsage({
-        feature: "report_chat",
+        feature: "document_chat",
         modelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
         usage: result.usage,
         reportId: input.reportId,
