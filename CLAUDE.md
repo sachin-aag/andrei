@@ -130,7 +130,7 @@ The subsystems below are small enough to stay resident.
 
 ## Subsystem: Review mode
 
-**Entry point:** `src/lib/review/` (catalog + runners) and `GET/POST /api/reports/[id]/review`.
+**Entry point:** `src/lib/review/` — client UI imports `ui.ts` (labels / DTOs only); runners and DB live in `server.ts`. Routes: `GET/POST /api/reports/[id]/review`.
 
 The right sidebar is Assistant | Review | Comments. Review category tabs are All checks | Report | FDA | Citations | Writing. Cards are checks (Run + status); issues are `fixable` (`ai_fix` / `ai_grammar`) or `needs_human` (Mark verified / Dismiss). Runs are manual. Placeholders are a live card (no Run). Header **Run all checks** opens Review and runs every `run`-kind check; per-section **Run criteria** on `SectionShell` is unchanged. FDA criteria live in `fda-criteria.ts` with keys prefixed `fda.` and `REVIEW_FDA_PROMPT_VERSION`. `generic_document` still shows Review (Citations + Writing only). Stub: `ALLOW_TEST_STUB_REVIEW`.
 

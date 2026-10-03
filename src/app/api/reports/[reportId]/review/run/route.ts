@@ -2,15 +2,14 @@ import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { isReviewCategory, type ReviewCheckId } from "@/lib/review/ui";
 import {
   checksForDocumentType,
   isKnownCheckId,
   loadReviewRunContext,
   runReviewChecks,
   buildReviewSnapshot,
-  isReviewCategory,
-  type ReviewCheckId,
-} from "@/lib/review";
+} from "@/lib/review/server";
 import {
   flushLangfuseTraces,
   observeRouteHandler,

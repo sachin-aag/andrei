@@ -1,8 +1,12 @@
 "use client";
 
 import { createContext, use } from "react";
-import type { ReviewCategory, ReviewCheckId } from "@/lib/review";
-import type { ReviewCheckDto, ReviewFindingDto } from "@/lib/review";
+import type {
+  ReviewCategory,
+  ReviewCheckDto,
+  ReviewCheckId,
+  ReviewFindingDto,
+} from "@/lib/review/ui";
 
 export type ReviewCategoryFilter = "all" | ReviewCategory;
 

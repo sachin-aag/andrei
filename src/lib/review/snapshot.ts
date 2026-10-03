@@ -12,40 +12,14 @@ import {
   REVIEW_WRITING_PROMPT_VERSION,
 } from "./prompts";
 import type {
-  ReviewCategory,
-  ReviewCheckId,
+  ReviewCheckDto,
   ReviewCheckUiStatus,
+  ReviewFindingDto,
   ReviewRunContext,
 } from "./types";
 import { categoryLabel } from "./types";
 
-export type ReviewFindingDto = {
-  id: string;
-  checkId: string;
-  section: string | null;
-  contentPath: string | null;
-  anchorText: string;
-  message: string;
-  severity: string;
-  kind: string;
-  commentId: string | null;
-  status: string;
-  metadata: Record<string, unknown>;
-};
-
-export type ReviewCheckDto = {
-  id: ReviewCheckId;
-  category: ReviewCategory;
-  categoryLabel: string;
-  label: string;
-  description: string;
-  standardTag: string;
-  kind: "live" | "run";
-  status: ReviewCheckUiStatus;
-  issueCount: number;
-  lastRunAt: string | null;
-  error: string | null;
-};
+export type { ReviewCheckDto, ReviewFindingDto };
 
 function saltForCheck(checkId: string): string {
   if (checkId.startsWith("fda.")) return REVIEW_FDA_PROMPT_VERSION;

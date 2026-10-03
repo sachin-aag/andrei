@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
-import type { ReviewCategory } from "@/lib/review";
-import type { ReviewCheckDto, ReviewFindingDto } from "@/lib/review";
+import type {
+  ReviewCategory,
+  ReviewCheckDto,
+  ReviewFindingDto,
+} from "@/lib/review/ui";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import {
   useReportComments,

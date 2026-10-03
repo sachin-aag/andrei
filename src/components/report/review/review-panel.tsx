@@ -8,9 +8,10 @@ import {
   REVIEW_CATEGORIES,
   categoryLabel,
   type ReviewCategory,
+  type ReviewCheckDto,
   type ReviewCheckId,
-} from "@/lib/review";
-import type { ReviewCheckDto, ReviewFindingDto } from "@/lib/review";
+  type ReviewFindingDto,
+} from "@/lib/review/ui";
 import { PlaceholdersPanelContent } from "@/components/report/placeholders-panel";
 import { useReportEvaluations } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";

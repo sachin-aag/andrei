@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
-import { loadReviewRunContext, buildReviewSnapshot } from "@/lib/review";
+import { loadReviewRunContext, buildReviewSnapshot } from "@/lib/review/server";
 import { observeRouteHandler } from "@/lib/observability/langfuse";
 
 export const GET = observeRouteHandler("report-review-get", handleGet);
