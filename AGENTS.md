@@ -168,7 +168,10 @@ MJ convention is `@mjbiopharm.com`; the script does not enforce the domain.
 
 `POST /api/test/login` and `POST /api/test/seed-auth-users` need **both**
 `ALLOW_TEST_LOGIN=true` **and** `TEST_AUTH_EMAIL`. A 404 usually means the
-process serving the request is missing one of them.
+process serving the request is missing one of them. The same pair stubs
+`sendResetEmail` (token is still written; Resend is skipped) so Playwright
+lockout / forgot-password can show the success screen without
+`AUTH_RESEND_KEY`.
 
 `src/proxy.ts` does **not** enforce the site-access gate (`SITE_ACCESS_PASSWORD`
 + `/unlock`).
