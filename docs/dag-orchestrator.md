@@ -4,12 +4,17 @@ Status: **not implemented**. Living plan for a follow-up PR after the stacked
 QSR PRs merge (`#451` / `#453` / `#455`). Trust this file for intent; trust
 the code once a branch exists.
 
-This is not the nested Flash-Lite family workers on `#455`
-(`docs/qsr-rtm-parallel-drafting-plan.md`). That dispatcher lands every
-reviewed URS ID in one card; its DQ / IQ / OQ / PQ jobs are a different
-product from “draft the IQ column.” Do not polish them toward this design.
+`#455` already shipped a **mini orchestrator** for QSR Tables 5–10
+(`draft_rtm_table` / `runRtmDraft`). Keep that graph (identity, then four
+family columns in parallel, then one card). Do not add a second RTM path.
+The later PR **moves that mini orchestrator onto the general DAG** and
+uses Tables 5–10 as the first recipe and the test: if “draft table 5”
+runs through the DAG and IQ matches typed “draft the IQ column,” the
+executor is real. Nested Flash-Lite jobs (`runRtmFamilyJob`, 90s) are
+what get replaced inside that graph — see
+`docs/qsr-rtm-parallel-drafting-plan.md`.
 
-This is also not [PR #413](https://github.com/sachin-aag/andrei/pull/413)
+This is not [PR #413](https://github.com/sachin-aag/andrei/pull/413)
 (*Fan URS retrieval into parallel queries, and plan multi-part drafts*),
 closed unmerged. Do not reopen it. Parallel *search* inside one chat turn
 is not an orchestrator.
@@ -36,9 +41,9 @@ Raising the chat timeout does not fix it. Identity plus four Agent-quality
 family fills is several 270s envelopes, not one.
 
 Target: a **general** orchestrator that emits a task list as an **adaptive
-DAG**, and **subagents** that do the work. First recipe is QSR Tables 5–10.
-Remaining-section (`kind: "section_queue"`) is the linear ancestor of the
-same JSON.
+DAG**, and **subagents** that do the work. The Tables 5–10 mini orchestrator
+is the first recipe **and** the proving test. Remaining-section
+(`kind: "section_queue"`) is the linear ancestor of the same JSON.
 
 ---
 
@@ -157,9 +162,12 @@ Adapt **after** a node, from `output`, not from a pre-baked graph:
   for OQ/PQ.
 - Compose waits on identity + the four families (skipped counts as done).
 
-First recipes are **code**, not a free-form planner:
+First recipes are **code**, not a free-form planner. `qsr_rtm_table` is
+not a sketch — it is today’s `runRtmDraft` graph, persisted as DAG nodes
+instead of `Promise.all` inside the chat isolate:
 
 1. `qsr_rtm_table` — identity → {dq, iq, oq, pq} → remarks → compose
+   (the `#455` mini orchestrator; first recipe; acceptance test)
 2. `section_queue` — today’s remaining-section list, same JSON
 3. Later: a planner LLM that may only emit `kind`s from that registry
 
@@ -227,19 +235,83 @@ Cancel, `sessionVersion`, and AI budget still gate every step.
 
 ---
 
-## 8. What `#455` already ships (do not redo)
+## 8. Port the Tables 5–10 mini orchestrator (first recipe + test)
 
-After the stacked QSR PRs merge, main will have:
+`#455` is not a throwaway. After the stacked QSR PRs merge, `runRtmDraft`
+already is a mini orchestrator:
 
-- References (Table 1): inventory review + per-row search before a number
-  lands
-- Tables 5–10: `draft_rtm_table` lands every reviewed URS ID from ledger
-  quotes, one suggestion card, ungrounded family cells do not kill identity
-- Nested Flash-Lite family jobs (`runRtmFamilyJob`, 90s,
-  `submit_family_cells`) as a same-turn attempt at DQ/IQ/OQ/PQ
+```
+draft_rtm_table
+├── planRtmDraft          no LLM: reviewed URS IDs − live rows
+├── runRtmIdentityJob     URS ID / Parameters / User requirements
+├── Promise.all           four runRtmFamilyJob (Flash-Lite, 90s)  ← replace
+├── composeRtmOperations  insert_rows + edit_cells
+└── persist via edit_table  identity-first ground, one card
+```
 
-The follow-up **deletes** `runRtmFamilyJob` once DAG nodes exist. Until then,
-typed “draft the IQ column” remains the quality path for a single family.
+The later PR **rewires that graph onto the DAG**. Same tool name
+(`draft_rtm_table`), same step-policy force on a focused RTM table, same
+Plan-mode exclusion, same one-card persist. The chat isolate only **seeds**
+the DAG (plan + maybe identity). Family nodes and compose run as durable
+steps. There is no second “draft table 5” path.
+
+### Keep (call from DAG nodes; do not rewrite)
+
+| Piece | Why |
+|-------|-----|
+| `draft_rtm_table` tool + `inScopeRtmSection` step policy | Still the only write tool on a focused Table 5–10 |
+| `planRtmDraft` / leftover missing IDs | Deterministic checklist; wrap-up still cannot skip IDs |
+| `runRtmIdentityJob` | Identity from reviewed URS quotes, no family cells |
+| `composeRtmOperations` / `identityOnlyOperation` | One card; identity grounds first; family cells clear instead of blocking |
+| `withRtmDraftLock` | One draft per report+section |
+| Off Plan allowlist, stub/Vitest skip LLM | Unchanged |
+
+### Replace (same node, different worker)
+
+| Today | DAG |
+|-------|-----|
+| `runRtmFamilyJob` Flash-Lite + `submit_family_cells` | Family `family_column` subagent = typed “draft the IQ column” (3.7 Flash, grep/read/`edit_table` or scratch, own 270s) |
+| `RTM_WORKER_BUDGET_MS = 90_000` nested under chat abort | No inner 90s. Leftover IDs become `iq#2` via `adapt()` |
+| `Promise.all` of four jobs in `runRtmDraft` | Four ready DAG nodes, `Promise.all` of `"use step"` (or one continue POST each on preview) |
+| Family results held in memory until persist | Scratch on the node `output`; compose reads all four |
+
+### Delete once the DAG IQ node matches typed IQ
+
+`runRtmFamilyJob`, `submit_family_cells`, `RTM_WORKER_BUDGET_MS`,
+`RTM_WORKER_MIN_START_MS`. Do not leave a fallback that still one-shots
+Flash-Lite inside the chat turn.
+
+### Tables 5–10 is the test of the general executor
+
+Do not invent a synthetic DAG to prove the orchestrator. The test **is**
+the mini orchestrator:
+
+1. **Vitest (CTO, no LLM):** `planRtmDraft` still lists every reviewed ID;
+   identity-only compose still opens one card; `adapt()` after
+   `protocol_missing` / leftover IDs / 0-identity still rewrites the graph;
+   `draft_rtm_table` still seeds `kind: "task_dag"` and does not call
+   `runRtmFamilyJob`. Reuse `rtm-draft-plan.test.ts`, `rtm-compose.test.ts`,
+   `rtm-draft-loop.test.ts`, `qsr-rtm-draft-replay.test.ts`,
+   `step-policy.test.ts`. Replay `draft_rtm_table` through `buildChatTools`
+   remains the gold floor.
+2. **CEO (preview):** `@` Table 5 “draft table 5” lands every reviewed URS
+   ID (the `#455` bar, still). Then IQ on that card matches a follow-up
+   “draft the IQ column for table 5” — `{section} – {audit line}` from the
+   protocol body page, not `12.1` reused, not cover cites. DQ / OQ / PQ
+   can finish after IQ (widget shows the DAG). One suggestion card. Cancel
+   pauses; Resume continues IQ leftovers as `iq#2`.
+3. **Regression:** typed “draft the IQ column” alone still works when the
+   table already has identity rows (DAG family node or live Agent
+   `edit_table` — same quality). Purpose / References still do not load
+   `draft_rtm_table`. Plan mode still has no write tools.
+
+If Table 5 IQ through the DAG is worse than the typed IQ ask, the
+orchestrator is not done. Do not expand to remaining-section or a planner
+LLM until that test passes.
+
+Until the DAG ships, typed “draft the IQ column” remains the quality path
+for a single family. Empty or NA family cells on a `#455` first card are
+acceptable; a copied wrong heading is not.
 
 ---
 
@@ -254,9 +326,12 @@ New branch off `main` after the stack merges. Do not pile this onto `#455`.
 3. `reportDraftWorkflow` + preview auto-continue fallback (ingest mode
    switch). Node I/O (pg, crypto, GCS) stays in `"use step"`, not the
    workflow body — same constraint as ingest.
-4. RTM recipe only: identity → four family subagents → compose.
-5. DAG widget + Cancel/Resume.
-6. Delete `runRtmFamilyJob` / `RTM_WORKER_BUDGET_MS`.
+4. **Port `runRtmDraft`:** `draft_rtm_table` seeds the RTM recipe
+   (identity → four family nodes → compose). Family nodes are Agent-quality.
+   Keep plan / identity / compose / persist helpers.
+5. DAG widget + Cancel/Resume (extend `ChatPlanProgress`).
+6. **Pass the Table 5–10 test** (section 8). Then delete `runRtmFamilyJob` /
+   `RTM_WORKER_BUDGET_MS`.
 7. Fold remaining-section into the same executor.
 8. Only then consider a planner LLM over the node registry.
 
@@ -264,10 +339,11 @@ New branch off `main` after the stack merges. Do not pile this onto `#455`.
 
 ## 10. What not to build
 
+- Do not add a second Tables 5–10 write path beside `draft_rtm_table`.
 - Do not reopen `#413` (parallel URS-band search as the orchestrator).
 - Do not raise chat `maxDuration` so four Agents fit in one isolate.
-- Do not use Flash-Lite / `submit_family_cells` / a 90s budget as the IQ
-  worker.
+- Do not keep Flash-Lite / `submit_family_cells` / a 90s budget as a
+  fallback IQ worker.
 - Do not let four family `edit_table` calls each open a card.
 - Do not wait for Apply between identity and family (scratch, then compose).
 - Do not persist “The assistant stopped before finishing” when the next node
@@ -275,6 +351,8 @@ New branch off `main` after the stack merges. Do not pile this onto `#455`.
 - Do not put write tools on the Plan-mode allowlist.
 - Do not skip LLM workers in a way that Vitest/`ALLOW_TEST_STUB_CHAT` start
   calling Flash.
+- Do not call the orchestrator done on remaining-section or a planner until
+  Table 5 IQ through the DAG matches typed “draft the IQ column.”
 
 ---
 
@@ -288,7 +366,11 @@ New branch off `main` after the stack merges. Do not pile this onto `#455`.
 | `src/app/api/reports/[reportId]/chat/route.ts` | `maxDuration = 300` |
 | `src/workflows/document-ingest.ts` | Durable `"use workflow"` / `"use step"` |
 | `src/lib/attachments/document-ingest-mode.ts` | Preview = inline, else workflow |
-| `src/lib/ai/chat/rtm-draft.ts` | `#455` dispatcher to replace |
-| `src/lib/ai/chat/rtm-family-job.ts` | Flash-Lite job to delete |
-| `docs/qsr-rtm-parallel-drafting-plan.md` | Nested-worker attempt; not the destination |
+| `src/lib/ai/chat/rtm-draft.ts` | Mini orchestrator to **port** (`draft_rtm_table` still seeds) |
+| `src/lib/ai/chat/rtm-draft-plan.ts` | Keep: deterministic URS checklist |
+| `src/lib/ai/chat/rtm-identity-job.ts` | Keep: identity node |
+| `src/lib/ai/chat/rtm-compose.ts` | Keep: one-card compose |
+| `src/lib/ai/chat/rtm-family-job.ts` | Flash-Lite job to delete after Table 5 IQ test passes |
+| `src/lib/ai/chat/qsr-rtm-draft-replay.test.ts` | Gold floor; replay still goes through `draft_rtm_table` |
+| `docs/qsr-rtm-parallel-drafting-plan.md` | Mini-orchestrator graph; family jobs are the part to move |
 | `docs/document-ingest-pipeline.md` | Workflow vs `after()` fallback |

@@ -6,9 +6,10 @@ Living plan. Status: implemented on `cursor/qsr-references-search-f517`
 `qsr_rtm_csv`, `qsr_rtm_maintenance`.
 
 Identity-first + one card stays. Nested Flash-Lite family jobs (90s,
-`submit_family_cells`) are not the destination for DQ / IQ / OQ / PQ —
-see `docs/dag-orchestrator.md` for the later DAG + Agent-quality subagent
-work. Do not reopen PR #413.
+`submit_family_cells`) are not the destination for DQ / IQ / OQ / PQ.
+The later PR ports this mini orchestrator onto the general DAG and uses
+Tables 5–10 as the first recipe and the test — see
+`docs/dag-orchestrator.md`. Do not reopen PR #413.
 
 ## 1. The failure we are fixing
 
