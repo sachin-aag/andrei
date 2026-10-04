@@ -16,6 +16,27 @@ export function sectionFromReportCriteriaCheckId(checkId: string): string | null
   return section || null;
 }
 
+export function sectionEvaluationsAreFresh(args: {
+  section: string;
+  criteria: Array<{ key: string }>;
+  evaluations: ReviewRunContext["evaluations"];
+  contentHash: string;
+}): boolean {
+  if (args.criteria.length === 0) return false;
+  const byKey = new Map(
+    args.evaluations
+      .filter(
+        (row) =>
+          row.section === args.section && !row.criterionKey.startsWith("fda.")
+      )
+      .map((row) => [row.criterionKey, row])
+  );
+  return args.criteria.every((criterion) => {
+    const row = byKey.get(criterion.key);
+    return row?.evaluatedContentHash === args.contentHash;
+  });
+}
+
 export async function runReportCriteriaCheck(
   ctx: ReviewRunContext,
   section: string
@@ -40,6 +61,49 @@ export async function runReportCriteriaCheck(
     };
   }
 
+  const contentHash = evaluationContentHash({
+    section,
+    content,
+    allSections: ctx.sections,
+    criteria,
+    promptVersion: def.prompts.promptVersion,
+  });
+
+  if (
+    sectionEvaluationsAreFresh({
+      section,
+      criteria,
+      evaluations: ctx.evaluations,
+      contentHash,
+    })
+  ) {
+    const ids = new Map(
+      ctx.evaluations
+        .filter((row) => row.section === section)
+        .map((row) => [row.criterionKey, row.id])
+    );
+    return {
+      findings: findingsFromCriteriaResults({
+        ctx,
+        section,
+        sectionId: sectionRow.id,
+        results: ctx.evaluations
+          .filter(
+            (row) =>
+              row.section === section &&
+              criteria.some((criterion) => criterion.key === row.criterionKey)
+          )
+          .map((row) => ({
+            criterionKey: row.criterionKey,
+            criterionLabel: row.criterionLabel,
+            status: row.status,
+            reasoning: row.reasoning,
+          })),
+        ids,
+      }),
+    };
+  }
+
   const results = await evaluateSection({
     section,
     content,
@@ -52,14 +116,6 @@ export async function runReportCriteriaCheck(
     report: ctx.report as never,
   });
 
-  const contentHash = evaluationContentHash({
-    section,
-    content,
-    allSections: ctx.sections,
-    criteria,
-    promptVersion: def.prompts.promptVersion,
-  });
-
   const ids = await upsertCriterionEvaluations({
     reportId: ctx.report.id,
     sectionId: sectionRow.id,
@@ -68,36 +124,59 @@ export async function runReportCriteriaCheck(
     results,
   });
 
-  const openFixes = ctx.comments.filter(
+  return {
+    findings: findingsFromCriteriaResults({
+      ctx,
+      section,
+      sectionId: sectionRow.id,
+      results,
+      ids,
+    }),
+  };
+}
+
+function findingsFromCriteriaResults(args: {
+  ctx: ReviewRunContext;
+  section: string;
+  sectionId: string;
+  results: Array<{
+    criterionKey: string;
+    criterionLabel: string;
+    status: ReviewRunContext["evaluations"][number]["status"];
+    reasoning: string;
+  }>;
+  ids: Map<string, string>;
+}): ReviewCheckResult["findings"] {
+  const openFixes = args.ctx.comments.filter(
     (comment) =>
       !comment.parentId &&
       isAiSuggestionKind(comment.kind) &&
       comment.status === "open" &&
-      comment.section === section
+      comment.section === args.section
   );
 
-  const findings = [];
-  for (const result of results) {
+  const findings: ReviewCheckResult["findings"] = [];
+  for (const result of args.results) {
     if (result.criterionKey.startsWith("fda.")) continue;
-    const evaluationId = ids.get(result.criterionKey);
+    const evaluationId = args.ids.get(result.criterionKey);
     const evalRow = {
       id: evaluationId ?? "",
-      reportId: ctx.report.id,
-      sectionId: sectionRow.id,
-      section,
+      reportId: args.ctx.report.id,
+      sectionId: args.sectionId,
+      section: args.section,
       criterionKey: result.criterionKey,
       criterionLabel: result.criterionLabel,
       status: result.status,
       reasoning: result.reasoning,
       bypassed: false,
-      evaluatedContentHash: contentHash,
+      evaluatedContentHash: "",
       updatedAt: "",
     };
     if (effectiveStatus(evalRow) === "met") continue;
     if (effectiveStatus(evalRow) === "not_evaluated") continue;
     const comment = openFixes.find((row) => row.evaluationId === evaluationId);
     findings.push({
-      section,
+      section: args.section,
       contentPath: comment?.contentPath ?? null,
       anchorText: comment?.anchorText ?? "",
       message: `${result.criterionLabel}: ${result.reasoning || result.status}`,
@@ -107,6 +186,5 @@ export async function runReportCriteriaCheck(
       metadata: { criterionKey: result.criterionKey, evaluationId },
     });
   }
-
-  return { findings };
+  return findings;
 }

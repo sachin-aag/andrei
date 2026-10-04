@@ -17,13 +17,15 @@ import type { ReportWithManagers } from "@/lib/reports/require-report-access";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { checkById } from "./catalog";
 import { reviewContentHash } from "./content-hash";
-import { finishReviewRun, startReviewRun } from "./persist";
+import { fdaCriteriaForDocumentType, type FdaCriterion } from "./fda-criteria";
+import { finishReviewRun, latestRunsByCheck, startReviewRun } from "./persist";
 import {
   REVIEW_CITATION_PROMPT_VERSION,
   REVIEW_FDA_PROMPT_VERSION,
   REVIEW_WRITING_PROMPT_VERSION,
 } from "./prompts";
-import type { ReviewCheckId, ReviewRunContext } from "./types";
+import { fdaCheckId, groupFdaCriteriaBySection, runFdaSectionChecks } from "./checks/fda";
+import type { ReviewCheckId, ReviewCheckResult, ReviewRunContext } from "./types";
 
 const RUN_CONCURRENCY = 3;
 
@@ -32,6 +34,39 @@ function saltForCheck(checkId: string): string {
   if (checkId.startsWith("citations.")) return REVIEW_CITATION_PROMPT_VERSION;
   if (checkId.startsWith("writing.")) return REVIEW_WRITING_PROMPT_VERSION;
   return "report-v1";
+}
+
+export function shouldSkipFreshCheck(args: {
+  latest: { status: string; contentHash: string | null } | undefined;
+  contentHash: string;
+}): boolean {
+  return (
+    args.latest?.status === "completed" &&
+    args.latest.contentHash === args.contentHash
+  );
+}
+
+type ReviewJob =
+  | { kind: "single"; checkId: ReviewCheckId }
+  | { kind: "fda-section"; criteria: FdaCriterion[] };
+
+export function reviewRunJobs(args: {
+  checkIds: ReviewCheckId[];
+  fdaCriteria: FdaCriterion[];
+}): ReviewJob[] {
+  const requestedFda = new Set(
+    args.checkIds.filter((id) => id.startsWith("fda."))
+  );
+  const singles = args.checkIds
+    .filter((id) => !id.startsWith("fda."))
+    .map((checkId) => ({ kind: "single" as const, checkId }));
+  const selected = args.fdaCriteria.filter((criterion) =>
+    requestedFda.has(fdaCheckId(criterion.key))
+  );
+  const fdaJobs = [...groupFdaCriteriaBySection(selected).values()].map(
+    (criteria) => ({ kind: "fda-section" as const, criteria })
+  );
+  return [...singles, ...fdaJobs];
 }
 
 async function mapPool<T>(
@@ -131,55 +166,125 @@ export async function loadReviewRunContext(args: {
   };
 }
 
+async function persistCheckOutcome(args: {
+  ctx: ReviewRunContext;
+  checkId: ReviewCheckId;
+  result?: ReviewCheckResult;
+  error?: string;
+}): Promise<"ran" | "failed"> {
+  const def = checkById(args.ctx.documentType, args.checkId);
+  const contentHash = reviewContentHash(
+    args.ctx.sections,
+    saltForCheck(args.checkId)
+  );
+  const runId = await startReviewRun({
+    reportId: args.ctx.report.id,
+    checkId: args.checkId,
+    contentHash,
+    createdBy: args.ctx.user.id,
+  });
+  if (args.error || !args.result) {
+    await finishReviewRun({
+      runId,
+      reportId: args.ctx.report.id,
+      checkId: args.checkId,
+      findings: [],
+      error: args.error ?? "Check failed",
+    });
+    return "failed";
+  }
+  await finishReviewRun({
+    runId,
+    reportId: args.ctx.report.id,
+    checkId: args.checkId,
+    findings: args.result.findings,
+  });
+  await recordAuditEvent({
+    actor: auditActorFromUser(args.ctx.user),
+    action: "review_check_run",
+    entityType: "review",
+    entityId: runId,
+    reportId: args.ctx.report.id,
+    summary: `Ran review check ${def?.label ?? args.checkId}`,
+    newValue: { checkId: args.checkId, issueCount: args.result.findings.length },
+  });
+  return "ran";
+}
+
 export async function runReviewChecks(args: {
   report: ReportWithManagers;
   user: WorkspaceUser;
   checkIds: ReviewCheckId[];
-}): Promise<{ ran: string[]; failed: string[] }> {
+}): Promise<{ ran: string[]; failed: string[]; skipped: string[] }> {
   const ctx = await loadReviewRunContext(args);
+  const latest = await latestRunsByCheck(ctx.report.id);
   const ran: string[] = [];
   const failed: string[] = [];
+  const skipped: string[] = [];
 
-  await mapPool(args.checkIds, RUN_CONCURRENCY, async (checkId) => {
+  const pending: ReviewCheckId[] = [];
+  for (const checkId of args.checkIds) {
     const def = checkById(ctx.documentType, checkId);
-    if (!def || def.kind !== "run" || !def.run) return;
+    if (!def || def.kind !== "run" || !def.run) continue;
     const contentHash = reviewContentHash(ctx.sections, saltForCheck(checkId));
-    const runId = await startReviewRun({
-      reportId: ctx.report.id,
-      checkId,
-      contentHash,
-      createdBy: ctx.user.id,
-    });
+    if (shouldSkipFreshCheck({ latest: latest.get(checkId), contentHash })) {
+      skipped.push(checkId);
+      continue;
+    }
+    pending.push(checkId);
+  }
+
+  const jobs = reviewRunJobs({
+    checkIds: pending,
+    fdaCriteria: fdaCriteriaForDocumentType(ctx.documentType),
+  });
+
+  await mapPool(jobs, RUN_CONCURRENCY, async (job) => {
+    if (job.kind === "single") {
+      const def = checkById(ctx.documentType, job.checkId);
+      if (!def?.run) return;
+      try {
+        const result = await def.run(ctx);
+        const outcome = await persistCheckOutcome({
+          ctx,
+          checkId: job.checkId,
+          result,
+        });
+        if (outcome === "ran") ran.push(job.checkId);
+        else failed.push(job.checkId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Check failed";
+        await persistCheckOutcome({
+          ctx,
+          checkId: job.checkId,
+          error: message,
+        });
+        failed.push(job.checkId);
+      }
+      return;
+    }
+
     try {
-      const result = await def.run(ctx);
-      await finishReviewRun({
-        runId,
-        reportId: ctx.report.id,
-        checkId,
-        findings: result.findings,
-      });
-      await recordAuditEvent({
-        actor: auditActorFromUser(ctx.user),
-        action: "review_check_run",
-        entityType: "review",
-        entityId: runId,
-        reportId: ctx.report.id,
-        summary: `Ran review check ${def.label}`,
-        newValue: { checkId, issueCount: result.findings.length },
-      });
-      ran.push(checkId);
+      const results = await runFdaSectionChecks(ctx, job.criteria);
+      for (const criterion of job.criteria) {
+        const checkId = fdaCheckId(criterion.key);
+        const outcome = await persistCheckOutcome({
+          ctx,
+          checkId,
+          result: results.get(checkId) ?? { findings: [] },
+        });
+        if (outcome === "ran") ran.push(checkId);
+        else failed.push(checkId);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Check failed";
-      await finishReviewRun({
-        runId,
-        reportId: ctx.report.id,
-        checkId,
-        findings: [],
-        error: message,
-      });
-      failed.push(checkId);
+      for (const criterion of job.criteria) {
+        const checkId = fdaCheckId(criterion.key);
+        await persistCheckOutcome({ ctx, checkId, error: message });
+        failed.push(checkId);
+      }
     }
   });
 
-  return { ran, failed };
+  return { ran, failed, skipped };
 }

@@ -19,7 +19,7 @@ import {
   isAiBudgetExceededError,
 } from "@/lib/ai/usage";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const bodySchema = z.object({
   checkIds: z.array(z.string()).optional(),

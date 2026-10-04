@@ -1,5 +1,10 @@
 export { checksForDocumentType, checkById, isKnownCheckId } from "./catalog";
-export { loadReviewRunContext, runReviewChecks } from "./run-checks";
+export {
+  loadReviewRunContext,
+  runReviewChecks,
+  shouldSkipFreshCheck,
+  reviewRunJobs,
+} from "./run-checks";
 export { buildReviewSnapshot } from "./snapshot";
 export { fdaCriteriaForDocumentType } from "./fda-criteria";
 export {

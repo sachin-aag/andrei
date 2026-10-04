@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
-import type {
-  ReviewCategory,
-  ReviewCheckDto,
-  ReviewFindingDto,
+import {
+  reviewRunWaves,
+  type ReviewCategory,
+  type ReviewCheckDto,
+  type ReviewFindingDto,
 } from "@/lib/review/ui";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import {
@@ -79,42 +80,60 @@ export function useReviewChecks() {
 
   const runChecks = useCallback(
     async (checkIds?: string[], category?: ReviewCategory) => {
-      const ids =
-        checkIds ??
-        checks
+      const waves = reviewRunWaves(checks, { checkIds, category });
+      const ids = waves.flatMap((wave) => {
+        if (wave.checkIds && wave.checkIds.length > 0) return wave.checkIds;
+        return checks
           .filter((check) => check.kind === "run")
-          .filter((check) => (category ? check.category === category : true))
+          .filter((check) =>
+            wave.category ? check.category === wave.category : true
+          )
           .map((check) => check.id);
+      });
       if (ids.length === 0) return;
       setRunningCheckIds(ids);
+      const failed: string[] = [];
       try {
-        const res = await fetch(`/api/reports/${report.id}/review/run`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            category && !checkIds ? { category } : { checkIds: ids }
-          ),
-        });
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          toast.error(
-            typeof errBody.error === "string"
-              ? errBody.error
-              : "Review checks failed. Please try again."
-          );
-          return;
+        for (const wave of waves) {
+          const res = await fetch(`/api/reports/${report.id}/review/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              wave.checkIds && wave.checkIds.length > 0
+                ? { checkIds: wave.checkIds }
+                : { category: wave.category }
+            ),
+          });
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const message =
+              typeof errBody.error === "string" ? errBody.error : "";
+            if (
+              res.status === 504 ||
+              res.status === 408 ||
+              /timed out/i.test(message)
+            ) {
+              toast.error(
+                "Review checks timed out. Try Run on one category — Report, FDA, Citations, or Writing."
+              );
+              return;
+            }
+            toast.error(message || "Review checks failed. Please try again.");
+            return;
+          }
+          const data = (await res.json()) as {
+            checks: ReviewCheckDto[];
+            findings: ReviewFindingDto[];
+            placeholderCount: number;
+            comments?: unknown[];
+            evaluations?: EvaluationRecord[];
+            failed?: string[];
+          };
+          applySnapshot(data);
+          if (data.failed) failed.push(...data.failed);
         }
-        const data = (await res.json()) as {
-          checks: ReviewCheckDto[];
-          findings: ReviewFindingDto[];
-          placeholderCount: number;
-          comments?: unknown[];
-          evaluations?: EvaluationRecord[];
-          failed?: string[];
-        };
-        applySnapshot(data);
-        if (data.failed && data.failed.length > 0) {
-          toast.error(`${data.failed.length} review check(s) failed.`);
+        if (failed.length > 0) {
+          toast.error(`${failed.length} review check(s) failed.`);
         }
       } finally {
         setRunningCheckIds([]);

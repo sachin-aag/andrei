@@ -4,6 +4,7 @@ export {
   STATIC_REVIEW_CHECK_IDS,
   categoryLabel,
   isReviewCategory,
+  reviewRunWaves,
   type ReviewCategory,
   type ReviewCheckId,
   type ReviewCheckKind,

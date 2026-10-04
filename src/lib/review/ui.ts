@@ -71,6 +71,30 @@ export type ReviewFindingDto = {
   metadata: Record<string, unknown>;
 };
 
+export type ReviewRunWave = {
+  category?: ReviewCategory;
+  checkIds?: string[];
+};
+
+/** Split Run all into one request per category so a 60s function cannot eat every LLM check. */
+export function reviewRunWaves(
+  checks: Array<{ id: string; kind: string; category: ReviewCategory }>,
+  requested?: { checkIds?: string[]; category?: ReviewCategory }
+): ReviewRunWave[] {
+  if (requested?.checkIds && requested.checkIds.length > 0) {
+    return [{ checkIds: requested.checkIds }];
+  }
+  if (requested?.category) {
+    return [{ category: requested.category }];
+  }
+  return REVIEW_CATEGORIES.flatMap((category) => {
+    const hasRun = checks.some(
+      (check) => check.kind === "run" && check.category === category
+    );
+    return hasRun ? [{ category }] : [];
+  });
+}
+
 export type ReviewCheckDto = {
   id: ReviewCheckId;
   category: ReviewCategory;
