@@ -21,6 +21,7 @@ import {
 } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
+import { LazyWorkspaceSection } from "./lazy-workspace-section";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
@@ -1321,28 +1322,33 @@ export function ReportWorkspace({
                         continuousDocument ? "space-y-4" : "space-y-10"
                       )}
                     >
-                      {getWorkspaceSections(report.documentType).map((section) => {
-                        const s = section.key;
-                        const Editor =
-                          SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
-                            s
-                          ];
-                        if (!Editor) return null;
-                        const extra = showReviewGutter
-                          ? sectionMinHeights[s]
-                          : undefined;
-                        return (
-                          <section
-                            key={s}
-                            id={s}
-                            style={
-                              extra ? { paddingBottom: `${extra}px` } : undefined
-                            }
-                          >
-                            <Editor />
-                          </section>
-                        );
-                      })}
+                      {getWorkspaceSections(report.documentType).map(
+                        (section, index) => {
+                          const s = section.key;
+                          const Editor =
+                            SECTION_EDITORS_BY_DOCUMENT_TYPE[
+                              report.documentType
+                            ]?.[s];
+                          if (!Editor) return null;
+                          const extra = showReviewGutter
+                            ? sectionMinHeights[s]
+                            : undefined;
+                          return (
+                            <LazyWorkspaceSection
+                              key={s}
+                              id={s}
+                              eager={index < 2}
+                              style={
+                                extra
+                                  ? { paddingBottom: `${extra}px` }
+                                  : undefined
+                              }
+                            >
+                              <Editor />
+                            </LazyWorkspaceSection>
+                          );
+                        }
+                      )}
                     </div>
                   </div>
                   {showReviewGutter ? (
