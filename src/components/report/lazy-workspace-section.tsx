@@ -94,10 +94,12 @@ export function LazyWorkspaceSection({
     let cancelMount: (() => void) | undefined;
     const queueMount = (urgent = false) => {
       cancelMount?.();
-      cancelMount = enqueueLazyWorkspaceMount(
-        () => startTransition(() => setMounted(true)),
-        urgent
-      );
+      cancelMount = enqueueLazyWorkspaceMount(() => {
+        // The first section must commit before deferred work (suggestion
+        // locate) or a transition can sit unpainted for the whole scan.
+        if (urgent) setMounted(true);
+        else startTransition(() => setMounted(true));
+      }, urgent);
     };
 
     const onRequest = (requested: string) => {
@@ -107,7 +109,7 @@ export function LazyWorkspaceSection({
     sectionMountListeners.add(onRequest);
 
     if (eager) {
-      queueMount(false);
+      queueMount(true);
       return () => {
         sectionMountListeners.delete(onRequest);
         cancelMount?.();

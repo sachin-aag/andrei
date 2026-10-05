@@ -17,6 +17,7 @@ import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
 import {
   countOpenAiSuggestions,
   sectionOrderWithOpenSuggestions,
+  sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
 import { getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
 import {
@@ -31,7 +32,7 @@ import {
   identityCurrentFromReport,
 } from "@/lib/suggestions/identity-suggestion";
 import type { IdentityApplyPatch } from "@/lib/suggestions/accept-suggestion";
-import { countOpenSuggestionsForReport } from "@/lib/suggestions/validate-suggestion";
+import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import type { SectionType } from "@/db/schema";
 
@@ -66,23 +67,49 @@ export function ReportBulkSuggestionActions() {
   );
 
   const openTotal = countOpenAiSuggestions(comments);
-  // Locating each open card walks the section body. On a large ELR table that
-  // blocks the first workspace paint, so the count runs after commit.
+  // Locating a card walks that section's body. One pass over a large ELR
+  // table blocks the first editor, so each card is counted on its own turn
+  // after the eager section has been given a frame to mount.
   const [locatable, setLocatable] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
+    let timer = 0;
+    const jobs = sectionOrder.flatMap((section) =>
+      sortedOpenSuggestionsForSection(section, [...comments], [...evaluations]).map(
+        (comment) => ({ section, comment })
+      )
+    );
+    let index = 0;
+    let found = 0;
+    let secondFrame = 0;
+    const step = () => {
       if (cancelled) return;
-      const counts = countOpenSuggestionsForReport(
-        sectionOrder,
-        comments,
-        evaluations,
-        (section) => sections[section]
-      );
-      if (!cancelled) setLocatable(counts.locatable);
-    }, 0);
+      const job = jobs[index];
+      if (!job) {
+        setLocatable(found);
+        return;
+      }
+      index += 1;
+      if (
+        validateSuggestionLocate(
+          job.comment,
+          job.section,
+          sections[job.section]
+        ).canApply
+      ) {
+        found += 1;
+      }
+      timer = window.setTimeout(step, 0);
+    };
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        if (!cancelled) timer = window.setTimeout(step, 0);
+      });
+    });
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
       window.clearTimeout(timer);
     };
   }, [sectionOrder, comments, evaluations, sections]);
