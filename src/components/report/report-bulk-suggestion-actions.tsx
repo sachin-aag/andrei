@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { CheckCheck, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -66,16 +66,26 @@ export function ReportBulkSuggestionActions() {
   );
 
   const openTotal = countOpenAiSuggestions(comments);
-  const { locatable } = useMemo(
-    () =>
-      countOpenSuggestionsForReport(
+  // Locating each open card walks the section body. On a large ELR table that
+  // blocks the first workspace paint, so the count runs after commit.
+  const [locatable, setLocatable] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const counts = countOpenSuggestionsForReport(
         sectionOrder,
         comments,
         evaluations,
         (section) => sections[section]
-      ),
-    [sectionOrder, comments, evaluations, sections]
-  );
+      );
+      if (!cancelled) setLocatable(counts.locatable);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [sectionOrder, comments, evaluations, sections]);
 
   const releaseBulkHolds = useCallback(() => {
     // Release after comments are updated so TipTap does not re-inject a
