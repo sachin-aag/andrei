@@ -24,7 +24,13 @@ export function ReportWorkspaceLoading({
       )}
     >
       <div className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        <span
+          className="inline-flex size-4 animate-spin"
+          style={{ willChange: "transform" }}
+          aria-hidden="true"
+        >
+          <Loader2 className="size-4" />
+        </span>
         {slow
           ? "Still loading — a large report can take a bit…"
           : "Loading report…"}
