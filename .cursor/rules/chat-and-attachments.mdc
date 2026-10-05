@@ -47,7 +47,8 @@ table filled", "I don't see the change", "suggestions are not landing",
 "refusing to make an edit", "only summarising") are write on Agent
 (`reason: missing_work`) so Lite is skipped. An explicit "insert the
 suggestion" / "edit the document" turn reads the section first, then the
-next step must call `edit_table` (table in scope) or `propose_edit`. Do not
+next step must call `draft_rtm_table` when a QSR RTM table is in `@`
+scope, `edit_table` for any other table, or `propose_edit`. Do not
 claim Agent mode is read-only or paste a markdown table. ELR section numbers
 in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
 Maintenance, 3.15 Access Control). A printed Table N is only the number on
@@ -188,12 +189,22 @@ sentences) keeps each block's sentences out of the last ID's window and
 still lets every ID in that block use them, even when another row's
 parameter shares a word such as glass or thickness. URS-1 does not match
 URS-13. OCR-split `URS- 33` / `URS-\n33` is URS-33 before windowing.
+Lettered subparts (`URS-34 a` → `URS-34a`) stay distinct windows — same
+numeric stem does not continue a column-major ID run; URS-34 / 34a / 34b
+belong in 5.2 (Instrument Requirement). Gold:
+`glr-1301-urs-page-9.transcript.txt`.
 Digits in URS-N are not a measured number. A decimal such as 25.0 is
 not a measured zero. OCR-split `3 . 5` is evidence for `3.5`, not a reason
 to persist `<number>` or ask the engineer to type it. Integer `3` is not
-`3.5`. A named date column (Effective Date) must match the source value
-next to that same label — presence of a signature or observation date on
-the cited page is not that field. A leading minus is part of the number
+`3.5`. Integer `1600` matches OCR `1600.0` / `1600.00`, not `1600.5`.
+Do not glue a numbered-list index onto the next measurement (`1. 2.5`
+is not `1.2.5`). A protocol section number (`9.3.4`, `7.2`, `8.2.4`)
+persists only when a retrieved page prints it. Repair search pins to
+cited files when the draft named them. A named date column (Effective Date) matches the source value
+next to that same label first; if the exact label is missing, the
+closest date label on the page. A signature or observation date is not
+that field when a closer status label exists. An explicit insert, or a
+fact already in this thread, still cites a page but is not dropped. A leading minus is part of the number
 (`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
 leading tilde is approximate (`~50±10 RPM` is not `−50 ± 10 RPM`). A ±
 window is not independent evidence for the setpoint (`50±10 RPM` is not
@@ -207,7 +218,15 @@ window is not independent evidence for the setpoint (`50±10 RPM` is not
   is a pass with no pass word; an unexecuted template (no signature date)
   is not, and a fail / does-not-meet statement vetoes every pass. Unsupported family-column /
   Remarks cells clear
-instead of blocking the URS copy. PQ/OQ/IQ family-column numbers are
+instead of blocking the URS copy. Persist rewrites family cells to
+`{section} – {audit line}` from the protocol body page that prints
+that heading, drops cover/contents `Section 8` / `13.2` cites, and
+attaches an audit line to leftover number-only `12.1` only when that
+same section number is on the ledger (keep `8.1` / `12.1` if pick is
+null; do not swap onto a neighbour `12.4`). Family workers
+reject number-only and off-topic submits so one grep cannot finish
+the column.
+PQ/OQ/IQ family-column numbers are
 dotted (`8.2.3`, `8.1.1`, `13.6`); a printed page counter (`16`, `14`,
 `Page 21 of 51`) or a logged measurement (`12.72 °C`) is cleared, and `[file, p. N]` cites the page that
 prints that heading. An explicit empty `edit_cells` of filled
@@ -231,7 +250,8 @@ counter (`16`) or logged reading (`12.72 °C`) in Section still clears.
 Wrap-up quotes `adjustedCells.saved`
 Section, not a different test heading. Every pack uses `unsupportedFactPolicy: block`
 (no persist; `unsupported_facts`). On a blocked write, those tools run
-one closed-set repair search (C1 retriever), seed new quotes, and
+one closed-set repair search (C1 retriever) pinned to cited files when
+the draft named them, seed new quotes, and
 re-ground the original text — not a Flash-Lite subagent. Prose leftover
 `<date>` / `<identifier>` / `<number>` persist after that lookup when
 the facts are still missing. Table leftovers bounce once
@@ -474,7 +494,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`requireInventoryReview`). Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (transcript-backed
-  batches skip the extract LLM; no thought summaries on extract). `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
+  batches skip the extract LLM; no thought summaries on extract). Unsigned
+  Celsius ranges reuse ingest's PNG signed-quantity overlay (`overlayPages`)
+  before extract — review Flash-Lite is text-only and cannot see a drawn minus.
+  `read_document_page` runs the same overlay. `finish_document_review` caps the findings sample (pin split-table / objective-named pages, then fair-share by attachment);
   follow-up turns strip prior findings arrays before the model call.
   `search_documents` `queries[]` is at most 8 and `limit` at most 16;
   `coerceSearchDocumentsInput` normalizes oversized model JSON, and
@@ -495,6 +518,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
 
 - Extract + embed is **Vertex-only** (`runDocumentIngest`). Gateway key is not
   enough. Stub with `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
+- Unsigned Celsius ranges (`15 °C to 130 °C`, `15–130 °C`, `15℃`) get ingest's
+  PNG overlay (`overlayNumericSignsOnPdfPages`). Never send the PDF for that
+  look. Empty looks stamp `numeric-sign-look:` so chat does not call Gemini twice.
 - `markAttachmentReadyForTests` must insert a page **and** a chunk or outline /
   keyword search have nothing to find.
 - `documentSummary` / `pageContext` are model output over untrusted PDFs.

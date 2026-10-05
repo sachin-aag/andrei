@@ -67,6 +67,21 @@ describe("retrieval eval corpus", () => {
     expect(protocolText).not.toContain(CORPUS_ANCHORS.pmcPr014);
   });
 
+  it("prints a URS minus as a stroke so the text layer stays unsigned 15 °C", async () => {
+    const files = await buildRetrievalCorpus();
+    const software = files.find(
+      (file) => file.filename === SOFTWARE_REQUIREMENTS_FILENAME
+    );
+    const layer = await readPdfTextLayer(software!.bytes);
+    const ursPage = layer.pages.find(
+      (page) => page.pageNumber === SOFTWARE_PAGES.ursShell
+    );
+    expect(ursPage?.text).toContain(CORPUS_ANCHORS.urs3);
+    expect(ursPage?.text).toContain(CORPUS_ANCHORS.unsignedShellRange);
+    expect(ursPage?.text).toContain(CORPUS_ANCHORS.approxRpm);
+    expect(ursPage?.text).not.toContain("-15");
+  });
+
   it("indexes generated PDFs without Document AI so stale-GCS CI can ingest", async () => {
     vi.stubEnv("GOOGLE_VERTEX_PROJECT", "eval-project");
     vi.stubEnv("DOCUMENT_AI_PROCESSOR_ID", "");

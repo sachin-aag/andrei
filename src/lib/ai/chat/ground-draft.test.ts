@@ -904,3 +904,101 @@ describe("gated placeholder persist policy", () => {
     expect(result.message).not.toMatch(/or use angle-bracket placeholders/i);
   });
 });
+
+describe("groundTableOperation explicit insert keep", () => {
+  it("keeps a chat date on go-ahead insert and still cites the page", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 1,
+        attachmentId: "att-urs",
+        quote: "User Requirement Specification cover. Document No. URS/GLR-1301.",
+      },
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 3,
+        attachmentId: "att-urs",
+        quote: [
+          "APPROVAL SHEET",
+          "Approved by Quality Assurance",
+          "Date of Approval 30-06-2025",
+        ].join("\n"),
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS",
+            rowContext: "URS User Requirement Specification",
+            insertText:
+              "30-06-2025 [User Requirement Specification.PDF, p. 1]",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: {
+        section: "qsr_qualification_documents",
+        latestUserMessageText: "go ahead and insert that",
+        recentAssistantTexts: [
+          "Yes, the URS approval sheet has 30-06-2025.",
+        ],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("30-06-2025");
+    expect(cell).not.toContain("<date>");
+    const dateClaim = result.provenance.claims.find(
+      (claim) => claim.kind === "date"
+    );
+    expect(dateClaim?.status).toBe("citation_moved");
+    expect(dateClaim?.source?.page).toBe(3);
+  });
+
+  it("still drops an invented date on a first-pass draft", () => {
+    const ledger = ledgerFromPages([
+      {
+        filename: "User Requirement Specification.PDF",
+        pageNumber: 3,
+        attachmentId: "att-urs",
+        quote: "APPROVAL SHEET Date of Approval 30-06-2025",
+      },
+    ]);
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 4,
+            rowKey: "URS",
+            rowContext: "URS User Requirement Specification",
+            insertText: "01-01-2099",
+          },
+        ],
+      },
+      ledger,
+      policy: "block",
+      grounding: {
+        section: "qsr_qualification_documents",
+        latestUserMessageText: "draft section 3",
+      },
+    });
+    expect(result.blocked).toBe(true);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).not.toContain("01-01-2099");
+  });
+});

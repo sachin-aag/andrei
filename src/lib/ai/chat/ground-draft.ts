@@ -39,11 +39,14 @@ import {
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
   isExemptFrameFact,
+  isExplicitInsertRequest,
+  shouldKeepUnsupportedFact,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
 import {
   attachLiveTableRowContext,
+  backfillQsrSopEffectiveDates,
   dateSupportedAsLabeledField,
   documentFamilyFromContext,
   extraQsrUnsupported,
@@ -53,7 +56,10 @@ import {
   isClearOnlyOptionalRtmEdit,
   isLabeledDateColumnLabel,
   isQsrRtmOptionalReferenceColumn,
+  isRtmNotFoundMarker,
   qsrFailClosedReason,
+  qsrReferenceValueOnCitedPage,
+  resolveRtmFamilyCell,
   rtmFamilyAtColumn,
   qsrTableColumnLabel,
   rowKeyFromContext,
@@ -68,11 +74,15 @@ import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 
 export type { ClaimProvenance, ClaimProvenanceRecord } from "@/lib/ai/chat/claim-facts";
 
+export type GroundDropReason = "fail_closed" | "unsourced_fact" | "qsr_extra";
+
 export type GroundDraftResult = {
   text: string;
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
+  /** Why a blocked write dropped, for claim_unsupported audit metadata. */
+  dropReason?: GroundDropReason;
 };
 
 function filenamesMatch(left: string, right: string): boolean {
@@ -212,11 +222,13 @@ function pageSupportsFact(
   quote: string,
   fact: HardFact,
   rowKey: string | null,
-  columnLabel?: string
+  columnLabel?: string,
+  presenceFallback = false
 ): boolean {
   if (columnLabel && isLabeledDateColumnLabel(columnLabel)) {
     const labeled = dateSupportedAsLabeledField(quote, fact, columnLabel);
-    if (labeled != null) return labeled;
+    if (labeled === true) return true;
+    if (labeled === false && !presenceFallback) return false;
   }
   if (rowKey && !factIsRowKey(fact, rowKey)) {
     return factSupportedForRowKey(quote, fact, rowKey);
@@ -233,11 +245,13 @@ function resolveFact(
     analyses?: readonly AnalysisEvidence[];
     section?: string;
     columnLabel?: string;
+    presenceFallback?: boolean;
   }
 ): ClaimProvenanceRecord {
   const pages = ledger.recordedPages();
   const rowKey = rowKeyFromContext(extras.context ?? extras.sentence);
   const columnLabel = extras.columnLabel?.trim() || undefined;
+  const presenceFallback = Boolean(extras.presenceFallback);
   const docFamily =
     extras.section === "qsr_qualification_documents" ||
     extras.section === "qsr_references"
@@ -253,7 +267,13 @@ function resolveFact(
   const citedHit = citedPages.find(
     (row) =>
       (!docFamily || filenameMatchesFamily(row.filename, docFamily)) &&
-      pageSupportsFact(row.quote, fact, rowKey, columnLabel)
+      pageSupportsFact(
+        row.quote,
+        fact,
+        rowKey,
+        columnLabel,
+        presenceFallback
+      )
   );
   const primaryCited = citedPages[0] ?? null;
   const identifiers = extractHardFacts(
@@ -278,7 +298,13 @@ function resolveFact(
     if (docFamily && !filenameMatchesFamily(row.filename, docFamily)) {
       return false;
     }
-    return pageSupportsFact(row.quote, fact, rowKey, columnLabel);
+    return pageSupportsFact(
+      row.quote,
+      fact,
+      rowKey,
+      columnLabel,
+      presenceFallback
+    );
   });
   const quotedPageCount = pages.filter((row) => row.quote.trim()).length;
   const ranked = rankMoveTarget({
@@ -290,6 +316,7 @@ function resolveFact(
   });
 
   const labeledDateRejected =
+    !presenceFallback &&
     Boolean(columnLabel) &&
     dateSupportedAsLabeledField(
       primaryCited?.quote ?? "",
@@ -549,17 +576,27 @@ export function groundDraftText(input: {
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
-  const failClosed = qsrFailClosedReason({
-    section: input.grounding?.section,
-    attachedFilenames: input.grounding?.attachedFilenames,
-    ledger: input.ledger,
-  });
+  const keepSource = {
+    latestUserMessageText: input.grounding?.latestUserMessageText,
+    recentAssistantTexts: input.grounding?.recentAssistantTexts,
+  };
+  const keepTurn = isExplicitInsertRequest(
+    input.grounding?.latestUserMessageText ?? ""
+  );
+  const failClosed = keepTurn
+    ? null
+    : qsrFailClosedReason({
+        section: input.grounding?.section,
+        attachedFilenames: input.grounding?.attachedFilenames,
+        ledger: input.ledger,
+      });
   if (failClosed) {
     return {
       text: cited,
       provenance: { claims: [], policy: input.policy },
       unsupported: [syntheticUnsupportedFact(failClosed)],
       blocked: input.policy === "block",
+      dropReason: input.policy === "block" ? "fail_closed" : undefined,
     };
   }
   if (!input.ledger.hasQuotedPages() || mode === "skip") {
@@ -573,6 +610,8 @@ export function groundDraftText(input: {
 
   const facts = extractHardFacts(cited);
   const records = facts.map((fact) => {
+    const keepFact =
+      keepTurn || shouldKeepUnsupportedFact(fact, keepSource);
     if (
       mode === "frame" &&
       isExemptFrameFact(fact, {
@@ -599,6 +638,7 @@ export function groundDraftText(input: {
         col: input.grounding?.tableCol,
         override: input.grounding?.tableColumnLabel,
       }),
+      presenceFallback: keepFact,
     });
   });
   const withMoved = applyMovedCitations(
@@ -612,9 +652,10 @@ export function groundDraftText(input: {
       )
     )
   );
-  const unsourcedFacts = facts.filter(
-    (_, index) => records[index]?.status === "unsourced"
-  );
+  const unsourcedFacts = facts.filter((fact, index) => {
+    if (records[index]?.status !== "unsourced") return false;
+    return !(keepTurn || shouldKeepUnsupportedFact(fact, keepSource));
+  });
   const extraUnsupported = extraQsrUnsupported({
     cell: cited,
     context: input.context ?? cited,
@@ -626,7 +667,9 @@ export function groundDraftText(input: {
       override: input.grounding?.tableColumnLabel,
     }),
     ledger: input.ledger,
-  });
+  }).filter(
+    (fact) => !(keepTurn || shouldKeepUnsupportedFact(fact, keepSource))
+  );
   const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;
@@ -652,11 +695,19 @@ export function groundDraftText(input: {
       !(record.status === "verified" && !record.source && !record.analysis)
   );
 
+  const dropReason: GroundDropReason | undefined = !blocked
+    ? undefined
+    : unsourcedFacts.length > 0
+      ? "unsourced_fact"
+      : extraUnsupported.length > 0
+        ? "qsr_extra"
+        : undefined;
   return {
     text,
     provenance: { claims: provenanceClaims, policy: input.policy },
     unsupported: unsupportedFacts,
     blocked,
+    dropReason,
   };
 }
 
@@ -682,27 +733,28 @@ export function groundTableOperation(input: {
   provenance: ClaimProvenance;
   unsupported: HardFact[];
   blocked: boolean;
+  dropReason?: GroundDropReason;
 } {
   const cited = rewriteTableOperationCitations(
     attachLiveTableRowContext(input.operation, input.fieldDoc),
     input.ledger
   );
-  const failClosed = isClearOnlyOptionalRtmEdit(
-    cited,
-    input.grounding?.section
-  )
-    ? null
-    : qsrFailClosedReason({
-        section: input.grounding?.section,
-        attachedFilenames: input.grounding?.attachedFilenames,
-        ledger: input.ledger,
-      });
+  const failClosed =
+    isClearOnlyOptionalRtmEdit(cited, input.grounding?.section) ||
+    isExplicitInsertRequest(input.grounding?.latestUserMessageText ?? "")
+      ? null
+      : qsrFailClosedReason({
+          section: input.grounding?.section,
+          attachedFilenames: input.grounding?.attachedFilenames,
+          ledger: input.ledger,
+        });
   if (failClosed) {
     return {
       operation: cited,
       provenance: { claims: [], policy: input.policy },
       unsupported: [syntheticUnsupportedFact(failClosed)],
       blocked: input.policy === "block",
+      dropReason: input.policy === "block" ? "fail_closed" : undefined,
     };
   }
   if (!input.ledger.hasQuotedPages()) {
@@ -714,9 +766,16 @@ export function groundTableOperation(input: {
     };
   }
 
+  const dated = backfillQsrSopEffectiveDates(
+    cited,
+    input.ledger,
+    input.grounding?.section
+  );
+
   const claims: ClaimProvenanceRecord[] = [];
   const unsupported: HardFact[] = [];
   let blocked = false;
+  let dropReason: GroundDropReason | undefined;
   const groundValue = (
     value: string,
     context: string | undefined,
@@ -730,8 +789,41 @@ export function groundTableOperation(input: {
     ) {
       return "";
     }
+    const family =
+      col != null
+        ? rtmFamilyAtColumn(input.grounding?.section, col)
+        : null;
+    let next = value;
+    if (family) {
+      if (isRtmNotFoundMarker(value)) return "NA";
+      const key = rowKeyFromContext(context ?? "") ?? "";
+      const resolved = resolveRtmFamilyCell({
+        cell: value,
+        family,
+        key,
+        context: context ?? "",
+        ledger: input.ledger,
+      });
+      switch (resolved.action) {
+        case "clear":
+          return "";
+        case "replace":
+          if (!resolved.text) return "";
+          next =
+            resolved.citation && !resolved.text.includes(resolved.citation)
+              ? `${resolved.text} ${resolved.citation}`
+              : resolved.text;
+          break;
+        case "keep":
+          break;
+        default: {
+          const exhaustive: never = resolved;
+          return exhaustive;
+        }
+      }
+    }
     const grounded = groundDraftText({
-      text: value,
+      text: next,
       ledger: input.ledger,
       policy: input.policy,
       grounding: {
@@ -756,17 +848,20 @@ export function groundTableOperation(input: {
     }
     claims.push(...grounded.provenance.claims);
     unsupported.push(...grounded.unsupported);
-    if (grounded.blocked) blocked = true;
+    if (grounded.blocked) {
+      blocked = true;
+      if (!dropReason && grounded.dropReason) dropReason = grounded.dropReason;
+    }
     return grounded.text;
   };
 
   let operation: TableOperation;
-  switch (cited.kind) {
+  switch (dated.kind) {
     case "edit_cells":
       operation = {
-        ...cited,
-        cells: cited.cells.map((cell) => {
-          const context = cited.cells
+        ...dated,
+        cells: dated.cells.map((cell) => {
+          const context = dated.cells
             .filter(
               (rowCell) => editCellsGroupKey(rowCell) === editCellsGroupKey(cell)
             )
@@ -792,9 +887,28 @@ export function groundTableOperation(input: {
           };
         }),
       };
+      if (input.grounding?.section === "qsr_references") {
+        const kept = operation.cells.filter(
+          (cell) =>
+            cell.col !== 1 ||
+            !cell.insertText.trim() ||
+            qsrReferenceValueOnCitedPage(cell.insertText, input.ledger)
+        );
+        if (kept.length === 0 && operation.cells.length > 0) {
+          blocked = true;
+          if (!dropReason) dropReason = "qsr_extra";
+          unsupported.push(
+            syntheticUnsupportedFact(
+              "reference number not printed on the cited page"
+            )
+          );
+        } else {
+          operation = { ...operation, cells: kept };
+        }
+      }
       if (input.clearOptionalOnBlock) {
         const explicitClears = new Set(
-          cited.cells
+          dated.cells
             .filter(
               (cell) =>
                 isQsrRtmOptionalReferenceColumn(
@@ -819,13 +933,13 @@ export function groundTableOperation(input: {
           return true;
         });
         operation = { ...operation, cells: kept };
-        if (kept.length === 0 && cited.cells.length > 0) blocked = true;
+        if (kept.length === 0 && dated.cells.length > 0) blocked = true;
       }
       break;
     case "insert_rows":
       operation = {
-        ...cited,
-        rows: cited.rows.map((row) => {
+        ...dated,
+        rows: dated.rows.map((row) => {
           const context = row.join("\n");
           return row.map((cell, col) =>
             groundValue(
@@ -843,23 +957,23 @@ export function groundTableOperation(input: {
       break;
     case "insert_column":
       operation = {
-        ...cited,
-        header: groundValue(cited.header, cited.header),
-        values: cited.values?.map((value) =>
-          groundValue(value, `${cited.header}\n${value}`, undefined, cited.header)
+        ...dated,
+        header: groundValue(dated.header, dated.header),
+        values: dated.values?.map((value) =>
+          groundValue(value, `${dated.header}\n${value}`, undefined, dated.header)
         ),
       };
       break;
     case "create_table":
       operation = {
-        ...cited,
-        headers: cited.headers.map((header) =>
-          groundValue(header, cited.headers.join("\n"))
+        ...dated,
+        headers: dated.headers.map((header) =>
+          groundValue(header, dated.headers.join("\n"))
         ),
-        rows: cited.rows?.map((row) => {
-          const context = [...cited.headers, ...row].join("\n");
+        rows: dated.rows?.map((row) => {
+          const context = [...dated.headers, ...row].join("\n");
           return row.map((cell, col) =>
-            groundValue(cell, context, col, cited.headers[col])
+            groundValue(cell, context, col, dated.headers[col])
           );
         }),
       };
@@ -867,10 +981,10 @@ export function groundTableOperation(input: {
     case "delete_rows":
     case "delete_column":
     case "delete_table":
-      operation = cited;
+      operation = dated;
       break;
     default: {
-      const exhaustive: never = cited;
+      const exhaustive: never = dated;
       return exhaustive;
     }
   }
@@ -880,6 +994,7 @@ export function groundTableOperation(input: {
     provenance: { claims, policy: input.policy },
     unsupported,
     blocked,
+    dropReason: blocked ? dropReason : undefined,
   };
 }
 

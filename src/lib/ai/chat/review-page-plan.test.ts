@@ -812,6 +812,6 @@ describe("QSR lifecycle cover review", () => {
     ).toBe("scored");
     expect(qsrReviewPagePlan("Draft section 2,3,4")).toBe("mixed");
     expect(qsrReviewPagePlan("populate tables 3 and 4")).toBe("mixed");
-    expect(qsrReviewPagePlan("draft table 4")).toBe("urs");
+    expect(qsrReviewPagePlan("draft table 4")).toBe("scored");
   });
 });

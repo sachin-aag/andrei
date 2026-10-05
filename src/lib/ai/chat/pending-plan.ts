@@ -726,6 +726,7 @@ export function completedPlanSectionLabel(
 const PLAN_EDIT_TOOLS = new Set([
   "draft_field",
   "edit_table",
+  "draft_rtm_table",
   "propose_edit",
   "draft_identity",
 ]);

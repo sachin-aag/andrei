@@ -204,6 +204,40 @@ describe("evidenceContainsFact", () => {
     ).toBe(true);
   });
 
+  it("matches integer 1600 L against OCR Qty: 1600.0 L", () => {
+    const volume = fact("Simulation trial 1600 L", "number");
+    expect(
+      evidenceContainsFact(
+        "8.2.4 Simulation. Qty: 1600.0 L 2. Note: Close the manhole",
+        volume
+      )
+    ).toBe(true);
+    expect(
+      evidenceContainsFact("Qty: 1600.5 L 2. Note: Close the manhole", volume)
+    ).toBe(false);
+  });
+
+  it("matches 2.5 Kg/cm² when OCR prints a numbered row as 1. 2.5", () => {
+    const pressure = fact("2.5 Kg/cm² to Full Vacuum", "number");
+    expect(pressure.text).toContain("2.5");
+    expect(
+      evidenceContainsFact(
+        "Coil/jacket side Reactor (GLR-1301) VESSEL (VES-1308) 1. 2.5 Kg/cm² to Full Vacuum NLT 0.5 Kg/cm² Operating pressure Kg/cm² 8.3 View lamp",
+        pressure
+      )
+    ).toBe(true);
+  });
+
+  it("matches 9320 L when the unit sits in the column header", () => {
+    const overflow = fact("Overflow volume 9320 L", "number");
+    expect(
+      evidenceContainsFact(
+        "cable 1200 NA 5 Full volume (L) 8000 6 Over flow volume (L) 9320 Format No.",
+        overflow
+      )
+    ).toBe(true);
+  });
+
   it("matches 14 days against a spaced incubation line", () => {
     const duration = fact("Incubation 14 days");
     expect(

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { comments, reportSections } from "@/db/schema";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
@@ -8,6 +9,7 @@ import {
   extractReviewFindingsFromPages,
 } from "@/lib/ai/chat/document-review";
 import { buildChatTools } from "@/lib/ai/chat/tools";
+import { rowKeyFromContext } from "@/lib/ai/chat/qsr-row-grounding";
 import { emptyQsrContent, QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import type { QsrSectionKey } from "@/lib/document-types/qsr/sections";
 import type { JSONContent } from "@tiptap/core";
@@ -78,6 +80,19 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/attachments/overlay-stored-pages", () => ({
+  overlayNumericSignsOnReviewPages: async ({
+    pages,
+  }: {
+    pages: unknown[];
+  }) => pages,
+  overlayNumericSignsOnReadPage: async ({
+    page,
+  }: {
+    page: unknown;
+  }) => page,
+}));
+
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
 }));
@@ -90,6 +105,8 @@ const IQ_FILENAME = "Installation Qualification.PDF";
 const IQ_ID = "att_iq";
 const OQ_FILENAME = "Operational Qualification.PDF";
 const OQ_ID = "att_oq";
+const PQ_FILENAME = "Performance Qualification.PDF";
+const PQ_ID = "att_pq";
 const REPORT_ID = "report-qsr-rtm";
 
 const COVER_QUOTE =
@@ -102,6 +119,13 @@ const NEIGHBOUR_QUOTE =
   "URS-5 Jacket temperature 20-25 °C for the jacket loop. URS-37 Process temperature 15–130 °C for the vessel. URS-44 Emergency Stop push button at each station.";
 const COLUMN_QUOTE =
   "URS ID # Parameters User requirements URS-1 Reactor Capacity URS-2 MOC URS-3 Shell Operating temperature URS-4 Shell Operating pressure URS-12 Jacket MOC Format. No.:-QAD-SOP-FS-003-F03-00 8000 L High-quality Glass Lining and thickness should not be less than 1 mm 15 °C to 130 °C Full Vacuum to 3.5 Kg/cm²";
+const INSTRUMENT_QUOTE = readFileSync(
+  new URL(
+    "../../attachments/fixtures/glr-1301-urs-page-9.transcript.txt",
+    import.meta.url
+  ),
+  "utf8"
+);
 
 const URS_PAGES: Record<
   number,
@@ -112,6 +136,7 @@ const URS_PAGES: Record<
   6: { transcript: COLUMN_QUOTE, visualInterpretation: "" },
   8: { transcript: `URS-35 ${VACUUM_QUOTE}`, visualInterpretation: "" },
   9: { transcript: MOC_QUOTE, visualInterpretation: "" },
+  10: { transcript: INSTRUMENT_QUOTE, visualInterpretation: "" },
   12: {
     transcript: "URS-62 Heat Transfer Area NLT 25.0 m² for the jacket.",
     visualInterpretation: "",
@@ -167,6 +192,17 @@ function oqDoc(pageCount = 40) {
   return {
     attachmentId: OQ_ID,
     filename: OQ_FILENAME,
+    description: null,
+    pageCount,
+    ingestRunId: "run",
+    documentSummary: null,
+  };
+}
+
+function pqDoc(pageCount = 40) {
+  return {
+    attachmentId: PQ_ID,
+    filename: PQ_FILENAME,
     description: null,
     pageCount,
     ingestRunId: "run",
@@ -352,6 +388,27 @@ async function readOqPage(
   });
   const read = await tools.read_document_page!.execute!(
     { attachmentId: OQ_ID, pageNumber },
+    TEST_TOOL_OPTIONS
+  );
+  expect(read).toMatchObject({ status: "found" });
+}
+
+async function readPqPage(
+  tools: ReturnType<typeof buildChatTools>,
+  pageNumber: number,
+  transcript: string
+) {
+  readDocumentPageMock.mockResolvedValueOnce({
+    attachmentId: PQ_ID,
+    filename: PQ_FILENAME,
+    pageNumber,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    printedPageLabel: String(pageNumber),
+  });
+  const read = await tools.read_document_page!.execute!(
+    { attachmentId: PQ_ID, pageNumber },
     TEST_TOOL_OPTIONS
   );
   expect(read).toMatchObject({ status: "found" });
@@ -2179,6 +2236,186 @@ Complies`,
     expect(cells.find((c) => c.rowKey === "URS-7" && c.col === 4)?.insertText).toContain(
       "13.3.5"
     );
+  });
+
+  it("keeps PQ 1600 L from live OCR Qty: 1600.0 L instead of dropping the cell", async () => {
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        ["URS-10", "Working volume", "1600 L", "", "", "", "", ""],
+      ]),
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), pqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readPqPage(
+      tools,
+      17,
+      "8.2.4 Simulation. Qty: 1600.0 L 2. Note: Close the manhole"
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill PQ from the simulation page.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 6,
+              rowKey: "URS-10",
+              insertText: `8.2.4 – Simulation trial 1600 L [${PQ_FILENAME}, p. 17]`,
+              rowContext: "URS-10\nWorking volume\n1600 L",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    const cells = op.kind === "edit_cells" ? op.cells : [];
+    expect(cells.find((cell) => cell.col === 6)?.insertText).toContain("1600 L");
+    expect(cells.find((cell) => cell.col === 6)?.insertText).toContain("8.2.4");
+  });
+
+  it("does not propose an OQ family cell when 9.3.4 is missing from the cited page", async () => {
+    mockSection("qsr_rtm_process", {
+      table: rtmTableDoc([
+        ["URS-3", "Shell Operating temperature", "−15 °C to 130 °C", "", "", "", "", ""],
+      ]),
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), oqDoc()]);
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readOqPage(
+      tools,
+      83,
+      "Operating Range Maximum Temperature Verified By Sign & Date 120.8°C 21-05-2026 Equipment ID Minimum Temperature GLR-1301 -7.4c Format No."
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill OQ from the operating-range page.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 5,
+              rowKey: "URS-3",
+              insertText: `9.3.4 – Operating range temperature verification (−7.4 °C to 120.8 °C) [${OQ_FILENAME}, p. 83]`,
+              rowContext: "URS-3\nShell Operating temperature",
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+  });
+
+  it("proposes URS-34 lettered subparts as separate 5.2 rows from the page-9 fixture", async () => {
+    mockSection("qsr_rtm_control");
+    const tools = buildTools({ section: "qsr_rtm_control" });
+    await readUrsPage(tools, 10);
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_control",
+        targetField: "table",
+        reasoning: "Add Instrument Requirement rows from the URS.",
+        operation: {
+          kind: "insert_rows",
+          rows: [
+            [
+              "URS-34",
+              "Desired level of instruments",
+              "Temperature Indicator & Duplex RTD Sensor",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+            ],
+            ["URS-34A", "For solvent transfer", "Flowmeter", "", "", "", "", "", ""],
+            [
+              "URS-34B",
+              "For cleaning",
+              "Water pressure jet is required",
+              "",
+              "",
+              "",
+              "",
+              "",
+              "",
+            ],
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    const blob = rows.flat().join("\n");
+    expect(blob).toContain("URS-34");
+    expect(blob).toMatch(/URS-34A/i);
+    expect(blob).toMatch(/URS-34B/i);
+    expect(blob).toContain("Flowmeter");
+    expect(blob).toContain("Water pressure jet");
+    expect(blob).not.toContain("<identifier>");
+    expect(
+      (result as { missingUrsIds?: string[] }).missingUrsIds
+    ).toEqual(expect.arrayContaining(["URS-35", "URS-36"]));
+  });
+
+  it("loads draft_rtm_table only when a single RTM table is in scope", () => {
+    expect(buildTools({ section: "qsr_rtm_process" }).draft_rtm_table).toBeDefined();
+    expect(
+      buildChatTools({
+        reportId: REPORT_ID,
+        canEdit: true,
+        actor: ACTOR,
+        documentType: "qualification_summary_report",
+        sectionScope: "all",
+        documentReview: matchingRtmReview(),
+        unsupportedFactPolicy: "block",
+        retrievalPolicy: "adaptive",
+      }).draft_rtm_table
+    ).toBeUndefined();
+  });
+
+  it("draft_rtm_table lands every reviewed process URS ID from a column-major page", async () => {
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({ section: "qsr_rtm_process" });
+    await readUrsPage(tools, 6);
+    const result = await tools.draft_rtm_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        reasoning: "Draft table 5 from the URS.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    const op = proposedTableOp(inserted);
+    expect(op.kind).toBe("insert_rows");
+    const rows = op.kind === "insert_rows" ? op.rows : [];
+    const ids = rows.map((row) => {
+      const raw = String(row[0] ?? "")
+        .replace(/\s*\[[^\]]*\]\s*/g, " ")
+        .trim();
+      return rowKeyFromContext(raw) ?? raw;
+    });
+    expect(ids).toEqual(expect.arrayContaining(["URS-2", "URS-3", "URS-4", "URS-12"]));
+    expect(ids).not.toContain("URS-1");
+    const blob = rows.flat().join(" ");
+    expect(blob).toMatch(/MOC|Glass|8000|Vacuum|3\.5/i);
+    expect(
+      (result as { missingUrsIds?: string[] }).missingUrsIds ?? []
+    ).not.toEqual(expect.arrayContaining(["URS-2", "URS-3", "URS-4", "URS-12"]));
   });
 
   it("folds later Table 3 insert_rows onto the first open card (GLR-1301)", async () => {

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v174-insert-rows-scaffold-fold");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v180-qsr-rtm-draft-fold");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {

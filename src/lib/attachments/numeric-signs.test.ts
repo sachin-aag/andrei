@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   glueOcrMinusSigns,
   glueOcrUrsIds,
+  NUMERIC_SIGN_LOOK_MARK,
   overlayLeadingMinuses,
   pageNeedsNumericSignLook,
+  stampNumericSignLook,
   unsignedQuantityRangeCount,
 } from "./numeric-signs";
 
@@ -54,6 +56,17 @@ describe("glueOcrUrsIds", () => {
       "URS-1 Reactor Capacity URS-13 Jacket Type"
     );
   });
+
+  it("glues a lettered URS-34 subpart", () => {
+    expect(glueOcrUrsIds("URS-34 a For solvent transfer")).toBe(
+      "URS-34a For solvent transfer"
+    );
+    expect(glueOcrUrsIds("URS-34 b\nFor cleaning")).toBe(
+      "URS-34b\nFor cleaning"
+    );
+    expect(glueOcrUrsIds(GLR_1301_URS_PAGE_9)).toMatch(/URS-34a/);
+    expect(glueOcrUrsIds(GLR_1301_URS_PAGE_9)).toMatch(/URS-34b/);
+  });
 });
 
 describe("overlayLeadingMinuses", () => {
@@ -95,10 +108,19 @@ describe("overlayLeadingMinuses", () => {
     ).toBe("15 °C to 130 °C");
   });
 
-  it("does not turn an en-dash range into a signed quantity", () => {
+  it("copies a leading minus onto an en-dash Celsius range, not the high end", () => {
     expect(
       overlayLeadingMinuses("Process temperature 15–130 °C", "-15 °C to 130 °C")
-    ).toBe("Process temperature 15–130 °C");
+    ).toBe("Process temperature -15–130 °C");
+  });
+
+  it("copies a leading minus onto compact ℃ and OCR °to ranges", () => {
+    expect(overlayLeadingMinuses("15℃ to 130℃", "−15℃ to 130℃")).toBe(
+      "-15℃ to 130℃"
+    );
+    expect(overlayLeadingMinuses("20°to 220℃", "-20 °C to 220 °C")).toBe(
+      "-20°to 220℃"
+    );
   });
 
   it("overlays the live GLR-1301 page-6 fixture without emptying RPM", () => {
@@ -126,5 +148,19 @@ describe("pageNeedsNumericSignLook", () => {
     expect(pageNeedsNumericSignLook("slice 0 line 0 of verification evidence")).toBe(
       false
     );
+  });
+
+  it("looks at en-dash, ℃ , and OCR °to unsigned ranges", () => {
+    expect(pageNeedsNumericSignLook("15–130 °C")).toBe(true);
+    expect(pageNeedsNumericSignLook("15℃ to 130℃")).toBe(true);
+    expect(pageNeedsNumericSignLook("20°to 220℃")).toBe(true);
+    expect(pageNeedsNumericSignLook("-15–130 °C")).toBe(false);
+  });
+
+  it("skips a second look after the overlay stamp, including an empty look", () => {
+    const stamped = stampNumericSignLook("", "");
+    expect(stamped).toContain(NUMERIC_SIGN_LOOK_MARK);
+    expect(pageNeedsNumericSignLook("15 °C to 130 °C", stamped)).toBe(false);
+    expect(pageNeedsNumericSignLook("15 °C to 130 °C", "")).toBe(true);
   });
 });

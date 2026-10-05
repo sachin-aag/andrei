@@ -35,6 +35,7 @@ export default async function ReportPrintPage({
       <div className="no-print mb-6 flex gap-3">
         <Link
           href={reportWorkspacePath(reportId, user)}
+          prefetch={false}
           className="underline"
         >
           Back to report

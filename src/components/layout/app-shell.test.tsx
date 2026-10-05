@@ -14,13 +14,19 @@ vi.mock("next/link", () => ({
   default: function MockLink({
     children,
     href,
+    prefetch,
     ...rest
   }: {
     children: ReactNode;
     href: string;
+    prefetch?: boolean;
   }) {
     return (
-      <a href={href} {...rest}>
+      <a
+        href={href}
+        data-prefetch={prefetch === false ? "false" : "true"}
+        {...rest}
+      >
         {children}
       </a>
     );
@@ -194,5 +200,18 @@ describe("AppShell primary navigation", () => {
       "/admin/prompts",
     ]);
     expect(screen.queryByRole("link", { name: "Insights" })).not.toBeInTheDocument();
+  });
+
+  it("does not prefetch sidebar routes", () => {
+    setCustomer("mj");
+    render(
+      <AppShell user={engineer} initialUsers={[engineer]}>
+        <div>main</div>
+      </AppShell>
+    );
+    const nav = screen.getByRole("complementary", { name: "Primary navigation" });
+    for (const link of within(nav).getAllByRole("link")) {
+      expect(link).toHaveAttribute("data-prefetch", "false");
+    }
   });
 });

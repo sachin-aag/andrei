@@ -4,9 +4,15 @@ import {
   POSTHOG_PROXY_PATH,
   POSTHOG_UI_HOST,
 } from "@/lib/analytics/posthog-config";
+import { expirePostHogCookiesInBrowser } from "@/lib/analytics/posthog-cookies";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { useEffect } from "react";
+
+function posthogKey(): string | undefined {
+  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY?.trim();
+  return key || undefined;
+}
 
 export function PostHogProvider({
   children,
@@ -20,15 +26,23 @@ export function PostHogProvider({
   name?: string | null;
 }) {
   useEffect(() => {
-    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+    const key = posthogKey();
+    if (!key) return;
+    expirePostHogCookiesInBrowser();
+    posthog.init(key, {
       api_host: POSTHOG_PROXY_PATH,
       ui_host: POSTHOG_UI_HOST,
       person_profiles: "identified_only",
+      // Default is localStorage+cookie; feature-flag payloads in cookies stall
+      // /edit (Cookie header on every RSC + Edge proxy). Identity stays in
+      // localStorage. Existing ph_* cookies are expired above and in proxy.ts.
+      persistence: "localStorage",
+      cross_subdomain_cookie: false,
     });
   }, []);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !posthogKey()) return;
 
     posthog.identify(userId, {
       email: email ?? undefined,

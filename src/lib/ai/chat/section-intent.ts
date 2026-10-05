@@ -1,6 +1,9 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { getDocumentType } from "@/lib/document-types";
-import { EMPTY_QSR_CONTENT } from "@/lib/document-types/qsr/sections";
+import {
+  EMPTY_QSR_CONTENT,
+  sectionForQsrFormTableNumber,
+} from "@/lib/document-types/qsr/sections";
 import { orderedSectionContents } from "@/lib/suggestions/document-table-number";
 import { sectionForPrintedTableNumber } from "@/lib/suggestions/table-operation";
 
@@ -149,9 +152,10 @@ function sectionHitsFromText(
     sections: sectionsForPrintedTables(documentType, context?.sections),
   });
   for (const listed of listedPrintedTables(trimmed)) {
-    const section = sectionForPrintedTableNumber(
-      printedContents,
-      listed.number
+    const section = (
+      documentType === "qualification_summary_report"
+        ? sectionForQsrFormTableNumber(listed.number)
+        : sectionForPrintedTableNumber(printedContents, listed.number)
     ) as SectionType | undefined;
     if (!section) continue;
     addHit(hits, bySection, section, listed.index);

@@ -46,24 +46,33 @@ describe("retrieval-cases.json", () => {
     );
   });
 
-  it("keeps mustContain only on the excerpt-truncation cases; the judge grades the rest", () => {
+  it("keeps mustContain only on excerpt-truncation and live overlay cases; the judge grades the rest", () => {
     const executed = cases.find(
       (entry) => entry.id === "equipment-executed-log-negative"
     );
     const locator = cases.find(
       (entry) => entry.id === "equipment-page-2-locator"
     );
+    const ursMinus = cases.find((entry) => entry.id === "urs-3-recovered-minus");
     expect(executed?.gold[0]?.mustContain).toEqual([
       CORPUS_ANCHORS.digitalCalipers,
     ]);
     expect(locator?.gold[0]?.mustContain).toEqual([
       CORPUS_ANCHORS.requiredTable,
     ]);
+    expect(ursMinus?.gold[0]).toEqual({
+      filename: SOFTWARE_REQUIREMENTS_FILENAME,
+      page: 3,
+      mustContain: ["-15"],
+    });
+    expect(ursMinus?.mustNotContainAnywhere).toEqual(["-50"]);
+    const mustContainIds = new Set([
+      "equipment-executed-log-negative",
+      "equipment-page-2-locator",
+      "urs-3-recovered-minus",
+    ]);
     const judgeOnly = cases.filter(
-      (entry) =>
-        entry.gold.length > 0 &&
-        entry.id !== "equipment-executed-log-negative" &&
-        entry.id !== "equipment-page-2-locator"
+      (entry) => entry.gold.length > 0 && !mustContainIds.has(entry.id)
     );
     expect(judgeOnly.length).toBeGreaterThanOrEqual(4);
     for (const entry of judgeOnly) {

@@ -89,12 +89,13 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   (and `.cursor/rules/eval-and-suggestions.mdc` for apply/merge).
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
-  are silently missing in Plan. Internal `unsupported_tool` is the exception
-  — keep it out of the allowlist and `activeTools`; `repairChatToolCall`
-  remaps a hallucinated name such as `edit_table` onto it so
-  `AI_NoSuchToolError` cannot fail the chat. On Agent read, that signal
-  unlocks registered write tools on the next step. `list_suggestions` is on
-  the Plan allowlist.
+  are silently missing in Plan. Write tools (`edit_table`, `draft_rtm_table`,
+  `draft_field`, `propose_edit`) stay off that list. Internal
+  `unsupported_tool` is the exception — keep it out of the allowlist and
+  `activeTools`; `repairChatToolCall` remaps a hallucinated name such as
+  `edit_table` onto it so `AI_NoSuchToolError` cannot fail the chat. On Agent
+  read, that signal unlocks registered write tools on the next step.
+  `list_suggestions` is on the Plan allowlist.
 - Chat/workspace changes walk the **full spectrum**, not just the control you
   clicked: Document **and** Agent chrome, Report chat **and** Analytics chat,
   then UI → request body → route parser → prompt → tools → Plan allowlist →
@@ -170,7 +171,10 @@ MJ convention is `@mjbiopharm.com`; the script does not enforce the domain.
 
 `POST /api/test/login` and `POST /api/test/seed-auth-users` need **both**
 `ALLOW_TEST_LOGIN=true` **and** `TEST_AUTH_EMAIL`. A 404 usually means the
-process serving the request is missing one of them.
+process serving the request is missing one of them. The same pair stubs
+`sendResetEmail` (token is still written; Resend is skipped) so Playwright
+lockout / forgot-password can show the success screen without
+`AUTH_RESEND_KEY`.
 
 `src/proxy.ts` does **not** enforce the site-access gate (`SITE_ACCESS_PASSWORD`
 + `/unlock`).
@@ -205,14 +209,15 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 Always-on summary only. Full policy: `.cursor/rules/chat-and-attachments.mdc`
 and `.claude/skills/chat-subsystem`. Grounding incidents replay
-`edit_table` (`qsr-rtm-draft-replay.test.ts`) and `pnpm chat-eval -- --replay`.
+`edit_table` / `draft_rtm_table` (`qsr-rtm-draft-replay.test.ts`) and
+`pnpm chat-eval -- --replay`.
 
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
   File-set questions use `list_attachments`; facts *inside* a PDF use
   `search_documents`. Report body is not chunk-indexed — use `read_section`.
   Living plan: `docs/retrieval.md`.
 - Search-then-ask. Default retrieval is adaptive. Empty inventory tables need
-  a finished matching document review before `edit_table`. Hard facts in write
+  a finished matching document review before `edit_table` / `draft_rtm_table`. Hard facts in write
   tools must match a retrieved quote (`groundDraftText`). Every pack uses
   `unsupportedFactPolicy: block`. Analytics `write_column` is not gated.
 - Saved fields use numbered `[n]` markers plus a trailing Citations list.
@@ -221,6 +226,20 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   tools. Composer scope is `@` tags. Voice is click start / click stop
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
+- A QSR RTM family-column cell persists as `{section} – {audit line}`
+  from the protocol body page that prints that heading — not a
+  cover/contents `Section 8` cite, and not a reused number-only `12.1`.
+  Family workers keep grepping until each row has that audit line (or
+  NA); persist attaches an audit line to leftover `12.1` only when that
+  same section number is on the ledger (it does not swap `12.1` onto
+  `12.4`). Integer `1600` matches OCR `1600.0`.
+  Repair search pins to cited files. Word-form Table 4 is SOPs; Tables
+  5–10 use `draft_rtm_table` when that table is in `@` scope (every
+  reviewed URS ID, then DQ/IQ/OQ/PQ in parallel). `edit_table` is the
+  single-cell correction path. URS-34 / 34a / 34b are
+  lettered Instrument Requirement subparts in 5.2, not a column-major
+  ID run. Gold: `qsr-rtm-draft-replay.test.ts`, page-9 fixture, and
+  `scripts/eval/chat-draft-cases.json`.
 
 ## Turbopack 404
 

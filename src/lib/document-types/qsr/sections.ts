@@ -52,6 +52,31 @@ export const QSR_TABLE_SECTION_KEYS = [
   "qsr_operating_range",
 ] as const satisfies readonly QsrSectionKey[];
 
+/**
+ * Word-form Table N on QAD/016/F06-00 (Table 3 Qualification Documents,
+ * Table 4 SOPs, Tables 5–10 RTM). Empty shells still occupy N — chat
+ * "draft table 4" is SOPs, not the next filled grid.
+ */
+export const QSR_FORM_TABLE_SECTIONS = [
+  "qsr_references",
+  "qsr_acronyms",
+  "qsr_qualification_documents",
+  "qsr_sops",
+  "qsr_rtm_process",
+  "qsr_rtm_control",
+  "qsr_rtm_gmp",
+  "qsr_rtm_safety",
+  "qsr_rtm_csv",
+  "qsr_rtm_maintenance",
+] as const satisfies readonly QsrSectionKey[];
+
+export function sectionForQsrFormTableNumber(
+  printed: number
+): QsrSectionKey | undefined {
+  if (!Number.isInteger(printed) || printed < 1) return undefined;
+  return QSR_FORM_TABLE_SECTIONS[printed - 1];
+}
+
 export type QsrTableSectionKey = (typeof QSR_TABLE_SECTION_KEYS)[number];
 
 const TABLE_KEY_SET: ReadonlySet<string> = new Set(QSR_TABLE_SECTION_KEYS);

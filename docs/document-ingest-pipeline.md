@@ -121,9 +121,9 @@ flowchart TD
   E --> D
 ```
 
-Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v13`.
+Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v14`.
 
-Born-digital pages keep the parser transcript. When a page still has an unsigned Celsius range (`15 °C to 130 °C`), ingest rasters that page to PNG (Node canvas, cap 5 pages) and copies a leading minus onto matching °C quantities only if the look reports a signed temperature. A tilde (`~50+/-10 RPM`) is approximate, not a minus. Raster failures leave the transcript unsigned (`overlayErrors`) instead of inventing a sign. Gemini must not be sent the PDF itself for that look — it would reread the unsigned text layer.
+Born-digital pages keep the parser transcript. When a page still has an unsigned Celsius range (`15 °C to 130 °C`, `15–130 °C`, `15℃`), ingest rasters that page to PNG (Node canvas, cap 5 pages) and copies a leading minus onto matching °C quantities only if the look reports a signed temperature. A tilde (`~50+/-10 RPM`) is approximate, not a minus. Raster failures leave the transcript unsigned (`overlayErrors`) instead of inventing a sign. Gemini must not be sent the PDF itself for that look — it would reread the unsigned text layer. A successful look, including “none visible”, stamps `numeric-sign-look:` on `visualInterpretation` so chat/review reuse the same overlay without a second Gemini call. Drafting a QSR RTM from an already-ingested URS runs that same PNG overlay before review extract and on `read_document_page` when the stored transcript is still unsigned.
 
 ## DOCX path
 
