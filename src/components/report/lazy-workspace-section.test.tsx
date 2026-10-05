@@ -4,6 +4,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   LazyWorkspaceSection,
+  notifyWorkspaceScroll,
   requestWorkspaceSectionMount,
   resetLazyWorkspaceMountQueue,
   warmupAllLazyWorkspaceSections,
@@ -12,6 +13,7 @@ import {
 describe("LazyWorkspaceSection", () => {
   afterEach(() => {
     resetLazyWorkspaceMountQueue();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -111,6 +113,14 @@ describe("LazyWorkspaceSection", () => {
     expect(screen.getByText("Process body")).toBeInTheDocument();
     expect(screen.queryByText("Control body")).not.toBeInTheDocument();
 
+    act(() => {
+      frames.shift()?.(0);
+    });
+    expect(screen.queryByText("Control body")).not.toBeInTheDocument();
+
+    act(() => {
+      warmupAllLazyWorkspaceSections();
+    });
     act(() => {
       frames.shift()?.(0);
     });
@@ -450,5 +460,48 @@ describe("LazyWorkspaceSection", () => {
       });
     });
     expect(ready).toBe(true);
+  });
+
+  it("does not start another editor while the document is scrolling", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("requestIdleCallback", undefined);
+    class DeferredObserver {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", DeferredObserver);
+
+    render(
+      <LazyWorkspaceSection id="elr_alarms" title="Alarms">
+        <p>Alarms body</p>
+      </LazyWorkspaceSection>
+    );
+
+    act(() => {
+      notifyWorkspaceScroll();
+      warmupAllLazyWorkspaceSections();
+    });
+    act(() => {
+      frames.shift()?.(0);
+    });
+    expect(screen.queryByText("Alarms body")).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    act(() => {
+      frames.shift()?.(0);
+    });
+    expect(screen.getByText("Alarms body")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });

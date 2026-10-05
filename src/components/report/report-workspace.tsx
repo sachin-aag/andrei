@@ -22,6 +22,7 @@ import {
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import {
   LazyWorkspaceSection,
+  notifyWorkspaceScroll,
   requestWorkspaceSectionMount,
   warmupAllLazyWorkspaceSections,
 } from "./lazy-workspace-section";
@@ -227,27 +228,36 @@ export function ReportWorkspace({
   useEffect(() => {
     if (!firstSectionMounted || shellReady) return;
     let cancelled = false;
-    const finish = () => {
-      if (cancelled) return;
-      setShellReady(true);
-      if (!didWarmupEditors.current) {
-        didWarmupEditors.current = true;
-        warmupAllLazyWorkspaceSections();
-      }
+    const frame = requestAnimationFrame(() => {
+      if (!cancelled) setShellReady(true);
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [firstSectionMounted, shellReady]);
+
+  useEffect(() => {
+    if (!shellReady || didWarmupEditors.current) return;
+    let cancelled = false;
+    const start = () => {
+      if (cancelled || didWarmupEditors.current) return;
+      didWarmupEditors.current = true;
+      warmupAllLazyWorkspaceSections();
     };
     if (typeof window.requestIdleCallback === "function") {
-      const idleId = window.requestIdleCallback(finish, { timeout: 2000 });
+      const idleId = window.requestIdleCallback(start, { timeout: 4000 });
       return () => {
         cancelled = true;
         window.cancelIdleCallback(idleId);
       };
     }
-    const timer = window.setTimeout(finish, 1);
+    const timer = window.setTimeout(start, 50);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [firstSectionMounted, shellReady]);
+  }, [shellReady]);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
@@ -338,6 +348,16 @@ export function ReportWorkspace({
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
   const reviewGutterAsideRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => notifyWorkspaceScroll();
+    el.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, []);
   const [reviewGutterColumnMeasured, setReviewGutterColumnMeasured] =
     useState(false);
   const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(

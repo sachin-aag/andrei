@@ -23,12 +23,20 @@ const VIEWPORT_MARGIN_PX = 160;
 /** Contents waits this long for the target editor before scrolling anyway. */
 export const JUMP_SCROLL_WAIT_MS = 1500;
 
+const MOUNT_YIELD_MS = 50;
+const SCROLL_QUIET_MS = 200;
+const WARMUP_IDLE_TIMEOUT_MS = 4000;
+const IS_TEST = process.env.VITEST === "true";
+
 const mountQueue: MountJob[] = [];
 let flushing = false;
 let rafHandle = 0;
 let idleHandle = 0;
+let yieldHandle = 0;
 let jumpTarget: string | null = null;
 let jumpTimer = 0;
+let scrollQuiet = true;
+let scrollEndTimer = 0;
 const mountedSectionIds = new Set<string>();
 const readyWaiters = new Map<string, Set<() => void>>();
 const sectionMountListeners = new Set<(id: string) => void>();
@@ -81,6 +89,20 @@ function cancelScheduledFlush() {
     }
     idleHandle = 0;
   }
+  if (yieldHandle) {
+    clearTimeout(yieldHandle);
+    yieldHandle = 0;
+  }
+}
+
+function kickIdleOrFrame() {
+  if (typeof requestIdleCallback === "function") {
+    idleHandle = requestIdleCallback(flush, {
+      timeout: IS_TEST ? 200 : WARMUP_IDLE_TIMEOUT_MS,
+    });
+    return;
+  }
+  rafHandle = requestAnimationFrame(flush);
 }
 
 function scheduleFlush() {
@@ -88,19 +110,32 @@ function scheduleFlush() {
     flushing = false;
     return;
   }
-  flushing = true;
   const urgent = mountQueue[0]?.kind === "urgent";
+  if (!scrollQuiet && !urgent) {
+    flushing = false;
+    return;
+  }
+  flushing = true;
   if (urgent) {
     cancelScheduledFlush();
     rafHandle = requestAnimationFrame(flush);
     return;
   }
-  if (rafHandle || idleHandle) return;
-  if (typeof requestIdleCallback === "function") {
-    idleHandle = requestIdleCallback(flush, { timeout: 200 });
+  if (rafHandle || idleHandle || yieldHandle) return;
+  // A 200ms idle timeout was forcing the next TipTap while the tab was
+  // still busy, so paint, chat, and even refresh could not run.
+  if (IS_TEST || typeof requestIdleCallback !== "function") {
+    kickIdleOrFrame();
     return;
   }
-  rafHandle = requestAnimationFrame(flush);
+  yieldHandle = window.setTimeout(() => {
+    yieldHandle = 0;
+    if (!scrollQuiet) {
+      flushing = false;
+      return;
+    }
+    kickIdleOrFrame();
+  }, MOUNT_YIELD_MS);
 }
 
 function dropPrefetchJobs() {
@@ -158,6 +193,7 @@ function prefetchClosestVisible() {
 function flush() {
   rafHandle = 0;
   idleHandle = 0;
+  yieldHandle = 0;
   const next = mountQueue.shift();
   if (!next) {
     flushing = false;
@@ -166,7 +202,6 @@ function flush() {
   if (next.shouldRun && !next.shouldRun()) {
     if (mountQueue.length > 0) scheduleFlush();
     else flushing = false;
-    prefetchClosestVisible();
     return;
   }
   try {
@@ -174,9 +209,6 @@ function flush() {
   } finally {
     if (mountQueue.length > 0) scheduleFlush();
     else flushing = false;
-    if (next.kind !== "warmup" && jumpTarget !== next.id) {
-      prefetchClosestVisible();
-    }
   }
 }
 
@@ -251,13 +283,27 @@ export function enqueueLazyWorkspaceMount(
     const at = mountQueue.findIndex((queued) => queued.run === mount);
     if (at !== -1) mountQueue.splice(at, 1);
   };
-  if (opts.kind === "urgent" && idleHandle) {
+  if (opts.kind === "urgent") {
     cancelScheduledFlush();
     scheduleFlush();
     return cancel;
   }
   if (!flushing) scheduleFlush();
   return cancel;
+}
+
+/** Wheel / trackpad: do not start another TipTap until scrolling stops. */
+export function notifyWorkspaceScroll() {
+  scrollQuiet = false;
+  cancelScheduledFlush();
+  flushing = false;
+  if (typeof window === "undefined") return;
+  window.clearTimeout(scrollEndTimer);
+  scrollEndTimer = window.setTimeout(() => {
+    scrollQuiet = true;
+    prefetchClosestVisible();
+    if (mountQueue.length > 0) scheduleFlush();
+  }, SCROLL_QUIET_MS);
 }
 
 /**
@@ -289,9 +335,14 @@ export function warmupAllLazyWorkspaceSections() {
 }
 
 export function resetLazyWorkspaceMountQueue() {
-  if (typeof window !== "undefined") window.clearTimeout(jumpTimer);
+  if (typeof window !== "undefined") {
+    window.clearTimeout(jumpTimer);
+    window.clearTimeout(scrollEndTimer);
+  }
   jumpTimer = 0;
+  scrollEndTimer = 0;
   jumpTarget = null;
+  scrollQuiet = true;
   cancelScheduledFlush();
   mountQueue.length = 0;
   flushing = false;
@@ -369,7 +420,7 @@ export function LazyWorkspaceSection({
       queueMount("warmup");
     };
     const onPrefetch = () => {
-      if (jumpTarget || mountedRef.current) return;
+      if (jumpTarget || mountedRef.current || !scrollQuiet) return;
       queueMount("prefetch");
     };
     const candidate = {
