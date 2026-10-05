@@ -6,6 +6,18 @@ import type { DocumentType } from "@/db/schema";
 export type SectionEditorMap = Record<string, ComponentType>;
 
 const cache = new Map<DocumentType, Promise<SectionEditorMap>>();
+const resolved = new Map<DocumentType, SectionEditorMap>();
+
+export function peekSectionEditors(
+  documentType: DocumentType
+): SectionEditorMap | null {
+  return resolved.get(documentType) ?? null;
+}
+
+export function clearSectionEditorCache() {
+  cache.clear();
+  resolved.clear();
+}
 
 function loadSectionEditorsUncached(
   documentType: DocumentType
@@ -60,16 +72,24 @@ export function loadSectionEditors(
 ): Promise<SectionEditorMap> {
   const hit = cache.get(documentType);
   if (hit) return hit;
-  const pending = loadSectionEditorsUncached(documentType).catch((err) => {
-    cache.delete(documentType);
-    throw err;
-  });
+  const pending = loadSectionEditorsUncached(documentType)
+    .then((map) => {
+      resolved.set(documentType, map);
+      return map;
+    })
+    .catch((err) => {
+      cache.delete(documentType);
+      resolved.delete(documentType);
+      throw err;
+    });
   cache.set(documentType, pending);
   return pending;
 }
 
 export function useDocumentSectionEditors(documentType: DocumentType) {
-  const [editors, setEditors] = useState<SectionEditorMap | null>(null);
+  const [editors, setEditors] = useState<SectionEditorMap | null>(() =>
+    peekSectionEditors(documentType)
+  );
 
   useEffect(() => {
     let cancelled = false;

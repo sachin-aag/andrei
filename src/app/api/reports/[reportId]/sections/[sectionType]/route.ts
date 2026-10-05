@@ -17,6 +17,10 @@ import {
   recordUserEditedAfterScore,
   flushLangfuseScores,
 } from "@/lib/observability/langfuse-scores";
+import {
+  logWorkspaceLoadServer,
+  WORKSPACE_LOAD_ID_HEADER,
+} from "@/lib/workspace-load-telemetry";
 
 /** PATCH and POST use the same body; POST exists for `navigator.sendBeacon` (always POST). */
 async function saveSection(
@@ -81,6 +85,15 @@ async function saveSection(
     });
   }
 
+  logWorkspaceLoadServer({
+    reportId,
+    loadId: req.headers.get(WORKSPACE_LOAD_ID_HEADER) ?? undefined,
+    stage: "section_patch",
+    extra: {
+      section: sectionType,
+      bytes: Number(req.headers.get("content-length")) || 0,
+    },
+  });
   return NextResponse.json({ section: saved });
 }
 

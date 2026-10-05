@@ -4,7 +4,9 @@ import { ReportWorkspaceLoader } from "@/components/report/report-workspace-load
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { after } from "next/server";
 import { loadReportAuth } from "@/lib/reports/bundle";
+import { logWorkspaceLoadServer } from "@/lib/workspace-load-telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,13 @@ export default async function AdminReportViewPage({
     loadReportAuth(reportId),
   ]);
   if (!report) notFound();
+  after(() =>
+    logWorkspaceLoadServer({
+      reportId,
+      documentType: report.documentType,
+      stage: "rsc_admin_page",
+    })
+  );
 
   return (
     <AppShell

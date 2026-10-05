@@ -168,8 +168,9 @@ export function ReportAttachmentsProvider({
     });
   }, []);
 
-  const refreshAttachments = useCallback(async () => {
-    const response = await fetch(`/api/reports/${reportId}/attachments`);
+  const refreshAttachments = useCallback(async (opts?: { sync?: boolean }) => {
+    const qs = opts?.sync ? "?sync=1" : "";
+    const response = await fetch(`/api/reports/${reportId}/attachments${qs}`);
     if (!response.ok) return;
     const data = (await response.json()) as {
       attachments?: ReportAttachmentRecord[];
@@ -193,7 +194,7 @@ export function ReportAttachmentsProvider({
     }
 
     const interval = window.setInterval(() => {
-      void refreshAttachments();
+      void refreshAttachments({ sync: true });
     }, 2500);
     return () => window.clearInterval(interval);
   }, [attachments, refreshAttachments]);
@@ -342,7 +343,7 @@ export function ReportAttachmentsProvider({
           })
         );
         toast.success(`${file.name} uploaded`);
-        void refreshAttachments();
+        void refreshAttachments({ sync: true });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : `Could not upload ${file.name}`;

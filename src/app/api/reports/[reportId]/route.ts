@@ -42,19 +42,31 @@ import {
   investigationOtherTools,
   investigationToolsUsed,
 } from "@/types/report";
+import {
+  logWorkspaceLoadServer,
+  WORKSPACE_LOAD_ID_HEADER,
+} from "@/lib/workspace-load-telemetry";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const stages: Record<string, number> = {};
   const started = Date.now();
   const { reportId } = await params;
+  const loadId = req.headers.get(WORKSPACE_LOAD_ID_HEADER) ?? undefined;
   const hung = setTimeout(() => {
     console.warn("[report-bundle] still waiting", {
       reportId,
+      loadId,
       elapsedMs: Date.now() - started,
       stages,
+    });
+    logWorkspaceLoadServer({
+      reportId,
+      loadId,
+      stage: "bundle_get_waiting",
+      t: Date.now() - started,
     });
   }, 4000);
 
@@ -98,11 +110,28 @@ export async function GET(
     stages.total = Date.now() - started;
     console.info("[report-bundle]", {
       reportId,
+      loadId,
       documentType: reportWithManagers.documentType,
       sections: body.sections.length,
       comments: body.comments.length,
       bytes: text.length,
       ...stages,
+    });
+    logWorkspaceLoadServer({
+      reportId,
+      loadId,
+      documentType: reportWithManagers.documentType,
+      stage: "bundle_get",
+      t: stages.total,
+      extra: {
+        sections: body.sections.length,
+        comments: body.comments.length,
+        bytes: text.length,
+        user: stages.user,
+        auth: stages.auth,
+        body: stages.body,
+        stringify: stages.stringify,
+      },
     });
     return new NextResponse(text, {
       status: 200,
@@ -111,6 +140,7 @@ export async function GET(
   } catch (err) {
     console.error("[report-bundle]", {
       reportId,
+      loadId,
       elapsedMs: Date.now() - started,
       stages,
       error: err instanceof Error ? err.message : String(err),

@@ -1,4 +1,6 @@
 import type { ReportBundle } from "@/types/report";
+import { emitWorkspaceLoadStage } from "@/lib/workspace-load-telemetry-client";
+import { WORKSPACE_LOAD_ID_HEADER } from "@/lib/workspace-load-telemetry";
 
 export const WORKSPACE_BUNDLE_TIMEOUT_MS = 10_000;
 
@@ -52,7 +54,7 @@ export function normalizeWorkspaceBundle(data: ReportBundle): ReportBundle {
  */
 export function fetchWorkspaceBundle(
   reportId: string,
-  options?: { timeoutMs?: number }
+  options?: { timeoutMs?: number; loadId?: string }
 ): Promise<ReportBundle> {
   const existing = inflightByReportId.get(reportId);
   if (existing) return existing;
@@ -72,17 +74,28 @@ export function clearWorkspaceBundleInflight() {
 
 async function fetchWorkspaceBundleOnce(
   reportId: string,
-  options?: { timeoutMs?: number }
+  options?: { timeoutMs?: number; loadId?: string }
 ): Promise<ReportBundle> {
   const ac = new AbortController();
   const timer = setTimeout(
     () => ac.abort(),
     options?.timeoutMs ?? WORKSPACE_BUNDLE_TIMEOUT_MS
   );
+  emitWorkspaceLoadStage("bundle_request_start");
   try {
+    const headers = new Headers();
+    if (options?.loadId) {
+      headers.set(WORKSPACE_LOAD_ID_HEADER, options.loadId);
+    }
     const res = await fetch(`/api/reports/${reportId}`, {
       signal: ac.signal,
       cache: "no-store",
+      headers,
+    });
+    const text = await res.text();
+    emitWorkspaceLoadStage("bundle_response", {
+      status: res.status,
+      bytes: text.length,
     });
     if (!res.ok) {
       throw new WorkspaceLoadError({
@@ -90,17 +103,25 @@ async function fetchWorkspaceBundleOnce(
         message: workspaceLoadErrorMessage(res.status),
       });
     }
-    const data = (await res.json()) as ReportBundle;
+    const data = JSON.parse(text) as ReportBundle;
+    emitWorkspaceLoadStage("bundle_parsed", { bytes: text.length });
     return normalizeWorkspaceBundle(data);
   } catch (err) {
-    if (err instanceof WorkspaceLoadError) throw err;
+    if (err instanceof WorkspaceLoadError) {
+      emitWorkspaceLoadStage(err.timedOut ? "timeout" : "error", {
+        status: err.status,
+      });
+      throw err;
+    }
     if (err instanceof DOMException && err.name === "AbortError") {
+      emitWorkspaceLoadStage("timeout");
       throw new WorkspaceLoadError({
         status: 0,
         timedOut: true,
         message: workspaceLoadErrorMessage(0, true),
       });
     }
+    emitWorkspaceLoadStage("error");
     throw new WorkspaceLoadError({
       status: 0,
       message: workspaceLoadErrorMessage(0),

@@ -68,16 +68,25 @@ export function LazyWorkspaceSection({
   title,
   eager = false,
   style,
+  onMounted,
   children,
 }: {
   id: string;
   title: string;
   eager?: boolean;
   style?: CSSProperties;
+  onMounted?: (id: string) => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
   const [mounted, setMounted] = useState(false);
+  const reportedMount = useRef(false);
+
+  useEffect(() => {
+    if (!mounted || reportedMount.current) return;
+    reportedMount.current = true;
+    onMounted?.(id);
+  }, [mounted, id, onMounted]);
 
   useEffect(() => {
     if (mounted) return;

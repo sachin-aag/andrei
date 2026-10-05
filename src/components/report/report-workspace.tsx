@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useSyncExternalStore,
 } from "react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { startPostHogSessionRecording } from "@/providers/posthog-provider";
@@ -60,12 +61,10 @@ import {
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReviewGutterPaintedProvider } from "./review-gutter-painted";
 import { isReviewGutterColumnPainted } from "./show-document-suggestion-card";
-import { ReportSidebar, type SidebarTab } from "./report-sidebar";
-import { DocumentsPanel } from "./documents/documents-panel";
-import { AttachmentCanvasStack } from "./attachment-canvas-stack";
+import type { SidebarTab } from "./report-sidebar";
 import { CanvasTabPane } from "./canvas-tab-pane";
 import { CanvasTabScrollProvider } from "./canvas-tab-scroll";
-import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
+import type { AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
@@ -108,6 +107,34 @@ import {
   type SignatureMeaningUi,
 } from "./electronic-signature-dialog";
 import { useDocumentSectionEditors } from "./section-editor-loaders";
+import { emitWorkspaceLoadStage } from "@/lib/workspace-load-telemetry-client";
+
+const DocumentsPanel = dynamic(
+  () =>
+    import("./documents/documents-panel").then((mod) => mod.DocumentsPanel),
+  { ssr: false, loading: () => <div className="h-full" /> }
+);
+
+const ReportSidebar = dynamic(
+  () => import("./report-sidebar").then((mod) => mod.ReportSidebar),
+  { ssr: false, loading: () => <div className="h-full" /> }
+);
+
+const AttachmentCanvasStack = dynamic(
+  () =>
+    import("./attachment-canvas-stack").then(
+      (mod) => mod.AttachmentCanvasStack
+    ),
+  { ssr: false }
+);
+
+const StatisticalWorkspace = dynamic(
+  () =>
+    import("@/components/statistical-analysis/workspace").then(
+      (mod) => mod.StatisticalWorkspace
+    ),
+  { ssr: false }
+);
 
 export type { WorkspaceMode };
 
@@ -128,6 +155,15 @@ export function ReportWorkspace({
   } = useReportData();
   const sectionEditors = useDocumentSectionEditors(report.documentType);
   const { pendingPlaceholders } = useReportPlaceholders();
+
+  useEffect(() => {
+    emitWorkspaceLoadStage("workspace_mounted");
+  }, []);
+
+  const handleSectionMounted = useCallback((section: string) => {
+    emitWorkspaceLoadStage("section_mounted", { section });
+    emitWorkspaceLoadStage("first_editor_ready", { section });
+  }, []);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
@@ -1090,6 +1126,7 @@ export function ReportWorkspace({
                               id={s}
                               title={section.label}
                               eager={index < 1}
+                              onMounted={handleSectionMounted}
                               style={
                                 extra
                                   ? { paddingBottom: `${extra}px` }

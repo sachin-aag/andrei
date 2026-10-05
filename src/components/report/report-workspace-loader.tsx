@@ -14,6 +14,13 @@ import {
   WorkspaceLoadError,
 } from "@/components/report/report-workspace-bundle";
 import { loadSectionEditors } from "@/components/report/section-editor-loaders";
+import { newWorkspaceLoadId } from "@/lib/workspace-load-telemetry";
+import {
+  emitWorkspaceLoadStage,
+  startWorkspaceLoadTelemetry,
+  stopWorkspaceLoadTelemetry,
+  WorkspaceLoadBeacon,
+} from "@/lib/workspace-load-telemetry-client";
 
 const ReportWorkspace = dynamic(
   () =>
@@ -50,15 +57,27 @@ export function ReportWorkspaceLoader({
   const [bundle, setBundle] = useState<ReportBundle | null>(null);
   const [editorsReady, setEditorsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadId] = useState(newWorkspaceLoadId);
+
+  useEffect(() => {
+    startWorkspaceLoadTelemetry({ reportId, documentType, loadId });
+    return () => {
+      stopWorkspaceLoadTelemetry();
+    };
+  }, [reportId, documentType, loadId]);
 
   useEffect(() => {
     let cancelled = false;
     void loadSectionEditors(documentType).then(
       () => {
-        if (!cancelled) setEditorsReady(true);
+        if (cancelled) return;
+        emitWorkspaceLoadStage("editors_chunk_ready");
+        setEditorsReady(true);
       },
       () => {
-        if (!cancelled) setEditorsReady(true);
+        if (cancelled) return;
+        emitWorkspaceLoadStage("editors_chunk_ready", { failed: true });
+        setEditorsReady(true);
       }
     );
     return () => {
@@ -71,7 +90,7 @@ export function ReportWorkspaceLoader({
 
     async function load() {
       try {
-        const next = await fetchWorkspaceBundle(reportId);
+        const next = await fetchWorkspaceBundle(reportId, { loadId });
         if (cancelled) return;
         setBundle(next);
       } catch (err) {
@@ -88,7 +107,7 @@ export function ReportWorkspaceLoader({
     return () => {
       cancelled = true;
     };
-  }, [reportId]);
+  }, [reportId, loadId]);
 
   if (error) {
     return (
@@ -112,6 +131,7 @@ export function ReportWorkspaceLoader({
       workspaceMode={workspaceMode}
       initialTrackChangesMode={initialTrackChangesMode}
     >
+      <WorkspaceLoadBeacon stage="provider_mounted" />
       <ReportWorkspace mode={workspaceMode} />
     </ReportProvider>
   );

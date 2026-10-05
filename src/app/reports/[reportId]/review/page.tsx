@@ -5,8 +5,10 @@ import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { canViewReport } from "@/lib/reports/access";
 import { loadReportAuth } from "@/lib/reports/bundle";
+import { after } from "next/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportWorkspaceLoader } from "@/components/report/report-workspace-loader";
+import { logWorkspaceLoadServer } from "@/lib/workspace-load-telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,13 @@ export default async function ReviewReportPage({
     reportPromise,
   ]);
   if (!report || !canViewReport(user, report)) notFound();
+  after(() =>
+    logWorkspaceLoadServer({
+      reportId,
+      documentType: report.documentType,
+      stage: "rsc_review_page",
+    })
+  );
 
   const initialTrackChangesMode =
     user.role === "manager" &&

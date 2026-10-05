@@ -6,8 +6,10 @@ import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { isHiddenExpertReviewer } from "@/lib/reports/hidden-expert-reviewer";
 import { canSaveReportSection, canViewReport } from "@/lib/reports/access";
 import { loadReportAuth } from "@/lib/reports/bundle";
+import { after } from "next/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportWorkspaceLoader } from "@/components/report/report-workspace-loader";
+import { logWorkspaceLoadServer } from "@/lib/workspace-load-telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,13 @@ export default async function EditReportPage({
     reportPromise,
   ]);
   if (!report || !canViewReport(user, report)) notFound();
+  after(() =>
+    logWorkspaceLoadServer({
+      reportId,
+      documentType: report.documentType,
+      stage: "rsc_edit_page",
+    })
+  );
 
   // Match section PATCH for authors. Managers save via review track-changes, not /edit.
   const canEdit =

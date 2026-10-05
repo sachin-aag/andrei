@@ -80,6 +80,28 @@ describe("fetchWorkspaceBundle", () => {
     expect(b.report).toEqual(a.report);
   });
 
+  it("sends the workspace load id on the bundle GET", async () => {
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            report: { id: "r1" },
+            sections: [],
+            evaluations: [],
+            comments: [],
+          }),
+          { status: 200 }
+        )
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchWorkspaceBundle("r1", { loadId: "load-1" });
+    const init = fetchMock.mock.calls[0]?.[1];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("x-workspace-load-id")).toBe("load-1");
+  });
+
   it("times out a GET that never answers", async () => {
     vi.stubGlobal(
       "fetch",
