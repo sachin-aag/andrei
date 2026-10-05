@@ -14,7 +14,6 @@ export const STATIC_REVIEW_CHECK_IDS = [
   "citations.uncited_facts",
   "citations.external_refs",
   "writing.grammar",
-  "writing.terminology",
   "writing.cross_references",
   "writing.tense",
 ] as const;

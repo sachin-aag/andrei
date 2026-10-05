@@ -73,8 +73,12 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
     latestRunsByCheck(ctx.report.id),
     openFindingsForReport(ctx.report.id),
   ]);
+  const knownCheckIds = new Set(defs.map((def) => def.id));
+  const catalogFindings = openFindings.filter((row) =>
+    knownCheckIds.has(row.checkId)
+  );
   const findingsByCheck = new Map<string, number>();
-  for (const finding of openFindings) {
+  for (const finding of catalogFindings) {
     findingsByCheck.set(
       finding.checkId,
       (findingsByCheck.get(finding.checkId) ?? 0) + 1
@@ -85,7 +89,7 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
     ctx.sections as Partial<SectionContentMap>
   ).length;
 
-  const findings: ReviewFindingDto[] = openFindings.map((row) => ({
+  const findings: ReviewFindingDto[] = catalogFindings.map((row) => ({
     id: row.id,
     checkId: row.checkId,
     section: row.section,

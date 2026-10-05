@@ -8,7 +8,6 @@ import { runCitationSupportsCheck } from "./checks/citations-supports";
 import { runUncitedFactsCheck } from "./checks/citations-uncited";
 import { runExternalRefsCheck } from "./checks/citations-external";
 import { runGrammarCheck, runTenseCheck } from "./checks/writing-llm";
-import { runTerminologyCheck } from "./checks/writing-terminology";
 import { runCrossReferencesCheck } from "./checks/writing-cross-refs";
 import type { ReviewCheckDefinition, ReviewCheckId } from "./types";
 
@@ -76,16 +75,6 @@ const STATIC_CHECKS: ReviewCheckDefinition[] = [
     kind: "run",
     appliesTo: always,
     run: runGrammarCheck,
-  },
-  {
-    id: "writing.terminology",
-    category: "writing",
-    label: "Terminology consistency",
-    description: "Batch numbers, equipment IDs, and names that drift in spelling.",
-    standardTag: "Style",
-    kind: "run",
-    appliesTo: always,
-    run: runTerminologyCheck,
   },
   {
     id: "writing.cross_references",
