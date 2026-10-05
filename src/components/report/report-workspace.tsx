@@ -24,9 +24,11 @@ import {
   LazyWorkspaceSection,
   notifyWorkspaceScroll,
   requestWorkspaceSectionMount,
+  setLazyWorkspaceBackgroundMounts,
   warmupAllLazyWorkspaceSections,
 } from "./lazy-workspace-section";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
+import { ReportWorkspaceLoading } from "./report-workspace-loading";
 import {
   shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
@@ -191,6 +193,17 @@ const StatisticalWorkspace = dynamic(
   { ssr: false }
 );
 
+function loadWorkspaceShell() {
+  return Promise.all([
+    import("./documents/documents-panel"),
+    import("./report-sidebar"),
+    import("./chat-panel"),
+    import("./attachment-canvas-stack"),
+  ]);
+}
+
+const EDITORS_AFTER_SHELL_MS = 1000;
+
 export type { WorkspaceMode };
 
 export function ReportWorkspace({
@@ -215,49 +228,34 @@ export function ReportWorkspace({
     emitWorkspaceLoadStage("workspace_mounted");
   }, []);
 
-  const [shellReady, setShellReady] = useState(false);
-  const [firstSectionMounted, setFirstSectionMounted] = useState(false);
-
+  const [editorsAllowed, setEditorsAllowed] = useState(false);
   const didWarmupEditors = useRef(false);
-  const handleSectionMounted = useCallback((section: string) => {
-    emitWorkspaceLoadStage("section_mounted", { section });
-    emitWorkspaceLoadStage("first_editor_ready", { section });
-    setFirstSectionMounted(true);
-  }, []);
 
   useEffect(() => {
-    if (!firstSectionMounted || shellReady) return;
     let cancelled = false;
-    const frame = requestAnimationFrame(() => {
-      if (!cancelled) setShellReady(true);
+    let timer = 0;
+    void loadWorkspaceShell().then(() => {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        setEditorsAllowed(true);
+        setLazyWorkspaceBackgroundMounts(true);
+      }, EDITORS_AFTER_SHELL_MS);
     });
     return () => {
       cancelled = true;
-      cancelAnimationFrame(frame);
-    };
-  }, [firstSectionMounted, shellReady]);
-
-  useEffect(() => {
-    if (!shellReady || didWarmupEditors.current) return;
-    let cancelled = false;
-    const start = () => {
-      if (cancelled || didWarmupEditors.current) return;
-      didWarmupEditors.current = true;
-      warmupAllLazyWorkspaceSections();
-    };
-    if (typeof window.requestIdleCallback === "function") {
-      const idleId = window.requestIdleCallback(start, { timeout: 4000 });
-      return () => {
-        cancelled = true;
-        window.cancelIdleCallback(idleId);
-      };
-    }
-    const timer = window.setTimeout(start, 50);
-    return () => {
-      cancelled = true;
       window.clearTimeout(timer);
+      setLazyWorkspaceBackgroundMounts(false);
     };
-  }, [shellReady]);
+  }, []);
+
+  const handleSectionMounted = useCallback((section: string) => {
+    emitWorkspaceLoadStage("section_mounted", { section });
+    emitWorkspaceLoadStage("first_editor_ready", { section });
+    if (didWarmupEditors.current) return;
+    didWarmupEditors.current = true;
+    warmupAllLazyWorkspaceSections();
+  }, []);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
@@ -348,16 +346,6 @@ export function ReportWorkspace({
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
   const reviewGutterAsideRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const el = mainRef.current;
-    if (!el) return;
-    const onScroll = () => notifyWorkspaceScroll();
-    el.addEventListener("scroll", onScroll, { capture: true, passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll, { capture: true });
-    };
-  }, []);
   const [reviewGutterColumnMeasured, setReviewGutterColumnMeasured] =
     useState(false);
   const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -624,16 +612,29 @@ export function ReportWorkspace({
   const signingInFlight = submitting || approving || sendingFeedback;
 
   const jumpEpochRef = useRef(0);
+  const pendingJumpRef = useRef<SectionType | null>(null);
   const jumpToSection = useCallback((s: SectionType) => {
     setWorkProductView("report");
     setActiveTabId("report");
     const epoch = ++jumpEpochRef.current;
+    if (!editorsAllowed) {
+      pendingJumpRef.current = s;
+      setEditorsAllowed(true);
+      setLazyWorkspaceBackgroundMounts(true);
+    }
     return requestWorkspaceSectionMount(s).then(() => {
       if (jumpEpochRef.current !== epoch) return;
       const el = mainRef.current?.querySelector(`#${s}`);
       if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
     });
-  }, []);
+  }, [editorsAllowed]);
+
+  useEffect(() => {
+    const s = pendingJumpRef.current;
+    if (!editorsAllowed || !s) return;
+    pendingJumpRef.current = null;
+    void requestWorkspaceSectionMount(s);
+  }, [editorsAllowed]);
 
   useEffect(() => {
     return () => {
@@ -1009,16 +1010,12 @@ export function ReportWorkspace({
           )}
           style={{ width: docsWidth }}
         >
-          {shellReady ? (
-            <DocumentsPanel
-              collapsed={documentsCollapsed}
-              onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
-              documentType={report.documentType}
-              onJumpToSection={jumpToSection}
-            />
-          ) : (
-            <div className="h-full" />
-          )}
+          <DocumentsPanel
+            collapsed={documentsCollapsed}
+            onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+            documentType={report.documentType}
+            onJumpToSection={jumpToSection}
+          />
           {documentsCollapsed ? null : (
             <WorkspaceResizeHandle
               label="Resize documents panel"
@@ -1163,6 +1160,7 @@ export function ReportWorkspace({
                   scrollable
                   scrollTabId="report"
                   testId="report-document-canvas"
+                  onScroll={notifyWorkspaceScroll}
                 >
                 <ReviewGutterPaintedProvider painted={reviewGutterColumnPainted}>
                 <div
@@ -1223,7 +1221,8 @@ export function ReportWorkspace({
                         continuousDocument ? "space-y-4" : "space-y-10"
                       )}
                     >
-                      {getWorkspaceSections(report.documentType).map(
+                    {editorsAllowed ? (
+                      getWorkspaceSections(report.documentType).map(
                         (section, index) => {
                           const s = section.key;
                           const Editor = sectionEditors?.[s];
@@ -1248,7 +1247,10 @@ export function ReportWorkspace({
                             </LazyWorkspaceSection>
                           );
                         }
-                      )}
+                      )
+                    ) : (
+                      <ReportWorkspaceLoading />
+                    )}
                     </div>
                   </div>
                   {showReviewGutter ? (
@@ -1280,17 +1282,15 @@ export function ReportWorkspace({
                     />
                   </CanvasTabPane>
                 ) : null}
-                {shellReady ? (
-                  <AttachmentCanvasStack
-                    openAttachmentIds={liveOpenAttachmentIds}
-                    activeAttachmentId={
-                      viewingDocument
-                        ? attachmentIdFromTab(liveActiveTabId)
-                        : null
-                    }
-                    onCloseTab={closeAttachmentTab}
-                  />
-                ) : null}
+                <AttachmentCanvasStack
+                  openAttachmentIds={liveOpenAttachmentIds}
+                  activeAttachmentId={
+                    viewingDocument
+                      ? attachmentIdFromTab(liveActiveTabId)
+                      : null
+                  }
+                  onCloseTab={closeAttachmentTab}
+                />
               </div>
             </>
           )}
@@ -1333,36 +1333,32 @@ export function ReportWorkspace({
               agentChrome && "mx-auto max-w-[800px]"
             )}
           >
-            {shellReady ? (
-              <ReportSidebar
-                collapsed={agentChrome ? false : sidebarCollapsed}
-                onToggleCollapse={toggleSidebarCollapse}
-                hideCollapse={agentChrome}
-                chrome={chrome}
-                activeTab={sidebarTab}
-                onTabChange={setSidebarTab}
-                onJumpToSection={jumpToSection}
-                onJumpToPlaceholder={handleJumpToPlaceholder}
-                onJumpToComment={jumpToComment}
-                initialCriteriaSection={criteriaFocusSection}
-                workProductView={workProductView}
-                statsEnabled={statsEnabled}
-                onAnalyticsSettled={() =>
-                  setAnalyticsReloadEpoch((epoch) => epoch + 1)
-                }
-                onAnalyticsAgentBusy={setAnalyticsAgentBusy}
-                onAnalyticsFocusSheet={(sheetId) =>
-                  analyticsFocusRef.current?.focusSheet(sheetId)
-                }
-                onAnalyticsFocusAnalysis={(analysisId) =>
-                  analyticsFocusRef.current?.focusAnalysis(analysisId)
-                }
-                analyticsReloadEpoch={analyticsReloadEpoch}
-                analyticsMentionSheets={analyticsMentionSheets}
-              />
-            ) : (
-              <div className="h-full" />
-            )}
+            <ReportSidebar
+              collapsed={agentChrome ? false : sidebarCollapsed}
+              onToggleCollapse={toggleSidebarCollapse}
+              hideCollapse={agentChrome}
+              chrome={chrome}
+              activeTab={sidebarTab}
+              onTabChange={setSidebarTab}
+              onJumpToSection={jumpToSection}
+              onJumpToPlaceholder={handleJumpToPlaceholder}
+              onJumpToComment={jumpToComment}
+              initialCriteriaSection={criteriaFocusSection}
+              workProductView={workProductView}
+              statsEnabled={statsEnabled}
+              onAnalyticsSettled={() =>
+                setAnalyticsReloadEpoch((epoch) => epoch + 1)
+              }
+              onAnalyticsAgentBusy={setAnalyticsAgentBusy}
+              onAnalyticsFocusSheet={(sheetId) =>
+                analyticsFocusRef.current?.focusSheet(sheetId)
+              }
+              onAnalyticsFocusAnalysis={(analysisId) =>
+                analyticsFocusRef.current?.focusAnalysis(analysisId)
+              }
+              analyticsReloadEpoch={analyticsReloadEpoch}
+              analyticsMentionSheets={analyticsMentionSheets}
+            />
           </div>
           {agentChrome || sidebarCollapsed ? null : (
             <WorkspaceResizeHandle

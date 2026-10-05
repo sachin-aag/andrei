@@ -30,6 +30,8 @@ const IS_TEST = process.env.VITEST === "true";
 
 const mountQueue: MountJob[] = [];
 let flushing = false;
+let inFlight = false;
+let allowBackgroundMounts = false;
 let rafHandle = 0;
 let idleHandle = 0;
 let yieldHandle = 0;
@@ -106,6 +108,7 @@ function kickIdleOrFrame() {
 }
 
 function scheduleFlush() {
+  if (inFlight) return;
   if (mountQueue.length === 0) {
     flushing = false;
     return;
@@ -177,7 +180,7 @@ function insertJob(job: MountJob) {
 }
 
 function prefetchClosestVisible() {
-  if (jumpTarget) return;
+  if (!allowBackgroundMounts || jumpTarget || inFlight) return;
   if (mountQueue.some((job) => job.kind === "prefetch" || job.kind === "urgent")) {
     return;
   }
@@ -200,15 +203,15 @@ function flush() {
     return;
   }
   if (next.shouldRun && !next.shouldRun()) {
+    flushing = false;
     if (mountQueue.length > 0) scheduleFlush();
-    else flushing = false;
     return;
   }
+  inFlight = true;
   try {
     next.run();
   } finally {
-    if (mountQueue.length > 0) scheduleFlush();
-    else flushing = false;
+    flushing = false;
   }
 }
 
@@ -221,12 +224,13 @@ function resolveReadyWaiters(id: string) {
 
 function markSectionMounted(id: string) {
   mountedSectionIds.add(id);
+  inFlight = false;
   if (jumpTarget === id) {
     jumpTarget = null;
     if (typeof window !== "undefined") window.clearTimeout(jumpTimer);
-    prefetchClosestVisible();
   }
   resolveReadyWaiters(id);
+  if (mountQueue.length > 0) scheduleFlush();
 }
 
 function whenWorkspaceSectionReady(
@@ -329,6 +333,11 @@ export function requestWorkspaceSectionMount(
   return whenWorkspaceSectionReady(id, timeoutMs);
 }
 
+/** After chat/documents have painted, later editors may prefetch and warm. */
+export function setLazyWorkspaceBackgroundMounts(enabled: boolean) {
+  allowBackgroundMounts = enabled;
+}
+
 /** After the first section paints, queue every remaining editor in document order. */
 export function warmupAllLazyWorkspaceSections() {
   for (const listener of sectionWarmupListeners) listener();
@@ -343,6 +352,8 @@ export function resetLazyWorkspaceMountQueue() {
   scrollEndTimer = 0;
   jumpTarget = null;
   scrollQuiet = true;
+  inFlight = false;
+  allowBackgroundMounts = false;
   cancelScheduledFlush();
   mountQueue.length = 0;
   flushing = false;
@@ -420,7 +431,14 @@ export function LazyWorkspaceSection({
       queueMount("warmup");
     };
     const onPrefetch = () => {
-      if (jumpTarget || mountedRef.current || !scrollQuiet) return;
+      if (
+        !allowBackgroundMounts ||
+        jumpTarget ||
+        mountedRef.current ||
+        !scrollQuiet
+      ) {
+        return;
+      }
       queueMount("prefetch");
     };
     const candidate = {
@@ -436,35 +454,9 @@ export function LazyWorkspaceSection({
 
     if (eager) {
       queueMount("urgent");
-      return () => {
-        sectionMountListeners.delete(onRequest);
-        sectionWarmupListeners.delete(onWarmup);
-        prefetchCandidates.delete(candidate);
-        cancelMount?.();
-      };
     }
 
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") {
-      queueMount("warmup");
-      return () => {
-        sectionMountListeners.delete(onRequest);
-        sectionWarmupListeners.delete(onWarmup);
-        prefetchCandidates.delete(candidate);
-        cancelMount?.();
-      };
-    }
-
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry?.isIntersecting) return;
-        onPrefetch();
-      },
-      { rootMargin: `${VIEWPORT_MARGIN_PX}px 0px` }
-    );
-    io.observe(el);
     return () => {
-      io.disconnect();
       sectionMountListeners.delete(onRequest);
       sectionWarmupListeners.delete(onWarmup);
       prefetchCandidates.delete(candidate);

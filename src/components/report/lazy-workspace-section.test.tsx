@@ -37,17 +37,7 @@ describe("LazyWorkspaceSection", () => {
     expect(screen.getByText("Objective body")).toBeInTheDocument();
   });
 
-  it("holds lazy sections until they intersect", () => {
-    class DeferredObserver {
-      observe() {}
-      disconnect() {}
-      unobserve() {}
-      takeRecords() {
-        return [];
-      }
-    }
-    vi.stubGlobal("IntersectionObserver", DeferredObserver);
-
+  it("holds lazy sections until they are jumped to or warmed", () => {
     render(
       <LazyWorkspaceSection id="elr_alarms" title="Alarms">
         <p>Alarms body</p>
@@ -61,73 +51,7 @@ describe("LazyWorkspaceSection", () => {
     );
   });
 
-  it("mounts intersecting sections one frame at a time", () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
-      frames.push(cb);
-      return frames.length;
-    });
-    vi.stubGlobal("requestIdleCallback", undefined);
-
-    const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> =
-      [];
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(
-          cb: (entries: Array<{ isIntersecting: boolean }>) => void
-        ) {
-          observers.push(cb);
-        }
-        observe() {}
-        disconnect() {}
-        unobserve() {}
-        takeRecords() {
-          return [];
-        }
-      }
-    );
-
-    render(
-      <>
-        <LazyWorkspaceSection id="qsr_rtm_process" title="Process">
-          <p>Process body</p>
-        </LazyWorkspaceSection>
-        <LazyWorkspaceSection id="qsr_rtm_control" title="Control">
-          <p>Control body</p>
-        </LazyWorkspaceSection>
-      </>
-    );
-
-    act(() => {
-      for (const notify of observers) {
-        notify([{ isIntersecting: true }]);
-      }
-    });
-    expect(screen.queryByText("Process body")).not.toBeInTheDocument();
-    expect(screen.queryByText("Control body")).not.toBeInTheDocument();
-
-    act(() => {
-      frames.shift()?.(0);
-    });
-    expect(screen.getByText("Process body")).toBeInTheDocument();
-    expect(screen.queryByText("Control body")).not.toBeInTheDocument();
-
-    act(() => {
-      frames.shift()?.(0);
-    });
-    expect(screen.queryByText("Control body")).not.toBeInTheDocument();
-
-    act(() => {
-      warmupAllLazyWorkspaceSections();
-    });
-    act(() => {
-      frames.shift()?.(0);
-    });
-    expect(screen.getByText("Control body")).toBeInTheDocument();
-  });
-
-  it("mounts a requested section ahead of the viewport queue", () => {
+  it("mounts a requested section ahead of the warmup queue", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       frames.push(cb);
@@ -235,25 +159,6 @@ describe("LazyWorkspaceSection", () => {
     });
     vi.stubGlobal("requestIdleCallback", undefined);
 
-    const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> =
-      [];
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(
-          cb: (entries: Array<{ isIntersecting: boolean }>) => void
-        ) {
-          observers.push(cb);
-        }
-        observe() {}
-        disconnect() {}
-        unobserve() {}
-        takeRecords() {
-          return [];
-        }
-      }
-    );
-
     render(
       <>
         <LazyWorkspaceSection id="elr_scope" title="Scope">
@@ -269,9 +174,6 @@ describe("LazyWorkspaceSection", () => {
     );
 
     act(() => {
-      for (const notify of observers) {
-        notify([{ isIntersecting: true }]);
-      }
       requestWorkspaceSectionMount("elr_alarms");
     });
     act(() => {
@@ -280,67 +182,6 @@ describe("LazyWorkspaceSection", () => {
     expect(screen.getByText("Alarms body")).toBeInTheDocument();
     expect(screen.queryByText("Scope body")).not.toBeInTheDocument();
     expect(screen.queryByText("Description body")).not.toBeInTheDocument();
-  });
-
-  it("skips a prefetch that has scrolled out of view", () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
-      frames.push(cb);
-      return frames.length;
-    });
-    vi.stubGlobal("requestIdleCallback", undefined);
-    vi.stubGlobal("innerHeight", 800);
-
-    const observers: Array<(entries: Array<{ isIntersecting: boolean }>) => void> =
-      [];
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(
-          cb: (entries: Array<{ isIntersecting: boolean }>) => void
-        ) {
-          observers.push(cb);
-        }
-        observe() {}
-        disconnect() {}
-        unobserve() {}
-        takeRecords() {
-          return [];
-        }
-      }
-    );
-
-    const rect = {
-      x: 0,
-      y: 4000,
-      top: 4000,
-      bottom: 4128,
-      left: 0,
-      right: 0,
-      width: 0,
-      height: 128,
-      toJSON() {
-        return this;
-      },
-    } satisfies DOMRect;
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
-      rect
-    );
-
-    render(
-      <LazyWorkspaceSection id="elr_alarms" title="Alarms">
-        <p>Alarms body</p>
-      </LazyWorkspaceSection>
-    );
-
-    act(() => {
-      observers[0]?.([{ isIntersecting: true }]);
-    });
-    act(() => {
-      frames.shift()?.(0);
-    });
-    expect(screen.queryByText("Alarms body")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /^alarms$/i })).toBeInTheDocument();
   });
 
   it("lets a Contents jump skip ahead of the warmup queue", () => {
