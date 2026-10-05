@@ -115,7 +115,7 @@ export async function GET(
       sections: body.sections.length,
       comments: body.comments.length,
       bytes: text.length,
-      ...stages,
+      stageMs: stages,
     });
     logWorkspaceLoadServer({
       reportId,

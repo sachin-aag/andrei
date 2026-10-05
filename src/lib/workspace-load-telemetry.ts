@@ -10,6 +10,7 @@ export const WORKSPACE_LOAD_CLIENT_STAGES = [
   "bundle_parsed",
   "editors_chunk_ready",
   "provider_mounted",
+  "workspace_module",
   "workspace_mounted",
   "section_mounted",
   "first_editor_ready",

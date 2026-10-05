@@ -20,14 +20,11 @@ import {
   useReportPlaceholders,
 } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
-import { ReportHeader } from "./report-header";
 import {
   LazyWorkspaceSection,
   requestWorkspaceSectionMount,
 } from "./lazy-workspace-section";
-import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
-import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import {
   shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
@@ -42,10 +39,6 @@ import {
 } from "./workspace-chrome-prefs";
 import { WorkProductTabs } from "./work-product-tabs";
 import { CommentsGutterToggle } from "./comments-gutter-toggle";
-import { DocumentRevisionHistory } from "./document-revision-history";
-import { DocumentRevisionDiff } from "./document-revision-diff";
-import { AnalyticsRevisionDiff } from "./analytics-revision-diff";
-import { ReportEditorToolbar } from "./report-editor-toolbar";
 import {
   attachmentIdFromTab,
   attachmentTabId,
@@ -58,7 +51,6 @@ import {
   tabIdAfterClosing,
   type CanvasTabId,
 } from "./work-product-canvas";
-import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReviewGutterPaintedProvider } from "./review-gutter-painted";
 import { isReviewGutterColumnPainted } from "./show-document-suggestion-card";
 import type { SidebarTab } from "./report-sidebar";
@@ -102,12 +94,73 @@ import {
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
 } from "./workspace-layout";
-import {
-  ElectronicSignatureDialog,
-  type SignatureMeaningUi,
-} from "./electronic-signature-dialog";
+import type { SignatureMeaningUi } from "./electronic-signature-dialog";
 import { useDocumentSectionEditors } from "./section-editor-loaders";
 import { emitWorkspaceLoadStage } from "@/lib/workspace-load-telemetry-client";
+
+emitWorkspaceLoadStage("workspace_module");
+
+const ReportHeader = dynamic(
+  () => import("./report-header").then((mod) => mod.ReportHeader),
+  { ssr: false }
+);
+
+const ReportEditorToolbar = dynamic(
+  () =>
+    import("./report-editor-toolbar").then((mod) => mod.ReportEditorToolbar),
+  { ssr: false }
+);
+
+const MarginGutter = dynamic(
+  () => import("./review-rail/margin-gutter").then((mod) => mod.MarginGutter),
+  { ssr: false }
+);
+
+const ElectronicSignatureDialog = dynamic(
+  () =>
+    import("./electronic-signature-dialog").then(
+      (mod) => mod.ElectronicSignatureDialog
+    ),
+  { ssr: false }
+);
+
+const ReportDetailsEditDialog = dynamic(
+  () =>
+    import("./report-details-edit-dialog").then(
+      (mod) => mod.ReportDetailsEditDialog
+    ),
+  { ssr: false }
+);
+
+const RequestExpertReviewDialog = dynamic(
+  () =>
+    import("./request-expert-review-dialog").then(
+      (mod) => mod.RequestExpertReviewDialog
+    ),
+  { ssr: false }
+);
+
+const DocumentRevisionHistory = dynamic(
+  () =>
+    import("./document-revision-history").then(
+      (mod) => mod.DocumentRevisionHistory
+    ),
+  { ssr: false }
+);
+
+const DocumentRevisionDiff = dynamic(
+  () =>
+    import("./document-revision-diff").then((mod) => mod.DocumentRevisionDiff),
+  { ssr: false }
+);
+
+const AnalyticsRevisionDiff = dynamic(
+  () =>
+    import("./analytics-revision-diff").then(
+      (mod) => mod.AnalyticsRevisionDiff
+    ),
+  { ssr: false }
+);
 
 const DocumentsPanel = dynamic(
   () =>
