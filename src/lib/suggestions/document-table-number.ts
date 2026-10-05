@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import type { DocumentType, SectionType } from "@/db/schema";
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
@@ -7,8 +8,15 @@ import {
   applyTableOperation,
   renumberFilledTableCaptions,
   type DocumentTableContent,
+  type TableOperation,
 } from "@/lib/suggestions/table-operation";
-import { syncTableRefsInContents } from "@/lib/suggestions/table-ref";
+import {
+  listInsertableTableRefs,
+  syncTableRefsInContents,
+  tableRefNumberMap,
+  type InsertableTableRef,
+} from "@/lib/suggestions/table-ref";
+import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CommentRecord } from "@/types/report";
 
 export type TableNumberComment = Pick<
@@ -34,25 +42,108 @@ export function orderedSectionContents(args: {
   });
 }
 
+type PendingTableOperation = {
+  comment: TableNumberComment;
+  operation: TableOperation;
+};
+
+type SectionOverlay = {
+  pending: readonly PendingTableOperation[];
+  content: unknown;
+};
+
 /**
- * Apply other open `edit_table` suggestions onto cloned section maps so a
+ * Overlaid section content keyed by the live section object. Typing in one
+ * section must not re-apply every other section's pending table suggestions.
+ * A few entries per section: the provider and the active-suggestion preview
+ * (`exceptCommentId`) ask for different pending sets.
+ */
+const SECTION_OVERLAY_CACHE_SIZE = 4;
+const sectionOverlayCache = new WeakMap<object, SectionOverlay[]>();
+
+function samePendingOperations(
+  a: readonly PendingTableOperation[],
+  b: readonly PendingTableOperation[]
+): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((entry, index) => {
+    const other = b[index]!.comment;
+    return (
+      entry.comment.id === other.id &&
+      entry.comment.content === other.content &&
+      entry.comment.contentPath === other.contentPath
+    );
+  });
+}
+
+function applyPendingToSection(
+  section: string,
+  content: Record<string, unknown>,
+  pending: readonly PendingTableOperation[]
+): unknown {
+  // One working doc per field: re-reading and re-cloning the whole section
+  // for every card made 60 open cards cost 60 section clones.
+  const docs = new Map<string, JSONContent>();
+  for (const { comment, operation } of pending) {
+    const field = comment.contentPath ?? "table";
+    if (!isRichTargetField(section, field)) continue;
+    const previous = docs.get(field);
+    const current = previous
+      ? normalizeRichField(previous)
+      : structuredClone(getRichFieldValue(content, field));
+    const applied = applyTableOperation(current, operation, {
+      section,
+      targetField: field,
+    });
+    if (!applied.ok) continue;
+    docs.set(field, applied.doc);
+  }
+  let next = content;
+  for (const [field, doc] of docs) {
+    next = setRichFieldValue(next, field, doc);
+  }
+  return next;
+}
+
+function overlaidSectionContent(
+  section: string,
+  content: unknown,
+  pending: readonly PendingTableOperation[]
+): unknown {
+  if (!content || typeof content !== "object") return content;
+  const cached = sectionOverlayCache.get(content);
+  const hit = cached?.find((entry) =>
+    samePendingOperations(entry.pending, pending)
+  );
+  if (hit) return hit.content;
+  const overlaid = applyPendingToSection(
+    section,
+    content as Record<string, unknown>,
+    pending
+  );
+  sectionOverlayCache.set(
+    content,
+    [{ pending, content: overlaid }, ...(cached ?? [])].slice(
+      0,
+      SECTION_OVERLAY_CACHE_SIZE
+    )
+  );
+  return overlaid;
+}
+
+/**
+ * Apply other open `edit_table` suggestions onto section copies so a
  * pending Media Fill fill occupies an ordinal before Monitoring is numbered.
- * Failures are skipped; only `tableHasData` on the clone matters.
+ * Failures are skipped; only `tableHasData` on the copy matters. Sections
+ * with no pending card keep their live content object — callers must not
+ * mutate the returned contents.
  */
 export function overlayPendingTableOperations(args: {
   contents: readonly DocumentTableContent[];
   comments: readonly TableNumberComment[];
   exceptCommentId?: string;
 }): DocumentTableContent[] {
-  const next = args.contents.map((row) => ({
-    section: row.section,
-    content: structuredClone(row.content),
-  }));
-  const bySection = new Map(next.map((row) => [row.section, row]));
-  const sectionOrder = new Map(
-    next.map((row, index) => [row.section, index])
-  );
-
+  const pendingBySection = new Map<string, PendingTableOperation[]>();
   const pending = args.comments
     .filter(
       (comment) =>
@@ -66,33 +157,27 @@ export function overlayPendingTableOperations(args: {
       if (!operation || !comment.section) return [];
       return [{ comment, operation }];
     })
-    .sort((a, b) => {
-      const aOrder =
-        sectionOrder.get(a.comment.section ?? "") ?? Number.MAX_SAFE_INTEGER;
-      const bOrder =
-        sectionOrder.get(b.comment.section ?? "") ?? Number.MAX_SAFE_INTEGER;
-      if (aOrder !== bOrder) return aOrder - bOrder;
-      return commentTime(a.comment.createdAt) - commentTime(b.comment.createdAt);
-    });
-
-  for (const { comment, operation } of pending) {
-    const section = comment.section;
-    if (!section) continue;
-    const row = bySection.get(section);
-    if (!row || !row.content || typeof row.content !== "object") continue;
-    const field = comment.contentPath ?? "table";
-    if (!isRichTargetField(section, field)) continue;
-    const sectionContent = row.content as Record<string, unknown>;
-    const applied = applyTableOperation(
-      getRichFieldValue(sectionContent, field),
-      operation,
-      { section, targetField: field }
+    .sort(
+      (a, b) =>
+        commentTime(a.comment.createdAt) - commentTime(b.comment.createdAt)
     );
-    if (!applied.ok) continue;
-    row.content = setRichFieldValue(sectionContent, field, applied.doc);
+  for (const entry of pending) {
+    const section = entry.comment.section;
+    if (!section) continue;
+    const list = pendingBySection.get(section);
+    if (list) list.push(entry);
+    else pendingBySection.set(section, [entry]);
   }
 
-  return next;
+  return args.contents.map((row) => {
+    const sectionPending = pendingBySection.get(row.section);
+    return {
+      section: row.section,
+      content: sectionPending
+        ? overlaidSectionContent(row.section, row.content, sectionPending)
+        : row.content,
+    };
+  });
 }
 
 /** Ordered workspace contents plus pending table-ops, excluding `exceptCommentId`. */
@@ -110,6 +195,67 @@ export function documentContentsFromReportState(args: {
     comments: args.comments,
     exceptCommentId: args.exceptCommentId,
   });
+}
+
+export type LiveTableRefNumbers = {
+  map: ReadonlyMap<string, number>;
+  insertable: readonly InsertableTableRef[];
+};
+
+let lastLiveTableRefNumbers: LiveTableRefNumbers | null = null;
+
+function sameNumberMap(
+  a: ReadonlyMap<string, number>,
+  b: ReadonlyMap<string, number>
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [key, n] of a) {
+    if (b.get(key) !== n) return false;
+  }
+  return true;
+}
+
+function sameInsertable(
+  a: readonly InsertableTableRef[],
+  b: readonly InsertableTableRef[]
+): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => {
+    const other = b[index]!;
+    return (
+      item.n === other.n &&
+      item.section === other.section &&
+      item.targetField === other.targetField &&
+      item.tableIndex === other.tableIndex &&
+      item.title === other.title &&
+      item.sectionLabel === other.sectionLabel
+    );
+  });
+}
+
+/**
+ * Live `Table N` for the workspace. Returns the previous `map` / `insertable`
+ * objects when the numbering did not change, so a keystroke in a narrative
+ * does not re-render every table reference and context menu.
+ */
+export function liveTableRefNumbers(args: {
+  documentType: DocumentType;
+  sections: Readonly<Partial<Record<string, unknown>>>;
+  comments: readonly TableNumberComment[];
+}): LiveTableRefNumbers {
+  const contents = documentContentsFromReportState(args);
+  const map = tableRefNumberMap(contents);
+  const insertable = listInsertableTableRefs(contents);
+  const last = lastLiveTableRefNumbers;
+  const next: LiveTableRefNumbers = {
+    map: last && sameNumberMap(last.map, map) ? last.map : map,
+    insertable:
+      last && sameInsertable(last.insertable, insertable)
+        ? last.insertable
+        : insertable,
+  };
+  lastLiveTableRefNumbers = next;
+  return next;
 }
 
 /**

@@ -3,14 +3,12 @@
 import { createContext, useMemo, type ReactNode } from "react";
 import type { DocumentType } from "@/db/schema";
 import {
-  documentContentsFromReportState,
+  liveTableRefNumbers,
   type TableNumberComment,
 } from "@/lib/suggestions/document-table-number";
 import {
-  listInsertableTableRefs,
   resolveTableRefTarget,
   tableRefMapKey,
-  tableRefNumberMap,
   type InsertableTableRef,
 } from "@/lib/suggestions/table-ref";
 import type { TableRefAttrs } from "@/lib/tiptap/table-ref-markdown";
@@ -47,18 +45,16 @@ export function TableRefNumbersProvider({
   comments: readonly TableNumberComment[];
   children: ReactNode;
 }) {
-  const value = useMemo(() => {
-    const contents = documentContentsFromReportState({
-      documentType,
-      sections,
-      comments,
-    });
-    return {
-      map: tableRefNumberMap(contents),
-      insertable: listInsertableTableRefs(contents),
-      documentType,
-    };
-  }, [documentType, sections, comments]);
+  const { map, insertable } = useMemo(
+    () => liveTableRefNumbers({ documentType, sections, comments }),
+    [documentType, sections, comments]
+  );
+  // `map` / `insertable` keep their identity while the numbering is unchanged,
+  // so typing does not re-render every table reference and context menu.
+  const value = useMemo(
+    () => ({ map, insertable, documentType }),
+    [map, insertable, documentType]
+  );
 
   return (
     <TableRefNumbersContext value={value}>{children}</TableRefNumbersContext>

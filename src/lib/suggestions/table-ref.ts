@@ -72,14 +72,87 @@ function tableGridHasData(table: JSONContent): boolean {
   return false;
 }
 
-function captionTitleAboveTable(doc: JSONContent, tableIndex: number): string {
-  const location = collectTableLocations(doc)[tableIndex];
-  const prev = location?.parent.content?.[location.index - 1];
+function captionTitleAboveTable(location: TableLocation): string {
+  const prev = location.parent.content?.[location.index - 1];
   if (!prev || prev.type !== "paragraph") return "";
   const text = flattenForAnchor(prev).text.trim();
   const match = TABLE_CAPTION_RE.exec(text);
   if (!match) return "";
   return text.slice(match[0].length).trim();
+}
+
+type FieldTables = {
+  field: string;
+  tables: { filled: boolean; captionTitle: string }[];
+};
+
+/**
+ * Per-section table facts keyed by the section content object. Section
+ * content is replaced, never mutated, so an edit in one section leaves the
+ * other sections' entries valid.
+ */
+const sectionTablesCache = new WeakMap<
+  object,
+  { section: string; fields: FieldTables[] }
+>();
+
+function sectionTables(section: string, content: unknown): FieldTables[] {
+  if (!content || typeof content !== "object") return [];
+  const cached = sectionTablesCache.get(content);
+  if (cached && cached.section === section) return cached.fields;
+  const fields = richFieldDocsForTableRefs(section, content).map(
+    ({ field, doc }) => ({
+      field,
+      tables: collectTableLocations(doc).map((location) => {
+        const filled = tableGridHasData(location.table);
+        return {
+          filled,
+          captionTitle: filled ? captionTitleAboveTable(location) : "",
+        };
+      }),
+    })
+  );
+  sectionTablesCache.set(content, { section, fields });
+  return fields;
+}
+
+type NumberedTable = TableRefTarget & {
+  n: number;
+  filled: boolean;
+  captionTitle: string;
+};
+
+/**
+ * Every table in document order with its `Table N`, in one walk. Same
+ * ordinal as `filledTableNumberInDocument`: filled grids before it, plus one.
+ */
+function numberedTables(
+  contents: readonly DocumentTableContent[]
+): NumberedTable[] {
+  const numbered: NumberedTable[] = [];
+  let filledBefore = 0;
+  for (const row of contents) {
+    for (const { field, tables } of sectionTables(row.section, row.content)) {
+      const targetField = field || defaultTableFieldForSection(row.section);
+      // A whole-section doc only answers to the default field names.
+      const addressable =
+        field !== "" || targetField === "narrative" || targetField === "table";
+      tables.forEach((table, tableIndex) => {
+        if (addressable) {
+          numbered.push({
+            section: row.section,
+            targetField,
+            tableIndex,
+            n: filledBefore + 1,
+            filled: table.filled,
+            captionTitle: table.captionTitle,
+          });
+        }
+        if (table.filled) filledBefore += 1;
+      });
+    }
+  }
+  return numbered;
 }
 
 /**
@@ -91,31 +164,16 @@ export function listInsertableTableRefs(
   contents: readonly DocumentTableContent[]
 ): InsertableTableRef[] {
   const items: InsertableTableRef[] = [];
-  for (const row of contents) {
-    for (const { field, doc } of richFieldDocsForTableRefs(row.section, row.content)) {
-      const targetField = field || defaultTableFieldForSection(row.section);
-      const locations = collectTableLocations(doc);
-      for (let tableIndex = 0; tableIndex < locations.length; tableIndex += 1) {
-        const table = locations[tableIndex]?.table;
-        if (!table || !tableGridHasData(table)) continue;
-        const n = filledTableNumberInDocument({
-          contents,
-          target: { section: row.section, targetField, tableIndex },
-        });
-        if (typeof n !== "number") continue;
-        const title =
-          captionTitleAboveTable(doc, tableIndex) ||
-          defaultTableCaptionTitle(row.section);
-        items.push({
-          n,
-          section: row.section,
-          targetField,
-          tableIndex,
-          title,
-          sectionLabel: displaySectionLabel(row.section),
-        });
-      }
-    }
+  for (const table of numberedTables(contents)) {
+    if (!table.filled) continue;
+    items.push({
+      n: table.n,
+      section: table.section,
+      targetField: table.targetField,
+      tableIndex: table.tableIndex,
+      title: table.captionTitle || defaultTableCaptionTitle(table.section),
+      sectionLabel: displaySectionLabel(table.section),
+    });
   }
   return items.toSorted((a, b) => a.n - b.n || a.section.localeCompare(b.section));
 }
@@ -185,16 +243,6 @@ export function richFieldDocsForTableRefs(
   return [];
 }
 
-function tableCountInDoc(doc: JSONContent): number {
-  let count = 0;
-  const walk = (node: JSONContent) => {
-    if (node.type === "table") count += 1;
-    node.content?.forEach(walk);
-  };
-  walk(doc);
-  return count;
-}
-
 function lookupOrdinal(
   contents: readonly DocumentTableContent[],
   target: TableRefTarget
@@ -237,16 +285,8 @@ export function tableRefNumberMap(
   contents: readonly DocumentTableContent[]
 ): Map<string, number> {
   const map = new Map<string, number>();
-  for (const row of contents) {
-    for (const { field, doc } of richFieldDocsForTableRefs(row.section, row.content)) {
-      const targetField = field || defaultTableFieldForSection(row.section);
-      const count = tableCountInDoc(doc);
-      for (let tableIndex = 0; tableIndex < count; tableIndex += 1) {
-        const target = { section: row.section, targetField, tableIndex };
-        const n = lookupOrdinal(contents, target);
-        if (n != null) map.set(tableRefMapKey(target), n);
-      }
-    }
+  for (const table of numberedTables(contents)) {
+    map.set(tableRefMapKey(table), table.n);
   }
   return map;
 }
