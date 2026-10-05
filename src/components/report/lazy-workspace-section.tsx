@@ -10,9 +10,11 @@ import {
 } from "react";
 
 /**
- * Defer TipTap until the section is near the viewport. ELR mounts ~25
- * section editors on first paint; that work runs after `edit?_rsc=` returns
- * and leaves the tab on "Loading report…" until Chrome says unresponsive.
+ * Defer TipTap until after first paint, then until the section is near the
+ * viewport. ELR (~25) and QSR (~18) used to mount every section editor in the
+ * same commit that applies `edit?_rsc=`. That work runs after the flight
+ * returns 200 and leaves the tab on "Loading report…" — Chrome then cannot
+ * even navigate home because the main thread is stuck.
  */
 export function LazyWorkspaceSection({
   id,
@@ -26,26 +28,36 @@ export function LazyWorkspaceSection({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
-  const [mounted, setMounted] = useState(eager);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     if (mounted) return;
+
+    const mount = () => startTransition(() => setMounted(true));
+
+    if (eager) {
+      const frame = requestAnimationFrame(() => {
+        mount();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+
     const el = ref.current;
     if (!el) return;
     if (typeof IntersectionObserver === "undefined") {
-      setMounted(true);
+      mount();
       return;
     }
     const io = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
-        startTransition(() => setMounted(true));
+        mount();
       },
       { rootMargin: "600px 0px" }
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [mounted]);
+  }, [eager, mounted]);
 
   return (
     <section ref={ref} id={id} style={style} className="min-h-32">

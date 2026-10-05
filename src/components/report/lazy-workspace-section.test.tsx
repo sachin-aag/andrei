@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { LazyWorkspaceSection } from "./lazy-workspace-section";
 
 describe("LazyWorkspaceSection", () => {
-  it("renders eager sections immediately", () => {
+  it("defers eager sections until after first paint", async () => {
     render(
       <LazyWorkspaceSection id="elr_objective" eager>
         <p>Objective body</p>
       </LazyWorkspaceSection>
     );
-    expect(screen.getByText("Objective body")).toBeInTheDocument();
+    expect(screen.queryByText("Objective body")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Objective body")).toBeInTheDocument();
+    });
   });
 
   it("holds lazy sections until they intersect", () => {

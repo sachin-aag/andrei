@@ -103,7 +103,7 @@ describe("/api/reports/[reportId]/comments", () => {
     });
   });
 
-  it("GET blanks resolved AI suggestion bodies", async () => {
+  it("GET omits resolved AI suggestion rows", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     mockAccessSelects([report], [manager.id]);
     mockSelectOrdered([
@@ -112,6 +112,12 @@ describe("/api/reports/[reportId]/comments", () => {
         kind: "ai_fix",
         status: "resolved",
         content: '{"tableOperation":{"kind":"insert_rows"}}',
+      },
+      {
+        id: "human-1",
+        kind: "human",
+        status: "open",
+        content: "Please clarify.",
       },
     ]);
 
@@ -123,10 +129,10 @@ describe("/api/reports/[reportId]/comments", () => {
     await expect(response.json()).resolves.toEqual({
       comments: [
         {
-          id: "fix-1",
-          kind: "ai_fix",
-          status: "resolved",
-          content: "",
+          id: "human-1",
+          kind: "human",
+          status: "open",
+          content: "Please clarify.",
         },
       ],
     });

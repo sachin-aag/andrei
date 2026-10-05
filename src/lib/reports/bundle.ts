@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
   comments,
@@ -13,16 +13,19 @@ import {
   listReportManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
-import { slimWorkspaceComments } from "@/lib/comments/slim-workspace-comments";
+import {
+  liveWorkspaceCommentsWhere,
+  slimWorkspaceComments,
+} from "@/lib/comments/slim-workspace-comments";
 import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
 
 // Loads the section/evaluation/comment/attachment rows for a report in parallel.
 // Split out from loadReportBundle so callers that authorize on the report row
 // first (e.g. the GET route) can reuse the same fetch without re-querying.
 //
-// Dismissed comments stay in the DB but are excluded here so ignored AI
-// suggestions and dismissed human threads do not clutter the gutter or the
-// highlight overlay.
+// Dismissed comments and applied AI suggestion rows stay in the DB but are
+// excluded here so Apply-all tableOperation JSON (ELR / QSR) does not ride
+// every /edit RSC. Open suggestions and human threads still load.
 export async function loadReportSubtables(reportId: string) {
   const [sections, evaluations, commentRows, attachments, attachmentFolders] =
     await Promise.all([
@@ -37,9 +40,7 @@ export async function loadReportSubtables(reportId: string) {
       db
         .select()
         .from(comments)
-        .where(
-          and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"))
-        ),
+        .where(liveWorkspaceCommentsWhere(reportId)),
       listActiveAttachments(reportId),
       listAttachmentFolders(reportId),
     ]);

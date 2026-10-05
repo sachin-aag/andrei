@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports } from "@/db/schema";
@@ -7,7 +7,10 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { isValidSection } from "@/lib/document-types";
-import { slimWorkspaceComments } from "@/lib/comments/slim-workspace-comments";
+import {
+  liveWorkspaceCommentsWhere,
+  slimWorkspaceComments,
+} from "@/lib/comments/slim-workspace-comments";
 
 export async function GET(
   req: Request,
@@ -20,14 +23,21 @@ export async function GET(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  // Dismissed comments are kept in the DB for audit / undo but excluded from
-  // the UI by default. Pass ?include=dismissed when you genuinely need them.
+  // Dismissed comments and applied AI suggestion bodies stay in the DB for
+  // audit / undo but are excluded from the live editor. Pass
+  // ?include=dismissed for dismissed *human* threads only.
   const url = new URL(req.url);
   const includeDismissed = url.searchParams.get("include") === "dismissed";
 
   const where = includeDismissed
-    ? eq(comments.reportId, reportId)
-    : and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"));
+    ? and(
+        eq(comments.reportId, reportId),
+        or(
+          eq(comments.status, "open"),
+          and(ne(comments.kind, "ai_fix"), ne(comments.kind, "ai_redraft"))
+        )
+      )
+    : liveWorkspaceCommentsWhere(reportId);
 
   const rows = await db
     .select()
