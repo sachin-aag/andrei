@@ -44,6 +44,7 @@ export default async function ReviewReportPage({
     >
       <ReportWorkspaceLoader
         reportId={reportId}
+        documentType={report.documentType}
         currentUserId={user.id}
         currentUserRole={user.role}
         currentUserEmail={user.email}

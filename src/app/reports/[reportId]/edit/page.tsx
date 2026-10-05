@@ -46,6 +46,7 @@ export default async function EditReportPage({
     >
       <ReportWorkspaceLoader
         reportId={reportId}
+        documentType={report.documentType}
         currentUserId={user.id}
         currentUserRole={user.role}
         currentUserEmail={user.email}

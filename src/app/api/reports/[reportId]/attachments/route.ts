@@ -1,5 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listAttachmentFolders } from "@/lib/attachments/folders";
 import { listActiveAttachments } from "@/lib/attachments/list-active";
 import { startIngestForUnprocessedLinkedVaultAssets } from "@/lib/attachments/start-vault-ingest";
 import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
@@ -25,10 +26,13 @@ export async function GET(
   // the leftover kick below starts holder ingest.
   await reclaimStaleIngests(reportId);
 
-  const attachments = await listActiveAttachments(reportId);
+  const [attachments, folders] = await Promise.all([
+    listActiveAttachments(reportId),
+    listAttachmentFolders(reportId),
+  ]);
   // Old vault files linked before vault ingest existed stay on uploading /
   // processing with no live run. Kick them here so Add from vault is not
   // required again (those rows are hidden from the picker).
   after(() => startIngestForUnprocessedLinkedVaultAssets(attachments));
-  return NextResponse.json({ attachments });
+  return NextResponse.json({ attachments, folders });
 }

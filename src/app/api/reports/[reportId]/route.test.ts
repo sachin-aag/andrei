@@ -109,12 +109,10 @@ function mockOrderedSelectOnce(rows: unknown[]) {
 function mockBundleSelects() {
   mockSelectOnce([report]);
   mockOrderedSelectOnce([]);
-  // loadReportSubtables: sections, evaluations, comments, attachments, folders.
+  // loadReportWorkspaceBody: sections, evaluations, comments.
   mockSelectOnce([]);
   mockSelectOnce([]);
   mockSelectOnce([]);
-  mockOrderedSelectOnce([]);
-  mockOrderedSelectOnce([]);
 }
 
 function mockManagerValidation(managerIds: string[]) {

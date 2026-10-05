@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
@@ -364,3 +365,20 @@ export function MechRevisionHistoryEditor() {
     />
   );
 }
+
+export const MECHANICAL_DV_SECTION_EDITORS: Record<string, ComponentType> = {
+  purpose: MechPurposeEditor,
+  scope: MechScopeEditor,
+  testers_dates: MechTestersDatesEditor,
+  executed_protocol: MechExecutedProtocolEditor,
+  protocol_deviations: MechProtocolDeviationsEditor,
+  units_under_test: MechUnitsUnderTestEditor,
+  equipment_and_calibration: MechTestEquipmentEditor,
+  failure_forms: MechFailureFormsEditor,
+  data_collection_forms: MechDataCollectionFormsEditor,
+  requirements_verified: MechRequirementsVerifiedEditor,
+  observations: MechObservationsEditor,
+  problems_resolution: MechProblemsResolutionEditor,
+  conclusion: MechConclusionEditor,
+  revision_history: MechRevisionHistoryEditor,
+};

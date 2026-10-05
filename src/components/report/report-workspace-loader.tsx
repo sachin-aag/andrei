@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import type { DocumentType } from "@/db/schema";
 import type { UserRole } from "@/lib/auth/roles";
 import type { ReportBundle } from "@/types/report";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspaceLoading } from "@/components/report/report-workspace-loading";
 import {
-  normalizeWorkspaceBundle,
+  fetchWorkspaceBundle,
   workspaceLoadErrorMessage,
+  WorkspaceLoadError,
 } from "@/components/report/report-workspace-bundle";
+import { loadSectionEditors } from "@/components/report/section-editor-loaders";
 
 const ReportWorkspace = dynamic(
   () =>
@@ -22,13 +25,12 @@ const ReportWorkspace = dynamic(
 
 /**
  * /edit used to stream the full bundle through the RSC client boundary.
- * Hydrating ReportWorkspace (every document-type editor) plus 18–25
- * section JSON docs kept the tab on "Loading report…" after HTTP 200 —
- * preview and local, not just production. Fetch the body after AppShell
- * paints so Home stays clickable.
+ * Fetch the body after AppShell paints so Home stays clickable. The GET
+ * times out instead of leaving "Loading report…" forever.
  */
 export function ReportWorkspaceLoader({
   reportId,
+  documentType,
   currentUserId,
   currentUserRole,
   currentUserEmail,
@@ -37,6 +39,7 @@ export function ReportWorkspaceLoader({
   initialTrackChangesMode = false,
 }: {
   reportId: string;
+  documentType: DocumentType;
   currentUserId: string;
   currentUserRole: UserRole;
   currentUserEmail: string;
@@ -45,40 +48,45 @@ export function ReportWorkspaceLoader({
   initialTrackChangesMode?: boolean;
 }) {
   const [bundle, setBundle] = useState<ReportBundle | null>(null);
+  const [editorsReady, setEditorsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const ac = new AbortController();
+    void loadSectionEditors(documentType).then(
+      () => {
+        if (!cancelled) setEditorsReady(true);
+      },
+      () => {
+        if (!cancelled) setEditorsReady(true);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [documentType]);
+
+  useEffect(() => {
+    let cancelled = false;
 
     async function load() {
       try {
-        // An editor must never hydrate from a cached body: autosave would
-        // write the stale sections back over newer content.
-        const res = await fetch(`/api/reports/${reportId}`, {
-          signal: ac.signal,
-          cache: "no-store",
-        });
+        const next = await fetchWorkspaceBundle(reportId);
         if (cancelled) return;
-        if (!res.ok) {
-          setError(workspaceLoadErrorMessage(res.status));
-          return;
-        }
-        const data = (await res.json()) as ReportBundle;
-        if (cancelled) return;
-        setBundle(normalizeWorkspaceBundle(data));
+        setBundle(next);
       } catch (err) {
-        if (cancelled || (err instanceof DOMException && err.name === "AbortError")) {
+        if (cancelled) return;
+        if (err instanceof WorkspaceLoadError) {
+          setError(workspaceLoadErrorMessage(err.status, err.timedOut));
           return;
         }
-        setError("The report could not be loaded.");
+        setError(workspaceLoadErrorMessage(0));
       }
     }
 
     void load();
     return () => {
       cancelled = true;
-      ac.abort();
     };
   }, [reportId]);
 
@@ -90,7 +98,7 @@ export function ReportWorkspaceLoader({
     );
   }
 
-  if (!bundle) {
+  if (!bundle || !editorsReady) {
     return <ReportWorkspaceLoading />;
   }
 

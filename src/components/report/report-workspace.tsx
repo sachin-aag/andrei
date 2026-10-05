@@ -7,7 +7,6 @@ import {
   useEffect,
   useLayoutEffect,
   useSyncExternalStore,
-  type ComponentType,
 } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -69,7 +68,7 @@ import { CanvasTabScrollProvider } from "./canvas-tab-scroll";
 import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
-import type { DocumentType, SectionType } from "@/db/schema";
+import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
@@ -108,261 +107,9 @@ import {
   ElectronicSignatureDialog,
   type SignatureMeaningUi,
 } from "./electronic-signature-dialog";
-import { DefineEditor } from "./sections/define-editor";
-import { MeasureEditor } from "./sections/measure-editor";
-import { AnalyzeEditor } from "./sections/analyze-editor";
-import { ImproveEditor } from "./sections/improve-editor";
-import { ControlEditor } from "./sections/control-editor";
-import { ConclusionEditor } from "./sections/conclusion-editor";
-import { DocumentsReviewedEditor } from "./sections/documents-reviewed-editor";
-import { AttachmentsEditor } from "./sections/attachments-editor";
-import { SignatureApprovalsSection } from "./sections/signature-approvals-section";
-import { DvCoverPageEditor } from "./sections/dv/cover-page-editor";
-import {
-  DvAppendicesEditor,
-  DvApprovalEditor,
-  DvConclusionEditor,
-  DvDeviationsEditor,
-  DvMethodsOfMeasurementEditor,
-  DvProblemsResolutionEditor,
-  DvPurposeEditor,
-  DvPurposeScopeEditor,
-  DvReferencesEditor,
-  DvResultsAndDiscussionsEditor,
-  DvScopeEditor,
-  DvTestEquipmentEditor,
-  DvTestMethodsEditor,
-  DvTestResultsEditor,
-  DvTestersDatesEditor,
-  DvTraceabilityEditor,
-} from "./sections/dv/dv-section-editors";
-import {
-  MechConclusionEditor,
-  MechDataCollectionFormsEditor,
-  MechExecutedProtocolEditor,
-  MechFailureFormsEditor,
-  MechObservationsEditor,
-  MechProblemsResolutionEditor,
-  MechProtocolDeviationsEditor,
-  MechPurposeEditor,
-  MechRequirementsVerifiedEditor,
-  MechRevisionHistoryEditor,
-  MechScopeEditor,
-  MechTestEquipmentEditor,
-  MechTestersDatesEditor,
-  MechUnitsUnderTestEditor,
-} from "./sections/dv/mechanical-section-editors";
-import { GenericDocumentEditor } from "./sections/generic/generic-document-editor";
-import {
-  QraApproachEditor,
-  QraCommunicationEditor,
-  QraFmeaEditor,
-  QraMitigationEditor,
-  QraObjectiveEditor,
-  QraOverviewEditor,
-  QraPeriodicReviewEditor,
-  QraPostConclusionEditor,
-  QraPreConclusionEditor,
-  QraProcedureEditor,
-  QraResidualRiskEditor,
-  QraRevisionHistoryEditor,
-  QraRiskIdentificationEditor,
-  QraScopeEditor,
-  QraTeamEditor,
-} from "./sections/qra/qra-section-editors";
-import {
-  ElrAbbreviationsEditor,
-  ElrAccessControlEditor,
-  ElrAlarmsEditor,
-  ElrAttachmentsEditor,
-  ElrAuditTrailEditor,
-  ElrBreakdownsEditor,
-  ElrCalibrationEditor,
-  ElrCleaningValidationEditor,
-  ElrConclusionEditor,
-  ElrCsvStatusEditor,
-  ElrDiscrepanciesEditor,
-  ElrMediaFillEditor,
-  ElrMonitoringEditor,
-  ElrObjectiveEditor,
-  ElrPreventiveMaintenanceEditor,
-  ElrProcessValidationEditor,
-  ElrQmsEditor,
-  ElrQraReviewEditor,
-  ElrQualificationEditor,
-  ElrResponsibilitiesEditor,
-  ElrRevisionHistoryEditor,
-  ElrRiskActionsEditor,
-  ElrScopeEditor,
-  ElrSystemDescriptionEditor,
-  ElrSystemTrendsEditor,
-} from "./sections/elr/elr-section-editors";
-import { VQ_SECTION_EDITORS } from "./sections/vq/vq-section-editors";
-import { QSR_SECTION_EDITORS } from "./sections/qsr/qsr-section-editors";
+import { useDocumentSectionEditors } from "./section-editor-loaders";
 
 export type { WorkspaceMode };
-
-/**
- * Section editors are all rendered at once, so they must not be lazy: a lazy
- * boundary that has not loaded when React hydrates makes React throw away the
- * server-rendered section and replace it with a fallback, silently discarding
- * focus and keystrokes typed into it.
- */
-import {
-  FirAttachmentsEditor,
-  FirBatchDispositionEditor,
-  FirCapaEffectivenessEditor,
-  FirChronologyEditor,
-  FirCorrectionEditor,
-  FirCorrectiveActionEditor,
-  FirEventDescriptionEditor,
-  FirHistoricReviewEditor,
-  FirHumanErrorEditor,
-  FirImmediateActionEditor,
-  FirImpactAssessmentEditor,
-  FirInitialImpactEditor,
-  FirInterimControlEditor,
-  FirInvestigationDetailsEditor,
-  FirInvestigationTeamEditor,
-  FirInvestigationToolsEditor,
-  FirPreventiveActionEditor,
-  FirRootCauseEditor,
-  FirScopeAssessmentEditor,
-  FirStandardProceduresEditor,
-} from "@/components/report/sections/fir/fir-section-editors";
-
-const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
-  define: DefineEditor,
-  measure: MeasureEditor,
-  analyze: AnalyzeEditor,
-  improve: ImproveEditor,
-  control: ControlEditor,
-  conclusion: ConclusionEditor,
-  documents_reviewed: DocumentsReviewedEditor,
-  attachments: AttachmentsEditor,
-  signature_approvals: SignatureApprovalsSection,
-};
-
-const DV_SECTION_EDITORS: Record<string, ComponentType> = {
-  cover_page: DvCoverPageEditor,
-  purpose_scope: DvPurposeScopeEditor,
-  references: DvReferencesEditor,
-  traceability: DvTraceabilityEditor,
-  test_methods: DvTestMethodsEditor,
-  test_results: DvTestResultsEditor,
-  deviations: DvDeviationsEditor,
-  conclusion: DvConclusionEditor,
-  approval_signoff: DvApprovalEditor,
-  appendices: DvAppendicesEditor,
-  purpose: DvPurposeEditor,
-  scope: DvScopeEditor,
-  testers_dates: DvTestersDatesEditor,
-  methods_of_measurement: DvMethodsOfMeasurementEditor,
-  test_equipment: DvTestEquipmentEditor,
-  results_and_discussions: DvResultsAndDiscussionsEditor,
-  problems_resolution: DvProblemsResolutionEditor,
-};
-
-const MECHANICAL_DV_SECTION_EDITORS: Record<string, ComponentType> = {
-  purpose: MechPurposeEditor,
-  scope: MechScopeEditor,
-  testers_dates: MechTestersDatesEditor,
-  executed_protocol: MechExecutedProtocolEditor,
-  protocol_deviations: MechProtocolDeviationsEditor,
-  units_under_test: MechUnitsUnderTestEditor,
-  equipment_and_calibration: MechTestEquipmentEditor,
-  failure_forms: MechFailureFormsEditor,
-  data_collection_forms: MechDataCollectionFormsEditor,
-  requirements_verified: MechRequirementsVerifiedEditor,
-  observations: MechObservationsEditor,
-  problems_resolution: MechProblemsResolutionEditor,
-  conclusion: MechConclusionEditor,
-  revision_history: MechRevisionHistoryEditor,
-};
-
-const QRA_SECTION_EDITORS: Record<string, ComponentType> = {
-  qra_approach: QraApproachEditor,
-  qra_objective: QraObjectiveEditor,
-  qra_scope: QraScopeEditor,
-  qra_overview: QraOverviewEditor,
-  qra_procedure: QraProcedureEditor,
-  qra_team: QraTeamEditor,
-  qra_risk_identification: QraRiskIdentificationEditor,
-  qra_fmea: QraFmeaEditor,
-  qra_communication: QraCommunicationEditor,
-  qra_pre_conclusion: QraPreConclusionEditor,
-  qra_mitigation: QraMitigationEditor,
-  qra_residual_risk: QraResidualRiskEditor,
-  qra_periodic_review: QraPeriodicReviewEditor,
-  qra_post_conclusion: QraPostConclusionEditor,
-  qra_revision_history: QraRevisionHistoryEditor,
-};
-
-const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
-  elr_objective: ElrObjectiveEditor,
-  elr_scope: ElrScopeEditor,
-  elr_responsibilities: ElrResponsibilitiesEditor,
-  elr_abbreviations: ElrAbbreviationsEditor,
-  elr_system_description: ElrSystemDescriptionEditor,
-  elr_qualification: ElrQualificationEditor,
-  elr_process_validation: ElrProcessValidationEditor,
-  elr_cleaning_validation: ElrCleaningValidationEditor,
-  elr_qra_review: ElrQraReviewEditor,
-  elr_media_fill: ElrMediaFillEditor,
-  elr_monitoring: ElrMonitoringEditor,
-  elr_calibration: ElrCalibrationEditor,
-  elr_preventive_maintenance: ElrPreventiveMaintenanceEditor,
-  elr_breakdowns: ElrBreakdownsEditor,
-  elr_qms: ElrQmsEditor,
-  elr_alarms: ElrAlarmsEditor,
-  elr_access_control: ElrAccessControlEditor,
-  elr_audit_trail: ElrAuditTrailEditor,
-  elr_csv_status: ElrCsvStatusEditor,
-  elr_discrepancies: ElrDiscrepanciesEditor,
-  elr_system_trends: ElrSystemTrendsEditor,
-  elr_risk_actions: ElrRiskActionsEditor,
-  elr_conclusion: ElrConclusionEditor,
-  elr_attachments: ElrAttachmentsEditor,
-  elr_revision_history: ElrRevisionHistoryEditor,
-};
-
-const FIR_SECTION_EDITORS: Record<string, ComponentType> = {
-  fir_event_description: FirEventDescriptionEditor,
-  fir_standard_procedures: FirStandardProceduresEditor,
-  fir_immediate_action: FirImmediateActionEditor,
-  fir_initial_impact: FirInitialImpactEditor,
-  fir_investigation_team: FirInvestigationTeamEditor,
-  fir_investigation_tools: FirInvestigationToolsEditor,
-  fir_chronology: FirChronologyEditor,
-  fir_investigation_details: FirInvestigationDetailsEditor,
-  fir_historic_review: FirHistoricReviewEditor,
-  fir_root_cause: FirRootCauseEditor,
-  fir_human_error: FirHumanErrorEditor,
-  fir_impact_assessment: FirImpactAssessmentEditor,
-  fir_scope_assessment: FirScopeAssessmentEditor,
-  fir_batch_disposition: FirBatchDispositionEditor,
-  fir_correction: FirCorrectionEditor,
-  fir_corrective_action: FirCorrectiveActionEditor,
-  fir_interim_control: FirInterimControlEditor,
-  fir_preventive_action: FirPreventiveActionEditor,
-  fir_capa_effectiveness: FirCapaEffectivenessEditor,
-  fir_attachments: FirAttachmentsEditor,
-};
-
-const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
-  DocumentType,
-  Record<string, ComponentType>
-> = {
-  investigation_report: INVESTIGATION_SECTION_EDITORS,
-  design_verification: DV_SECTION_EDITORS,
-  mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
-  generic_document: { body: GenericDocumentEditor },
-  quality_risk_assessment: QRA_SECTION_EDITORS,
-  equipment_lifecycle_report: ELR_SECTION_EDITORS,
-  vendor_qualification: VQ_SECTION_EDITORS,
-  failure_investigation_report: FIR_SECTION_EDITORS,
-  qualification_summary_report: QSR_SECTION_EDITORS,
-};
 
 export function ReportWorkspace({
   mode,
@@ -379,6 +126,7 @@ export function ReportWorkspace({
     currentUserRole,
     flushPendingSectionSaves,
   } = useReportData();
+  const sectionEditors = useDocumentSectionEditors(report.documentType);
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
@@ -1331,10 +1079,7 @@ export function ReportWorkspace({
                       {getWorkspaceSections(report.documentType).map(
                         (section, index) => {
                           const s = section.key;
-                          const Editor =
-                            SECTION_EDITORS_BY_DOCUMENT_TYPE[
-                              report.documentType
-                            ]?.[s];
+                          const Editor = sectionEditors?.[s];
                           if (!Editor) return null;
                           const extra = showReviewGutter
                             ? sectionMinHeights[s]

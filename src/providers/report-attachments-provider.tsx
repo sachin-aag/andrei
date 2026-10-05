@@ -173,11 +173,19 @@ export function ReportAttachmentsProvider({
     if (!response.ok) return;
     const data = (await response.json()) as {
       attachments?: ReportAttachmentRecord[];
+      folders?: ReportAttachmentFolderRecord[];
     };
     if (Array.isArray(data.attachments)) {
       setAttachments(data.attachments);
     }
+    if (Array.isArray(data.folders)) {
+      setFolders(data.folders);
+    }
   }, [reportId]);
+
+  useEffect(() => {
+    void refreshAttachments().catch(() => {});
+  }, [refreshAttachments]);
 
   useEffect(() => {
     if (!attachments.some((item) => NON_TERMINAL_STATUSES.has(item.processingStatus))) {
