@@ -23,6 +23,7 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 import {
   LazyWorkspaceSection,
   requestWorkspaceSectionMount,
+  warmupAllLazyWorkspaceSections,
 } from "./lazy-workspace-section";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import {
@@ -216,6 +217,7 @@ export function ReportWorkspace({
   const [shellReady, setShellReady] = useState(false);
   const [firstSectionMounted, setFirstSectionMounted] = useState(false);
 
+  const didWarmupEditors = useRef(false);
   const handleSectionMounted = useCallback((section: string) => {
     emitWorkspaceLoadStage("section_mounted", { section });
     emitWorkspaceLoadStage("first_editor_ready", { section });
@@ -226,7 +228,12 @@ export function ReportWorkspace({
     if (!firstSectionMounted || shellReady) return;
     let cancelled = false;
     const finish = () => {
-      if (!cancelled) setShellReady(true);
+      if (cancelled) return;
+      setShellReady(true);
+      if (!didWarmupEditors.current) {
+        didWarmupEditors.current = true;
+        warmupAllLazyWorkspaceSections();
+      }
     };
     if (typeof window.requestIdleCallback === "function") {
       const idleId = window.requestIdleCallback(finish, { timeout: 2000 });
@@ -331,7 +338,7 @@ export function ReportWorkspace({
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
   const reviewGutterAsideRef = useRef<HTMLElement>(null);
-  const [reviewGutterColumnPainted, setReviewGutterColumnPainted] =
+  const [reviewGutterColumnMeasured, setReviewGutterColumnMeasured] =
     useState(false);
   const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -432,19 +439,19 @@ export function ReportWorkspace({
   const showReviewGutter =
     reportSurface &&
     isReviewGutterVisible(commentsGutterVisible, false);
+  const reviewGutterColumnPainted =
+    showReviewGutter && reviewGutterColumnMeasured;
 
   useLayoutEffect(() => {
     if (!showReviewGutter) {
-      setReviewGutterColumnPainted(false);
       return;
     }
     const el = reviewGutterAsideRef.current;
     if (!el) {
-      setReviewGutterColumnPainted(false);
       return;
     }
     const update = () => {
-      setReviewGutterColumnPainted(isReviewGutterColumnPainted(el));
+      setReviewGutterColumnMeasured(isReviewGutterColumnPainted(el));
     };
     update();
     if (typeof ResizeObserver === "undefined") return;
@@ -596,12 +603,16 @@ export function ReportWorkspace({
 
   const signingInFlight = submitting || approving || sendingFeedback;
 
+  const jumpEpochRef = useRef(0);
   const jumpToSection = useCallback((s: SectionType) => {
     setWorkProductView("report");
     setActiveTabId("report");
-    requestWorkspaceSectionMount(s);
-    const el = mainRef.current?.querySelector(`#${s}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const epoch = ++jumpEpochRef.current;
+    return requestWorkspaceSectionMount(s).then(() => {
+      if (jumpEpochRef.current !== epoch) return;
+      const el = mainRef.current?.querySelector(`#${s}`);
+      if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
+    });
   }, []);
 
   useEffect(() => {
@@ -730,8 +741,7 @@ export function ReportWorkspace({
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
-    jumpToSection(p.section);
-    requestAnimationFrame(() => {
+    void jumpToSection(p.section).then(() => {
       if (p.contentPath !== "narrative") {
         const anchor = document.querySelector(
           `[data-field-anchor="${p.section}.${p.contentPath}"]`

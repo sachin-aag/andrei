@@ -9,59 +9,302 @@ import {
   type ReactNode,
 } from "react";
 
-const mountQueue: Array<() => void> = [];
+type MountKind = "urgent" | "prefetch" | "warmup";
+
+type MountJob = {
+  id: string;
+  run: () => void;
+  kind: MountKind;
+  shouldRun?: () => boolean;
+  distance?: () => number;
+};
+
+const VIEWPORT_MARGIN_PX = 160;
+/** Contents waits this long for the target editor before scrolling anyway. */
+export const JUMP_SCROLL_WAIT_MS = 1500;
+
+const mountQueue: MountJob[] = [];
 let flushing = false;
+let rafHandle = 0;
+let idleHandle = 0;
+let jumpTarget: string | null = null;
+let jumpTimer = 0;
+const mountedSectionIds = new Set<string>();
+const readyWaiters = new Map<string, Set<() => void>>();
 const sectionMountListeners = new Set<(id: string) => void>();
+const sectionWarmupListeners = new Set<() => void>();
+const prefetchCandidates = new Set<{
+  id: string;
+  mounted: () => boolean;
+  queue: () => void;
+  distance: () => number;
+  isNear: () => boolean;
+}>();
+
+function kindRank(kind: MountKind): number {
+  switch (kind) {
+    case "urgent":
+      return 0;
+    case "prefetch":
+      return 1;
+    case "warmup":
+      return 2;
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
+function isNearViewport(el: Element | null): boolean {
+  if (!el || typeof window === "undefined") return false;
+  const rect = el.getBoundingClientRect();
+  const viewH = window.innerHeight || 0;
+  return (
+    rect.bottom >= -VIEWPORT_MARGIN_PX && rect.top <= viewH + VIEWPORT_MARGIN_PX
+  );
+}
+
+function distanceToViewportTop(el: Element | null): number {
+  if (!el) return Number.POSITIVE_INFINITY;
+  return Math.abs(el.getBoundingClientRect().top);
+}
+
+function cancelScheduledFlush() {
+  if (rafHandle) {
+    cancelAnimationFrame(rafHandle);
+    rafHandle = 0;
+  }
+  if (idleHandle) {
+    if (typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(idleHandle);
+    }
+    idleHandle = 0;
+  }
+}
+
+function scheduleFlush() {
+  if (mountQueue.length === 0) {
+    flushing = false;
+    return;
+  }
+  flushing = true;
+  const urgent = mountQueue[0]?.kind === "urgent";
+  if (urgent) {
+    cancelScheduledFlush();
+    rafHandle = requestAnimationFrame(flush);
+    return;
+  }
+  if (rafHandle || idleHandle) return;
+  if (typeof requestIdleCallback === "function") {
+    idleHandle = requestIdleCallback(flush, { timeout: 200 });
+    return;
+  }
+  rafHandle = requestAnimationFrame(flush);
+}
+
+function dropPrefetchJobs() {
+  for (let i = mountQueue.length - 1; i >= 0; i--) {
+    if (mountQueue[i]?.kind === "prefetch") mountQueue.splice(i, 1);
+  }
+}
+
+function insertJob(job: MountJob) {
+  const existingAt = mountQueue.findIndex((queued) => queued.id === job.id);
+  if (existingAt !== -1) {
+    const existing = mountQueue[existingAt]!;
+    if (kindRank(existing.kind) < kindRank(job.kind)) return;
+    mountQueue.splice(existingAt, 1);
+  }
+  if (job.kind === "prefetch") {
+    const otherPrefetch = mountQueue.findIndex(
+      (queued) => queued.kind === "prefetch"
+    );
+    if (otherPrefetch !== -1) {
+      const other = mountQueue[otherPrefetch]!;
+      const nextDist = job.distance?.() ?? Number.POSITIVE_INFINITY;
+      const prevDist = other.distance?.() ?? Number.POSITIVE_INFINITY;
+      if (nextDist >= prevDist) return;
+      mountQueue.splice(otherPrefetch, 1);
+    }
+  }
+  if (job.kind === "urgent") {
+    mountQueue.unshift(job);
+    return;
+  }
+  if (job.kind === "prefetch") {
+    const warmupAt = mountQueue.findIndex((queued) => queued.kind === "warmup");
+    if (warmupAt === -1) mountQueue.push(job);
+    else mountQueue.splice(warmupAt, 0, job);
+    return;
+  }
+  mountQueue.push(job);
+}
+
+function prefetchClosestVisible() {
+  if (jumpTarget) return;
+  if (mountQueue.some((job) => job.kind === "prefetch" || job.kind === "urgent")) {
+    return;
+  }
+  let best: { dist: number; queue: () => void } | null = null;
+  for (const candidate of prefetchCandidates) {
+    if (candidate.mounted() || !candidate.isNear()) continue;
+    const dist = candidate.distance();
+    if (!best || dist < best.dist) best = { dist, queue: candidate.queue };
+  }
+  best?.queue();
+}
+
+function flush() {
+  rafHandle = 0;
+  idleHandle = 0;
+  const next = mountQueue.shift();
+  if (!next) {
+    flushing = false;
+    return;
+  }
+  if (next.shouldRun && !next.shouldRun()) {
+    if (mountQueue.length > 0) scheduleFlush();
+    else flushing = false;
+    prefetchClosestVisible();
+    return;
+  }
+  try {
+    next.run();
+  } finally {
+    if (mountQueue.length > 0) scheduleFlush();
+    else flushing = false;
+    if (next.kind !== "warmup" && jumpTarget !== next.id) {
+      prefetchClosestVisible();
+    }
+  }
+}
+
+function resolveReadyWaiters(id: string) {
+  const waiters = readyWaiters.get(id);
+  if (!waiters) return;
+  readyWaiters.delete(id);
+  for (const waiter of waiters) waiter();
+}
+
+function markSectionMounted(id: string) {
+  mountedSectionIds.add(id);
+  if (jumpTarget === id) {
+    jumpTarget = null;
+    if (typeof window !== "undefined") window.clearTimeout(jumpTimer);
+    prefetchClosestVisible();
+  }
+  resolveReadyWaiters(id);
+}
+
+function whenWorkspaceSectionReady(
+  id: string,
+  timeoutMs: number
+): Promise<void> {
+  if (mountedSectionIds.has(id)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (typeof window !== "undefined") window.clearTimeout(timer);
+      readyWaiters.get(id)?.delete(finish);
+      if (readyWaiters.get(id)?.size === 0) readyWaiters.delete(id);
+      resolve();
+    };
+    let waiters = readyWaiters.get(id);
+    if (!waiters) {
+      waiters = new Set();
+      readyWaiters.set(id, waiters);
+    }
+    waiters.add(finish);
+    const timer =
+      typeof window === "undefined"
+        ? 0
+        : window.setTimeout(finish, timeoutMs);
+  });
+}
 
 /**
- * One TipTap section per frame so 18 intersecting QSR shells cannot mount
- * together. Returns a cancel for sections that unmount while still queued.
+ * One TipTap section at a time. Urgent jobs (first paint, Contents jump)
+ * use animation frames; prefetch and warmup wait for an idle gap so
+ * scrolling stays usable.
  */
 export function enqueueLazyWorkspaceMount(
   mount: () => void,
-  urgent = false
+  opts: {
+    id: string;
+    kind: MountKind;
+    shouldRun?: () => boolean;
+    distance?: () => number;
+  }
 ): () => void {
-  const existing = mountQueue.indexOf(mount);
-  if (existing !== -1) mountQueue.splice(existing, 1);
-  if (urgent) mountQueue.unshift(mount);
-  else mountQueue.push(mount);
+  const job: MountJob = {
+    id: opts.id,
+    run: mount,
+    kind: opts.kind,
+    shouldRun: opts.shouldRun,
+    distance: opts.distance,
+  };
+  insertJob(job);
   const cancel = () => {
-    const at = mountQueue.indexOf(mount);
+    const at = mountQueue.findIndex((queued) => queued.run === mount);
     if (at !== -1) mountQueue.splice(at, 1);
   };
-  if (flushing) return cancel;
-  flushing = true;
-  const flush = () => {
-    const next = mountQueue.shift();
-    try {
-      next?.();
-    } finally {
-      // A throwing mount must not strand the sections queued behind it.
-      if (mountQueue.length > 0) {
-        requestAnimationFrame(flush);
-      } else {
-        flushing = false;
-      }
-    }
-  };
-  requestAnimationFrame(flush);
+  if (opts.kind === "urgent" && idleHandle) {
+    cancelScheduledFlush();
+    scheduleFlush();
+    return cancel;
+  }
+  if (!flushing) scheduleFlush();
   return cancel;
 }
 
-/** Jump-to-section / suggestion focus mounts this id ahead of the viewport queue. */
-export function requestWorkspaceSectionMount(id: string) {
+/**
+ * Jump-to-section / suggestion focus mounts this id ahead of the warmup
+ * queue and resolves once that editor is in the document (or the wait
+ * cap elapses). Callers should scroll after this promise — not before —
+ * so Contents does not sweep through unloaded stubs.
+ */
+export function requestWorkspaceSectionMount(
+  id: string,
+  timeoutMs = JUMP_SCROLL_WAIT_MS
+): Promise<void> {
+  jumpTarget = id;
+  dropPrefetchJobs();
+  if (typeof window !== "undefined") {
+    window.clearTimeout(jumpTimer);
+    jumpTimer = window.setTimeout(() => {
+      if (jumpTarget === id) jumpTarget = null;
+      prefetchClosestVisible();
+    }, timeoutMs);
+  }
   for (const listener of sectionMountListeners) listener(id);
+  return whenWorkspaceSectionReady(id, timeoutMs);
+}
+
+/** After the first section paints, queue every remaining editor in document order. */
+export function warmupAllLazyWorkspaceSections() {
+  for (const listener of sectionWarmupListeners) listener();
 }
 
 export function resetLazyWorkspaceMountQueue() {
+  if (typeof window !== "undefined") window.clearTimeout(jumpTimer);
+  jumpTimer = 0;
+  jumpTarget = null;
+  cancelScheduledFlush();
   mountQueue.length = 0;
   flushing = false;
+  mountedSectionIds.clear();
+  for (const waiters of readyWaiters.values()) {
+    for (const waiter of waiters) waiter();
+  }
+  readyWaiters.clear();
 }
 
 /**
- * Defer TipTap until after first paint, then until the section is near the
- * viewport. ELR (~25) and QSR (~18) used to mount every section editor in the
- * same commit. The one-per-frame queue keeps a 160px prefetch from piling up.
+ * Defer TipTap until after first paint. Jumps and fast scrolls mount only the
+ * section that was landed on; the rest warm in the background on idle.
  */
 export function LazyWorkspaceSection({
   id,
@@ -80,11 +323,13 @@ export function LazyWorkspaceSection({
 }) {
   const ref = useRef<HTMLElement>(null);
   const [mounted, setMounted] = useState(false);
+  const mountedRef = useRef(false);
   const reportedMount = useRef(false);
 
   useEffect(() => {
     if (!mounted || reportedMount.current) return;
     reportedMount.current = true;
+    markSectionMounted(id);
     onMounted?.(id);
   }, [mounted, id, onMounted]);
 
@@ -92,35 +337,69 @@ export function LazyWorkspaceSection({
     if (mounted) return;
 
     let cancelMount: (() => void) | undefined;
-    const queueMount = (urgent = false) => {
+    const commit = (kind: MountKind) => {
+      mountedRef.current = true;
+      if (kind === "urgent") setMounted(true);
+      else startTransition(() => setMounted(true));
+    };
+    const queueMount = (kind: MountKind) => {
+      if (mountedRef.current) return;
       cancelMount?.();
-      cancelMount = enqueueLazyWorkspaceMount(() => {
-        // The first section must commit before deferred work (suggestion
-        // locate) or a transition can sit unpainted for the whole scan.
-        if (urgent) setMounted(true);
-        else startTransition(() => setMounted(true));
-      }, urgent);
+      const node = ref.current;
+      cancelMount = enqueueLazyWorkspaceMount(
+        () => {
+          commit(kind);
+        },
+        {
+          id,
+          kind,
+          shouldRun:
+            kind === "prefetch" ? () => isNearViewport(node) : undefined,
+          distance:
+            kind === "prefetch" ? () => distanceToViewportTop(node) : undefined,
+        }
+      );
     };
 
     const onRequest = (requested: string) => {
       if (requested !== id) return;
-      queueMount(true);
+      queueMount("urgent");
+    };
+    const onWarmup = () => {
+      queueMount("warmup");
+    };
+    const onPrefetch = () => {
+      if (jumpTarget || mountedRef.current) return;
+      queueMount("prefetch");
+    };
+    const candidate = {
+      id,
+      mounted: () => mountedRef.current,
+      queue: onPrefetch,
+      distance: () => distanceToViewportTop(ref.current),
+      isNear: () => isNearViewport(ref.current),
     };
     sectionMountListeners.add(onRequest);
+    sectionWarmupListeners.add(onWarmup);
+    prefetchCandidates.add(candidate);
 
     if (eager) {
-      queueMount(true);
+      queueMount("urgent");
       return () => {
         sectionMountListeners.delete(onRequest);
+        sectionWarmupListeners.delete(onWarmup);
+        prefetchCandidates.delete(candidate);
         cancelMount?.();
       };
     }
 
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") {
-      queueMount(false);
+      queueMount("warmup");
       return () => {
         sectionMountListeners.delete(onRequest);
+        sectionWarmupListeners.delete(onWarmup);
+        prefetchCandidates.delete(candidate);
         cancelMount?.();
       };
     }
@@ -128,15 +407,16 @@ export function LazyWorkspaceSection({
     const io = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
-        queueMount(false);
-        io.disconnect();
+        onPrefetch();
       },
-      { rootMargin: "160px 0px" }
+      { rootMargin: `${VIEWPORT_MARGIN_PX}px 0px` }
     );
     io.observe(el);
     return () => {
       io.disconnect();
       sectionMountListeners.delete(onRequest);
+      sectionWarmupListeners.delete(onWarmup);
+      prefetchCandidates.delete(candidate);
       cancelMount?.();
     };
   }, [eager, mounted, id]);
