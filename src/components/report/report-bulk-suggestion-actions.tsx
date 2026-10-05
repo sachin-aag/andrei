@@ -102,8 +102,6 @@ export function ReportBulkSuggestionActions() {
       },
     }),
     [
-      report.id,
-      report.documentType,
       report,
       sectionOrder,
       comments,
