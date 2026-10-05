@@ -73,7 +73,7 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
     latestRunsByCheck(ctx.report.id),
     openFindingsForReport(ctx.report.id),
   ]);
-  const knownCheckIds = new Set(defs.map((def) => def.id));
+  const knownCheckIds = new Set<string>(defs.map((def) => def.id));
   const catalogFindings = openFindings.filter((row) =>
     knownCheckIds.has(row.checkId)
   );
