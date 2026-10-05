@@ -11,6 +11,26 @@ import {
 import { FIXTURES, doc, para } from "@/lib/suggestions/merge-fixtures";
 
 describe("planFieldDiff apply invariant", () => {
+  it("terminates when paragraphs swap places", () => {
+    const first = para(
+      "Temperature mapping was repeated after the HVAC filter change in March."
+    );
+    const second = para(
+      "Differential pressure alarms were reviewed for the whole period."
+    );
+    const third = para("No excursions were recorded for the filling room.");
+    const base = doc(first, second, third);
+    const target = doc(second, first, third);
+
+    // A crossed pair used to leave the alignment loop without advancing,
+    // which hung the tab as soon as the section mounted.
+    const ops = planFieldDiff(base, target);
+
+    expect(ops.map((op) => op.kind)).toEqual(["insert_block", "remove_block"]);
+    expect(ops[0]?.insertText).toContain("Differential pressure");
+    expect(ops[1]?.deleteText).toContain("Differential pressure");
+  });
+
   it("rebuilds a prose edit", () => {
     const base = FIXTURES.prose;
     const target = doc(
