@@ -35,6 +35,11 @@ describe("slimWorkspaceComments", () => {
           content: '{"tableOperation":{"kind":"insert_rows"}}',
         },
         {
+          kind: "ai_grammar",
+          status: "resolved",
+          content: '{"insertText":"rephrased"}',
+        },
+        {
           kind: "human",
           status: "resolved",
           content: "Please clarify.",
@@ -57,6 +62,9 @@ describe("slimWorkspaceComments", () => {
     ).toBe(false);
     expect(
       isLiveWorkspaceComment({ kind: "ai_redraft", status: "dismissed" })
+    ).toBe(false);
+    expect(
+      isLiveWorkspaceComment({ kind: "ai_tone", status: "resolved" })
     ).toBe(false);
     expect(isLiveWorkspaceComment({ kind: "ai_fix", status: "open" })).toBe(
       true

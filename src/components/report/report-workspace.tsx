@@ -21,7 +21,10 @@ import {
 } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
-import { LazyWorkspaceSection } from "./lazy-workspace-section";
+import {
+  LazyWorkspaceSection,
+  requestWorkspaceSectionMount,
+} from "./lazy-workspace-section";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
@@ -735,6 +738,7 @@ export function ReportWorkspace({
   const jumpToSection = useCallback((s: SectionType) => {
     setWorkProductView("report");
     setActiveTabId("report");
+    requestWorkspaceSectionMount(s);
     const el = mainRef.current?.querySelector(`#${s}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
@@ -764,7 +768,9 @@ export function ReportWorkspace({
       }
     });
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
-    const retryDelaysMs = [0, 50, 100, 200];
+    requestWorkspaceSectionMount(section);
+    // Wait for the urgent lazy mount (one frame) plus TipTap create.
+    const retryDelaysMs = [0, 50, 100, 200, 400, 800];
 
     const finish = (scrolled: boolean) => {
       if (cancelled) return;
@@ -1337,7 +1343,8 @@ export function ReportWorkspace({
                             <LazyWorkspaceSection
                               key={s}
                               id={s}
-                              eager={index < 2}
+                              title={section.label}
+                              eager={index < 1}
                               style={
                                 extra
                                   ? { paddingBottom: `${extra}px` }

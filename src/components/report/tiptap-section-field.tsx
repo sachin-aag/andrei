@@ -553,6 +553,12 @@ export function TiptapSectionField({
   useLayoutEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+  /**
+   * Extension onCreate runs before the field's onCreate and the normalize
+   * transaction is the first update after paint — not a microtask. Stay
+   * silent until two frames after the editor instance exists.
+   */
+  const skipHydrateUpdateRef = useRef(true);
 
   const editable = isTrackChangesFieldEditable({
     locked,
@@ -616,6 +622,7 @@ export function TiptapSectionField({
       content: normalizeRichField(value, richFieldOptions),
       editable,
       onUpdate: ({ editor: ed }) => {
+        if (skipHydrateUpdateRef.current) return;
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
@@ -624,6 +631,20 @@ export function TiptapSectionField({
     [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
   );
 
+  useEffect(() => {
+    if (!editor) return;
+    skipHydrateUpdateRef.current = true;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        skipHydrateUpdateRef.current = false;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [editor]);
 
   useLayoutEffect(() => {
     handlersRef.current = {

@@ -10,7 +10,7 @@ import {
 } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canViewReport } from "@/lib/reports/access";
-import { loadReportSubtables } from "@/lib/reports/bundle";
+import { loadReportAuth, loadReportSubtables } from "@/lib/reports/bundle";
 import {
   DUPLICATE_DOCUMENT_NO_ERROR,
   isDocumentNoTaken,
@@ -53,28 +53,26 @@ export async function GET(
 
   // Authorize before loading the heavier section/eval/comment rows so a
   // forbidden request never pays for the full bundle fetch.
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const managerIds = await listReportManagerIds(reportId);
-  const reportWithManagers = withAssignedManagerIds(report, managerIds);
+  const reportWithManagers = await loadReportAuth(reportId);
+  if (!reportWithManagers) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   if (!canViewReport(user, reportWithManagers)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [{ sections, evaluations, comments }, sourceDocxFilename] =
-    await Promise.all([
-      loadReportSubtables(reportId),
-      sourceDocxFilenameFor(reportId),
-    ]);
+  const [subtables, sourceDocxFilename] = await Promise.all([
+    loadReportSubtables(reportId),
+    sourceDocxFilenameFor(reportId),
+  ]);
 
   return NextResponse.json({
     report: { ...reportWithManagers, sourceDocxFilename },
-    sections,
-    evaluations,
-    comments,
+    sections: subtables.sections,
+    evaluations: subtables.evaluations,
+    comments: subtables.comments,
+    attachments: subtables.attachments,
+    attachmentFolders: subtables.attachmentFolders,
   });
 }
 

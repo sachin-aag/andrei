@@ -19,6 +19,17 @@ import {
 } from "@/lib/comments/slim-workspace-comments";
 import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
 
+/** Report row + assigned managers. Cheap enough for /edit authz without the body. */
+export async function loadReportAuth(reportId: string) {
+  const [report] = await db
+    .select()
+    .from(reports)
+    .where(eq(reports.id, reportId));
+  if (!report) return null;
+  const managerIds = await listReportManagerIds(reportId);
+  return withAssignedManagerIds(report, managerIds);
+}
+
 // Loads the section/evaluation/comment/attachment rows for a report in parallel.
 // Split out from loadReportBundle so callers that authorize on the report row
 // first (e.g. the GET route) can reuse the same fetch without re-querying.

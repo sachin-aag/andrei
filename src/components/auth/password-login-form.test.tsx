@@ -161,9 +161,11 @@ describe("PasswordLoginForm", () => {
       await screen.findByText(/this account is locked after too many failed/i)
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/^password$/i)).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /email me a reset link/i })
-    ).toBeEnabled();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /email me a reset link/i })
+      ).toBeEnabled();
+    });
   });
 
   it("emails a password reset link from a locked account", async () => {

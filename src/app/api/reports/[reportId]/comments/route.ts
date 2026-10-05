@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq, ne, or } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports } from "@/db/schema";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/comments/slim-workspace-comments";
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const currentUser = await getCurrentUser();
@@ -24,25 +24,11 @@ export async function GET(
   }
 
   // Dismissed comments and applied AI suggestion bodies stay in the DB for
-  // audit / undo but are excluded from the live editor. Pass
-  // ?include=dismissed for dismissed *human* threads only.
-  const url = new URL(req.url);
-  const includeDismissed = url.searchParams.get("include") === "dismissed";
-
-  const where = includeDismissed
-    ? and(
-        eq(comments.reportId, reportId),
-        or(
-          eq(comments.status, "open"),
-          and(ne(comments.kind, "ai_fix"), ne(comments.kind, "ai_redraft"))
-        )
-      )
-    : liveWorkspaceCommentsWhere(reportId);
-
+  // audit / undo but are excluded from the live editor.
   const rows = await db
     .select()
     .from(comments)
-    .where(where)
+    .where(liveWorkspaceCommentsWhere(reportId))
     .orderBy(asc(comments.createdAt));
   return NextResponse.json({ comments: slimWorkspaceComments(rows) });
 }

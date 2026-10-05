@@ -1,8 +1,13 @@
-import { and, eq, ne, or } from "drizzle-orm";
-import { comments } from "@/db/schema";
+import { and, eq, ne, notInArray, or } from "drizzle-orm";
+import { commentKindEnum, comments } from "@/db/schema";
 
-function isAiSuggestionKind(kind: string): boolean {
-  return kind === "ai_fix" || kind === "ai_redraft";
+const AI_COMMENT_KINDS = commentKindEnum.enumValues.filter((kind) =>
+  kind.startsWith("ai_")
+);
+
+/** Closed `ai_*` rows (fix/redraft plus leftover grammar/tone/removal). */
+function isClosedAiComment(row: { kind?: string; status?: string }): boolean {
+  return (row.kind ?? "").startsWith("ai_") && row.status !== "open";
 }
 
 /**
@@ -12,16 +17,16 @@ function isAiSuggestionKind(kind: string): boolean {
  * suggestions and human threads.
  */
 export function isLiveWorkspaceComment(row: {
-  kind: string;
-  status: string;
+  kind?: string;
+  status?: string;
 }): boolean {
-  if (isAiSuggestionKind(row.kind) && row.status !== "open") return false;
+  if (isClosedAiComment(row)) return false;
   if (row.status === "dismissed") return false;
   return true;
 }
 
 export function slimWorkspaceComments<
-  T extends { kind: string; status: string },
+  T extends { kind?: string; status?: string },
 >(rows: T[]): T[] {
   return rows.filter(isLiveWorkspaceComment);
 }
@@ -31,9 +36,7 @@ export function liveWorkspaceCommentsWhere(reportId: string) {
   return and(
     eq(comments.reportId, reportId),
     ne(comments.status, "dismissed"),
-    or(
-      eq(comments.status, "open"),
-      and(ne(comments.kind, "ai_fix"), ne(comments.kind, "ai_redraft"))
-    )
+    // `comment_kind` is a Postgres enum — LIKE/`~~` is not defined on it.
+    or(eq(comments.status, "open"), notInArray(comments.kind, AI_COMMENT_KINDS))
   );
 }
