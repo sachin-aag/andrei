@@ -132,7 +132,17 @@ The subsystems below are small enough to stay resident.
 
 **Entry point:** `src/lib/review/` — client UI imports `ui.ts` (labels / DTOs only); runners and DB live in `server.ts`. Routes: `GET/POST /api/reports/[id]/review`. Run all POSTs one category at a time (`reviewRunWaves`); the runner skips completed same-hash runs, batches FDA criteria by target section, and batches citation-support judgements (8 at a time, cap 24). `maxDuration` is 120.
 
-The right sidebar is Assistant | Review | Comments. Review category tabs are All checks | Report | FDA | Citations | Writing. Cards are checks (Run + status); issues are `fixable` (`ai_fix` / `ai_grammar`) or `needs_human` (Mark verified / Dismiss). Runs are manual. Placeholders are a live card (no Run). Header **Run all checks** opens Review and runs every `run`-kind check; per-section **Run criteria** on `SectionShell` is unchanged. FDA criteria live in `fda-criteria.ts` with keys prefixed `fda.` and `REVIEW_FDA_PROMPT_VERSION`. `generic_document` still shows Review (Citations + Writing only). Stub: `ALLOW_TEST_STUB_REVIEW`.
+The right sidebar is Assistant | Review | Placeholders | Comments. Review
+category tabs are All checks | Report | FDA | Citations | Writing, ordered
+with Critical findings first. Each finding is Critical (red), Major (amber),
+or Minor (blue); the same counts sit at the top of Review, on each category
+tab, and on each check card. Issues are `fixable` (`ai_fix` / `ai_grammar`)
+or `needs_human` (Mark verified / Dismiss). Runs are manual. Placeholders
+are their own tab. Header **Run all checks** opens Review and runs every
+`run`-kind check; per-section **Run criteria** on `SectionShell` is unchanged.
+FDA criteria live in `fda-criteria.ts` with keys prefixed `fda.` and
+`REVIEW_FDA_PROMPT_VERSION`. `generic_document` still shows Review (Citations
++ Writing only). Stub: `ALLOW_TEST_STUB_REVIEW`.
 
 ## Subsystem: AI Suggestions
 

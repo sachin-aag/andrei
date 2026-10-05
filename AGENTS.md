@@ -140,9 +140,10 @@ Sidebar is Reports, then Document vault (`/vault`). Insights (`/insights`) and
 Templates (`/templates`) are demo-only (`insightsEnabled` /
 `documentTemplatesEnabled`). Other packs hide those links and keep a
 document-type dropdown for New Report. Report chrome is Document | Agent;
-new reports open in Agent. Sidebar tabs are Assistant | Review | Comments
-(Criteria and Placeholders fold into Review: All checks | Report | FDA |
-Citations | Writing). Grammar findings use `ai_grammar` and ride the same
+new reports open in Agent. Sidebar tabs are Assistant | Review | Placeholders |
+Comments. Review category tabs are All checks | Report | FDA | Citations |
+Writing, with Critical (red) / Major (amber) / Minor (blue) counts. Grammar
+findings use `ai_grammar` and ride the same
 Apply / Dismiss path as `ai_fix`. Composer Report | Analytics is independent of the
 focused canvas pane. Scope is `@` tags. Analytics is on for every pack
 (`statisticalAnalysisEnabled`). Vault, remaining-section, plot, and worksheet

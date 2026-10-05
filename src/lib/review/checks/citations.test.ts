@@ -40,6 +40,7 @@ describe("citation review checks", () => {
       attachmentIndexFrom([])
     );
     expect(findings.some((row) => row.message.includes("[1]"))).toBe(true);
+    expect(findings.every((row) => row.severity === "critical")).toBe(true);
   });
 
   it("accepts a ready attachment page", () => {
@@ -69,6 +70,7 @@ describe("citation review checks", () => {
     });
     expect(findings.length).toBeGreaterThan(0);
     expect(findings.every((row) => row.kind === "needs_human")).toBe(true);
+    expect(findings.every((row) => row.severity === "major")).toBe(true);
   });
 
   it("flags SOP numbers that are not in the vault", () => {
@@ -78,5 +80,6 @@ describe("citation review checks", () => {
       attachmentFilenames: ["unrelated.pdf"],
     });
     expect(findings.some((row) => row.anchorText.includes("SOP/QA/012"))).toBe(true);
+    expect(findings.every((row) => row.severity === "major")).toBe(true);
   });
 });

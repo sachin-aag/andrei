@@ -454,9 +454,9 @@ export const reviewFindingStatusEnum = pgEnum("review_finding_status", [
 ]);
 
 export const reviewFindingSeverityEnum = pgEnum("review_finding_severity", [
-  "info",
-  "warning",
-  "error",
+  "critical",
+  "major",
+  "minor",
 ]);
 
 export const reviewCheckRuns = pgTable(
@@ -501,7 +501,7 @@ export const reviewFindings = pgTable(
     contentPath: text("content_path"),
     anchorText: text("anchor_text").notNull().default(""),
     message: text("message").notNull(),
-    severity: reviewFindingSeverityEnum("severity").notNull().default("warning"),
+    severity: reviewFindingSeverityEnum("severity").notNull().default("major"),
     kind: reviewFindingKindEnum("kind").notNull(),
     commentId: text("comment_id").references((): AnyPgColumn => comments.id, {
       onDelete: "set null",

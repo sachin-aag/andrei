@@ -44,7 +44,7 @@ function missingSectionResult(
         contentPath: null,
         anchorText: "",
         message: `${criterion.label}: target section is not on this report.`,
-        severity: "info",
+        severity: "minor",
         kind: "needs_human",
         metadata: { criterionKey: criterion.key },
       },
@@ -176,7 +176,7 @@ function findingsForFdaResult(args: {
         contentPath: comment?.contentPath ?? null,
         anchorText: comment?.anchorText ?? "",
         message: `${args.result.criterionLabel}: ${args.result.reasoning || args.result.status}`,
-        severity: args.result.status === "not_met" ? "error" : "warning",
+        severity: args.result.status === "not_met" ? "critical" : "major",
         kind: comment ? "fixable" : "needs_human",
         commentId: comment?.id ?? null,
         metadata: {

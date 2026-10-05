@@ -22,6 +22,7 @@ import {
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import type { ReviewFindingDraft } from "./types";
 import type { ReviewRunContext } from "./types";
+import type { ReviewSeverity } from "./severity";
 
 export async function persistLocatedEdit(args: {
   ctx: ReviewRunContext;
@@ -30,6 +31,7 @@ export async function persistLocatedEdit(args: {
   edit: SuggestionEdit;
   reasoning: string;
   kind: "ai_fix" | "ai_grammar";
+  severity?: ReviewSeverity;
 }): Promise<ReviewFindingDraft | null> {
   const { ctx, section, contentPath, reasoning, kind } = args;
   const insertText = normalizeSuggestionInsertText(args.edit.insertText);
@@ -93,7 +95,7 @@ export async function persistLocatedEdit(args: {
     contentPath,
     anchorText: edit.anchorText,
     message: reasoning,
-    severity: "warning",
+    severity: args.severity ?? (kind === "ai_grammar" ? "minor" : "major"),
     kind: "fixable",
     commentId,
   };

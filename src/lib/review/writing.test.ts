@@ -24,6 +24,7 @@ describe("writing review checks", () => {
       },
     });
     expect(findings.some((row) => row.anchorText === "Table 4")).toBe(true);
+    expect(findings.every((row) => row.severity === "minor")).toBe(true);
   });
 });
 

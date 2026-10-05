@@ -6,15 +6,22 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   REVIEW_CATEGORIES,
+  REVIEW_SEVERITY_CHIP_CLASS,
+  REVIEW_SEVERITY_LABEL,
+  REVIEW_SEVERITY_ORDER,
   categoryLabel,
+  coerceReviewSeverity,
+  compareSeverityDesc,
+  countFindingSeverities,
+  sortCategoriesBySeverity,
+  worstSeverity,
   type ReviewCategory,
   type ReviewCheckDto,
   type ReviewCheckId,
   type ReviewFindingDto,
-} from "@/lib/review/ui";
-import { PlaceholdersPanelContent } from "@/components/report/placeholders-panel";
+  type ReviewSeverityCounts,
+} from "@/lib/review";
 import { useReportEvaluations } from "@/providers/report-provider";
-import type { Placeholder } from "@/lib/placeholders/find";
 import type { SectionType } from "@/db/schema";
 import {
   ReviewContext,
@@ -37,7 +44,6 @@ function ReviewProvider({ children }: ProviderProps) {
       state: {
         checks: review.checks,
         findings: review.findings,
-        placeholderCount: review.placeholderCount,
         category,
         openCheckId,
         runningCheckIds: review.runningCheckIds,
@@ -58,6 +64,48 @@ function ReviewProvider({ children }: ProviderProps) {
   );
 
   return <ReviewContext value={value}>{children}</ReviewContext>;
+}
+
+function ReviewSeverityChips({
+  counts,
+  showZeros = false,
+  labeled = false,
+  testId,
+}: {
+  counts: ReviewSeverityCounts;
+  showZeros?: boolean;
+  labeled?: boolean;
+  testId?: string;
+}) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1" data-testid={testId}>
+      {REVIEW_SEVERITY_ORDER.map((severity) => {
+        const count = counts[severity];
+        if (!showZeros && count === 0) return null;
+        return (
+          <span
+            key={severity}
+            title={`${count} ${REVIEW_SEVERITY_LABEL[severity].toLowerCase()}`}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full font-bold",
+              REVIEW_SEVERITY_CHIP_CLASS[severity],
+              labeled ? "px-2 py-0.5 text-[11px]" : "px-1.5 py-0.5 text-[9px]",
+              count === 0 && "opacity-40"
+            )}
+          >
+            {labeled ? `${REVIEW_SEVERITY_LABEL[severity]} ${count}` : count}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function findingsForCheck(
+  findings: ReviewFindingDto[],
+  checkId: string
+): ReviewFindingDto[] {
+  return findings.filter((row) => row.checkId === checkId);
 }
 
 function statusLabel(check: ReviewCheckDto, running: boolean): string {
@@ -82,27 +130,69 @@ function statusLabel(check: ReviewCheckDto, running: boolean): string {
   }
 }
 
+function ReviewSeverityStats({ layout = "panel" }: { layout?: "panel" | "header" }) {
+  const {
+    state: { findings },
+  } = useReview();
+  const counts = countFindingSeverities(findings);
+  if (layout === "header" && counts.critical + counts.major + counts.minor === 0) {
+    return null;
+  }
+  return (
+    <ReviewSeverityChips
+      counts={counts}
+      showZeros={layout === "panel"}
+      labeled={layout === "panel"}
+      testId={layout === "panel" ? "review-severity-stats" : "review-header-severity-stats"}
+    />
+  );
+}
+
 function ReviewCategoryTabs() {
   const {
-    state: { category, checks },
+    state: { category, checks, findings },
     actions: { setCategory },
   } = useReview();
-  const counts = useMemo(() => {
-    const byCategory = new Map<ReviewCategory, number>();
+  const countsByCategory = useMemo(() => {
+    const byCategory = new Map<ReviewCategory, ReviewSeverityCounts>();
     for (const check of checks) {
-      byCategory.set(
-        check.category,
-        (byCategory.get(check.category) ?? 0) + check.issueCount
-      );
+      const existing = byCategory.get(check.category) ?? {
+        critical: 0,
+        major: 0,
+        minor: 0,
+      };
+      const next = countFindingSeverities(findingsForCheck(findings, check.id));
+      byCategory.set(check.category, {
+        critical: existing.critical + next.critical,
+        major: existing.major + next.major,
+        minor: existing.minor + next.minor,
+      });
     }
     return byCategory;
-  }, [checks]);
+  }, [checks, findings]);
 
-  const tabs: Array<{ id: ReviewCategoryFilter; label: string }> = [
-    { id: "all", label: "All checks" },
-    ...REVIEW_CATEGORIES.filter((id) =>
+  const visibleCategories = sortCategoriesBySeverity(
+    REVIEW_CATEGORIES.filter((id) =>
       checks.some((check) => check.category === id)
-    ).map((id) => ({ id, label: categoryLabel(id) })),
+    ),
+    (id) => countsByCategory.get(id) ?? { critical: 0, major: 0, minor: 0 }
+  );
+
+  const tabs: Array<{
+    id: ReviewCategoryFilter;
+    label: string;
+    counts: ReviewSeverityCounts;
+  }> = [
+    {
+      id: "all",
+      label: "All checks",
+      counts: countFindingSeverities(findings),
+    },
+    ...visibleCategories.map((id) => ({
+      id,
+      label: categoryLabel(id),
+      counts: countsByCategory.get(id) ?? { critical: 0, major: 0, minor: 0 },
+    })),
   ];
 
   return (
@@ -113,10 +203,7 @@ function ReviewCategoryTabs() {
     >
       {tabs.map((tab) => {
         const selected = category === tab.id;
-        const count =
-          tab.id === "all"
-            ? checks.reduce((sum, check) => sum + check.issueCount, 0)
-            : (counts.get(tab.id) ?? 0);
+        const worst = worstSeverity(tab.counts);
         return (
           <button
             key={tab.id}
@@ -125,18 +212,17 @@ function ReviewCategoryTabs() {
             aria-selected={selected}
             onClick={() => setCategory(tab.id)}
             className={cn(
-              "rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+              "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
               selected
                 ? "border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)]"
-                : "border-transparent text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
+                : "border-transparent text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]",
+              worst === "critical" && !selected && "text-red-700",
+              worst === "major" && !selected && "text-amber-700",
+              worst === "minor" && !selected && "text-sky-700"
             )}
           >
             {tab.label}
-            {count > 0 ? (
-              <span className="ml-1 rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
-                {count}
-              </span>
-            ) : null}
+            <ReviewSeverityChips counts={tab.counts} />
           </button>
         );
       })}
@@ -239,9 +325,20 @@ function ReviewIssueRow({
   onJumpToSection: (section: SectionType) => void;
 }) {
   const { generateSuggestions, isSuggesting } = useReportEvaluations();
+  const severity = coerceReviewSeverity(finding.severity);
 
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <span
+          className={cn(
+            "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+            REVIEW_SEVERITY_CHIP_CLASS[severity]
+          )}
+        >
+          {REVIEW_SEVERITY_LABEL[severity]}
+        </span>
+      </div>
       <button
         type="button"
         className="w-full text-left text-xs leading-snug text-[var(--foreground)] hover:text-[var(--foreground)]"
@@ -282,19 +379,16 @@ function ReviewIssueRow({
 function ReviewIssueList({
   check,
   onJumpToComment,
-  onJumpToPlaceholder,
   onJumpToSection,
 }: {
   check: ReviewCheckDto;
   onJumpToComment: (commentId: string) => void;
-  onJumpToPlaceholder: (placeholder: Placeholder) => void;
   onJumpToSection: (section: SectionType) => void;
 }) {
   const { state } = useReview();
-  if (check.id === "report.placeholders") {
-    return <PlaceholdersPanelContent onJumpToPlaceholder={onJumpToPlaceholder} />;
-  }
-  const issues = state.findings.filter((row) => row.checkId === check.id);
+  const issues = findingsForCheck(state.findings, check.id).toSorted((a, b) =>
+    compareSeverityDesc(a.severity, b.severity)
+  );
   if (issues.length === 0) {
     return (
       <p className="px-1 py-2 text-[11px] italic text-[var(--muted-foreground)]">
@@ -323,20 +417,19 @@ function ReviewIssueList({
 function ReviewCheckCard({
   check,
   onJumpToComment,
-  onJumpToPlaceholder,
   onJumpToSection,
 }: {
   check: ReviewCheckDto;
   onJumpToComment: (commentId: string) => void;
-  onJumpToPlaceholder: (placeholder: Placeholder) => void;
   onJumpToSection: (section: SectionType) => void;
 }) {
   const {
-    state: { openCheckId, runningCheckIds, canRun },
+    state: { openCheckId, runningCheckIds, canRun, findings },
     actions: { toggleCheck, runChecks },
   } = useReview();
   const open = openCheckId === check.id;
   const running = runningCheckIds.includes(check.id);
+  const counts = countFindingSeverities(findingsForCheck(findings, check.id));
 
   return (
     <div
@@ -350,11 +443,12 @@ function ReviewCheckCard({
           onClick={() => toggleCheck(check.id)}
           aria-expanded={open}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold">{check.label}</span>
             <span className="rounded bg-[var(--secondary)] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
               {check.standardTag}
             </span>
+            <ReviewSeverityChips counts={counts} />
           </div>
           <p className="mt-0.5 text-[11px] leading-snug text-[var(--muted-foreground)]">
             {check.description}
@@ -386,7 +480,6 @@ function ReviewCheckCard({
           <ReviewIssueList
             check={check}
             onJumpToComment={onJumpToComment}
-            onJumpToPlaceholder={onJumpToPlaceholder}
             onJumpToSection={onJumpToSection}
           />
         </div>
@@ -397,17 +490,46 @@ function ReviewCheckCard({
 
 function ReviewCheckList({
   onJumpToComment,
-  onJumpToPlaceholder,
   onJumpToSection,
 }: {
   onJumpToComment: (commentId: string) => void;
-  onJumpToPlaceholder: (placeholder: Placeholder) => void;
   onJumpToSection: (section: SectionType) => void;
 }) {
   const { state } = useReview();
-  const visible = state.checks.filter(
-    (check) => state.category === "all" || check.category === state.category
-  );
+  const visible = state.checks
+    .filter(
+      (check) => state.category === "all" || check.category === state.category
+    )
+    .toSorted((left, right) => {
+      const leftCounts = countFindingSeverities(
+        findingsForCheck(state.findings, left.id)
+      );
+      const rightCounts = countFindingSeverities(
+        findingsForCheck(state.findings, right.id)
+      );
+      const leftWorst = worstSeverity(leftCounts);
+      const rightWorst = worstSeverity(rightCounts);
+      const leftRank = leftWorst
+        ? leftWorst === "critical"
+          ? 0
+          : leftWorst === "major"
+            ? 1
+            : 2
+        : 3;
+      const rightRank = rightWorst
+        ? rightWorst === "critical"
+          ? 0
+          : rightWorst === "major"
+            ? 1
+            : 2
+        : 3;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      if (leftWorst) {
+        const delta = rightCounts[leftWorst] - leftCounts[leftWorst];
+        if (delta !== 0) return delta;
+      }
+      return 0;
+    });
   if (state.loading && visible.length === 0) {
     return (
       <p className="py-8 text-center text-xs text-[var(--muted-foreground)]">
@@ -429,7 +551,6 @@ function ReviewCheckList({
           key={check.id}
           check={check}
           onJumpToComment={onJumpToComment}
-          onJumpToPlaceholder={onJumpToPlaceholder}
           onJumpToSection={onJumpToSection}
         />
       ))}
@@ -439,28 +560,26 @@ function ReviewCheckList({
 
 function ReviewPanel({
   onJumpToComment,
-  onJumpToPlaceholder,
   onJumpToSection,
 }: {
   onJumpToComment: (commentId: string) => void;
-  onJumpToPlaceholder: (placeholder: Placeholder) => void;
   onJumpToSection: (section: SectionType) => void;
 }) {
   return (
     <div className="space-y-3" data-testid="review-panel">
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0 space-y-1.5">
           <h2 className="text-sm font-semibold">Review</h2>
           <p className="text-[11px] text-[var(--muted-foreground)]">
             Run checks, then open a card to work through its issues.
           </p>
+          <ReviewSeverityStats />
         </div>
         <ReviewRunAll />
       </div>
       <ReviewCategoryTabs />
       <ReviewCheckList
         onJumpToComment={onJumpToComment}
-        onJumpToPlaceholder={onJumpToPlaceholder}
         onJumpToSection={onJumpToSection}
       />
     </div>
@@ -472,6 +591,7 @@ export const Review = {
   Panel: ReviewPanel,
   CategoryTabs: ReviewCategoryTabs,
   RunAll: ReviewRunAll,
+  SeverityStats: ReviewSeverityStats,
   CheckCard: ReviewCheckCard,
   IssueList: ReviewIssueList,
   IssueRow: ReviewIssueRow,

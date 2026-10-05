@@ -42,7 +42,7 @@ export function crossReferenceFindings(
         contentPath: field.contentPath,
         anchorText: tableMatch[0],
         message: `${tableMatch[0]} does not resolve to a filled table in this document.`,
-        severity: "warning",
+        severity: "minor",
         kind: "needs_human",
       });
     }
@@ -59,7 +59,7 @@ export function crossReferenceFindings(
         contentPath: field.contentPath,
         anchorText: sectionMatch[0],
         message: `${sectionMatch[0]} does not match a section in this document.`,
-        severity: "info",
+        severity: "minor",
         kind: "needs_human",
       });
     }

@@ -14,7 +14,6 @@ export type ReviewContextValue = {
   state: {
     checks: ReviewCheckDto[];
     findings: ReviewFindingDto[];
-    placeholderCount: number;
     category: ReviewCategoryFilter;
     openCheckId: ReviewCheckId | null;
     runningCheckIds: string[];

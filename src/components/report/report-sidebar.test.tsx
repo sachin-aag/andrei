@@ -32,6 +32,28 @@ vi.mock("@/components/report/review", () => ({
   Review: {
     Panel: () => <div>review</div>,
   },
+  useReview: () => ({
+    state: {
+      checks: [],
+      findings: [],
+      category: "all",
+      openCheckId: null,
+      runningCheckIds: [],
+      loading: false,
+      canRun: false,
+    },
+    actions: {
+      setCategory: () => {},
+      toggleCheck: () => {},
+      runChecks: async () => {},
+      patchFinding: async () => {},
+      refresh: async () => {},
+    },
+  }),
+}));
+
+vi.mock("@/components/report/placeholders-panel", () => ({
+  PlaceholdersPanel: () => <div>placeholders</div>,
 }));
 
 vi.mock("@/components/report/comments-panel", () => ({
@@ -42,7 +64,7 @@ const noop = () => {};
 
 function renderSidebar(
   collapsed: boolean,
-  activeTab: "assistant" | "review" | "comments"
+  activeTab: "assistant" | "review" | "placeholders" | "comments"
 ) {
   return render(
     <ReportSidebar
@@ -68,6 +90,7 @@ describe("ReportSidebar chat keep-alive", () => {
   it("shows all tab buttons when the sidebar is expanded", () => {
     renderSidebar(false, "assistant");
     expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Placeholders" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Comments" })).toBeInTheDocument();
   });
 
@@ -157,7 +180,7 @@ describe("ReportSidebar chat keep-alive", () => {
     expect(chatPanelMounts).toBe(1);
   });
 
-  it.each(["review", "comments"] as const)(
+  it.each(["review", "placeholders", "comments"] as const)(
     "fills the sidebar with %s instead of leaving empty space above it",
     (tab) => {
       renderSidebar(false, tab);

@@ -10,13 +10,13 @@ describe("review client barrel", () => {
     expect(review).not.toHaveProperty("runReviewChecks");
     expect(review).not.toHaveProperty("loadReviewRunContext");
     expect(review).not.toHaveProperty("buildReviewSnapshot");
+    expect(review.REVIEW_SEVERITY_ORDER).toEqual(["critical", "major", "minor"]);
   });
 });
 
 describe("reviewRunWaves", () => {
   const checks = [
     { id: "report.criteria.define", kind: "run", category: "report" as const },
-    { id: "report.placeholders", kind: "live", category: "report" as const },
     { id: "fda.211_192_thorough", kind: "run", category: "fda" as const },
     { id: "citations.resolves", kind: "run", category: "citations" as const },
     { id: "writing.grammar", kind: "run", category: "writing" as const },
@@ -43,7 +43,7 @@ describe("reviewRunWaves", () => {
   it("omits a category with no run-kind checks", () => {
     expect(
       reviewRunWaves([
-        { id: "report.placeholders", kind: "live", category: "report" },
+        { id: "report.criteria.define", kind: "live", category: "report" },
         { id: "writing.grammar", kind: "run", category: "writing" },
       ])
     ).toEqual([{ category: "writing" }]);

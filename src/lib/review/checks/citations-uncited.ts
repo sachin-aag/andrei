@@ -16,7 +16,7 @@ export function uncitedFactFindings(
         contentPath: field.contentPath,
         anchorText: fact.text,
         message: `Uncited ${fact.kind}: “${fact.text}”. Please add a citation or confirm it is not an attachment fact.`,
-        severity: "warning",
+        severity: "major",
         kind: "needs_human",
         metadata: { factKind: fact.kind },
       });

@@ -17,15 +17,6 @@ function always(): boolean {
 
 const STATIC_CHECKS: ReviewCheckDefinition[] = [
   {
-    id: "report.placeholders",
-    category: "report",
-    label: "Placeholders",
-    description: "Unfilled <tokens> still in the report body.",
-    standardTag: "Live scan",
-    kind: "live",
-    appliesTo: always,
-  },
-  {
     id: "citations.resolves",
     category: "citations",
     label: "Citation resolves",
@@ -117,7 +108,6 @@ export function checksForDocumentType(
       run: (ctx) => runReportCriteriaCheck(ctx, sectionKey),
     });
   }
-  checks.push(STATIC_CHECKS[0]!);
 
   for (const criterion of fdaCriteriaForDocumentType(documentType)) {
     checks.push({
@@ -133,7 +123,7 @@ export function checksForDocumentType(
     });
   }
 
-  checks.push(...STATIC_CHECKS.slice(1));
+  checks.push(...STATIC_CHECKS);
   return checks.filter((check) => check.appliesTo(documentType));
 }
 

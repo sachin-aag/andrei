@@ -22,7 +22,6 @@ export function useReviewChecks() {
   const { setEvaluations } = useReportEvaluations();
   const [checks, setChecks] = useState<ReviewCheckDto[]>([]);
   const [findings, setFindings] = useState<ReviewFindingDto[]>([]);
-  const [placeholderCount, setPlaceholderCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [runningCheckIds, setRunningCheckIds] = useState<string[]>([]);
 
@@ -30,15 +29,11 @@ export function useReviewChecks() {
     (data: {
       checks?: ReviewCheckDto[];
       findings?: ReviewFindingDto[];
-      placeholderCount?: number;
       comments?: unknown[];
       evaluations?: EvaluationRecord[];
     }) => {
       if (data.checks) setChecks(data.checks);
       if (data.findings) setFindings(data.findings);
-      if (typeof data.placeholderCount === "number") {
-        setPlaceholderCount(data.placeholderCount);
-      }
       if (Array.isArray(data.comments)) {
         setComments(
           data.comments.map((row) =>
@@ -59,7 +54,6 @@ export function useReviewChecks() {
     const data = (await res.json()) as {
       checks: ReviewCheckDto[];
       findings: ReviewFindingDto[];
-      placeholderCount: number;
     };
     applySnapshot(data);
   }, [applySnapshot, report.id]);
@@ -124,7 +118,6 @@ export function useReviewChecks() {
           const data = (await res.json()) as {
             checks: ReviewCheckDto[];
             findings: ReviewFindingDto[];
-            placeholderCount: number;
             comments?: unknown[];
             evaluations?: EvaluationRecord[];
             failed?: string[];
@@ -179,7 +172,6 @@ export function useReviewChecks() {
   return {
     checks,
     findings,
-    placeholderCount,
     loading,
     runningCheckIds,
     canRun: workspaceMode !== "view",

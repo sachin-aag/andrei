@@ -56,6 +56,7 @@ describe("persistLocatedEdit", () => {
       kind: "ai_grammar",
     });
     expect(finding?.kind).toBe("fixable");
+    expect(finding?.severity).toBe("minor");
     expect(finding?.commentId).toEqual(expect.any(String));
     expect(insert).toHaveBeenCalled();
     const values = insertValues.mock.calls[0]?.[0] as { kind: string };

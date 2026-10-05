@@ -8,7 +8,6 @@ export const REVIEW_CATEGORIES = [
 export type ReviewCategory = (typeof REVIEW_CATEGORIES)[number];
 
 export const STATIC_REVIEW_CHECK_IDS = [
-  "report.placeholders",
   "citations.resolves",
   "citations.supports_claim",
   "citations.uncited_facts",

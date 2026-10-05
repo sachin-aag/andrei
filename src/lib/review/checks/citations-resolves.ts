@@ -58,7 +58,7 @@ export function citationResolveFindings(
             contentPath: field.contentPath,
             anchorText: match[0],
             message: `${match[0]} has no matching line in the Citations list.`,
-            severity: "error",
+            severity: "critical",
             kind: "needs_human",
             metadata: { citationNumber: n },
           });
@@ -71,7 +71,7 @@ export function citationResolveFindings(
             contentPath: field.contentPath,
             anchorText: match[0],
             message: `${match[0]} maps to ${source}, which is not a parseable file citation. Please verify it.`,
-            severity: "warning",
+            severity: "major",
             kind: "needs_human",
             metadata: { citationNumber: n, source },
           });
@@ -83,7 +83,7 @@ export function citationResolveFindings(
             contentPath: field.contentPath,
             anchorText: match[0],
             message: `${match[0]} cites ${parsed.filename}, which is not an attached file. Please verify it.`,
-            severity: "error",
+            severity: "critical",
             kind: "needs_human",
             metadata: { citationNumber: n, source },
           });
@@ -96,7 +96,7 @@ export function citationResolveFindings(
             contentPath: field.contentPath,
             anchorText: match[0],
             message: `${match[0]} cites ${parsed.filename} p. ${page}, which is not a ready page. Please verify it.`,
-            severity: "error",
+            severity: "critical",
             kind: "needs_human",
             metadata: { citationNumber: n, source, page },
           });

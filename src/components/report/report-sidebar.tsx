@@ -6,22 +6,29 @@ import {
   MessageSquare,
   PanelRightClose,
   PanelRightOpen,
+  PenLine,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
+import {
+  countFindingSeverities,
+  REVIEW_SEVERITY_CHIP_CLASS,
+  worstSeverity,
+} from "@/lib/review";
 import { CommentsPanelContent } from "./comments-panel";
 import { ChatPanel } from "./chat-panel";
-import { Review } from "./review";
+import { Review, useReview } from "./review";
+import { PlaceholdersPanel } from "./placeholders-panel";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
 import { COLLAPSED_RAIL_PX } from "./workspace-layout";
 
-export type SidebarTab = "assistant" | "review" | "comments";
+export type SidebarTab = "assistant" | "review" | "placeholders" | "comments";
 
 type Props = {
   collapsed: boolean;
@@ -46,6 +53,7 @@ type Props = {
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
   { value: "assistant", label: "Assistant", icon: Sparkles },
   { value: "review", label: "Review", icon: ListChecks },
+  { value: "placeholders", label: "Placeholders", icon: PenLine },
   { value: "comments", label: "Comments", icon: MessageSquare },
 ];
 
@@ -94,21 +102,36 @@ export function ReportSidebar({
   const parkChat = !chatVisible || holdChatPark;
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
+  const {
+    state: { findings },
+  } = useReview();
   const visibleTabs = TABS;
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
+  const reviewCounts = countFindingSeverities(findings);
+  const reviewWorst = worstSeverity(reviewCounts);
 
   const tabBadge = (tab: SidebarTab): number | null => {
     if (tab === "review") {
-      const count = pendingPlaceholders.length + openSuggestionCount;
-      return count > 0 ? count : null;
+      const count = reviewCounts.critical + reviewCounts.major + reviewCounts.minor;
+      return count > 0 ? count : openSuggestionCount > 0 ? openSuggestionCount : null;
+    }
+    if (tab === "placeholders" && pendingPlaceholders.length > 0) {
+      return pendingPlaceholders.length;
     }
     if (tab === "comments" && rootCommentCount > 0) {
       return rootCommentCount;
     }
     return null;
+  };
+
+  const tabBadgeClass = (tab: SidebarTab): string => {
+    if (tab === "review" && reviewWorst) {
+      return REVIEW_SEVERITY_CHIP_CLASS[reviewWorst];
+    }
+    return "bg-amber-500 text-white";
   };
 
   const activeTabDef =
@@ -176,7 +199,12 @@ export function ReportSidebar({
           >
             <ActiveTabIcon className="size-4" aria-hidden="true" />
             {activeTabBadge != null ? (
-              <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+              <span
+                className={cn(
+                  "absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full text-[8px] font-bold",
+                  tabBadgeClass(activeTabDef.value)
+                )}
+              >
                 {activeTabBadge}
               </span>
             ) : null}
@@ -214,7 +242,8 @@ export function ReportSidebar({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
+                      "ml-0.5 flex size-4 items-center justify-center rounded-full text-[9px] font-bold",
+                      tabBadgeClass(tab.value),
                       badge == null && "invisible"
                     )}
                   >
@@ -231,7 +260,7 @@ export function ReportSidebar({
           changes so the thread, composer prefs, and rendered markdown are
           not reset. Hide with visibility (not display:none) so the scroller
           keeps its layout box and scrollTop through the width animation.
-          Review / Comments share this flex-1 box; parked
+          Review / Placeholders / Comments share this flex-1 box; parked
           chat is position:absolute so it does not steal the top half. */}
       <div
         className={cn(
@@ -273,9 +302,11 @@ export function ReportSidebar({
             {activeTab === "review" && (
               <Review.Panel
                 onJumpToComment={onJumpToComment}
-                onJumpToPlaceholder={onJumpToPlaceholder}
                 onJumpToSection={onJumpToSection}
               />
+            )}
+            {activeTab === "placeholders" && (
+              <PlaceholdersPanel onJumpToPlaceholder={onJumpToPlaceholder} />
             )}
             {activeTab === "comments" && (
               <CommentsPanelContent onJumpToComment={onJumpToComment} />

@@ -1,5 +1,3 @@
-import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
-import type { SectionContentMap } from "@/types/sections";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { effectiveStatus } from "@/lib/ai/criteria-view";
 import { checksForDocumentType } from "./catalog";
@@ -18,6 +16,7 @@ import type {
   ReviewRunContext,
 } from "./types";
 import { categoryLabel } from "./types";
+import { coerceReviewSeverity, severityForEvalStatus } from "./severity";
 
 export type { ReviewCheckDto, ReviewFindingDto };
 
@@ -54,7 +53,7 @@ export function liveCriteriaFindings(args: {
       contentPath: comment?.contentPath ?? null,
       anchorText: comment?.anchorText ?? "",
       message: `${row.criterionLabel}: ${row.reasoning || row.status}`,
-      severity: row.status === "not_met" ? "error" : "warning",
+      severity: severityForEvalStatus(row.status),
       kind: comment ? "fixable" : "needs_human",
       commentId: comment?.id ?? null,
       status: "open",
@@ -66,7 +65,6 @@ export function liveCriteriaFindings(args: {
 export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
   checks: ReviewCheckDto[];
   findings: ReviewFindingDto[];
-  placeholderCount: number;
 }> {
   const defs = checksForDocumentType(ctx.documentType);
   const [runs, openFindings] = await Promise.all([
@@ -85,10 +83,6 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
     );
   }
 
-  const placeholderCount = collectPlaceholders(
-    ctx.sections as Partial<SectionContentMap>
-  ).length;
-
   const findings: ReviewFindingDto[] = catalogFindings.map((row) => ({
     id: row.id,
     checkId: row.checkId,
@@ -96,7 +90,7 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
     contentPath: row.contentPath,
     anchorText: row.anchorText,
     message: row.message,
-    severity: row.severity,
+    severity: coerceReviewSeverity(row.severity),
     kind: row.kind,
     commentId: row.commentId,
     status: row.status,
@@ -104,21 +98,6 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
   }));
 
   const checks: ReviewCheckDto[] = defs.map((def) => {
-    if (def.kind === "live") {
-      return {
-        id: def.id,
-        category: def.category,
-        categoryLabel: categoryLabel(def.category),
-        label: def.label,
-        description: def.description,
-        standardTag: def.standardTag,
-        kind: def.kind,
-        status: placeholderCount > 0 ? "issues" : "clean",
-        issueCount: placeholderCount,
-        lastRunAt: null,
-        error: null,
-      };
-    }
     const run = runs.get(def.id);
     const currentHash = reviewContentHash(ctx.sections, saltForCheck(def.id));
     let status: ReviewCheckUiStatus = "never_run";
@@ -163,6 +142,5 @@ export async function buildReviewSnapshot(ctx: ReviewRunContext): Promise<{
   return {
     checks,
     findings,
-    placeholderCount,
   };
 }

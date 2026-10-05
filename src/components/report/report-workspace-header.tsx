@@ -165,7 +165,10 @@ export function ReportWorkspaceHeader({
         </span>
 
         {showRunCriteria ? (
-          <Review.RunAll layout="header" onRun={onOpenReview} />
+          <span className="inline-flex items-center gap-2">
+            <Review.SeverityStats layout="header" />
+            <Review.RunAll layout="header" onRun={onOpenReview} />
+          </span>
         ) : null}
         {showBulkSuggestions ? <ReportBulkSuggestionActions /> : null}
 

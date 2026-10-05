@@ -18,6 +18,11 @@ export {
   type ReviewCheckDto,
   type ReviewFindingDto,
 } from "./ui";
+export {
+  coerceReviewSeverity,
+  severityForEvalStatus,
+  type ReviewSeverity,
+} from "./severity";
 
 export type ReviewFindingDraft = {
   section: string | null;

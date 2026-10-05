@@ -30,7 +30,7 @@ export function externalRefFindings(
         contentPath: field.contentPath,
         anchorText: token,
         message: `Please verify ${token} — it is not in the attached vault files.`,
-        severity: "info",
+        severity: "major",
         kind: "needs_human",
       });
     }

@@ -64,7 +64,7 @@ describe("liveCriteriaFindings", () => {
         kind: "fixable",
         commentId: "c1",
         contentPath: "narrative",
-        severity: "error",
+        severity: "critical",
       }),
     ]);
   });
@@ -79,7 +79,7 @@ describe("liveCriteriaFindings", () => {
     expect(findings[0]).toMatchObject({
       kind: "needs_human",
       commentId: null,
-      severity: "warning",
+      severity: "major",
     });
   });
 });

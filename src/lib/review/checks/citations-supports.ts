@@ -87,7 +87,7 @@ export function collectCitationSupportJobs(
           contentPath: field.contentPath,
           anchorText: match[0],
           message: `${match[0]} cannot be checked automatically. Please verify ${source}.`,
-          severity: "warning",
+          severity: "major",
           kind: "needs_human",
         });
         continue;
@@ -127,7 +127,7 @@ export async function runCitationSupportsCheck(
           contentPath: null,
           anchorText: "",
           message: "Stub citation-support review (ALLOW_TEST_STUB_REVIEW).",
-          severity: "info",
+          severity: "minor",
           kind: "needs_human",
         },
       ],
@@ -144,7 +144,7 @@ export async function runCitationSupportsCheck(
       contentPath: null,
       anchorText: "",
       message: `${overflow} more citation(s) were not judged this pass. Fix the first ${CITATION_SUPPORT_MAX_CLAIMS}, then run Citation supports again.`,
-      severity: "info",
+      severity: "minor",
       kind: "needs_human",
     });
   }
@@ -167,7 +167,7 @@ export async function runCitationSupportsCheck(
             contentPath: job.contentPath,
             anchorText: job.marker,
             message: `${job.marker} cites a page with no extracted text. Please verify ${job.source}.`,
-            severity: "warning",
+            severity: "major",
             kind: "needs_human",
           });
           return null;
@@ -227,7 +227,7 @@ export async function runCitationSupportsCheck(
         contentPath: row.job.contentPath,
         anchorText: row.job.marker,
         message: `${row.job.marker} ${judgement.status}: ${judgement.reasoning}`,
-        severity: judgement.status === "unsupported" ? "error" : "warning",
+        severity: judgement.status === "unsupported" ? "critical" : "major",
         kind: "needs_human",
         metadata: {
           citationNumber: row.job.citationNumber,
@@ -263,6 +263,7 @@ export async function runCitationSupportsCheck(
           },
           reasoning: `${row.job.marker} is ${judgement.status} on the cited page. Replace the Citations line with ${replacement}.`,
           kind: "ai_fix",
+          severity: needsHuman.severity,
         });
         findings.push(persisted ?? needsHuman);
       } catch {

@@ -512,6 +512,13 @@
       "when": 1789504800000,
       "tag": "0071_review_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789590000000,
+      "tag": "0072_review_finding_severity",
+      "breakpoints": true
     }
   ]
 }

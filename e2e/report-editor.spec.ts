@@ -133,19 +133,21 @@ test.describe("report editor", () => {
     const sidebar = reportSidebar(page);
     await sidebar.getByRole("button", { name: /^review$/i }).click();
     await expect(sidebar.getByTestId("review-panel")).toBeVisible();
+    await expect(sidebar.getByTestId("review-severity-stats")).toBeVisible();
     await expect(sidebar.getByRole("tab", { name: /all checks/i })).toBeVisible();
     await expect(sidebar.getByRole("tab", { name: /^report$/i })).toBeVisible();
     await expect(sidebar.getByRole("tab", { name: /^fda$/i })).toBeVisible();
     await expect(sidebar.getByRole("tab", { name: /^citations$/i })).toBeVisible();
     await expect(sidebar.getByRole("tab", { name: /^writing$/i })).toBeVisible();
-    await expect(sidebar.getByText("Placeholders").first()).toBeVisible();
 
-    await sidebar.getByTestId("review-check-report.placeholders").click();
+    await sidebar.getByRole("button", { name: /^placeholders$/i }).click();
+    await expect(sidebar.getByTestId("placeholders-panel")).toBeVisible();
     await expect(sidebar.getByText("You're all caught up!")).toBeVisible();
     await expect(
       sidebar.getByText("No placeholders found in the document.")
     ).toBeVisible();
 
+    await sidebar.getByRole("button", { name: /^review$/i }).click();
     await seedDefineForEvaluation(page, reportId!);
     const evalRes = await page.request.post(`/api/reports/${reportId}/evaluate`, {
       data: {},

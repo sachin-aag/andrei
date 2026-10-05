@@ -39,7 +39,7 @@ async function runWritingLlmCheck(
           contentPath: null,
           anchorText: "",
           message: "Stub writing review (ALLOW_TEST_STUB_REVIEW).",
-          severity: "info",
+          severity: "minor",
           kind: "needs_human",
         },
       ],
@@ -93,6 +93,7 @@ async function runWritingLlmCheck(
       },
       reasoning: edit.message,
       kind: args.kind,
+      severity: "minor",
     });
     if (finding) {
       findings.push(finding);
@@ -102,7 +103,7 @@ async function runWritingLlmCheck(
         contentPath: edit.contentPath,
         anchorText: edit.anchorText,
         message: edit.message,
-        severity: "warning",
+        severity: "minor",
         kind: "needs_human",
       });
     }
