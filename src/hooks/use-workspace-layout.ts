@@ -74,9 +74,14 @@ export function useWorkspaceLayout({
     const node = containerRef.current;
     if (!node) return;
 
-    const observer = new ResizeObserver(() => {
-      if (!isResizingRef.current) setProtect("none");
-      setContainerWidth(node.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      if (!isResizingRef.current) {
+        setProtect((prev) => (prev === "none" ? prev : "none"));
+      }
+      const next = Math.round(
+        entries[0]?.contentRect.width ?? node.getBoundingClientRect().width
+      );
+      setContainerWidth((prev) => (prev === next ? prev : next));
     });
     observer.observe(node);
     return () => observer.disconnect();

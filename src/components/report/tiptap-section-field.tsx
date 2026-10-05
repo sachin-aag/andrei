@@ -425,6 +425,10 @@ export function TiptapSectionField({
     endSuggestionApplyTransition,
   } = useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
+  const sectionsRef = useRef(sections);
+  useLayoutEffect(() => {
+    sectionsRef.current = sections;
+  }, [sections]);
   const { getUser } = useUserDirectory();
   const activeSuggestionId = activeSuggestionIdForSection(section);
   const suggestionWidgetStateRef = useRef<SuggestionActionWidgetState>({
@@ -1052,7 +1056,10 @@ export function TiptapSectionField({
     applyExternalValueToEditor();
   }, [applyExternalValueToEditor]);
 
-  const richContentKey = isRichField ? JSON.stringify(value) : "";
+  const richContentKey = useMemo(
+    () => (isRichField ? JSON.stringify(value) : ""),
+    [isRichField, value]
+  );
 
   const previewHeld = isRichField && isSuggestionPreviewHeld(section);
   const previewHeldMode = previewHeld
@@ -1218,7 +1225,7 @@ export function TiptapSectionField({
                 documentContents: documentContentsFromReportState({
                   documentType: report.documentType,
                   sections: {
-                    ...sections,
+                    ...sectionsRef.current,
                     [section]: sectionContent as Record<string, unknown>,
                   },
                   comments: comments.filter(
@@ -1323,7 +1330,6 @@ export function TiptapSectionField({
     previewHeld,
     section,
     sectionContent,
-    sections,
     report.documentType,
     suggestionApplyTransition,
     value,
