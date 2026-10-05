@@ -81,8 +81,8 @@ describe("fetchWorkspaceBundle", () => {
   });
 
   it("sends the workspace load id on the bundle GET", async () => {
-    const fetchMock = vi.fn(
-      (_url: string, _init?: RequestInit) =>
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
+      () =>
         Promise.resolve(
           new Response(
             JSON.stringify({

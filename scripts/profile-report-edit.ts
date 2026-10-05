@@ -22,6 +22,7 @@ const reportId = process.argv[2];
 const throttle = Number(process.argv[3] ?? 1);
 const label = process.argv[4] ?? `t${throttle}`;
 const MAX_MS = Number(process.env.PROFILE_MAX_MS ?? 90_000);
+const SCROLL_SETTLE_MS = Number(process.env.PROFILE_SCROLL_SETTLE_MS ?? 3000);
 
 if (!reportId) {
   console.error(`usage: pnpm profile:report-edit -- <reportId> [cpuThrottle] [label]
@@ -118,6 +119,19 @@ async function main() {
   await new Promise((r) => setTimeout(r, 4000));
   const mountEnd = Date.now() - t0;
 
+  const scrollTarget = process.env.PROFILE_SCROLL_TO ?? "elr_system_description";
+  let scrollNote = "skipped";
+  try {
+    const beforeScroll = Date.now();
+    await page.locator(`#${scrollTarget}`).scrollIntoViewIfNeeded({ timeout: 15_000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    await page.mouse.wheel(0, 400);
+    await new Promise((r) => setTimeout(r, SCROLL_SETTLE_MS));
+    scrollNote = `scrolled to #${scrollTarget} + wheel in ${Date.now() - beforeScroll}ms`;
+  } catch (e) {
+    scrollNote = `scroll failed: ${(e as Error).message.slice(0, 120)}`;
+  }
+
   let typing = "skipped";
   if (done) {
     try {
@@ -157,7 +171,7 @@ async function main() {
   const report = [
     `report ${reportId}  base ${BASE}  throttle ${throttle}x  wall ${Date.now() - t0}ms  allSectionsMounted=${done}  unresponsivePolls=${unresponsive}`,
     `script busy ${(busyUs / 1000).toFixed(0)}ms   longtasks ${lt.length}  sum ${lt.reduce((a, b) => a + b.dur, 0)}ms  max ${Math.max(0, ...lt.map((l) => l.dur))}ms`,
-    `mount finished at ${mountEnd}ms; TYPING: ${typing}`,
+    `mount finished at ${mountEnd}ms; SCROLL: ${scrollNote}; TYPING: ${typing}`,
     `worst longtasks: ${[...lt].sort((a, b) => b.dur - a.dur).slice(0, 8).map((l) => `${l.dur}ms@${l.start}`).join("  ")}`,
     `frame gaps >250ms: ${(vitals?.gaps ?? []).sort((a, b) => b.gap - a.gap).slice(0, 8).map((g) => `${g.gap}ms@${g.at}`).join("  ")}`,
     `artifacts: ${cpuprofilePath}`,

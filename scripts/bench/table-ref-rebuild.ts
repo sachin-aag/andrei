@@ -10,6 +10,9 @@
  *
  * CI budget (exit 1 if p95 exceeds ms):
  *   BENCH_TABLE_REF_BUDGET_MS=800 pnpm bench:table-ref -- --json
+ *
+ * Per-section keystroke simulation (throws + slow live rebuilds):
+ *   pnpm bench:table-ref -- --report-id <id> --stress
  */
 import path from "node:path";
 import { config as loadEnv } from "dotenv";
@@ -32,7 +35,9 @@ import {
 } from "./fixtures/elr-scaling";
 
 loadEnv({ path: path.join(process.cwd(), ".env") });
-loadEnv({ path: path.join(process.cwd(), ".env.local"), override: true });
+if (process.env.BENCH_USE_LOCAL_DB === "1") {
+  loadEnv({ path: path.join(process.cwd(), ".env.local"), override: true });
+}
 
 const DOCUMENT_TYPE: DocumentType = "equipment_lifecycle_report";
 
@@ -42,6 +47,7 @@ type BenchArgs = {
   iterations: number;
   json: boolean;
   sweep: number[];
+  stress: boolean;
 };
 
 function parseArgs(argv: string[]): BenchArgs {
@@ -50,6 +56,7 @@ function parseArgs(argv: string[]): BenchArgs {
   let openSuggestions = 0;
   let iterations = 5;
   let json = false;
+  let stress = false;
   const sweep: number[] = [];
 
   for (let i = 0; i < tokens.length; i++) {
@@ -58,6 +65,7 @@ function parseArgs(argv: string[]): BenchArgs {
     else if (a === "--open-suggestions") openSuggestions = Number(tokens[++i] ?? 0);
     else if (a === "--iterations") iterations = Number(tokens[++i] ?? 5);
     else if (a === "--json") json = true;
+    else if (a === "--stress") stress = true;
     else if (a === "--sweep") {
       const raw = tokens[++i] ?? "";
       sweep.push(...raw.split(",").map((n) => Number(n.trim())).filter((n) => Number.isFinite(n)));
@@ -70,7 +78,7 @@ function parseArgs(argv: string[]): BenchArgs {
     }
   }
 
-  return { reportId, openSuggestions, iterations, json, sweep };
+  return { reportId, openSuggestions, iterations, json, sweep, stress };
 }
 
 function timeSync<T>(fn: () => T): { ms: number; value: T } {
@@ -209,6 +217,100 @@ function runIterations(
   return { label, last, liveStats };
 }
 
+const STRESS_SLOW_MS = Number(process.env.BENCH_STRESS_SLOW_MS ?? 50);
+
+type StressRow = {
+  section: string;
+  liveMs: number;
+  overlayMs: number;
+  error?: string;
+};
+
+function stressReportKeystrokes(loaded: {
+  documentType: DocumentType;
+  sections: Readonly<Partial<Record<string, unknown>>>;
+  comments: readonly TableNumberComment[];
+}): { rows: StressRow[]; baseline: PhaseResult } {
+  const baseline = benchOnce(loaded);
+  const keys = Object.keys(loaded.sections);
+  const rows: StressRow[] = [];
+
+  for (const sectionKey of keys) {
+    const current = loaded.sections[sectionKey];
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      rows.push({ section: sectionKey, liveMs: 0, overlayMs: 0, error: "skip: non-object section" });
+      continue;
+    }
+    const edited = {
+      ...loaded.sections,
+      [sectionKey]: { ...(current as Record<string, unknown>) },
+    };
+    try {
+      const overlay = timeSync(() =>
+        documentContentsFromReportState({
+          documentType: loaded.documentType,
+          sections: edited,
+          comments: loaded.comments,
+        })
+      );
+      const live = timeSync(() =>
+        liveTableRefNumbers({
+          documentType: loaded.documentType,
+          sections: edited,
+          comments: loaded.comments,
+        })
+      );
+      rows.push({ section: sectionKey, liveMs: live.ms, overlayMs: overlay.ms });
+    } catch (e) {
+      rows.push({
+        section: sectionKey,
+        liveMs: 0,
+        overlayMs: 0,
+        error: (e as Error).message,
+      });
+    }
+  }
+
+  return { rows, baseline };
+}
+
+function printStressReport(
+  reportId: string,
+  loaded: {
+    documentType: DocumentType;
+    comments: readonly TableNumberComment[];
+  },
+  stress: ReturnType<typeof stressReportKeystrokes>
+) {
+  const { rows, baseline } = stress;
+  const errors = rows.filter((r) => r.error);
+  const slow = rows.filter((r) => !r.error && r.liveMs >= STRESS_SLOW_MS);
+  const worst = [...rows].filter((r) => !r.error).sort((a, b) => b.liveMs - a.liveMs).slice(0, 8);
+
+  console.log(`\n=== stress report ${reportId} (${loaded.documentType}) ===`);
+  console.log(
+    `comments=${loaded.comments.length}  openTableSuggestions=${countOpenTableSuggestions(loaded.comments)}  slowThresholdMs=${STRESS_SLOW_MS}`
+  );
+  console.log(
+    `baseline live=${baseline.liveMs.toFixed(2)}ms overlay=${baseline.overlayMs.toFixed(2)}ms`
+  );
+  console.log(`per-section keystroke sim: ${rows.length} sections  errors=${errors.length}  slow=${slow.length}`);
+
+  if (errors.length > 0) {
+    console.log("\nERRORS (would not crash Node unless uncaught in React — still a data bug):");
+    for (const r of errors) console.log(`  ${r.section}: ${r.error}`);
+  }
+  if (worst.length > 0) {
+    console.log("\nSlowest sections (liveTableRefNumbers after shallow clone):");
+    for (const r of worst) {
+      console.log(`  ${r.liveMs.toFixed(2)}ms live  ${r.overlayMs.toFixed(2)}ms overlay  ${r.section}`);
+    }
+  }
+  if (errors.length === 0 && slow.length === 0) {
+    console.log("\nNo throws and no section exceeded slow threshold — table-ref path is unlikely to explain a browser tab crash on this report.");
+  }
+}
+
 function printHuman(result: ReturnType<typeof runIterations>) {
   const { last, liveStats, label } = result;
   if (!last) return;
@@ -248,6 +350,18 @@ async function main() {
     }
   } else if (cli.reportId) {
     const loaded = await loadSectionsFromReport(cli.reportId);
+    if (cli.stress) {
+      const stress = stressReportKeystrokes(loaded);
+      if (cli.json) {
+        console.log(JSON.stringify({ reportId: cli.reportId, stress }, null, 2));
+      } else {
+        printStressReport(cli.reportId, loaded, stress);
+      }
+      const errors = stress.rows.filter((r) => r.error);
+      const slow = stress.rows.filter((r) => !r.error && r.liveMs >= STRESS_SLOW_MS);
+      if (errors.length > 0 || slow.length > 0) process.exit(1);
+      return;
+    }
     results.push(
       runIterations(
         `report ${cli.reportId} (${loaded.documentType})`,
