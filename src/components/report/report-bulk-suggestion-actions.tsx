@@ -31,7 +31,6 @@ import {
   identityCurrentFromReport,
 } from "@/lib/suggestions/identity-suggestion";
 import type { IdentityApplyPatch } from "@/lib/suggestions/accept-suggestion";
-import { countOpenSuggestionsForReport } from "@/lib/suggestions/validate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import type { SectionType } from "@/db/schema";
 
@@ -66,16 +65,6 @@ export function ReportBulkSuggestionActions() {
   );
 
   const openTotal = countOpenAiSuggestions(comments);
-  const { locatable } = useMemo(
-    () =>
-      countOpenSuggestionsForReport(
-        sectionOrder,
-        comments,
-        evaluations,
-        (section) => sections[section]
-      ),
-    [sectionOrder, comments, evaluations, sections]
-  );
 
   const releaseBulkHolds = useCallback(() => {
     // Release after comments are updated so TipTap does not re-inject a
@@ -113,8 +102,6 @@ export function ReportBulkSuggestionActions() {
       },
     }),
     [
-      report.id,
-      report.documentType,
       report,
       sectionOrder,
       comments,
@@ -218,24 +205,22 @@ export function ReportBulkSuggestionActions() {
 
   return (
     <div className="flex items-center gap-2" data-testid="report-bulk-suggestion-actions">
-      {locatable >= 1 ? (
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy}
-          title={`Apply all ${locatable} open suggestions across the document`}
-          onClick={() => {
-            void handleAcceptAll();
-          }}
-        >
-          {running === "accept" ? (
-            <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
-          ) : (
-            <CheckCheck className="size-4 shrink-0" aria-hidden="true" />
-          )}
-          Apply all {locatable}
-        </Button>
-      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        disabled={busy}
+        title={`Apply all ${openTotal} open suggestions across the document`}
+        onClick={() => {
+          void handleAcceptAll();
+        }}
+      >
+        {running === "accept" ? (
+          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+        ) : (
+          <CheckCheck className="size-4 shrink-0" aria-hidden="true" />
+        )}
+        Apply all {openTotal}
+      </Button>
       <Button
         type="button"
         size="sm"

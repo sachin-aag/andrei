@@ -53,11 +53,6 @@ export function useIdentityFormSave<T>(opts: {
   const pauseSave = useIdentitySavePaused();
   const { registerSectionFlush } = useReportData();
 
-  incomingRef.current = incoming;
-  applyToReportRef.current = applyToReport;
-  toPatchRef.current = toPatch;
-  valueRef.current = value;
-
   const onSave = useCallback(
     async (v: T, context?: AutoSaveContext) => {
       const data = await patchIdentityReport(
@@ -80,7 +75,14 @@ export function useIdentityFormSave<T>(opts: {
     onSave,
   });
   const markPersistedRef = useRef(markPersisted);
-  markPersistedRef.current = markPersisted;
+
+  useLayoutEffect(() => {
+    incomingRef.current = incoming;
+    applyToReportRef.current = applyToReport;
+    toPatchRef.current = toPatch;
+    valueRef.current = value;
+    markPersistedRef.current = markPersisted;
+  }, [incoming, applyToReport, toPatch, value, markPersisted]);
 
   useEffect(
     () =>

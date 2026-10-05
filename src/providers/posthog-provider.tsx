@@ -14,6 +14,12 @@ function posthogKey(): string | undefined {
   return key || undefined;
 }
 
+/** Call after the report workspace mounts — not during "Loading report…". */
+export function startPostHogSessionRecording(): void {
+  if (!posthogKey()) return;
+  posthog.startSessionRecording(true);
+}
+
 export function PostHogProvider({
   children,
   userId,
@@ -38,6 +44,9 @@ export function PostHogProvider({
       // localStorage. Existing ph_* cookies are expired above and in proxy.ts.
       persistence: "localStorage",
       cross_subdomain_cookie: false,
+      // rrweb on loading.tsx + a hung /edit RSC freezes the tab ("Page
+      // Unresponsive"). ReportWorkspace starts recording after the editor mounts.
+      disable_session_recording: true,
     });
   }, []);
 
@@ -48,9 +57,6 @@ export function PostHogProvider({
       email: email ?? undefined,
       name: name ?? undefined,
     });
-    // Recorder v2 lazy-loads by default; start explicitly once identified so
-    // report editing is captured (not just a hollow shell on pageleave).
-    posthog.startSessionRecording(true);
   }, [userId, email, name]);
 
   return <PHProvider client={posthog}>{children}</PHProvider>;

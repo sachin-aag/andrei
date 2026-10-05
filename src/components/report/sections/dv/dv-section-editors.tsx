@@ -1,6 +1,8 @@
 "use client";
 
+import type { ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
+import { DvCoverPageEditor } from "./cover-page-editor";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { useGenericReportSection } from "@/providers/report-provider";
@@ -348,3 +350,23 @@ export function DvProblemsResolutionEditor() {
     />
   );
 }
+
+export const DV_SECTION_EDITORS: Record<string, ComponentType> = {
+  cover_page: DvCoverPageEditor,
+  purpose_scope: DvPurposeScopeEditor,
+  references: DvReferencesEditor,
+  traceability: DvTraceabilityEditor,
+  test_methods: DvTestMethodsEditor,
+  test_results: DvTestResultsEditor,
+  deviations: DvDeviationsEditor,
+  conclusion: DvConclusionEditor,
+  approval_signoff: DvApprovalEditor,
+  appendices: DvAppendicesEditor,
+  purpose: DvPurposeEditor,
+  scope: DvScopeEditor,
+  testers_dates: DvTestersDatesEditor,
+  methods_of_measurement: DvMethodsOfMeasurementEditor,
+  test_equipment: DvTestEquipmentEditor,
+  results_and_discussions: DvResultsAndDiscussionsEditor,
+  problems_resolution: DvProblemsResolutionEditor,
+};

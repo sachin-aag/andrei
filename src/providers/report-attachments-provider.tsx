@@ -168,16 +168,25 @@ export function ReportAttachmentsProvider({
     });
   }, []);
 
-  const refreshAttachments = useCallback(async () => {
-    const response = await fetch(`/api/reports/${reportId}/attachments`);
+  const refreshAttachments = useCallback(async (opts?: { sync?: boolean }) => {
+    const qs = opts?.sync ? "?sync=1" : "";
+    const response = await fetch(`/api/reports/${reportId}/attachments${qs}`);
     if (!response.ok) return;
     const data = (await response.json()) as {
       attachments?: ReportAttachmentRecord[];
+      folders?: ReportAttachmentFolderRecord[];
     };
     if (Array.isArray(data.attachments)) {
       setAttachments(data.attachments);
     }
+    if (Array.isArray(data.folders)) {
+      setFolders(data.folders);
+    }
   }, [reportId]);
+
+  useEffect(() => {
+    void refreshAttachments().catch(() => {});
+  }, [refreshAttachments]);
 
   useEffect(() => {
     if (!attachments.some((item) => NON_TERMINAL_STATUSES.has(item.processingStatus))) {
@@ -185,7 +194,7 @@ export function ReportAttachmentsProvider({
     }
 
     const interval = window.setInterval(() => {
-      void refreshAttachments();
+      void refreshAttachments({ sync: true });
     }, 2500);
     return () => window.clearInterval(interval);
   }, [attachments, refreshAttachments]);
@@ -334,7 +343,7 @@ export function ReportAttachmentsProvider({
           })
         );
         toast.success(`${file.name} uploaded`);
-        void refreshAttachments();
+        void refreshAttachments({ sync: true });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : `Could not upload ${file.name}`;

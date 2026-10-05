@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { toast } from "sonner";
 import type { JSONContent } from "@tiptap/core";
 import { Button } from "@/components/ui/button";
@@ -631,3 +631,21 @@ export function QraRevisionHistoryEditor() {
     <TableEditor section="qra_revision_history" fieldLabel="Revision history" />
   );
 }
+
+export const QRA_SECTION_EDITORS: Record<string, ComponentType> = {
+  qra_approach: QraApproachEditor,
+  qra_objective: QraObjectiveEditor,
+  qra_scope: QraScopeEditor,
+  qra_overview: QraOverviewEditor,
+  qra_procedure: QraProcedureEditor,
+  qra_team: QraTeamEditor,
+  qra_risk_identification: QraRiskIdentificationEditor,
+  qra_fmea: QraFmeaEditor,
+  qra_communication: QraCommunicationEditor,
+  qra_pre_conclusion: QraPreConclusionEditor,
+  qra_mitigation: QraMitigationEditor,
+  qra_residual_risk: QraResidualRiskEditor,
+  qra_periodic_review: QraPeriodicReviewEditor,
+  qra_post_conclusion: QraPostConclusionEditor,
+  qra_revision_history: QraRevisionHistoryEditor,
+};

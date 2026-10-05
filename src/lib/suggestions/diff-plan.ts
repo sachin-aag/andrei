@@ -354,10 +354,11 @@ function alignBlocks(left: MergeBlock[], right: MergeBlock[]): AlignHunk[] {
       continue;
     }
     if (pair) {
-      while (ri < pair.ri) {
-        hunks.push({ type: "insert", right: right[ri]! });
-        ri += 1;
-      }
+      // pair.ri < ri: the blocks crossed (a moved or re-matched paragraph), so
+      // its right side already went out as an insert. Emit the left side as a
+      // remove. Leaving li and ri untouched here spun forever and hung the tab.
+      hunks.push({ type: "remove", left: left[li]! });
+      li += 1;
       continue;
     }
     if (ri < right.length) {

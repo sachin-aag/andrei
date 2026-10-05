@@ -101,6 +101,7 @@ describe("ReportBulkSuggestionActions leftover suggestions", () => {
     ];
     render(<ReportBulkSuggestionActions />);
     expect(screen.getByTestId("report-bulk-suggestion-actions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^apply all 1$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^dismiss all$/i })).toBeInTheDocument();
   });
 

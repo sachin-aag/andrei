@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { Label } from "@/components/ui/label";
 import { SectionShell } from "@/components/report/sections/section-shell";
@@ -668,3 +669,26 @@ export function FirBatchDispositionEditor() {
     </SectionShell>
   );
 }
+
+export const FIR_SECTION_EDITORS: Record<string, ComponentType> = {
+  fir_event_description: FirEventDescriptionEditor,
+  fir_standard_procedures: FirStandardProceduresEditor,
+  fir_immediate_action: FirImmediateActionEditor,
+  fir_initial_impact: FirInitialImpactEditor,
+  fir_investigation_team: FirInvestigationTeamEditor,
+  fir_investigation_tools: FirInvestigationToolsEditor,
+  fir_chronology: FirChronologyEditor,
+  fir_investigation_details: FirInvestigationDetailsEditor,
+  fir_historic_review: FirHistoricReviewEditor,
+  fir_root_cause: FirRootCauseEditor,
+  fir_human_error: FirHumanErrorEditor,
+  fir_impact_assessment: FirImpactAssessmentEditor,
+  fir_scope_assessment: FirScopeAssessmentEditor,
+  fir_batch_disposition: FirBatchDispositionEditor,
+  fir_correction: FirCorrectionEditor,
+  fir_corrective_action: FirCorrectiveActionEditor,
+  fir_interim_control: FirInterimControlEditor,
+  fir_preventive_action: FirPreventiveActionEditor,
+  fir_capa_effectiveness: FirCapaEffectivenessEditor,
+  fir_attachments: FirAttachmentsEditor,
+};

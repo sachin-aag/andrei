@@ -7,10 +7,11 @@ import {
   useEffect,
   useLayoutEffect,
   useSyncExternalStore,
-  type ComponentType,
 } from "react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { startPostHogSessionRecording } from "@/providers/posthog-provider";
 import {
   useReportComments,
   useReportData,
@@ -19,10 +20,16 @@ import {
   useReportPlaceholders,
 } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
-import { ReportHeader } from "./report-header";
-import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
+import {
+  LazyWorkspaceSection,
+  notifyWorkspaceScroll,
+  resetLazyWorkspaceMountQueue,
+  requestWorkspaceSectionMount,
+  setLazyWorkspaceBackgroundMounts,
+  warmupAllLazyWorkspaceSections,
+} from "./lazy-workspace-section";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
-import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
+import { ReportWorkspaceLoading } from "./report-workspace-loading";
 import {
   shouldCollapseAssistantOnSuggestionFocus,
   shouldRevealCriteriaTab,
@@ -37,10 +44,6 @@ import {
 } from "./workspace-chrome-prefs";
 import { WorkProductTabs } from "./work-product-tabs";
 import { CommentsGutterToggle } from "./comments-gutter-toggle";
-import { DocumentRevisionHistory } from "./document-revision-history";
-import { DocumentRevisionDiff } from "./document-revision-diff";
-import { AnalyticsRevisionDiff } from "./analytics-revision-diff";
-import { ReportEditorToolbar } from "./report-editor-toolbar";
 import {
   attachmentIdFromTab,
   attachmentTabId,
@@ -53,18 +56,15 @@ import {
   tabIdAfterClosing,
   type CanvasTabId,
 } from "./work-product-canvas";
-import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReviewGutterPaintedProvider } from "./review-gutter-painted";
 import { isReviewGutterColumnPainted } from "./show-document-suggestion-card";
-import { ReportSidebar, type SidebarTab } from "./report-sidebar";
-import { DocumentsPanel } from "./documents/documents-panel";
-import { AttachmentCanvasStack } from "./attachment-canvas-stack";
+import type { SidebarTab } from "./report-sidebar";
 import { CanvasTabPane } from "./canvas-tab-pane";
 import { CanvasTabScrollProvider } from "./canvas-tab-scroll";
-import { StatisticalWorkspace, type AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
+import type { AnalyticsFocusApi } from "@/components/statistical-analysis/workspace";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import { useUserDirectory } from "@/providers/user-directory-provider";
-import type { DocumentType, SectionType } from "@/db/schema";
+import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
@@ -99,265 +99,113 @@ import {
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
 } from "./workspace-layout";
-import {
-  ElectronicSignatureDialog,
-  type SignatureMeaningUi,
-} from "./electronic-signature-dialog";
-import { DefineEditor } from "./sections/define-editor";
-import { MeasureEditor } from "./sections/measure-editor";
-import { AnalyzeEditor } from "./sections/analyze-editor";
-import { ImproveEditor } from "./sections/improve-editor";
-import { ControlEditor } from "./sections/control-editor";
-import { ConclusionEditor } from "./sections/conclusion-editor";
-import { DocumentsReviewedEditor } from "./sections/documents-reviewed-editor";
-import { AttachmentsEditor } from "./sections/attachments-editor";
-import { SignatureApprovalsSection } from "./sections/signature-approvals-section";
-import { DvCoverPageEditor } from "./sections/dv/cover-page-editor";
-import {
-  DvAppendicesEditor,
-  DvApprovalEditor,
-  DvConclusionEditor,
-  DvDeviationsEditor,
-  DvMethodsOfMeasurementEditor,
-  DvProblemsResolutionEditor,
-  DvPurposeEditor,
-  DvPurposeScopeEditor,
-  DvReferencesEditor,
-  DvResultsAndDiscussionsEditor,
-  DvScopeEditor,
-  DvTestEquipmentEditor,
-  DvTestMethodsEditor,
-  DvTestResultsEditor,
-  DvTestersDatesEditor,
-  DvTraceabilityEditor,
-} from "./sections/dv/dv-section-editors";
-import {
-  MechConclusionEditor,
-  MechDataCollectionFormsEditor,
-  MechExecutedProtocolEditor,
-  MechFailureFormsEditor,
-  MechObservationsEditor,
-  MechProblemsResolutionEditor,
-  MechProtocolDeviationsEditor,
-  MechPurposeEditor,
-  MechRequirementsVerifiedEditor,
-  MechRevisionHistoryEditor,
-  MechScopeEditor,
-  MechTestEquipmentEditor,
-  MechTestersDatesEditor,
-  MechUnitsUnderTestEditor,
-} from "./sections/dv/mechanical-section-editors";
-import { GenericDocumentEditor } from "./sections/generic/generic-document-editor";
-import {
-  QraApproachEditor,
-  QraCommunicationEditor,
-  QraFmeaEditor,
-  QraMitigationEditor,
-  QraObjectiveEditor,
-  QraOverviewEditor,
-  QraPeriodicReviewEditor,
-  QraPostConclusionEditor,
-  QraPreConclusionEditor,
-  QraProcedureEditor,
-  QraResidualRiskEditor,
-  QraRevisionHistoryEditor,
-  QraRiskIdentificationEditor,
-  QraScopeEditor,
-  QraTeamEditor,
-} from "./sections/qra/qra-section-editors";
-import {
-  ElrAbbreviationsEditor,
-  ElrAccessControlEditor,
-  ElrAlarmsEditor,
-  ElrAttachmentsEditor,
-  ElrAuditTrailEditor,
-  ElrBreakdownsEditor,
-  ElrCalibrationEditor,
-  ElrCleaningValidationEditor,
-  ElrConclusionEditor,
-  ElrCsvStatusEditor,
-  ElrDiscrepanciesEditor,
-  ElrMediaFillEditor,
-  ElrMonitoringEditor,
-  ElrObjectiveEditor,
-  ElrPreventiveMaintenanceEditor,
-  ElrProcessValidationEditor,
-  ElrQmsEditor,
-  ElrQraReviewEditor,
-  ElrQualificationEditor,
-  ElrResponsibilitiesEditor,
-  ElrRevisionHistoryEditor,
-  ElrRiskActionsEditor,
-  ElrScopeEditor,
-  ElrSystemDescriptionEditor,
-  ElrSystemTrendsEditor,
-} from "./sections/elr/elr-section-editors";
-import { VQ_SECTION_EDITORS } from "./sections/vq/vq-section-editors";
-import { QSR_SECTION_EDITORS } from "./sections/qsr/qsr-section-editors";
+import type { SignatureMeaningUi } from "./electronic-signature-dialog";
+import { useDocumentSectionEditors } from "./section-editor-loaders";
+import { emitWorkspaceLoadStage } from "@/lib/workspace-load-telemetry-client";
+
+emitWorkspaceLoadStage("workspace_module");
+
+const ReportHeader = dynamic(
+  () => import("./report-header").then((mod) => mod.ReportHeader),
+  { ssr: false }
+);
+
+const ReportEditorToolbar = dynamic(
+  () =>
+    import("./report-editor-toolbar").then((mod) => mod.ReportEditorToolbar),
+  { ssr: false }
+);
+
+const MarginGutter = dynamic(
+  () => import("./review-rail/margin-gutter").then((mod) => mod.MarginGutter),
+  { ssr: false }
+);
+
+const ElectronicSignatureDialog = dynamic(
+  () =>
+    import("./electronic-signature-dialog").then(
+      (mod) => mod.ElectronicSignatureDialog
+    ),
+  { ssr: false }
+);
+
+const ReportDetailsEditDialog = dynamic(
+  () =>
+    import("./report-details-edit-dialog").then(
+      (mod) => mod.ReportDetailsEditDialog
+    ),
+  { ssr: false }
+);
+
+const RequestExpertReviewDialog = dynamic(
+  () =>
+    import("./request-expert-review-dialog").then(
+      (mod) => mod.RequestExpertReviewDialog
+    ),
+  { ssr: false }
+);
+
+const DocumentRevisionHistory = dynamic(
+  () =>
+    import("./document-revision-history").then(
+      (mod) => mod.DocumentRevisionHistory
+    ),
+  { ssr: false }
+);
+
+const DocumentRevisionDiff = dynamic(
+  () =>
+    import("./document-revision-diff").then((mod) => mod.DocumentRevisionDiff),
+  { ssr: false }
+);
+
+const AnalyticsRevisionDiff = dynamic(
+  () =>
+    import("./analytics-revision-diff").then(
+      (mod) => mod.AnalyticsRevisionDiff
+    ),
+  { ssr: false }
+);
+
+const DocumentsPanel = dynamic(
+  () =>
+    import("./documents/documents-panel").then((mod) => mod.DocumentsPanel),
+  { ssr: false, loading: () => <div className="h-full" /> }
+);
+
+const ReportSidebar = dynamic(
+  () => import("./report-sidebar").then((mod) => mod.ReportSidebar),
+  { ssr: false, loading: () => <div className="h-full" /> }
+);
+
+const AttachmentCanvasStack = dynamic(
+  () =>
+    import("./attachment-canvas-stack").then(
+      (mod) => mod.AttachmentCanvasStack
+    ),
+  { ssr: false }
+);
+
+const StatisticalWorkspace = dynamic(
+  () =>
+    import("@/components/statistical-analysis/workspace").then(
+      (mod) => mod.StatisticalWorkspace
+    ),
+  { ssr: false }
+);
+
+function loadWorkspaceShell() {
+  return Promise.all([
+    import("./documents/documents-panel"),
+    import("./report-sidebar"),
+    import("./chat-panel"),
+    import("./attachment-canvas-stack"),
+  ]);
+}
+
+const EDITORS_AFTER_SHELL_MS = 1000;
 
 export type { WorkspaceMode };
-
-/**
- * Section editors are all rendered at once, so they must not be lazy: a lazy
- * boundary that has not loaded when React hydrates makes React throw away the
- * server-rendered section and replace it with a fallback, silently discarding
- * focus and keystrokes typed into it.
- */
-import {
-  FirAttachmentsEditor,
-  FirBatchDispositionEditor,
-  FirCapaEffectivenessEditor,
-  FirChronologyEditor,
-  FirCorrectionEditor,
-  FirCorrectiveActionEditor,
-  FirEventDescriptionEditor,
-  FirHistoricReviewEditor,
-  FirHumanErrorEditor,
-  FirImmediateActionEditor,
-  FirImpactAssessmentEditor,
-  FirInitialImpactEditor,
-  FirInterimControlEditor,
-  FirInvestigationDetailsEditor,
-  FirInvestigationTeamEditor,
-  FirInvestigationToolsEditor,
-  FirPreventiveActionEditor,
-  FirRootCauseEditor,
-  FirScopeAssessmentEditor,
-  FirStandardProceduresEditor,
-} from "@/components/report/sections/fir/fir-section-editors";
-
-const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
-  define: DefineEditor,
-  measure: MeasureEditor,
-  analyze: AnalyzeEditor,
-  improve: ImproveEditor,
-  control: ControlEditor,
-  conclusion: ConclusionEditor,
-  documents_reviewed: DocumentsReviewedEditor,
-  attachments: AttachmentsEditor,
-  signature_approvals: SignatureApprovalsSection,
-};
-
-const DV_SECTION_EDITORS: Record<string, ComponentType> = {
-  cover_page: DvCoverPageEditor,
-  purpose_scope: DvPurposeScopeEditor,
-  references: DvReferencesEditor,
-  traceability: DvTraceabilityEditor,
-  test_methods: DvTestMethodsEditor,
-  test_results: DvTestResultsEditor,
-  deviations: DvDeviationsEditor,
-  conclusion: DvConclusionEditor,
-  approval_signoff: DvApprovalEditor,
-  appendices: DvAppendicesEditor,
-  purpose: DvPurposeEditor,
-  scope: DvScopeEditor,
-  testers_dates: DvTestersDatesEditor,
-  methods_of_measurement: DvMethodsOfMeasurementEditor,
-  test_equipment: DvTestEquipmentEditor,
-  results_and_discussions: DvResultsAndDiscussionsEditor,
-  problems_resolution: DvProblemsResolutionEditor,
-};
-
-const MECHANICAL_DV_SECTION_EDITORS: Record<string, ComponentType> = {
-  purpose: MechPurposeEditor,
-  scope: MechScopeEditor,
-  testers_dates: MechTestersDatesEditor,
-  executed_protocol: MechExecutedProtocolEditor,
-  protocol_deviations: MechProtocolDeviationsEditor,
-  units_under_test: MechUnitsUnderTestEditor,
-  equipment_and_calibration: MechTestEquipmentEditor,
-  failure_forms: MechFailureFormsEditor,
-  data_collection_forms: MechDataCollectionFormsEditor,
-  requirements_verified: MechRequirementsVerifiedEditor,
-  observations: MechObservationsEditor,
-  problems_resolution: MechProblemsResolutionEditor,
-  conclusion: MechConclusionEditor,
-  revision_history: MechRevisionHistoryEditor,
-};
-
-const QRA_SECTION_EDITORS: Record<string, ComponentType> = {
-  qra_approach: QraApproachEditor,
-  qra_objective: QraObjectiveEditor,
-  qra_scope: QraScopeEditor,
-  qra_overview: QraOverviewEditor,
-  qra_procedure: QraProcedureEditor,
-  qra_team: QraTeamEditor,
-  qra_risk_identification: QraRiskIdentificationEditor,
-  qra_fmea: QraFmeaEditor,
-  qra_communication: QraCommunicationEditor,
-  qra_pre_conclusion: QraPreConclusionEditor,
-  qra_mitigation: QraMitigationEditor,
-  qra_residual_risk: QraResidualRiskEditor,
-  qra_periodic_review: QraPeriodicReviewEditor,
-  qra_post_conclusion: QraPostConclusionEditor,
-  qra_revision_history: QraRevisionHistoryEditor,
-};
-
-const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
-  elr_objective: ElrObjectiveEditor,
-  elr_scope: ElrScopeEditor,
-  elr_responsibilities: ElrResponsibilitiesEditor,
-  elr_abbreviations: ElrAbbreviationsEditor,
-  elr_system_description: ElrSystemDescriptionEditor,
-  elr_qualification: ElrQualificationEditor,
-  elr_process_validation: ElrProcessValidationEditor,
-  elr_cleaning_validation: ElrCleaningValidationEditor,
-  elr_qra_review: ElrQraReviewEditor,
-  elr_media_fill: ElrMediaFillEditor,
-  elr_monitoring: ElrMonitoringEditor,
-  elr_calibration: ElrCalibrationEditor,
-  elr_preventive_maintenance: ElrPreventiveMaintenanceEditor,
-  elr_breakdowns: ElrBreakdownsEditor,
-  elr_qms: ElrQmsEditor,
-  elr_alarms: ElrAlarmsEditor,
-  elr_access_control: ElrAccessControlEditor,
-  elr_audit_trail: ElrAuditTrailEditor,
-  elr_csv_status: ElrCsvStatusEditor,
-  elr_discrepancies: ElrDiscrepanciesEditor,
-  elr_system_trends: ElrSystemTrendsEditor,
-  elr_risk_actions: ElrRiskActionsEditor,
-  elr_conclusion: ElrConclusionEditor,
-  elr_attachments: ElrAttachmentsEditor,
-  elr_revision_history: ElrRevisionHistoryEditor,
-};
-
-const FIR_SECTION_EDITORS: Record<string, ComponentType> = {
-  fir_event_description: FirEventDescriptionEditor,
-  fir_standard_procedures: FirStandardProceduresEditor,
-  fir_immediate_action: FirImmediateActionEditor,
-  fir_initial_impact: FirInitialImpactEditor,
-  fir_investigation_team: FirInvestigationTeamEditor,
-  fir_investigation_tools: FirInvestigationToolsEditor,
-  fir_chronology: FirChronologyEditor,
-  fir_investigation_details: FirInvestigationDetailsEditor,
-  fir_historic_review: FirHistoricReviewEditor,
-  fir_root_cause: FirRootCauseEditor,
-  fir_human_error: FirHumanErrorEditor,
-  fir_impact_assessment: FirImpactAssessmentEditor,
-  fir_scope_assessment: FirScopeAssessmentEditor,
-  fir_batch_disposition: FirBatchDispositionEditor,
-  fir_correction: FirCorrectionEditor,
-  fir_corrective_action: FirCorrectiveActionEditor,
-  fir_interim_control: FirInterimControlEditor,
-  fir_preventive_action: FirPreventiveActionEditor,
-  fir_capa_effectiveness: FirCapaEffectivenessEditor,
-  fir_attachments: FirAttachmentsEditor,
-};
-
-const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
-  DocumentType,
-  Record<string, ComponentType>
-> = {
-  investigation_report: INVESTIGATION_SECTION_EDITORS,
-  design_verification: DV_SECTION_EDITORS,
-  mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
-  generic_document: { body: GenericDocumentEditor },
-  quality_risk_assessment: QRA_SECTION_EDITORS,
-  equipment_lifecycle_report: ELR_SECTION_EDITORS,
-  vendor_qualification: VQ_SECTION_EDITORS,
-  failure_investigation_report: FIR_SECTION_EDITORS,
-  qualification_summary_report: QSR_SECTION_EDITORS,
-};
 
 export function ReportWorkspace({
   mode,
@@ -374,7 +222,43 @@ export function ReportWorkspace({
     currentUserRole,
     flushPendingSectionSaves,
   } = useReportData();
+  const sectionEditors = useDocumentSectionEditors(report.documentType);
   const { pendingPlaceholders } = useReportPlaceholders();
+
+  useEffect(() => {
+    emitWorkspaceLoadStage("workspace_mounted");
+  }, []);
+
+  const [editorsAllowed, setEditorsAllowed] = useState(false);
+  const didWarmupEditors = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = 0;
+    void loadWorkspaceShell().then(() => {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        setEditorsAllowed(true);
+        setLazyWorkspaceBackgroundMounts(true);
+      }, EDITORS_AFTER_SHELL_MS);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      // The queue is module state: without a reset, a section left in
+      // flight here would block every mount on the next report opened.
+      resetLazyWorkspaceMountQueue();
+    };
+  }, []);
+
+  const handleSectionMounted = useCallback((section: string) => {
+    emitWorkspaceLoadStage("section_mounted", { section });
+    emitWorkspaceLoadStage("first_editor_ready", { section });
+    if (didWarmupEditors.current) return;
+    didWarmupEditors.current = true;
+    warmupAllLazyWorkspaceSections();
+  }, []);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
@@ -465,7 +349,7 @@ export function ReportWorkspace({
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
   const reviewGutterAsideRef = useRef<HTMLElement>(null);
-  const [reviewGutterColumnPainted, setReviewGutterColumnPainted] =
+  const [reviewGutterColumnMeasured, setReviewGutterColumnMeasured] =
     useState(false);
   const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -547,6 +431,10 @@ export function ReportWorkspace({
   );
 
   useEffect(() => {
+    startPostHogSessionRecording();
+  }, []);
+
+  useEffect(() => {
     const justFinished = shouldRevealCriteriaTab({
       wasEvaluating: wasEvaluatingRef.current,
       isEvaluating,
@@ -562,19 +450,19 @@ export function ReportWorkspace({
   const showReviewGutter =
     reportSurface &&
     isReviewGutterVisible(commentsGutterVisible, false);
+  const reviewGutterColumnPainted =
+    showReviewGutter && reviewGutterColumnMeasured;
 
   useLayoutEffect(() => {
     if (!showReviewGutter) {
-      setReviewGutterColumnPainted(false);
       return;
     }
     const el = reviewGutterAsideRef.current;
     if (!el) {
-      setReviewGutterColumnPainted(false);
       return;
     }
     const update = () => {
-      setReviewGutterColumnPainted(isReviewGutterColumnPainted(el));
+      setReviewGutterColumnMeasured(isReviewGutterColumnPainted(el));
     };
     update();
     if (typeof ResizeObserver === "undefined") return;
@@ -726,12 +614,30 @@ export function ReportWorkspace({
 
   const signingInFlight = submitting || approving || sendingFeedback;
 
+  const jumpEpochRef = useRef(0);
+  const pendingJumpRef = useRef<SectionType | null>(null);
   const jumpToSection = useCallback((s: SectionType) => {
     setWorkProductView("report");
     setActiveTabId("report");
-    const el = mainRef.current?.querySelector(`#${s}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+    const epoch = ++jumpEpochRef.current;
+    if (!editorsAllowed) {
+      pendingJumpRef.current = s;
+      setEditorsAllowed(true);
+      setLazyWorkspaceBackgroundMounts(true);
+    }
+    return requestWorkspaceSectionMount(s).then(() => {
+      if (jumpEpochRef.current !== epoch) return;
+      const el = mainRef.current?.querySelector(`#${s}`);
+      if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
+    });
+  }, [editorsAllowed]);
+
+  useEffect(() => {
+    const s = pendingJumpRef.current;
+    if (!editorsAllowed || !s) return;
+    pendingJumpRef.current = null;
+    void requestWorkspaceSectionMount(s);
+  }, [editorsAllowed]);
 
   useEffect(() => {
     return () => {
@@ -758,7 +664,9 @@ export function ReportWorkspace({
       }
     });
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
-    const retryDelaysMs = [0, 50, 100, 200];
+    requestWorkspaceSectionMount(section);
+    // Wait for the urgent lazy mount (one frame) plus TipTap create.
+    const retryDelaysMs = [0, 50, 100, 200, 400, 800];
 
     const finish = (scrolled: boolean) => {
       if (cancelled) return;
@@ -857,8 +765,7 @@ export function ReportWorkspace({
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
-    jumpToSection(p.section);
-    requestAnimationFrame(() => {
+    void jumpToSection(p.section).then(() => {
       if (p.contentPath !== "narrative") {
         const anchor = document.querySelector(
           `[data-field-anchor="${p.section}.${p.contentPath}"]`
@@ -1256,6 +1163,7 @@ export function ReportWorkspace({
                   scrollable
                   scrollTabId="report"
                   testId="report-document-canvas"
+                  onScroll={notifyWorkspaceScroll}
                 >
                 <ReviewGutterPaintedProvider painted={reviewGutterColumnPainted}>
                 <div
@@ -1316,28 +1224,36 @@ export function ReportWorkspace({
                         continuousDocument ? "space-y-4" : "space-y-10"
                       )}
                     >
-                      {getWorkspaceSections(report.documentType).map((section) => {
-                        const s = section.key;
-                        const Editor =
-                          SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
-                            s
-                          ];
-                        if (!Editor) return null;
-                        const extra = showReviewGutter
-                          ? sectionMinHeights[s]
-                          : undefined;
-                        return (
-                          <section
-                            key={s}
-                            id={s}
-                            style={
-                              extra ? { paddingBottom: `${extra}px` } : undefined
-                            }
-                          >
-                            <Editor />
-                          </section>
-                        );
-                      })}
+                    {editorsAllowed ? (
+                      getWorkspaceSections(report.documentType).map(
+                        (section, index) => {
+                          const s = section.key;
+                          const Editor = sectionEditors?.[s];
+                          if (!Editor) return null;
+                          const extra = showReviewGutter
+                            ? sectionMinHeights[s]
+                            : undefined;
+                          return (
+                            <LazyWorkspaceSection
+                              key={s}
+                              id={s}
+                              title={section.label}
+                              eager={index < 1}
+                              onMounted={handleSectionMounted}
+                              style={
+                                extra
+                                  ? { paddingBottom: `${extra}px` }
+                                  : undefined
+                              }
+                            >
+                              <Editor />
+                            </LazyWorkspaceSection>
+                          );
+                        }
+                      )
+                    ) : (
+                      <ReportWorkspaceLoading />
+                    )}
                     </div>
                   </div>
                   {showReviewGutter ? (

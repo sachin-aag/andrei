@@ -10,7 +10,7 @@ import {
 } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canViewReport } from "@/lib/reports/access";
-import { loadReportSubtables } from "@/lib/reports/bundle";
+import { loadReportAuth, loadReportWorkspaceBody } from "@/lib/reports/bundle";
 import {
   DUPLICATE_DOCUMENT_NO_ERROR,
   isDocumentNoTaken,
@@ -42,40 +42,113 @@ import {
   investigationOtherTools,
   investigationToolsUsed,
 } from "@/types/report";
+import {
+  logWorkspaceLoadServer,
+  WORKSPACE_LOAD_ID_HEADER,
+} from "@/lib/workspace-load-telemetry";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const stages: Record<string, number> = {};
+  const started = Date.now();
   const { reportId } = await params;
+  const loadId = req.headers.get(WORKSPACE_LOAD_ID_HEADER) ?? undefined;
+  const hung = setTimeout(() => {
+    console.warn("[report-bundle] still waiting", {
+      reportId,
+      loadId,
+      elapsedMs: Date.now() - started,
+      stages,
+    });
+    logWorkspaceLoadServer({
+      reportId,
+      loadId,
+      stage: "bundle_get_waiting",
+      t: Date.now() - started,
+    });
+  }, 4000);
 
-  // Authorize before loading the heavier section/eval/comment rows so a
-  // forbidden request never pays for the full bundle fetch.
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const managerIds = await listReportManagerIds(reportId);
-  const reportWithManagers = withAssignedManagerIds(report, managerIds);
-  if (!canViewReport(user, reportWithManagers)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  try {
+    const userStarted = Date.now();
+    const user = await getCurrentUser();
+    stages.user = Date.now() - userStarted;
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [{ sections, evaluations, comments }, sourceDocxFilename] =
-    await Promise.all([
-      loadReportSubtables(reportId),
+    // Authorize before loading the heavier section/eval/comment rows so a
+    // forbidden request never pays for the full bundle fetch.
+    const authStarted = Date.now();
+    const reportWithManagers = await loadReportAuth(reportId);
+    stages.auth = Date.now() - authStarted;
+    if (!reportWithManagers) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (!canViewReport(user, reportWithManagers)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const bodyStarted = Date.now();
+    const [body, sourceDocxFilename] = await Promise.all([
+      loadReportWorkspaceBody(reportId),
       sourceDocxFilenameFor(reportId),
     ]);
+    stages.body = Date.now() - bodyStarted;
+    Object.assign(stages, body.stages);
 
-  return NextResponse.json({
-    report: { ...reportWithManagers, sourceDocxFilename },
-    sections,
-    evaluations,
-    comments,
-  });
+    const payload = {
+      report: { ...reportWithManagers, sourceDocxFilename },
+      sections: body.sections,
+      evaluations: body.evaluations,
+      comments: body.comments,
+      attachments: [],
+      attachmentFolders: [],
+    };
+    const jsonStarted = Date.now();
+    const text = JSON.stringify(payload);
+    stages.stringify = Date.now() - jsonStarted;
+    stages.total = Date.now() - started;
+    console.info("[report-bundle]", {
+      reportId,
+      loadId,
+      documentType: reportWithManagers.documentType,
+      sections: body.sections.length,
+      comments: body.comments.length,
+      bytes: text.length,
+      stageMs: stages,
+    });
+    logWorkspaceLoadServer({
+      reportId,
+      loadId,
+      documentType: reportWithManagers.documentType,
+      stage: "bundle_get",
+      t: stages.total,
+      extra: {
+        sections: body.sections.length,
+        comments: body.comments.length,
+        bytes: text.length,
+        user: stages.user,
+        auth: stages.auth,
+        body: stages.body,
+        stringify: stages.stringify,
+      },
+    });
+    return new NextResponse(text, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    console.error("[report-bundle]", {
+      reportId,
+      loadId,
+      elapsedMs: Date.now() - started,
+      stages,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  } finally {
+    clearTimeout(hung);
+  }
 }
 
 const patchSchema = z.object({

@@ -344,7 +344,6 @@ type ReportEditorsContextValue = Pick<
   | "activeEditorKey"
   | "setActiveEditor"
   | "getActiveEditor"
-  | "editorTick"
 >;
 
 const ReportDataContext = createContext<ReportDataContextValue | null>(null);
@@ -353,6 +352,8 @@ const ReportPlaceholdersContext = createContext<ReportPlaceholdersContextValue |
 const ReportCommentsContext = createContext<ReportCommentsContextValue | null>(null);
 const ReportEvaluationContext = createContext<ReportEvaluationContextValue | null>(null);
 const ReportEditorsContext = createContext<ReportEditorsContextValue | null>(null);
+/** Isolated so editor register/update ticks cannot re-render every field and the chat shell. */
+const ReportEditorTickContext = createContext(0);
 const DefineSectionContext = createContext<ReportSectionContextValue<SectionContentMap["define"]> | null>(null);
 const MeasureSectionContext = createContext<ReportSectionContextValue<SectionContentMap["measure"]> | null>(null);
 const AnalyzeSectionContext = createContext<ReportSectionContextValue<SectionContentMap["analyze"]> | null>(null);
@@ -520,11 +521,10 @@ export function ReportProvider({
       setEditorTick((n) => n + 1);
 
       // Coalesce rapid bursts of `update` events into one state bump per frame.
-      // We intentionally do NOT subscribe to `transaction` — selection-only and
-      // decoration-only transactions would cause re-render storms that can in
-      // turn trigger more transactions (focus shuffling, etc.) and infinite
-      // loops. `update` only fires when the doc actually changes, which is the
-      // only thing that can move our anchor positions.
+      // Tick lives on its own context: TiptapSectionField, ReportWorkspace, and
+      // ChatPanel must not re-render when an editor registers or the doc changes.
+      // Do NOT subscribe to `transaction` — selection-only and decoration-only
+      // transactions re-render the gutter and can loop with more transactions.
       let frame: number | null = null;
       const onUpdate = () => {
         if (frame != null) return;
@@ -1254,7 +1254,6 @@ export function ReportProvider({
       activeEditorKey,
       setActiveEditor,
       getActiveEditor,
-      editorTick,
     }),
     [
       registerEditor,
@@ -1266,7 +1265,6 @@ export function ReportProvider({
       activeEditorKey,
       setActiveEditor,
       getActiveEditor,
-      editorTick,
     ]
   );
 
@@ -1287,6 +1285,7 @@ export function ReportProvider({
                           <ReportEvaluationContext.Provider value={evaluationValue}>
                             <ReportCommentsContext.Provider value={commentsValue}>
                               <ReportEditorsContext.Provider value={editorsValue}>
+                                <ReportEditorTickContext.Provider value={editorTick}>
                                 <ReportAttachmentsProvider
                                   key={report.id}
                                   reportId={report.id}
@@ -1303,6 +1302,7 @@ export function ReportProvider({
                                     {children}
                                   </TableRefNumbersProvider>
                                 </ReportAttachmentsProvider>
+                                </ReportEditorTickContext.Provider>
                               </ReportEditorsContext.Provider>
                             </ReportCommentsContext.Provider>
                           </ReportEvaluationContext.Provider>
@@ -1327,6 +1327,7 @@ export function useReport(): ReportContextValue {
   const evaluations = useReportEvaluations();
   const comments = useReportComments();
   const editors = useReportEditors();
+  const editorTick = useReportEditorTick();
 
   return useMemo(
     () => ({
@@ -1336,8 +1337,9 @@ export function useReport(): ReportContextValue {
       ...evaluations,
       ...comments,
       ...editors,
+      editorTick,
     }),
-    [data, sections, placeholders, evaluations, comments, editors]
+    [data, sections, placeholders, evaluations, comments, editors, editorTick]
   );
 }
 
@@ -1445,4 +1447,8 @@ export function useReportEditors() {
   const ctx = useContext(ReportEditorsContext);
   if (!ctx) throw new Error("useReportEditors must be used within ReportProvider");
   return ctx;
+}
+
+export function useReportEditorTick() {
+  return useContext(ReportEditorTickContext);
 }

@@ -56,15 +56,20 @@ test.describe("report editor", () => {
   });
 
   test("shows all DMAIC and structural sections", async ({ page }) => {
-    for (const title of ["Define", "Measure", "Analyze", "Improve", "Control"]) {
+    for (const { id, title } of [
+      { id: "define", title: "Define" },
+      { id: "measure", title: "Measure" },
+      { id: "analyze", title: "Analyze" },
+      { id: "improve", title: "Improve" },
+      { id: "control", title: "Control" },
+      { id: "documents_reviewed", title: "Documents Reviewed" },
+      { id: "attachments", title: "Attachments" },
+    ] as const) {
+      await page.locator(`#${id}`).scrollIntoViewIfNeeded();
       await expect(
         page.getByRole("heading", { name: new RegExp(`^${title}$`, "i") })
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
     }
-    await expect(
-      page.getByRole("heading", { name: /documents reviewed/i })
-    ).toBeVisible();
-    await expect(page.getByRole("heading", { name: /^attachments$/i })).toBeVisible();
     // Blank reports omit signature approvals until a DOCX with that table is imported.
     await expect(
       page.getByRole("heading", { name: /approvals \(qc \/ qa\)/i })
