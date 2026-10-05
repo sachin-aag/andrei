@@ -7,6 +7,7 @@ import type { UserRole } from "@/lib/auth/roles";
 import type { ReportBundle } from "@/types/report";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import { ReportProvider } from "@/providers/report-provider";
+import { Button } from "@/components/ui/button";
 import { ReportWorkspaceLoading } from "@/components/report/report-workspace-loading";
 import {
   fetchWorkspaceBundle,
@@ -29,6 +30,9 @@ const ReportWorkspace = dynamic(
     ),
   { ssr: false, loading: () => <ReportWorkspaceLoading /> }
 );
+
+const EDITORS_LOAD_ERROR =
+  "The editor could not be loaded. Check your connection and try again.";
 
 /**
  * /edit used to stream the full bundle through the RSC client boundary.
@@ -58,6 +62,7 @@ export function ReportWorkspaceLoader({
   const [editorsReady, setEditorsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadId] = useState(newWorkspaceLoadId);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     startWorkspaceLoadTelemetry({ reportId, documentType, loadId });
@@ -71,22 +76,26 @@ export function ReportWorkspaceLoader({
 
   useEffect(() => {
     let cancelled = false;
-    void loadSectionEditors(documentType).then(
-      () => {
-        if (cancelled) return;
-        emitWorkspaceLoadStage("editors_chunk_ready");
-        setEditorsReady(true);
-      },
-      () => {
-        if (cancelled) return;
-        emitWorkspaceLoadStage("editors_chunk_ready", { failed: true });
-        setEditorsReady(true);
-      }
-    );
+    // A failed chunk is usually a stale tab after a deploy or a network
+    // blip. Retry once, then say so — an empty workspace helps nobody.
+    void loadSectionEditors(documentType)
+      .catch(() => loadSectionEditors(documentType))
+      .then(
+        () => {
+          if (cancelled) return;
+          emitWorkspaceLoadStage("editors_chunk_ready");
+          setEditorsReady(true);
+        },
+        () => {
+          if (cancelled) return;
+          emitWorkspaceLoadStage("editors_chunk_ready", { failed: true });
+          setError(EDITORS_LOAD_ERROR);
+        }
+      );
     return () => {
       cancelled = true;
     };
-  }, [documentType]);
+  }, [documentType, attempt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,12 +119,35 @@ export function ReportWorkspaceLoader({
     return () => {
       cancelled = true;
     };
-  }, [reportId, loadId]);
+  }, [reportId, loadId, attempt]);
 
   if (error) {
     return (
-      <div className="flex min-h-[50vh] flex-1 items-center justify-center bg-[var(--background)]">
+      <div
+        role="alert"
+        className="flex min-h-[50vh] flex-1 flex-col items-center justify-center gap-3 bg-[var(--background)]"
+      >
         <p className="text-sm text-[var(--muted-foreground)]">{error}</p>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              setError(null);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => window.location.reload()}
+          >
+            Reload page
+          </Button>
+        </div>
       </div>
     );
   }

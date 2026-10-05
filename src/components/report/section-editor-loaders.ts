@@ -93,9 +93,13 @@ export function useDocumentSectionEditors(documentType: DocumentType) {
 
   useEffect(() => {
     let cancelled = false;
-    void loadSectionEditors(documentType).then((map) => {
-      if (!cancelled) setEditors(map);
-    });
+    void loadSectionEditors(documentType).then(
+      (map) => {
+        if (!cancelled) setEditors(map);
+      },
+      // ReportWorkspaceLoader owns the retry and the error screen.
+      () => {}
+    );
     return () => {
       cancelled = true;
     };

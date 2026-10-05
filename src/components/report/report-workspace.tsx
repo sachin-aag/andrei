@@ -23,6 +23,7 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 import {
   LazyWorkspaceSection,
   notifyWorkspaceScroll,
+  resetLazyWorkspaceMountQueue,
   requestWorkspaceSectionMount,
   setLazyWorkspaceBackgroundMounts,
   warmupAllLazyWorkspaceSections,
@@ -245,7 +246,9 @@ export function ReportWorkspace({
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
-      setLazyWorkspaceBackgroundMounts(false);
+      // The queue is module state: without a reset, a section left in
+      // flight here would block every mount on the next report opened.
+      resetLazyWorkspaceMountQueue();
     };
   }, []);
 

@@ -2,7 +2,11 @@ import type { ReportBundle } from "@/types/report";
 import { emitWorkspaceLoadStage } from "@/lib/workspace-load-telemetry-client";
 import { WORKSPACE_LOAD_ID_HEADER } from "@/lib/workspace-load-telemetry";
 
-export const WORKSPACE_BUNDLE_TIMEOUT_MS = 10_000;
+/**
+ * Slow is acceptable, a dead spinner is not: long enough for a cold
+ * serverless start on a large report, and the error screen offers a retry.
+ */
+export const WORKSPACE_BUNDLE_TIMEOUT_MS = 45_000;
 
 const inflightByReportId = new Map<string, Promise<ReportBundle>>();
 

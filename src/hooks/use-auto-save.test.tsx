@@ -257,6 +257,8 @@ describe("useAutoSave", () => {
     expect(result.current.status).toBe("saving");
 
     rerender({ value: "dirty", enabled: false });
+    // The status reset is queued as a microtask after the effect.
+    await act(async () => {});
     expect(result.current.status).toBe("idle");
     expect(onSave).not.toHaveBeenCalled();
 
@@ -408,6 +410,7 @@ describe("useAutoSave", () => {
 
     rerender({ value: "stale", enabled: false });
     expect(capturedSignal?.aborted).toBe(true);
+    await act(async () => {});
     expect(result.current.status).toBe("idle");
 
     await act(async () => {

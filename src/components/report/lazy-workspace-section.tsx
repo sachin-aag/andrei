@@ -1,5 +1,6 @@
 "use client";
 
+import { SectionErrorBoundary } from "@/components/report/section-error-boundary";
 import {
   startTransition,
   useEffect,
@@ -26,11 +27,15 @@ export const JUMP_SCROLL_WAIT_MS = 1500;
 const MOUNT_YIELD_MS = 50;
 const SCROLL_QUIET_MS = 200;
 const WARMUP_IDLE_TIMEOUT_MS = 4000;
+/** A mount that never reports back must not hold every later section. */
+const IN_FLIGHT_WATCHDOG_MS = 8000;
 const IS_TEST = process.env.VITEST === "true";
 
 const mountQueue: MountJob[] = [];
 let flushing = false;
 let inFlight = false;
+let inFlightId: string | null = null;
+let inFlightTimer = 0;
 let allowBackgroundMounts = false;
 let rafHandle = 0;
 let idleHandle = 0;
@@ -208,11 +213,36 @@ function flush() {
     return;
   }
   inFlight = true;
+  inFlightId = next.id;
+  if (typeof window !== "undefined") {
+    window.clearTimeout(inFlightTimer);
+    inFlightTimer = window.setTimeout(
+      () => releaseLazyWorkspaceMount(next.id),
+      IN_FLIGHT_WATCHDOG_MS
+    );
+  }
   try {
     next.run();
   } finally {
     flushing = false;
   }
+}
+
+function clearInFlight() {
+  inFlight = false;
+  inFlightId = null;
+  if (typeof window !== "undefined") window.clearTimeout(inFlightTimer);
+  inFlightTimer = 0;
+}
+
+/**
+ * Let the queue move on when the in-flight section will never report: it
+ * unmounted (the user left the report mid-mount) or its commit stalled.
+ */
+export function releaseLazyWorkspaceMount(id: string) {
+  if (inFlightId !== id) return;
+  clearInFlight();
+  if (mountQueue.length > 0) scheduleFlush();
 }
 
 function resolveReadyWaiters(id: string) {
@@ -224,7 +254,9 @@ function resolveReadyWaiters(id: string) {
 
 function markSectionMounted(id: string) {
   mountedSectionIds.add(id);
-  inFlight = false;
+  // A late report from a section the watchdog already released must not
+  // unblock whichever section is in flight now.
+  if (inFlightId === null || inFlightId === id) clearInFlight();
   if (jumpTarget === id) {
     jumpTarget = null;
     if (typeof window !== "undefined") window.clearTimeout(jumpTimer);
@@ -352,7 +384,7 @@ export function resetLazyWorkspaceMountQueue() {
   scrollEndTimer = 0;
   jumpTarget = null;
   scrollQuiet = true;
-  inFlight = false;
+  clearInFlight();
   allowBackgroundMounts = false;
   cancelScheduledFlush();
   mountQueue.length = 0;
@@ -394,6 +426,13 @@ export function LazyWorkspaceSection({
     markSectionMounted(id);
     onMounted?.(id);
   }, [mounted, id, onMounted]);
+
+  useEffect(
+    () => () => {
+      releaseLazyWorkspaceMount(id);
+    },
+    [id]
+  );
 
   useEffect(() => {
     if (mounted) return;
@@ -467,7 +506,9 @@ export function LazyWorkspaceSection({
   return (
     <section ref={ref} id={id} style={style} className="min-h-32">
       {mounted ? (
-        children
+        <SectionErrorBoundary section={id} title={title}>
+          {children}
+        </SectionErrorBoundary>
       ) : (
         <h2 className="text-xl font-semibold">{title}</h2>
       )}

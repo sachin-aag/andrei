@@ -345,4 +345,68 @@ describe("LazyWorkspaceSection", () => {
     expect(screen.getByText("Alarms body")).toBeInTheDocument();
     vi.useRealTimers();
   });
+  it("keeps the other sections when one throws while rendering", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Broken(): never {
+      throw new Error("bad table node");
+    }
+
+    render(
+      <>
+        <LazyWorkspaceSection id="elr_qms" title="QMS" eager>
+          <Broken />
+        </LazyWorkspaceSection>
+        <LazyWorkspaceSection id="elr_alarms" title="Alarms" eager>
+          <p>Alarms body</p>
+        </LazyWorkspaceSection>
+      </>
+    );
+    // One section per frame; the broken one must still hand the queue on.
+    for (let i = 0; i < 4 && frames.length > 0; i += 1) {
+      act(() => {
+        frames.shift()?.(0);
+      });
+    }
+
+    expect(screen.getByTestId("section-error-elr_qms")).toHaveTextContent(
+      "This section could not be displayed."
+    );
+    expect(screen.getByRole("heading", { name: /^qms$/i })).toBeInTheDocument();
+    expect(screen.getByText("Alarms body")).toBeInTheDocument();
+    consoleError.mockRestore();
+  });
+
+  it("does not block the next report when a section unmounts mid-mount", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+
+    const first = render(
+      <LazyWorkspaceSection id="elr_objective" title="Objective" eager>
+        <p>First report</p>
+      </LazyWorkspaceSection>
+    );
+    // Start the mount, then leave the page before React commits it.
+    frames.shift()?.(0);
+    first.unmount();
+
+    render(
+      <LazyWorkspaceSection id="elr_objective" title="Objective" eager>
+        <p>Second report</p>
+      </LazyWorkspaceSection>
+    );
+    for (let i = 0; i < 4 && frames.length > 0; i += 1) {
+      act(() => {
+        frames.shift()?.(0);
+      });
+    }
+    expect(screen.getByText("Second report")).toBeInTheDocument();
+  });
 });

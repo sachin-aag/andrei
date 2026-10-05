@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReportWorkspaceLoader } from "./report-workspace-loader";
 import { WorkspaceLoadError } from "./report-workspace-bundle";
@@ -19,8 +19,10 @@ vi.mock("@/providers/report-provider", () => ({
   ),
 }));
 
+const loadSectionEditors = vi.fn((): Promise<unknown> => Promise.resolve({}));
+
 vi.mock("./section-editor-loaders", () => ({
-  loadSectionEditors: vi.fn(() => Promise.resolve({})),
+  loadSectionEditors: () => loadSectionEditors(),
 }));
 
 const fetchWorkspaceBundle = vi.fn();
@@ -37,6 +39,8 @@ vi.mock("./report-workspace-bundle", async () => {
 
 afterEach(() => {
   fetchWorkspaceBundle.mockReset();
+  loadSectionEditors.mockReset();
+  loadSectionEditors.mockImplementation(() => Promise.resolve({}));
 });
 
 const props = {
@@ -68,5 +72,36 @@ describe("ReportWorkspaceLoader", () => {
         )
       ).toBeInTheDocument();
     });
+  });
+  it("retries the report request from the error screen", async () => {
+    fetchWorkspaceBundle
+      .mockRejectedValueOnce(
+        new WorkspaceLoadError({ status: 0, message: "The report could not be loaded." })
+      )
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<ReportWorkspaceLoader {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+    await waitFor(() => {
+      expect(fetchWorkspaceBundle).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText("Loading report…")).toBeInTheDocument();
+  });
+
+  it("retries a failed editor chunk once, then says the editor did not load", async () => {
+    fetchWorkspaceBundle.mockReturnValue(new Promise(() => {}));
+    loadSectionEditors.mockImplementation(() =>
+      Promise.reject(new Error("ChunkLoadError"))
+    );
+
+    render(<ReportWorkspaceLoader {...props} />);
+
+    expect(
+      await screen.findByText(
+        "The editor could not be loaded. Check your connection and try again."
+      )
+    ).toBeInTheDocument();
+    expect(loadSectionEditors).toHaveBeenCalledTimes(2);
   });
 });
