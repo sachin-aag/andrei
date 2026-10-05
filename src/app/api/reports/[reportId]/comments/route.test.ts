@@ -103,6 +103,41 @@ describe("/api/reports/[reportId]/comments", () => {
     });
   });
 
+  it("GET omits resolved AI suggestion rows", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockAccessSelects([report], [manager.id]);
+    mockSelectOrdered([
+      {
+        id: "fix-1",
+        kind: "ai_fix",
+        status: "resolved",
+        content: '{"tableOperation":{"kind":"insert_rows"}}',
+      },
+      {
+        id: "human-1",
+        kind: "human",
+        status: "open",
+        content: "Please clarify.",
+      },
+    ]);
+
+    const response = await GET(new Request("http://localhost/comments"), {
+      params: Promise.resolve({ reportId: report.id }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      comments: [
+        {
+          id: "human-1",
+          kind: "human",
+          status: "open",
+          content: "Please clarify.",
+        },
+      ],
+    });
+  });
+
   it("POST returns 401 when unauthenticated", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(null);
 

@@ -987,8 +987,6 @@ export function SectionSuggestionCard({
     comments,
     evaluations,
     sectionOrder,
-    report.id,
-    report.documentType,
     report,
     setReport,
     replaceSection,

@@ -168,6 +168,19 @@ export async function waitForReportEditor(page: Page): Promise<void> {
   await expect(defineEditor(page)).toBeVisible({ timeout: 30_000 });
 }
 
+/** Scroll a lazy section shell into view so TipTap mounts, then wait for it. */
+export async function waitForSectionEditor(
+  page: Page,
+  section: string
+): Promise<void> {
+  const shell = page.locator(`#${section}`);
+  await expect(shell).toBeVisible({ timeout: 30_000 });
+  await shell.scrollIntoViewIfNeeded();
+  await expect(shell.locator(".ProseMirror").first()).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 export async function openReportEditor(
   page: Page,
   reportId: string,

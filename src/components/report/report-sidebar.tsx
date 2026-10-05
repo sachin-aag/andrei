@@ -79,6 +79,11 @@ export function ReportSidebar({
   const analyticsSurface = workProductView === "analytics";
   const chatVisible =
     !collapsed && (analyticsSurface || activeTab === "assistant");
+  const chatRequested = analyticsSurface || activeTab === "assistant";
+  const [chatHasOpened, setChatHasOpened] = useState(false);
+  if (chatRequested && !chatHasOpened) {
+    setChatHasOpened(true);
+  }
   const chatShellRef = useRef<HTMLDivElement>(null);
   const wasChatVisibleRef = useRef(chatVisible);
   const [holdChatPark, setHoldChatPark] = useState(false);
@@ -256,7 +261,8 @@ export function ReportSidebar({
         </div>
       )}
 
-      {/* ChatPanel stays mounted across collapse, tab, and work-product
+      {/* ChatPanel is requested only after Assistant (or Analytics) is first
+          opened, then stays mounted across collapse, tab, and work-product
           changes so the thread, composer prefs, and rendered markdown are
           not reset. Hide with visibility (not display:none) so the scroller
           keeps its layout box and scrollTop through the width animation.
@@ -268,6 +274,7 @@ export function ReportSidebar({
           parkChat && "overflow-hidden"
         )}
       >
+        {chatHasOpened ? (
         <div
           ref={chatShellRef}
           className={cn(
@@ -294,6 +301,7 @@ export function ReportSidebar({
             mentionSheets={analyticsMentionSheets}
           />
         </div>
+        ) : null}
         {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
           <div
             className="h-full min-h-0 overflow-y-auto p-4 min-w-0"

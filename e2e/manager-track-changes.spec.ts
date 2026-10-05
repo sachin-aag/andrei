@@ -6,7 +6,7 @@ import {
 } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
 import { createReport, deleteReport } from "./helpers/reports";
-import { defineEditor, defineSection, analyzePlainField, openReportEditor, waitForReportEditor } from "./helpers/workspace";
+import { defineEditor, defineSection, analyzePlainField, openReportEditor, waitForReportEditor, waitForSectionEditor } from "./helpers/workspace";
 import { signedWorkflowPayload } from "./helpers/signing";
 
 function improveEditor(page: Page) {
@@ -84,9 +84,7 @@ test.describe("manager track changes persist", () => {
   test("saves Improve track-changes edits across reload", async ({ page }) => {
     await authenticateAsManager(page);
     await openReportEditor(page, reportId!, { mode: "review" });
-    await expect(page.getByRole("heading", { name: /^improve$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await waitForSectionEditor(page, "improve");
 
     const mark = `mgr-improve-${Date.now()}`;
     const editor = improveEditor(page);
@@ -101,9 +99,7 @@ test.describe("manager track changes persist", () => {
     });
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: /^improve$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await waitForSectionEditor(page, "improve");
     await expect(improveEditor(page)).toContainText(mark, { timeout: 30_000 });
   });
 
@@ -135,9 +131,7 @@ test.describe("manager track changes persist", () => {
     expect(seed.ok(), `seed improve failed (${seed.status()})`).toBeTruthy();
 
     await openReportEditor(page, reportId!, { mode: "review" });
-    await expect(page.getByRole("heading", { name: /^improve$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await waitForSectionEditor(page, "improve");
 
     const editor = improveEditor(page);
     await editor.scrollIntoViewIfNeeded();
@@ -302,9 +296,7 @@ test.describe("manager track changes persist", () => {
     ).toBeTruthy();
 
     await openReportEditor(page, reportId!, { mode: "review" });
-    await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await waitForSectionEditor(page, "analyze");
 
     const field = analyzePlainField(page, "brainstorming");
     const shell = page.locator('[data-field-shell="analyze.brainstorming"]');
@@ -328,14 +320,8 @@ test.describe("manager track changes persist", () => {
   test("marks Brainstorming and Other Tools typing as inserts", async ({ page }) => {
     await authenticateAsManager(page);
     await openReportEditor(page, reportId!, { mode: "review" });
-    await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
-      timeout: 30_000,
-    });
-    // Section editors load in parallel. Control is below Analyze; once it is
-    // mounted, height changes above Brainstorming have settled.
-    await expect(page.getByRole("heading", { name: /^control$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await waitForSectionEditor(page, "analyze");
+    await waitForSectionEditor(page, "control");
 
     for (const contentPath of ["brainstorming", "otherTools"] as const) {
       const field = analyzePlainField(page, contentPath);

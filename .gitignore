@@ -129,6 +129,9 @@ scripts/eval/chat-draft-cases.local.json
 # Local marketing film build (HTML recorder, vendor assets, dist)
 /marketing/
 
+# Playwright CPU profiles from pnpm profile:report-edit
+artifacts/profile-report-edit/
+
 # Large media artifacts (keep out of git)
 *.mp4
 *.mov

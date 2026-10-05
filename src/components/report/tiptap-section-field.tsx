@@ -425,6 +425,10 @@ export function TiptapSectionField({
     endSuggestionApplyTransition,
   } = useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
+  const sectionsRef = useRef(sections);
+  useLayoutEffect(() => {
+    sectionsRef.current = sections;
+  }, [sections]);
   const { getUser } = useUserDirectory();
   const activeSuggestionId = activeSuggestionIdForSection(section);
   const suggestionWidgetStateRef = useRef<SuggestionActionWidgetState>({
@@ -553,6 +557,12 @@ export function TiptapSectionField({
   useLayoutEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+  /**
+   * Extension onCreate runs before the field's onCreate and the normalize
+   * transaction is the first update after paint — not a microtask. Stay
+   * silent until two frames after the editor instance exists.
+   */
+  const skipHydrateUpdateRef = useRef(true);
 
   const editable = isTrackChangesFieldEditable({
     locked,
@@ -616,6 +626,7 @@ export function TiptapSectionField({
       content: normalizeRichField(value, richFieldOptions),
       editable,
       onUpdate: ({ editor: ed }) => {
+        if (skipHydrateUpdateRef.current) return;
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
@@ -624,6 +635,20 @@ export function TiptapSectionField({
     [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
   );
 
+  useEffect(() => {
+    if (!editor) return;
+    skipHydrateUpdateRef.current = true;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        skipHydrateUpdateRef.current = false;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [editor]);
 
   useLayoutEffect(() => {
     handlersRef.current = {
@@ -1031,7 +1056,10 @@ export function TiptapSectionField({
     applyExternalValueToEditor();
   }, [applyExternalValueToEditor]);
 
-  const richContentKey = isRichField ? JSON.stringify(value) : "";
+  const richContentKey = useMemo(
+    () => (isRichField ? JSON.stringify(value) : ""),
+    [isRichField, value]
+  );
 
   const previewHeld = isRichField && isSuggestionPreviewHeld(section);
   const previewHeldMode = previewHeld
@@ -1197,7 +1225,7 @@ export function TiptapSectionField({
                 documentContents: documentContentsFromReportState({
                   documentType: report.documentType,
                   sections: {
-                    ...sections,
+                    ...sectionsRef.current,
                     [section]: sectionContent as Record<string, unknown>,
                   },
                   comments: comments.filter(
@@ -1302,7 +1330,6 @@ export function TiptapSectionField({
     previewHeld,
     section,
     sectionContent,
-    sections,
     report.documentType,
     suggestionApplyTransition,
     value,

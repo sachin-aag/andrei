@@ -109,12 +109,10 @@ function mockOrderedSelectOnce(rows: unknown[]) {
 function mockBundleSelects() {
   mockSelectOnce([report]);
   mockOrderedSelectOnce([]);
-  // loadReportSubtables: sections, evaluations, comments, attachments, folders.
+  // loadReportWorkspaceBody: sections, evaluations, comments.
   mockSelectOnce([]);
   mockSelectOnce([]);
   mockSelectOnce([]);
-  mockOrderedSelectOnce([]);
-  mockOrderedSelectOnce([]);
 }
 
 function mockManagerValidation(managerIds: string[]) {
@@ -175,6 +173,8 @@ describe("GET /api/reports/[reportId]", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.report.id).toBe(report.id);
+    expect(body.attachments).toEqual([]);
+    expect(body.attachmentFolders).toEqual([]);
   });
 
   it("allows authors to fetch their own report bundle", async () => {

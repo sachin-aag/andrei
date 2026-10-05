@@ -254,7 +254,9 @@ export function useAutoSave<T>({
         clearTimeout(timer.current);
         timer.current = null;
       }
-      setStatus((current) => (current === "saving" ? "idle" : current));
+      queueMicrotask(() => {
+        setStatus((current) => (current === "saving" ? "idle" : current));
+      });
       return;
     }
     const next = serializeValue(value);

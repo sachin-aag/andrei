@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { Label } from "@/components/ui/label";
 import { SectionShell } from "@/components/report/sections/section-shell";
@@ -655,3 +656,31 @@ export function ElrRevisionHistoryEditor() {
     />
   );
 }
+
+export const ELR_SECTION_EDITORS: Record<string, ComponentType> = {
+  elr_objective: ElrObjectiveEditor,
+  elr_scope: ElrScopeEditor,
+  elr_responsibilities: ElrResponsibilitiesEditor,
+  elr_abbreviations: ElrAbbreviationsEditor,
+  elr_system_description: ElrSystemDescriptionEditor,
+  elr_qualification: ElrQualificationEditor,
+  elr_process_validation: ElrProcessValidationEditor,
+  elr_cleaning_validation: ElrCleaningValidationEditor,
+  elr_qra_review: ElrQraReviewEditor,
+  elr_media_fill: ElrMediaFillEditor,
+  elr_monitoring: ElrMonitoringEditor,
+  elr_calibration: ElrCalibrationEditor,
+  elr_preventive_maintenance: ElrPreventiveMaintenanceEditor,
+  elr_breakdowns: ElrBreakdownsEditor,
+  elr_qms: ElrQmsEditor,
+  elr_alarms: ElrAlarmsEditor,
+  elr_access_control: ElrAccessControlEditor,
+  elr_audit_trail: ElrAuditTrailEditor,
+  elr_csv_status: ElrCsvStatusEditor,
+  elr_discrepancies: ElrDiscrepanciesEditor,
+  elr_system_trends: ElrSystemTrendsEditor,
+  elr_risk_actions: ElrRiskActionsEditor,
+  elr_conclusion: ElrConclusionEditor,
+  elr_attachments: ElrAttachmentsEditor,
+  elr_revision_history: ElrRevisionHistoryEditor,
+};

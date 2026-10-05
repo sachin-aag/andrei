@@ -8,6 +8,7 @@ import {
   reviewMargin,
   setReportChrome,
   showReviewMargin,
+  waitForSectionEditor,
 } from "./helpers/workspace";
 
 const ANCHOR = "a deviation was observed during testing";
@@ -392,6 +393,7 @@ test.describe("document-wide apply all and dismiss all", () => {
 
     // The measure suggestion was applied without ever opening that section.
     await expect(bulkApplyAll(page)).toHaveCount(0, { timeout: 15_000 });
+    await waitForSectionEditor(page, "measure");
     const measure = page.locator("#measure .ProseMirror");
     await expect(measure).toContainText("using a calibrated balance", {
       timeout: 15_000,
@@ -410,6 +412,7 @@ test.describe("document-wide apply all and dismiss all", () => {
     await expect(editor).not.toContainText("filling line FL-02");
     await expect(editor).not.toContainText("by 12%");
     await expect(bulkDismissAll(page)).toHaveCount(0, { timeout: 15_000 });
+    await waitForSectionEditor(page, "measure");
     await expect(page.locator("#measure .ProseMirror")).not.toContainText(
       "using a calibrated balance"
     );

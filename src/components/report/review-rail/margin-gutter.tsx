@@ -13,6 +13,7 @@ import {
 import {
   useReportComments,
   useReportData,
+  useReportEditorTick,
   useReportEditors,
   useReportEvaluations,
 } from "@/providers/report-provider";
@@ -265,7 +266,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     setActiveCommentId,
     hoveredCommentIds,
   } = useReportComments();
-  const { getEditor, editorTick } = useReportEditors();
+  const { getEditor } = useReportEditors();
+  const editorTick = useReportEditorTick();
   const {
     evaluations,
     gutterSuggestionCommentForSection,
