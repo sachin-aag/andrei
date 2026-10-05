@@ -9,6 +9,10 @@ vi.mock("next/dynamic", () => ({
   default: () => () => null,
 }));
 
+vi.mock("@/components/report/report-workspace", () => ({
+  ReportWorkspace: () => null,
+}));
+
 vi.mock("@/providers/report-provider", () => ({
   ReportProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>

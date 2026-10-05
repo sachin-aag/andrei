@@ -213,10 +213,34 @@ export function ReportWorkspace({
     emitWorkspaceLoadStage("workspace_mounted");
   }, []);
 
+  const [shellReady, setShellReady] = useState(false);
+  const [firstSectionMounted, setFirstSectionMounted] = useState(false);
+
   const handleSectionMounted = useCallback((section: string) => {
     emitWorkspaceLoadStage("section_mounted", { section });
     emitWorkspaceLoadStage("first_editor_ready", { section });
+    setFirstSectionMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!firstSectionMounted || shellReady) return;
+    let cancelled = false;
+    const finish = () => {
+      if (!cancelled) setShellReady(true);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(finish, { timeout: 2000 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+    const timer = window.setTimeout(finish, 1);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [firstSectionMounted, shellReady]);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
@@ -955,12 +979,16 @@ export function ReportWorkspace({
           )}
           style={{ width: docsWidth }}
         >
-          <DocumentsPanel
-            collapsed={documentsCollapsed}
-            onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
-            documentType={report.documentType}
-            onJumpToSection={jumpToSection}
-          />
+          {shellReady ? (
+            <DocumentsPanel
+              collapsed={documentsCollapsed}
+              onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+              documentType={report.documentType}
+              onJumpToSection={jumpToSection}
+            />
+          ) : (
+            <div className="h-full" />
+          )}
           {documentsCollapsed ? null : (
             <WorkspaceResizeHandle
               label="Resize documents panel"
@@ -1222,15 +1250,17 @@ export function ReportWorkspace({
                     />
                   </CanvasTabPane>
                 ) : null}
-                <AttachmentCanvasStack
-                  openAttachmentIds={liveOpenAttachmentIds}
-                  activeAttachmentId={
-                    viewingDocument
-                      ? attachmentIdFromTab(liveActiveTabId)
-                      : null
-                  }
-                  onCloseTab={closeAttachmentTab}
-                />
+                {shellReady ? (
+                  <AttachmentCanvasStack
+                    openAttachmentIds={liveOpenAttachmentIds}
+                    activeAttachmentId={
+                      viewingDocument
+                        ? attachmentIdFromTab(liveActiveTabId)
+                        : null
+                    }
+                    onCloseTab={closeAttachmentTab}
+                  />
+                ) : null}
               </div>
             </>
           )}
@@ -1273,32 +1303,36 @@ export function ReportWorkspace({
               agentChrome && "mx-auto max-w-[800px]"
             )}
           >
-            <ReportSidebar
-              collapsed={agentChrome ? false : sidebarCollapsed}
-              onToggleCollapse={toggleSidebarCollapse}
-              hideCollapse={agentChrome}
-              chrome={chrome}
-              activeTab={sidebarTab}
-              onTabChange={setSidebarTab}
-              onJumpToSection={jumpToSection}
-              onJumpToPlaceholder={handleJumpToPlaceholder}
-              onJumpToComment={jumpToComment}
-              initialCriteriaSection={criteriaFocusSection}
-              workProductView={workProductView}
-              statsEnabled={statsEnabled}
-              onAnalyticsSettled={() =>
-                setAnalyticsReloadEpoch((epoch) => epoch + 1)
-              }
-              onAnalyticsAgentBusy={setAnalyticsAgentBusy}
-              onAnalyticsFocusSheet={(sheetId) =>
-                analyticsFocusRef.current?.focusSheet(sheetId)
-              }
-              onAnalyticsFocusAnalysis={(analysisId) =>
-                analyticsFocusRef.current?.focusAnalysis(analysisId)
-              }
-              analyticsReloadEpoch={analyticsReloadEpoch}
-              analyticsMentionSheets={analyticsMentionSheets}
-            />
+            {shellReady ? (
+              <ReportSidebar
+                collapsed={agentChrome ? false : sidebarCollapsed}
+                onToggleCollapse={toggleSidebarCollapse}
+                hideCollapse={agentChrome}
+                chrome={chrome}
+                activeTab={sidebarTab}
+                onTabChange={setSidebarTab}
+                onJumpToSection={jumpToSection}
+                onJumpToPlaceholder={handleJumpToPlaceholder}
+                onJumpToComment={jumpToComment}
+                initialCriteriaSection={criteriaFocusSection}
+                workProductView={workProductView}
+                statsEnabled={statsEnabled}
+                onAnalyticsSettled={() =>
+                  setAnalyticsReloadEpoch((epoch) => epoch + 1)
+                }
+                onAnalyticsAgentBusy={setAnalyticsAgentBusy}
+                onAnalyticsFocusSheet={(sheetId) =>
+                  analyticsFocusRef.current?.focusSheet(sheetId)
+                }
+                onAnalyticsFocusAnalysis={(analysisId) =>
+                  analyticsFocusRef.current?.focusAnalysis(analysisId)
+                }
+                analyticsReloadEpoch={analyticsReloadEpoch}
+                analyticsMentionSheets={analyticsMentionSheets}
+              />
+            ) : (
+              <div className="h-full" />
+            )}
           </div>
           {agentChrome || sidebarCollapsed ? null : (
             <WorkspaceResizeHandle

@@ -61,6 +61,9 @@ export function ReportWorkspaceLoader({
 
   useEffect(() => {
     startWorkspaceLoadTelemetry({ reportId, documentType, loadId });
+    // dynamic() only fetches when <ReportWorkspace> first renders, which is
+    // after bundle + editors. Start the chunk now so it overlaps the GET.
+    void import("@/components/report/report-workspace");
     return () => {
       stopWorkspaceLoadTelemetry();
     };

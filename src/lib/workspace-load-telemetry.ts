@@ -14,6 +14,7 @@ export const WORKSPACE_LOAD_CLIENT_STAGES = [
   "workspace_mounted",
   "section_mounted",
   "first_editor_ready",
+  "nav_timing",
   "longtask",
   "error",
   "timeout",
@@ -70,6 +71,38 @@ export function isWorkspaceLoadTelemetryEnabled(): boolean {
 
 export function newWorkspaceLoadId(): string {
   return crypto.randomUUID();
+}
+
+const NAV_TIMING_SCRIPT_CAP = 5;
+
+/** Flatten navigation + top script resources into telemetry extra fields. */
+export function workspaceNavTimingExtra(
+  navigation: {
+    responseStart: number;
+    domInteractive: number;
+    domContentLoadedEventEnd: number;
+  } | null,
+  scripts: Array<{ name: string; transferSize: number; duration: number }>
+): Record<string, string | number> {
+  const extra: Record<string, string | number> = {};
+  if (navigation) {
+    extra.responseStart = Math.round(navigation.responseStart);
+    extra.domInteractive = Math.round(navigation.domInteractive);
+    extra.domContentLoadedEventEnd = Math.round(
+      navigation.domContentLoadedEventEnd
+    );
+  }
+  const top = scripts
+    .toSorted(
+      (a, b) => b.duration - a.duration || b.transferSize - a.transferSize
+    )
+    .slice(0, NAV_TIMING_SCRIPT_CAP);
+  for (const [i, entry] of top.entries()) {
+    const name = (entry.name.split("/").pop() || "script").slice(0, 80);
+    extra[`s${i}`] =
+      `${Math.round(entry.transferSize)}b ${Math.round(entry.duration)}ms ${name}`;
+  }
+  return extra;
 }
 
 export function logWorkspaceLoadServer(event: {

@@ -1,9 +1,35 @@
 // @vitest-environment jsdom
 
-import { useEffect } from "react";
-import { render, screen } from "@testing-library/react";
+import { useEffect, type ComponentType } from "react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ReportSidebar } from "@/components/report/report-sidebar";
+
+vi.mock("next/dynamic", async () => {
+  const React = await import("react");
+  return {
+    default: (loader: () => Promise<unknown>) => {
+      const Lazy = React.lazy(async () => {
+        const loaded = await loader();
+        if (typeof loaded === "function") {
+          return { default: loaded as ComponentType };
+        }
+        const mod = loaded as { default?: ComponentType } & Record<
+          string,
+          ComponentType
+        >;
+        return { default: (mod.default ?? Object.values(mod)[0])! };
+      });
+      return function DynamicMock(props: Record<string, unknown>) {
+        return (
+          <React.Suspense fallback={null}>
+            <Lazy {...props} />
+          </React.Suspense>
+        );
+      };
+    },
+  };
+});
 
 vi.mock("@/providers/report-provider", () => ({
   useReportPlaceholders: () => ({ pendingPlaceholders: [] }),
@@ -56,6 +82,12 @@ function renderSidebar(
   );
 }
 
+async function waitForChatPanel() {
+  await waitFor(() => {
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+  });
+}
+
 describe("ReportSidebar chat keep-alive", () => {
   it("shows only the active tab icon when the sidebar is collapsed", () => {
     renderSidebar(true, "criteria");
@@ -70,9 +102,34 @@ describe("ReportSidebar chat keep-alive", () => {
     expect(screen.getByRole("button", { name: "Placeholders" })).toBeInTheDocument();
   });
 
-  it("keeps ChatPanel mounted when the sidebar is collapsed", () => {
+  it("does not mount ChatPanel until Assistant is first opened", async () => {
+    chatPanelMounts = 0;
+    const { rerender } = renderSidebar(false, "criteria");
+    await waitFor(() => {
+      expect(screen.getByTestId("sidebar-tab-panel")).toHaveTextContent("criteria");
+    });
+    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
+    expect(chatPanelMounts).toBe(0);
+
+    rerender(
+      <ReportSidebar
+        collapsed={false}
+        onToggleCollapse={noop}
+        activeTab="assistant"
+        onTabChange={noop}
+        onJumpToSection={noop}
+        onJumpToPlaceholder={noop}
+        onJumpToComment={noop}
+      />
+    );
+    await waitForChatPanel();
+    expect(chatPanelMounts).toBe(1);
+  });
+
+  it("keeps ChatPanel mounted when the sidebar is collapsed", async () => {
     chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
+    await waitForChatPanel();
     expect(screen.getByTestId("chat-panel")).toHaveAttribute(
       "data-visible",
       "true"
@@ -125,10 +182,10 @@ describe("ReportSidebar chat keep-alive", () => {
     expect(chatPanelMounts).toBe(1);
   });
 
-  it("keeps ChatPanel mounted when switching away from Assistant", () => {
+  it("keeps ChatPanel mounted when switching away from Assistant", async () => {
     chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
-    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    await waitForChatPanel();
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
       "invisible"
     );
@@ -158,34 +215,33 @@ describe("ReportSidebar chat keep-alive", () => {
 
   it.each(["criteria", "placeholders", "comments"] as const)(
     "fills the sidebar with %s instead of leaving empty space above it",
-    (tab) => {
+    async (tab) => {
       renderSidebar(false, tab);
 
-      const chatShell = screen.getByTestId("chat-panel").parentElement;
-      const tabPanel = screen.getByTestId("sidebar-tab-panel");
-
-      expect(chatShell).toHaveClass("absolute");
-      expect(chatShell).toHaveClass("invisible");
+      const tabPanel = await screen.findByTestId("sidebar-tab-panel");
+      expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument();
       expect(tabPanel).toHaveClass("h-full");
       expect(tabPanel).not.toHaveClass("flex-1");
-      expect(tabPanel.parentElement).toBe(chatShell?.parentElement);
       expect(tabPanel.parentElement).toHaveClass("flex-1");
-      expect(tabPanel).toHaveTextContent(tab);
+      await waitFor(() => {
+        expect(tabPanel).toHaveTextContent(tab);
+      });
     }
   );
 
-  it("does not render a competing tab panel on Assistant", () => {
+  it("does not render a competing tab panel on Assistant", async () => {
     renderSidebar(false, "assistant");
+    await waitForChatPanel();
     expect(screen.queryByTestId("sidebar-tab-panel")).not.toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
       "absolute"
     );
   });
 
-  it("keeps ChatPanel visible on the Analytics surface", () => {
+  it("keeps ChatPanel visible on the Analytics surface", async () => {
     chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
-    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    await waitForChatPanel();
 
     rerender(
       <ReportSidebar

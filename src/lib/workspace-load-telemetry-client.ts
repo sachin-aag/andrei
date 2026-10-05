@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import {
   isWorkspaceLoadTelemetryEnabled,
+  workspaceNavTimingExtra,
   WORKSPACE_LOAD_TELEMETRY_MAX_BYTES,
   type WorkspaceLoadClientStage,
 } from "@/lib/workspace-load-telemetry";
@@ -135,6 +136,41 @@ export function getWorkspaceLoadId(): string | null {
   return session?.loadId ?? null;
 }
 
+function collectNavTimingExtra(): Record<string, string | number> | undefined {
+  if (typeof performance === "undefined") return undefined;
+  if (typeof performance.getEntriesByType !== "function") return undefined;
+  try {
+    const nav = performance.getEntriesByType(
+      "navigation"
+    )[0] as PerformanceNavigationTiming | undefined;
+    const scripts = performance
+      .getEntriesByType("resource")
+      .filter(
+        (entry): entry is PerformanceResourceTiming =>
+          "initiatorType" in entry &&
+          (entry as PerformanceResourceTiming).initiatorType === "script"
+      )
+      .map((entry) => ({
+        name: entry.name,
+        transferSize: entry.transferSize,
+        duration: entry.duration,
+      }));
+    const extra = workspaceNavTimingExtra(
+      nav
+        ? {
+            responseStart: nav.responseStart,
+            domInteractive: nav.domInteractive,
+            domContentLoadedEventEnd: nav.domContentLoadedEventEnd,
+          }
+        : null,
+      scripts
+    );
+    return Object.keys(extra).length > 0 ? extra : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function emitWorkspaceLoadStage(
   stage: WorkspaceLoadClientStage,
   extra?: Record<string, string | number | boolean>
@@ -142,6 +178,9 @@ export function emitWorkspaceLoadStage(
   if (stage === "first_editor_ready") {
     if (!session || session.firstEditorReady) return;
     session.firstEditorReady = true;
+    send(stage, extra);
+    send("nav_timing", collectNavTimingExtra());
+    return;
   }
   send(stage, extra);
 }

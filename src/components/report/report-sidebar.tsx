@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   FileQuestion,
   ListChecks,
@@ -13,15 +14,30 @@ import { cn } from "@/lib/utils";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { useReportPlaceholders, useReportComments, useReportData } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
-import { PlaceholdersPanelContent } from "./placeholders-panel";
-import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
-import { ChatPanel } from "./chat-panel";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
 import { getEvaluatableSections } from "@/lib/document-types";
 import { COLLAPSED_RAIL_PX } from "./workspace-layout";
+
+const PlaceholdersPanelContent = dynamic(
+  () =>
+    import("./placeholders-panel").then((mod) => mod.PlaceholdersPanelContent),
+  { ssr: false }
+);
+const CriteriaPanelContent = dynamic(
+  () => import("./criteria-sheet").then((mod) => mod.CriteriaPanelContent),
+  { ssr: false }
+);
+const CommentsPanelContent = dynamic(
+  () => import("./criteria-sheet").then((mod) => mod.CommentsPanelContent),
+  { ssr: false }
+);
+const ChatPanel = dynamic(
+  () => import("./chat-panel").then((mod) => mod.ChatPanel),
+  { ssr: false }
+);
 
 export type SidebarTab =
   | "assistant"
@@ -80,6 +96,11 @@ export function ReportSidebar({
   const analyticsSurface = workProductView === "analytics";
   const chatVisible =
     !collapsed && (analyticsSurface || activeTab === "assistant");
+  const chatRequested = analyticsSurface || activeTab === "assistant";
+  const [chatHasOpened, setChatHasOpened] = useState(false);
+  if (chatRequested && !chatHasOpened) {
+    setChatHasOpened(true);
+  }
   const chatShellRef = useRef<HTMLDivElement>(null);
   const wasChatVisibleRef = useRef(chatVisible);
   const [holdChatPark, setHoldChatPark] = useState(false);
@@ -242,7 +263,8 @@ export function ReportSidebar({
         </div>
       )}
 
-      {/* ChatPanel stays mounted across collapse, tab, and work-product
+      {/* ChatPanel is requested only after Assistant (or Analytics) is first
+          opened, then stays mounted across collapse, tab, and work-product
           changes so the thread, composer prefs, and rendered markdown are
           not reset. Hide with visibility (not display:none) so the scroller
           keeps its layout box and scrollTop through the width animation.
@@ -254,6 +276,7 @@ export function ReportSidebar({
           parkChat && "overflow-hidden"
         )}
       >
+        {chatHasOpened ? (
         <div
           ref={chatShellRef}
           className={cn(
@@ -280,6 +303,7 @@ export function ReportSidebar({
             mentionSheets={analyticsMentionSheets}
           />
         </div>
+        ) : null}
         {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
           <div
             className="h-full min-h-0 overflow-y-auto p-4 min-w-0"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { CheckCheck, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -17,7 +17,6 @@ import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
 import {
   countOpenAiSuggestions,
   sectionOrderWithOpenSuggestions,
-  sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
 import { getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
 import {
@@ -32,7 +31,6 @@ import {
   identityCurrentFromReport,
 } from "@/lib/suggestions/identity-suggestion";
 import type { IdentityApplyPatch } from "@/lib/suggestions/accept-suggestion";
-import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import type { SectionType } from "@/db/schema";
 
@@ -67,52 +65,6 @@ export function ReportBulkSuggestionActions() {
   );
 
   const openTotal = countOpenAiSuggestions(comments);
-  // Locating a card walks that section's body. One pass over a large ELR
-  // table blocks the first editor, so each card is counted on its own turn
-  // after the eager section has been given a frame to mount.
-  const [locatable, setLocatable] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    let timer = 0;
-    const jobs = sectionOrder.flatMap((section) =>
-      sortedOpenSuggestionsForSection(section, [...comments], [...evaluations]).map(
-        (comment) => ({ section, comment })
-      )
-    );
-    let index = 0;
-    let found = 0;
-    let secondFrame = 0;
-    const step = () => {
-      if (cancelled) return;
-      const job = jobs[index];
-      if (!job) {
-        setLocatable(found);
-        return;
-      }
-      index += 1;
-      if (
-        validateSuggestionLocate(
-          job.comment,
-          job.section,
-          sections[job.section]
-        ).canApply
-      ) {
-        found += 1;
-      }
-      timer = window.setTimeout(step, 0);
-    };
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        if (!cancelled) timer = window.setTimeout(step, 0);
-      });
-    });
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-      window.clearTimeout(timer);
-    };
-  }, [sectionOrder, comments, evaluations, sections]);
 
   const releaseBulkHolds = useCallback(() => {
     // Release after comments are updated so TipTap does not re-inject a
@@ -255,24 +207,22 @@ export function ReportBulkSuggestionActions() {
 
   return (
     <div className="flex items-center gap-2" data-testid="report-bulk-suggestion-actions">
-      {locatable >= 1 ? (
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy}
-          title={`Apply all ${locatable} open suggestions across the document`}
-          onClick={() => {
-            void handleAcceptAll();
-          }}
-        >
-          {running === "accept" ? (
-            <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
-          ) : (
-            <CheckCheck className="size-4 shrink-0" aria-hidden="true" />
-          )}
-          Apply all {locatable}
-        </Button>
-      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        disabled={busy}
+        title={`Apply all ${openTotal} open suggestions across the document`}
+        onClick={() => {
+          void handleAcceptAll();
+        }}
+      >
+        {running === "accept" ? (
+          <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+        ) : (
+          <CheckCheck className="size-4 shrink-0" aria-hidden="true" />
+        )}
+        Apply all {openTotal}
+      </Button>
       <Button
         type="button"
         size="sm"

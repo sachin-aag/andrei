@@ -105,8 +105,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
   toast reports them. Do not dismiss a skip — that is a silent failure.
   Apply all dismisses a same-table leftover invalidated by an operation
   applied earlier in the batch (`superseded_by:<id>`), not as a skip. The
-  Apply all count only includes locatable suggestions; Dismiss all still
-  counts every open suggestion so stale leftovers can be cleared. Bulk
+  Apply all N is the open-suggestion count (no locate scan on paint);
+  locate failures skip at click and the toast reports them. Dismiss all
+  still counts every open suggestion so stale leftovers can be cleared. Bulk
   visibility and apply/dismiss also walk sections that still have an open
   AI comment even when they are not evaluatable (QSR acronyms / other
   details, ELR attachments) so dismissing 1 of N cannot hide the header
