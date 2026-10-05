@@ -3,7 +3,10 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import posthog from "posthog-js";
-import { PostHogProvider } from "./posthog-provider";
+import {
+  PostHogProvider,
+  startPostHogSessionRecording,
+} from "./posthog-provider";
 
 vi.mock("posthog-js", () => ({
   default: {
@@ -37,6 +40,7 @@ describe("PostHogProvider", () => {
         expect.objectContaining({
           persistence: "localStorage",
           cross_subdomain_cookie: false,
+          disable_session_recording: true,
           api_host: "/mj-sync",
         })
       );
@@ -47,6 +51,12 @@ describe("PostHogProvider", () => {
         name: "Ada",
       });
     });
+    expect(posthog.startSessionRecording).not.toHaveBeenCalled();
+  });
+
+  it("starts session recording only when the workspace asks", () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test");
+    startPostHogSessionRecording();
     expect(posthog.startSessionRecording).toHaveBeenCalledWith(true);
   });
 

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { startPostHogSessionRecording } from "@/providers/posthog-provider";
 import {
   useReportComments,
   useReportData,
@@ -545,6 +546,10 @@ export function ReportWorkspace({
     },
     []
   );
+
+  useEffect(() => {
+    startPostHogSessionRecording();
+  }, []);
 
   useEffect(() => {
     const justFinished = shouldRevealCriteriaTab({

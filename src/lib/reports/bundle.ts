@@ -13,6 +13,7 @@ import {
   listReportManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import { slimWorkspaceComments } from "@/lib/comments/slim-workspace-comments";
 import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
 
 // Loads the section/evaluation/comment/attachment rows for a report in parallel.
@@ -46,7 +47,7 @@ export async function loadReportSubtables(reportId: string) {
   return {
     sections,
     evaluations,
-    comments: commentRows,
+    comments: slimWorkspaceComments(commentRows),
     attachments,
     attachmentFolders,
   };

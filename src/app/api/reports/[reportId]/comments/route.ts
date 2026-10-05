@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { isValidSection } from "@/lib/document-types";
+import { slimWorkspaceComments } from "@/lib/comments/slim-workspace-comments";
 
 export async function GET(
   req: Request,
@@ -33,7 +34,7 @@ export async function GET(
     .from(comments)
     .where(where)
     .orderBy(asc(comments.createdAt));
-  return NextResponse.json({ comments: rows });
+  return NextResponse.json({ comments: slimWorkspaceComments(rows) });
 }
 
 const COMMENT_MAX_LENGTH = 1024;
