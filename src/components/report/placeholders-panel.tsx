@@ -406,3 +406,21 @@ export function PlaceholdersPanelContent({
     </div>
   );
 }
+
+export function PlaceholdersPanel({
+  onJumpToPlaceholder,
+}: {
+  onJumpToPlaceholder: (placeholder: Placeholder) => void;
+}) {
+  return (
+    <div className="space-y-3" data-testid="placeholders-panel">
+      <div>
+        <h2 className="text-sm font-semibold">Placeholders</h2>
+        <p className="text-[11px] text-[var(--muted-foreground)]">
+          Fill leftover tokens in the document.
+        </p>
+      </div>
+      <PlaceholdersPanelContent onJumpToPlaceholder={onJumpToPlaceholder} />
+    </div>
+  );
+}

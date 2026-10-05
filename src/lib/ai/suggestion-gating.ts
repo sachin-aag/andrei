@@ -490,8 +490,10 @@ export function serializeAiRedraftCommentContent(
 }
 
 /** AI suggestion kinds reviewed via the suggestion card. */
-export function isAiSuggestionKind(kind: string): kind is "ai_fix" | "ai_redraft" {
-  return kind === "ai_fix" || kind === "ai_redraft";
+export type AiSuggestionKind = "ai_fix" | "ai_redraft" | "ai_grammar";
+
+export function isAiSuggestionKind(kind: string): kind is AiSuggestionKind {
+  return kind === "ai_fix" || kind === "ai_redraft" || kind === "ai_grammar";
 }
 
 /** Open AI suggestions (fixes + redrafts) for a section, red-first then criterion order. */

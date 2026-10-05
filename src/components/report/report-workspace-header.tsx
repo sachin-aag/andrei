@@ -19,7 +19,7 @@ import type { ReportRecord } from "@/types/report";
 import { ReportActionsMenu } from "./report-actions-menu";
 import { ReportBulkSuggestionActions } from "./report-bulk-suggestion-actions";
 import { ReportExportButton } from "./report-export-button";
-import { RunAllEvaluationButton } from "./section-status-pill";
+import { Review } from "./review";
 import { StatusBadge } from "./status-badge";
 import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
 
@@ -64,6 +64,7 @@ type ReportWorkspaceHeaderProps = {
   onEditDetails?: () => void;
   showExpertReview?: boolean;
   onExpertReview?: () => void;
+  onOpenReview?: () => void;
 };
 
 export function ReportWorkspaceHeader({
@@ -89,6 +90,7 @@ export function ReportWorkspaceHeader({
   onEditDetails,
   showExpertReview = false,
   onExpertReview,
+  onOpenReview,
 }: ReportWorkspaceHeaderProps) {
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
@@ -162,7 +164,12 @@ export function ReportWorkspaceHeader({
           />
         </span>
 
-        {showRunCriteria ? <RunAllEvaluationButton /> : null}
+        {showRunCriteria ? (
+          <span className="inline-flex items-center gap-2">
+            <Review.SeverityStats layout="header" />
+            <Review.RunAll layout="header" onRun={onOpenReview} />
+          </span>
+        ) : null}
         {showBulkSuggestions ? <ReportBulkSuggestionActions /> : null}
 
         {canSubmit && (

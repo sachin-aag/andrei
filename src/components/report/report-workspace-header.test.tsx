@@ -19,12 +19,15 @@ vi.mock("./report-bulk-suggestion-actions", () => ({
     </button>
   ),
 }));
-vi.mock("./section-status-pill", () => ({
-  RunAllEvaluationButton: () => (
-    <button type="button" data-testid="run-all-evaluation">
-      Run all
-    </button>
-  ),
+vi.mock("./review", () => ({
+  Review: {
+    SeverityStats: () => null,
+    RunAll: () => (
+      <button type="button" data-testid="run-all-review">
+        Run all checks
+      </button>
+    ),
+  },
 }));
 vi.mock("./status-badge", () => ({
   StatusBadge: () => <span>draft</span>,
@@ -92,7 +95,7 @@ describe("ReportWorkspaceHeader chrome", () => {
     const { rerender } = render(
       <ReportWorkspaceHeader {...baseProps} chrome="agent" />
     );
-    expect(screen.getByTestId("run-all-evaluation")).toBeInTheDocument();
+    expect(screen.getByTestId("run-all-review")).toBeInTheDocument();
     expect(screen.getByTestId("bulk-suggestion-actions")).toBeInTheDocument();
 
     rerender(
@@ -102,7 +105,7 @@ describe("ReportWorkspaceHeader chrome", () => {
         workProductView="analytics"
       />
     );
-    expect(screen.queryByTestId("run-all-evaluation")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("run-all-review")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bulk-suggestion-actions")).not.toBeInTheDocument();
 
     rerender(
@@ -112,7 +115,7 @@ describe("ReportWorkspaceHeader chrome", () => {
         workProductView="analytics"
       />
     );
-    expect(screen.queryByTestId("run-all-evaluation")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("run-all-review")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bulk-suggestion-actions")).not.toBeInTheDocument();
 
     rerender(
@@ -122,7 +125,7 @@ describe("ReportWorkspaceHeader chrome", () => {
         workProductView="report"
       />
     );
-    expect(screen.getByTestId("run-all-evaluation")).toBeInTheDocument();
+    expect(screen.getByTestId("run-all-review")).toBeInTheDocument();
     expect(screen.getByTestId("bulk-suggestion-actions")).toBeInTheDocument();
   });
 });

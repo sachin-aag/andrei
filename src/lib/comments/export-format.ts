@@ -63,6 +63,7 @@ export function formatCommentForExport(comment: ExportableComment): string {
     case "ai_redraft":
       return formatAiRedraftForExport(comment.content);
     case "ai_fix":
+    case "ai_grammar":
       return formatAiFixForExport(comment.content);
     default: {
       const _exhaustive: never = comment.kind;

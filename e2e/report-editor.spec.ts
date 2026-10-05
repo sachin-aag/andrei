@@ -136,11 +136,23 @@ test.describe("report editor", () => {
 
   test("sidebar tabs switch panels", async ({ page }) => {
     const sidebar = reportSidebar(page);
+    await sidebar.getByRole("button", { name: /^review$/i }).click();
+    await expect(sidebar.getByTestId("review-panel")).toBeVisible();
+    await expect(sidebar.getByTestId("review-severity-stats")).toBeVisible();
+    await expect(sidebar.getByRole("tab", { name: /all checks/i })).toBeVisible();
+    await expect(sidebar.getByRole("tab", { name: /^report$/i })).toBeVisible();
+    await expect(sidebar.getByRole("tab", { name: /^fda$/i })).toBeVisible();
+    await expect(sidebar.getByRole("tab", { name: /^citations$/i })).toBeVisible();
+    await expect(sidebar.getByRole("tab", { name: /^writing$/i })).toBeVisible();
+
     await sidebar.getByRole("button", { name: /^placeholders$/i }).click();
+    await expect(sidebar.getByTestId("placeholders-panel")).toBeVisible();
+    await expect(sidebar.getByText("You're all caught up!")).toBeVisible();
     await expect(
-      page.getByText(/you're all caught up|no placeholders found/i).first()
+      sidebar.getByText("No placeholders found in the document.")
     ).toBeVisible();
 
+    await sidebar.getByRole("button", { name: /^review$/i }).click();
     await seedDefineForEvaluation(page, reportId!);
     const evalRes = await page.request.post(`/api/reports/${reportId}/evaluate`, {
       data: {},
@@ -148,13 +160,13 @@ test.describe("report editor", () => {
     });
     expect(evalRes.ok()).toBeTruthy();
 
-    await sidebar.getByRole("button", { name: /^criteria$/i }).click();
-    await expect(page.getByText(/clearly define what happened actually/i)).toBeVisible({
-      timeout: 15_000,
+    await sidebar.getByRole("button", { name: /^run all$/i }).click();
+    await expect(sidebar.getByText(/issue|clean|stub/i).first()).toBeVisible({
+      timeout: 30_000,
     });
 
     await sidebar.getByRole("button", { name: /^comments$/i }).click();
-    await expect(page.getByText(/no comments yet|comment/i).first()).toBeVisible();
+    await expect(sidebar.getByText(/no comments yet|comment/i).first()).toBeVisible();
   });
 
   test("collapses and expands sidebar", async ({ page }) => {
