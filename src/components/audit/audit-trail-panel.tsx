@@ -84,7 +84,7 @@ export function AuditTrailPanel({ reportId }: { reportId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-            <Link href={`/reports/${reportId}/edit`}>
+            <Link href={`/reports/${reportId}/edit`} prefetch={false}>
               <ChevronLeft className="size-4" aria-hidden="true" />
               Back to report
             </Link>

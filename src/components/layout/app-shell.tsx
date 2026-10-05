@@ -196,6 +196,7 @@ export function AppShell({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 aria-label={collapsed ? item.label : undefined}
                 aria-current={isActive ? "page" : undefined}
                 title={collapsed ? item.label : undefined}
@@ -218,6 +219,7 @@ export function AppShell({
         <div className="border-t border-[var(--border)] p-3">
           <Link
             href="/profile"
+            prefetch={false}
             aria-label="Profile"
             aria-current={isProfileActive ? "page" : undefined}
             title={collapsed ? "Profile" : undefined}
