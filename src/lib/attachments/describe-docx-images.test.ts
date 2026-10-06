@@ -38,6 +38,7 @@ function image(partial: Partial<DocxEmbeddedImage> & { ordinal: number }): DocxE
     charOffset: partial.ordinal * 10,
     nearbyText: "nearby context",
     altText: null,
+    sourcePart: "body",
     ...partial,
   };
 }

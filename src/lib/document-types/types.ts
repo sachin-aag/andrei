@@ -120,7 +120,8 @@ export type DocxTemplateData = Record<string, unknown>;
 export type WordImportCapability =
   | { kind: "none" }
   | { kind: "investigation" }
-  | { kind: "generic_body" };
+  | { kind: "generic_body" }
+  | { kind: "cleaning_verification_protocol" };
 
 export type WorkspacePresentation =
   | { kind: "sections" }
@@ -143,8 +144,9 @@ export type DocumentTypeDefinition = {
   documentNoPlaceholder?: string;
   /**
    * Word .docx upload at create time. Investigation import is still gated by
-   * the customer pack `wordImportEnabled` flag. Generic-body import is type-owned
-   * and available whenever the type is enabled.
+   * the customer pack `wordImportEnabled` flag. Generic-body and cleaning
+   * verification protocol import are type-owned and available whenever the
+   * type is enabled.
    */
   wordImport?: WordImportCapability;
   workspacePresentation?: WorkspacePresentation;

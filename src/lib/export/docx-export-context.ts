@@ -146,6 +146,22 @@ export const QSR_DOCX_RUN_STYLE: DocxRunStyle = {
   tableBorderColor: "000000",
 };
 
+/**
+ * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, grey headers.
+ * Source protocol headers are unshaded; grey matches other 3xper paper forms.
+ */
+export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Times New Roman",
+  sizeHalfPoints: "24",
+  forceBlackText: true,
+  tableHeaderFill: "D9D9D9",
+  paragraphAlign: "both",
+  listParagraphStyle: true,
+  tableKeepTogetherWrapper: false,
+  tableWidthPct: "5000",
+  tableBorderColor: "000000",
+};
+
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
   decimal: 0,
   disc: 0,

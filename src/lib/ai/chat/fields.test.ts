@@ -43,9 +43,13 @@ describe("chatEditableSections", () => {
 });
 
 describe("chatMentionableSectionCandidates", () => {
-  it("puts cover identity first on QSR and not on investigation", () => {
+  it("puts cover identity first on QSR/CVP and not on investigation", () => {
     const qsr = chatMentionableSectionCandidates("qualification_summary_report");
     expect(qsr[0]).toEqual({ id: "identity", label: "Cover identity" });
+    expect(chatMentionableSectionCandidates("cleaning_verification_protocol")[0]).toEqual({
+      id: "identity",
+      label: "Cover identity",
+    });
     expect(isChatMentionableSection("identity", "qualification_summary_report")).toBe(
       true
     );

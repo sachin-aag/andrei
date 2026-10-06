@@ -99,6 +99,8 @@ const ALL_TYPES: readonly DocumentType[] = [
   "quality_risk_assessment",
   "equipment_lifecycle_report",
   "generic_document",
+  "qualification_summary_report",
+  "cleaning_verification_protocol",
 ];
 
 describe("suggest target field coverage", () => {

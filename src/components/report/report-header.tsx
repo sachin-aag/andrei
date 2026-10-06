@@ -28,6 +28,10 @@ import {
   qsrMetadataFrom,
   type QsrMetadata,
 } from "@/lib/document-types/qsr/sections";
+import {
+  cvpMetadataFrom,
+  type CvpMetadata,
+} from "@/lib/document-types/cvp/sections";
 import type { SectionType } from "@/db/schema";
 import { parseIdentityDate } from "@/lib/ai/chat/identity";
 
@@ -821,6 +825,140 @@ function QsrIdentityForm({
   );
 }
 
+function CvpIdentityForm({
+  report,
+  setReport,
+  readOnly,
+}: {
+  report: ReportRecord;
+  setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
+  readOnly: boolean;
+}) {
+  const toPatch = useCallback(
+    (v: { documentNo: string; meta: CvpMetadata }) => ({
+      documentNo: v.documentNo.trim(),
+      metadata: v.meta,
+    }),
+    []
+  );
+  const applyToReport = useCallback(
+    (v: { documentNo: string; meta: CvpMetadata }) => {
+      setReport((r) => ({
+        ...r,
+        documentNo: v.documentNo,
+        metadata: mergeIdentityMetadata(r, v.meta),
+      }));
+    },
+    [setReport]
+  );
+  const { value, update, status, lastSavedAt } = useIdentityFormSave({
+    reportId: report.id,
+    reportUpdatedAt: report.updatedAt,
+    readOnly,
+    incoming: {
+      documentNo: report.documentNo,
+      meta: cvpMetadataFrom(report.metadata),
+    },
+    toPatch,
+    applyToReport,
+  });
+  const { documentNo, meta } = value;
+  const setDocumentNoLive = (next: string) => {
+    update((prev) => ({ ...prev, documentNo: next }));
+  };
+  const set = (key: keyof CvpMetadata) => (next: string) => {
+    update((prev) => ({ ...prev, meta: { ...prev.meta, [key]: next } }));
+  };
+
+  return (
+    <IdentityHeaderShell>
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <IdentitySaveRow
+          readOnly={readOnly}
+          status={status}
+          lastSavedAt={lastSavedAt}
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <IdentityField
+            id="cvp-product-name"
+            fieldKey="productName"
+            label="Name of the product"
+            value={meta.productName}
+            disabled={readOnly}
+            onChange={set("productName")}
+          />
+          <IdentityField
+            id="cvp-product-code"
+            fieldKey="productCode"
+            label="Product Code"
+            value={meta.productCode}
+            disabled={readOnly}
+            onChange={set("productCode")}
+          />
+          <IdentityField
+            id="cvp-stage"
+            fieldKey="stage"
+            label="Stage"
+            value={meta.stage}
+            disabled={readOnly}
+            onChange={set("stage")}
+          />
+          <IdentityField
+            id="cvp-plant"
+            fieldKey="plant"
+            label="Plant"
+            value={meta.plant}
+            disabled={readOnly}
+            onChange={set("plant")}
+          />
+          <IdentityField
+            id="cvp-protocol-no"
+            fieldKey="documentNo"
+            label="Protocol No."
+            value={documentNo}
+            disabled={readOnly}
+            onChange={setDocumentNoLive}
+          />
+          <IdentityField
+            id="cvp-department"
+            fieldKey="department"
+            label="Department"
+            value={meta.department}
+            disabled={readOnly}
+            onChange={set("department")}
+          />
+          <IdentityField
+            id="cvp-version"
+            fieldKey="version"
+            label="Version"
+            value={meta.version}
+            disabled={readOnly}
+            onChange={set("version")}
+          />
+          <IdentityField
+            id="cvp-effective-date"
+            fieldKey="effectiveDate"
+            label="Effective Date"
+            value={meta.effectiveDate}
+            disabled={readOnly}
+            onChange={set("effectiveDate")}
+          />
+          <IdentityField
+            id="cvp-document-title"
+            fieldKey="documentTitle"
+            label="Document Title"
+            value={meta.documentTitle}
+            disabled={readOnly}
+            onChange={set("documentTitle")}
+          />
+        </div>
+      </CardContent>
+    </Card>
+    </IdentityHeaderShell>
+  );
+}
+
 export function ReportHeader() {
   const { report, setReport, readOnly } = useReportData();
   if (report.documentType === "equipment_lifecycle_report") {
@@ -846,6 +984,16 @@ export function ReportHeader() {
   if (report.documentType === "qualification_summary_report") {
     return (
       <QsrIdentityForm
+        key={report.id}
+        report={report}
+        setReport={setReport}
+        readOnly={readOnly}
+      />
+    );
+  }
+  if (report.documentType === "cleaning_verification_protocol") {
+    return (
+      <CvpIdentityForm
         key={report.id}
         report={report}
         setReport={setReport}

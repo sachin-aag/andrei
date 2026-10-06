@@ -9,6 +9,7 @@ import { equipmentLifecycleReportDefinition } from "./equipment-lifecycle-report
 import { vendorQualificationDefinition } from "./vendor-qualification";
 import { failureInvestigationReportDefinition } from "./failure-investigation-report";
 import { qualificationSummaryReportDefinition } from "./qualification-summary-report";
+import { cleaningVerificationProtocolDefinition } from "./cleaning-verification-protocol";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -43,6 +44,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return failureInvestigationReportDefinition;
     case "qualification_summary_report":
       return qualificationSummaryReportDefinition;
+    case "cleaning_verification_protocol":
+      return cleaningVerificationProtocolDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -62,7 +65,8 @@ export function resolveDocumentType(
     type === "equipment_lifecycle_report" ||
     type === "vendor_qualification" ||
     type === "failure_investigation_report" ||
-    type === "qualification_summary_report"
+    type === "qualification_summary_report" ||
+    type === "cleaning_verification_protocol"
   ) {
     return type;
   }
@@ -71,7 +75,8 @@ export function resolveDocumentType(
 
 /**
  * Word upload at create time. Investigation import stays pack-gated.
- * Generic-body import is available whenever the type is enabled.
+ * Generic-body and cleaning-verification-protocol import are available
+ * whenever the type is enabled.
  */
 export function isWordImportAvailable(
   type: DocumentType,
@@ -85,6 +90,7 @@ export function isWordImportAvailable(
     case "investigation":
       return pack.wordImportEnabled;
     case "generic_body":
+    case "cleaning_verification_protocol":
       return true;
     default: {
       const exhaustive: never = kind;
