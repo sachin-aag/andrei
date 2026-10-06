@@ -4174,6 +4174,60 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).toHaveBeenCalled();
   });
 
+  it("appends insert_image when the caption anchor is not in the field", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    loadDocumentFigureMock.mockResolvedValue({
+      ok: true,
+      image: {
+        src: dataUrl,
+        alt: "Cross-hatch swab sampling technique",
+        width: 640,
+        mediaId: null,
+      },
+      filename: "SSR-1302.docx",
+      page: 5,
+      attachmentId: "att_ssr",
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Insert the cross-hatch swab sampling motion diagram.",
+        image: {
+          source: "document",
+          filename: "SSR-1302.docx",
+          page: 5,
+          figure: 4,
+        },
+        anchorText:
+          "Figure: Cross-Hatch Swabbing Technique Diagram\nThe diagram illustrates the standardized bidirectional cross-hatch swabbing motion:",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]!.anchorText).toBe("");
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.insertImage?.src).toBe(dataUrl);
+  });
+
   it("lists insertable figures when a Word page has more than one raster", async () => {
     loadDocumentFigureMock.mockResolvedValue({
       ok: false,

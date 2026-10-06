@@ -838,6 +838,32 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 5, 3)).toBe("PQ");
   });
 
+  it("rematches edit_cells when row is omitted and rowKey is set", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const parsed = parseTableOperation({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [{ rowKey: "URS-13", col: 3, insertText: "PQ" }],
+    });
+    expect(parsed).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          insertText: "PQ",
+          rowKey: "URS-13",
+        },
+      ],
+    });
+    const result = applyTableOperation(doc, parsed!);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("PQ");
+  });
+
   it("rematches edit_cells from a URS-N in rowContext when rowKey is omitted", () => {
     const doc = rtmDoc(["URS-1", "URS-13"], { 2: "ANY SPECIFIC REQUIREMENTS" });
     const result = applyTableOperation(doc, {
@@ -2395,6 +2421,73 @@ describe("parseTableOperation", () => {
           insertText: "Major release number (e.g., 04)",
         },
       ],
+    });
+  });
+
+  it("infers edit_cells from rowKey+col cells when kind and row are omitted", () => {
+    expect(
+      parseTableOperation({
+        tableIndex: 0,
+        cells: [
+          {
+            rowKey: "Quality Assurance",
+            col: 1,
+            insertText: "Preparation and review of the protocol.",
+          },
+          {
+            col: 1,
+            rowKey: "Production",
+            insertText: "Execution of equipment cleaning.",
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          insertText: "Preparation and review of the protocol.",
+          rowKey: "Quality Assurance",
+        },
+        {
+          row: 1,
+          col: 1,
+          insertText: "Execution of equipment cleaning.",
+          rowKey: "Production",
+        },
+      ],
+    });
+  });
+
+  it("wraps a flat string array as one insert_rows row when kind is omitted", () => {
+    expect(
+      parseTableOperation({
+        rows: [
+          "Design Specification",
+          "DS/GLR-1301",
+          "00",
+          "Approved",
+          "<date>",
+          "New Document",
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "Design Specification",
+          "DS/GLR-1301",
+          "00",
+          "Approved",
+          "<date>",
+          "New Document",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
     });
   });
 

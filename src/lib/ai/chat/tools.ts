@@ -3520,28 +3520,39 @@ export function buildChatTools(opts: {
           };
         }
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
-        const check = checkProposedEdit(
+        const imageEdit = {
+          deleteText: "",
+          insertText: "",
+          insertImage,
+          removeImage,
+        };
+        let locateAnchor = trimmedAnchor;
+        let check = checkProposedEdit(
           fieldText,
-          {
-            anchorText: anchorText ?? "",
-            deleteText: "",
-            insertText: "",
-            insertImage,
-            removeImage,
-          },
+          { ...imageEdit, anchorText: locateAnchor },
           fieldDoc
         );
+        // Invented captions ("Figure: Cross-Hatch…") are not in the field.
+        // Append rather than dropping the figure.
+        if (check.status === "not_found" && locateAnchor) {
+          locateAnchor = "";
+          check = checkProposedEdit(
+            fieldText,
+            { ...imageEdit, anchorText: "" },
+            fieldDoc
+          );
+        }
         if (check.status !== "ok") {
           return {
             status: check.status,
             hint: proposedEditHint(check, {
-              anchorText: anchorText ?? "",
+              anchorText: trimmedAnchor,
               fieldDoc,
             }),
           } as InsertImageResult;
         }
 
-        const appendBlock = isAppendBlock({ anchorText: anchorText ?? "" });
+        const appendBlock = isAppendBlock({ anchorText: locateAnchor });
         const existingOp = findImageOpForMove(imageOps, {
           section,
           targetField: resolvedField,
@@ -3556,14 +3567,14 @@ export function buildChatTools(opts: {
             reasoning,
           };
           await patchFixComment(existingOp.suggestionId, nextPayload, {
-            anchorText: trimmedAnchor,
+            anchorText: locateAnchor,
           });
           recordImageOp(imageOps, {
             suggestionId: existingOp.suggestionId,
             section,
             targetField: resolvedField,
             payload: nextPayload,
-            anchorText: trimmedAnchor,
+            anchorText: locateAnchor,
             src: insertImage.src,
             removeIndex: removeImage?.index ?? existingOp.removeIndex,
           });
@@ -3617,7 +3628,7 @@ export function buildChatTools(opts: {
               {
                 kind: "located",
                 edit: {
-                  anchorText: trimmedAnchor,
+                  anchorText: locateAnchor,
                   deleteText: "",
                   insertText: "",
                   insertImage,
@@ -3626,7 +3637,7 @@ export function buildChatTools(opts: {
               }
             )
           ),
-          anchorText: trimmedAnchor,
+          anchorText: locateAnchor,
           contentPath: resolvedField,
           fromPos: null,
           toPos: null,
@@ -3639,7 +3650,7 @@ export function buildChatTools(opts: {
           section,
           targetField: resolvedField,
           payload,
-          anchorText: trimmedAnchor,
+          anchorText: locateAnchor,
           src: insertImage.src,
           removeIndex: removeImage?.index,
         });

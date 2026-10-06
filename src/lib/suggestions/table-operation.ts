@@ -1063,7 +1063,7 @@ export function resolveEditCells(
     if (key) {
       const hits = rowsMatchingAfterKey(rows, key);
       if (hits.length === 0) {
-        lastScopeHint = `rowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label).`;
+        lastScopeHint = `rowKey "${key}" was not found. Copy the first-cell text from read_section (URS ID or banner label). To add a row that is not in the table yet, use insert_rows.`;
         continue;
       }
       if (hits.length > 1) {
@@ -2277,11 +2277,16 @@ function coerceEditCellsShape(next: Record<string, unknown>): void {
           ? item.expected
           : undefined;
     const rowKey = firstString(item.rowKey, item.afterRowKey);
+    const row = asInt(item.row);
+    const col = asInt(item.col);
     return {
       ...item,
       ...(insertText !== undefined ? { insertText } : {}),
       ...(expectedText !== undefined ? { expectedText } : {}),
       ...(rowKey !== undefined ? { rowKey } : {}),
+      // Prefer rowKey over row — the model often omits the numeric index.
+      // Dummy 1 is overwritten when resolveEditCells rematches the key.
+      ...(row === null && rowKey && col !== null ? { row: 1 } : {}),
     };
   });
 }
@@ -2310,17 +2315,36 @@ function coerceInsertColumnShape(next: Record<string, unknown>): void {
 
 function looksLikeCellEdits(value: unknown): boolean {
   if (!Array.isArray(value) || value.length === 0) return false;
-  return value.every(
-    (item) =>
-      isRecord(item) &&
-      asInt(item.row) !== null &&
-      asInt(item.col) !== null &&
-      firstString(item.insertText, item.value, item.text, item.content) !==
-        undefined
+  return value.every((item) => {
+    if (!isRecord(item)) return false;
+    const col = asInt(item.col);
+    if (col === null || col < 0) return false;
+    if (
+      firstString(item.insertText, item.value, item.text, item.content) ===
+      undefined
+    ) {
+      return false;
+    }
+    const row = asInt(item.row);
+    const rowKey = firstString(item.rowKey, item.afterRowKey);
+    return row !== null || Boolean(rowKey);
+  });
+}
+
+function isFlatStringRow(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => asCellString(item) !== null)
   );
 }
 
 function coerceInsertRowsShape(next: Record<string, unknown>): void {
+  if (isFlatStringRow(next.rows)) {
+    next.rows = [
+      (next.rows as unknown[]).map((item) => asCellString(item) ?? ""),
+    ];
+  }
   if (!(Array.isArray(next.rows) && next.rows.length > 0)) {
     const nestedRows = nestedInsertRowsAlias(next);
     if (nestedRows) {
@@ -2347,6 +2371,17 @@ export function coerceTableOperationInput(raw: unknown): unknown {
   const mapped =
     resolveTableKind(next.kind) ?? resolveTableKind(next.operation);
   if (mapped) next.kind = mapped;
+  else if (Array.isArray(next.cells) && looksLikeCellEdits(next.cells)) {
+    next.kind = "edit_cells";
+  } else if (asStringArray(next.headers)?.length) {
+    next.kind = "create_table";
+  } else if (
+    nestedInsertRowsAlias(next) ||
+    Array.isArray(next.rows) ||
+    (Array.isArray(next.cells) && Boolean(asInsertTableRows(next.cells)))
+  ) {
+    next.kind = "insert_rows";
+  }
 
   if (next.kind === "edit_cells") coerceEditCellsShape(next);
   if (next.kind === "insert_column") coerceInsertColumnShape(next);
@@ -2398,20 +2433,23 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
       const cells: TableCellEdit[] = [];
       for (const item of coerced.cells) {
         if (!isRecord(item)) return undefined;
-        const row = asInt(item.row);
         const col = asInt(item.col);
-        if (row === null || col === null || row < 0 || col < 0) return undefined;
+        if (col === null || col < 0) return undefined;
         if (typeof item.insertText !== "string") return undefined;
+        const rowKey =
+          typeof item.rowKey === "string" && item.rowKey.trim()
+            ? item.rowKey
+            : undefined;
+        const row = asInt(item.row);
+        if (row === null && !rowKey) return undefined;
+        if (row !== null && row < 0) return undefined;
         cells.push({
-          row,
+          row: row ?? 1,
           col,
           expectedText:
             typeof item.expectedText === "string" ? item.expectedText : undefined,
           insertText: item.insertText,
-          rowKey:
-            typeof item.rowKey === "string" && item.rowKey.trim()
-              ? item.rowKey
-              : undefined,
+          rowKey,
           rowContext:
             typeof item.rowContext === "string" ? item.rowContext : undefined,
         });
@@ -2554,7 +2592,7 @@ export function tableOperationInvalidHint(raw: unknown): string {
     return `create_table needs kind: "create_table" with headers (and optional rows, title, afterAnchor) at the top of operation — not nested as { create_table: { headers, rows } }. ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "edit_cells") {
-    return `edit_cells needs kind: "edit_cells" with cells: [{ row, col, insertText }]. Prefer rowKey (first-cell text, e.g. URS-13) over row. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
+    return `edit_cells needs kind: "edit_cells" with cells: [{ col, insertText }]. Prefer rowKey (first-cell text, e.g. URS-13) over row — row may be omitted when rowKey is set. You may omit expectedText (the server captures the current cell). ${TABLE_EDIT_RECOVERY}`;
   }
   if (kind === "insert_column") {
     return `insert_column needs kind: "insert_column" with header (and optional afterCol, values). Omit afterCol to append as the last column. ${TABLE_EDIT_RECOVERY}`;
