@@ -53,11 +53,80 @@ const UNDERSCORE_ITALIC_PART_RE = new RegExp(
 const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
 
 /**
+ * Display `$...$` fences (`$$...$$`), including an inner span that may wrap.
+ * Currency `$100` is a single dollar and does not match.
+ */
+const DISPLAY_LATEX_DOLLAR_RE = /\$\$((?:\\\$|[^$])+?)\$\$/g;
+
+/**
  * Pandoc-style `$...$` (not `$$`). Requires a TeX-like inner span (`N_2`,
  * `\pm`) so `$100-$200` stays currency.
  */
 const INLINE_LATEX_DOLLAR_RE =
   /(?<!\$)\$(?!\$)(?!\s)((?:\\\$|[^$\n])+?)(?<!\s)\$(?!\$)/g;
+
+const LITERAL_TEX_COMMAND_RE =
+  /\\(?:text(?:rm|it|bf|sf)?|times|pm|le|ge|cdot|mathrm|operatorname|frac)\b/;
+
+function mathBlockNode(latex: string): JSONContent {
+  return {
+    type: "mathBlock",
+    attrs: { mathml: "", latex, omml: null, ommlDirty: true },
+  };
+}
+
+function latexToDisplayBlock(latex: string): JSONContent {
+  const quantity = quantityLatexToTextNodes(latex);
+  if (quantity) {
+    return { type: "paragraph", content: quantity };
+  }
+  return mathBlockNode(latex);
+}
+
+/**
+ * `$$...$$` on one line or split across following lines. Null when the opener
+ * is mixed with trailing prose (inline parser) or the fence never closes.
+ */
+function tryConsumeDisplayMath(
+  lines: readonly string[],
+  start: number
+): { latex: string; consumed: number } | null {
+  const first = lines[start]!.trim();
+  if (!first.startsWith("$$")) return null;
+
+  const afterOpen = first.slice(2);
+  const closeOnFirst = afterOpen.indexOf("$$");
+  if (closeOnFirst >= 0) {
+    const latex = afterOpen.slice(0, closeOnFirst).trim();
+    const trailing = afterOpen.slice(closeOnFirst + 2).trim();
+    if (trailing || !latex) return null;
+    return { latex, consumed: 1 };
+  }
+
+  const parts: string[] = [];
+  if (afterOpen.trim()) parts.push(afterOpen.trim());
+  for (let i = start + 1; i < lines.length; i++) {
+    const trimmed = lines[i]!.trim();
+    const close = trimmed.indexOf("$$");
+    if (close >= 0) {
+      const before = trimmed.slice(0, close).trim();
+      if (before) parts.push(before);
+      const latex = parts.join(" ").trim();
+      if (!latex) return null;
+      return { latex, consumed: i - start + 1 };
+    }
+    if (trimmed) parts.push(trimmed);
+  }
+  return null;
+}
+
+function displayMathFenceCount(text: string): number {
+  return text.match(/\$\$/g)?.length ?? 0;
+}
+
+function hasUnclosedDisplayMath(texts: readonly string[]): boolean {
+  return displayMathFenceCount(texts.join("\n")) % 2 === 1;
+}
 
 function textNode(text: string, marks: JSONContent["marks"] | undefined): JSONContent {
   return marks?.length ? { type: "text", text, marks } : { type: "text", text };
@@ -114,7 +183,7 @@ function appendLiteralWithMath(
   appendLiteralWithMathOnly(text, extraMarks, nodes);
 }
 
-function appendLiteralWithMathOnly(
+function appendSingleDollarMath(
   text: string,
   extraMarks: JSONContent["marks"] | undefined,
   nodes: JSONContent[]
@@ -140,7 +209,34 @@ function appendLiteralWithMathOnly(
   }
 }
 
+function appendLiteralWithMathOnly(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
+  DISPLAY_LATEX_DOLLAR_RE.lastIndex = 0;
+  let last = 0;
+  let sawDisplay = false;
+  for (const match of text.matchAll(DISPLAY_LATEX_DOLLAR_RE)) {
+    sawDisplay = true;
+    const start = match.index ?? 0;
+    if (start > last) {
+      appendSingleDollarMath(text.slice(last, start), extraMarks, nodes);
+    }
+    nodes.push(...latexToInlineNodes(match[1]!.trim(), extraMarks));
+    last = start + match[0].length;
+  }
+  if (sawDisplay) {
+    if (last < text.length) {
+      appendSingleDollarMath(text.slice(last), extraMarks, nodes);
+    }
+    return;
+  }
+  appendSingleDollarMath(text, extraMarks, nodes);
+}
+
 export function hasInlineTexDollars(text: string): boolean {
+  if (displayMathFenceCount(text) > 0) return true;
   INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
     if (shouldConvertDollarInner(match[1]!)) return true;
@@ -154,6 +250,14 @@ export function stripInlineMarkdown(text: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
     .replace(UNDERSCORE_ITALIC_RE, "$1")
+    .replace(DISPLAY_LATEX_DOLLAR_RE, (_match, inner: string) => {
+      const trimmed = inner.trim();
+      return (
+        quantityLatexToPlainText(trimmed) ??
+        simpleLatexToPlainText(trimmed) ??
+        trimmed
+      );
+    })
     .replace(INLINE_LATEX_DOLLAR_RE, (_match, inner: string) =>
       shouldConvertDollarInner(inner)
         ? (simpleLatexToPlainText(inner) ??
@@ -235,6 +339,7 @@ export function promoteAtxHeadingsInDoc(
  * - GFM tables (first row = header)
  * - `**bold**`, `*italic*`, and `_italic_` inline emphasis
  * - `$N_2$` / `$CO_2$` → text + subscript; other `$...$` TeX → mathInline
+ * - `$$...$$` quantity TeX → Unicode paragraph; `\frac` / `\sum` → mathBlock
  *
  * Anything else is kept as literal text. No HTML, no fuzziness.
  */
@@ -252,6 +357,13 @@ export function markdownToDoc(
 
     if (!trimmed) {
       i++;
+      continue;
+    }
+
+    const displayMath = tryConsumeDisplayMath(lines, i);
+    if (displayMath) {
+      content.push(latexToDisplayBlock(displayMath.latex));
+      i += displayMath.consumed;
       continue;
     }
 
@@ -355,12 +467,13 @@ function paragraphHasSuggestionMarks(node: JSONContent): boolean {
   );
 }
 
-/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `, `$N_2$`). */
+/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `, `$N_2$`, `$$`). */
 export function looksLikeLiteralMarkdown(text: string): boolean {
   if (ATX_HEADING_RE.test(text.trim())) return true;
   if (/\*\*[^*]+\*\*/.test(text)) return true;
   if (/\[\[table(?::[^\]]+)?\]\]/i.test(text)) return true;
   if (hasInlineTexDollars(text)) return true;
+  if (LITERAL_TEX_COMMAND_RE.test(text)) return true;
   return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
 }
 
@@ -401,6 +514,17 @@ function hydrateBlockArray(
           i++;
           continue;
         }
+        if (
+          texts.length > 0 &&
+          hasUnclosedDisplayMath(texts) &&
+          current.type === "paragraph" &&
+          paragraphIsPlainInline(current) &&
+          !paragraphHasSuggestionMarks(current)
+        ) {
+          texts.push(paragraphPlainText(current));
+          i++;
+          continue;
+        }
         break;
       }
       while (texts.length > 0 && !texts[texts.length - 1]!.trim()) {
@@ -428,9 +552,9 @@ function hydrateNode(
 
 /**
  * Chat / import can persist a whole markdown blob as one (or a few) paragraphs
- * with literal `###`, `**bold**`, `1. `, and `$N_2$` markers. Turn those into
- * the same TipTap nodes `markdownToDoc` emits so Improve/Control render
- * instead of showing hashes, asterisks, or dollar latex.
+ * with literal `###`, `**bold**`, `1. `, `$N_2$`, and `$$...$$` markers. Turn
+ * those into the same TipTap nodes `markdownToDoc` emits so Improve/Control
+ * render instead of showing hashes, asterisks, or dollar latex.
  */
 export function hydrateLiteralMarkdownInDoc(
   doc: JSONContent,

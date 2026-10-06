@@ -54,6 +54,38 @@ describe("rich text helpers", () => {
     ]);
   });
 
+  it("flattens persisted $$ quantity TeX on editor load", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`$$\text{Rinse Volume (L)} = \text{Surface Area (m)^2\text{}} \times \text{Rinse Factor (L/m)^2\text{}}$$`,
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`where $A$ is the internal surface area (m²).`,
+            },
+          ],
+        },
+      ],
+    });
+    expect(richJsonToPlainText(doc)).toContain(
+      "Rinse Volume (L) = Surface Area (m)² × Rinse Factor (L/m)²"
+    );
+    expect(richJsonToPlainText(doc)).toContain("where A is the internal");
+    expect(richJsonToPlainText(doc)).not.toContain("$$");
+    expect(richJsonToPlainText(doc)).not.toContain("$A$");
+  });
+
   it("turns leftover *italic* in a legacy string into italic marks", () => {
     const doc = normalizeRichField(
       "*Solea Model 3 Software Requirements Document* 822-700-0013"

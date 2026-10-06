@@ -325,6 +325,38 @@ describe("markdownToDoc", () => {
     );
   });
 
+  it("flattens CVP rinse-volume $$ quantity TeX, including a wrapped fence", () => {
+    const wrapped = [
+      String.raw`$$\text{Rinse Volume (L)} = \text{Surface Area (m)^2\text{}} \times \text{Rinse Factor`,
+      String.raw`(L/m)^2\text{}}$$`,
+    ].join("\n");
+    const doc = markdownToDoc(wrapped);
+    expect(richJsonToPlainText(doc)).toBe(
+      "Rinse Volume (L) = Surface Area (m)² × Rinse Factor (L/m)²"
+    );
+    expect(richJsonToPlainText(doc)).not.toContain("$$");
+    expect(richJsonToPlainText(doc)).not.toContain(String.raw`\text`);
+    expect(doc.content!.some((n) => n.type === "mathBlock")).toBe(false);
+  });
+
+  it("flattens $A$ identifiers in rinse SAF prose", () => {
+    const doc = markdownToDoc(
+      String.raw`calculated as $V_a = A \times SAF$, where $A$ is the internal surface area`
+    );
+    expect(richJsonToPlainText(doc)).toContain("Vₐ = A × SAF");
+    expect(richJsonToPlainText(doc)).toContain("where A is the internal");
+    expect(richJsonToPlainText(doc)).not.toContain("$A$");
+    expect(richJsonToPlainText(doc)).not.toContain("$");
+  });
+
+  it("keeps $$\\frac$$ as a mathBlock atom", () => {
+    const doc = markdownToDoc(String.raw`$$\frac{PDE \times MBS}{TDD}$$`);
+    expect(doc.content![0]!.type).toBe("mathBlock");
+    expect(doc.content![0]!.attrs?.latex).toBe(
+      String.raw`\frac{PDE \times MBS}{TDD}`
+    );
+  });
+
   it("keeps unsupported markdown as literal text", () => {
     const doc = markdownToDoc("Some `code` and [link](http://x)");
     expect(doc.content![0]!.content).toEqual([
@@ -627,5 +659,49 @@ describe("hydrateLiteralMarkdownInDoc", () => {
       { type: "text", text: "2", marks: [{ type: "subscript" }] },
       { type: "text", text: ")," },
     ]);
+  });
+
+  it("hydrates persisted CVP $$ rinse formulas split across paragraphs", () => {
+    const doc = hydrateLiteralMarkdownInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`$$\text{Rinse Volume (L)} = \text{Surface Area (m)^2\text{}} \times \text{Rinse Factor`,
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`(L/m)^2\text{}}$$`,
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`where $A$ is the internal surface area (m²).`,
+            },
+          ],
+        },
+      ],
+    });
+    expect(richJsonToPlainText(doc)).toContain(
+      "Rinse Volume (L) = Surface Area (m)² × Rinse Factor (L/m)²"
+    );
+    expect(richJsonToPlainText(doc)).toContain(
+      "where A is the internal surface area"
+    );
+    expect(richJsonToPlainText(doc)).not.toContain("$$");
+    expect(richJsonToPlainText(doc)).not.toContain(String.raw`\text`);
+    expect(richJsonToPlainText(doc)).not.toContain("$A$");
   });
 });

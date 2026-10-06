@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v183-cvp-maco-tables");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v184-cvp-equation-prose");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
