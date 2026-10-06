@@ -2593,11 +2593,22 @@ Complies`,
       },
       TEST_TOOL_OPTIONS
     );
-    expect(result).toMatchObject({ status: "unsupported_facts" });
-    const text =
-      "message" in result && typeof result.message === "string"
-        ? result.message
-        : JSON.stringify(result);
-    expect(text).toMatch(/24\.50|unsupported/i);
+    expect(result).toMatchObject({
+      status: "unsupported_facts",
+      keepSearchOpen: true,
+    });
+    const unsupported =
+      "unsupported" in result && Array.isArray(result.unsupported)
+        ? result.unsupported
+        : [];
+    expect(
+      unsupported
+        .map((row) =>
+          row && typeof row === "object" && "text" in row
+            ? String(row.text)
+            : ""
+        )
+        .join(" ")
+    ).toContain("24.50");
   });
 });
