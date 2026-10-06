@@ -77,6 +77,8 @@ export function CreateReportDialog({
       : showWordImport
         ? selectedType.key === "generic_document"
           ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
+          : selectedType.key === "cleaning_verification_protocol"
+            ? "Starts a new cleaning verification protocol as a draft. Optionally upload an existing Word file to fill cover identity and sections 1.0–24.0. Word drawings, SmartArt, and headers are dropped on import."
           : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
         : `Starts a new ${selectedType.label.toLowerCase()} as a draft.`;
 
@@ -327,7 +329,11 @@ export function CreateReportDialog({
                 </div>
                 {previewLoading ? (
                   <p className="text-xs text-[var(--muted-foreground)]">
-                    Reading deviation number from Word file…
+                    {documentType === "cleaning_verification_protocol"
+                      ? "Reading protocol number from Word file…"
+                      : documentType === "generic_document"
+                        ? "Reading Word file…"
+                        : "Reading deviation number from Word file…"}
                   </p>
                 ) : null}
               </div>
@@ -337,7 +343,9 @@ export function CreateReportDialog({
                 <Label htmlFor="report-upload">
                   {documentType === "generic_document"
                     ? "Existing document (.docx, optional)"
-                    : "Existing report (.docx, optional)"}
+                    : documentType === "cleaning_verification_protocol"
+                      ? "Existing protocol (.docx, optional)"
+                      : "Existing report (.docx, optional)"}
                 </Label>
                 <div className="flex flex-wrap items-center gap-2">
                   <Input

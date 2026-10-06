@@ -166,7 +166,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   documentNoun: "cleaning verification protocol",
   documentNoLabel: "Protocol No.",
   documentNoPlaceholder: "e.g. CVRP-ISM4-26-001",
-  wordImport: { kind: "none" },
+  wordImport: { kind: "cleaning_verification_protocol" },
   evaluation: { kind: "criteria" },
   citationsAtEndOfSection: true,
   sections: CVP_SECTION_KEYS.map((key, index) => ({

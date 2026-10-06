@@ -13,6 +13,7 @@ import {
   docxBufferToGenericDocument,
   GenericDocxImportError,
 } from "@/lib/import/docx-to-generic-document";
+import { docxBufferToImportedCvp } from "@/lib/import/docx-to-cvp";
 import {
   flushLangfuseTraces,
   observeWork,
@@ -105,6 +106,28 @@ export async function POST(req: Request) {
         return NextResponse.json({
           deviationNo: null,
           documentNo: null,
+        });
+      }
+      case "cleaning_verification_protocol": {
+        const imported = await withPropagatedAttributes(
+          {
+            userId: user.id,
+            traceName: "word-import-preview",
+            tags: ["word-import", documentType],
+            metadata: { documentType, filename: file.name },
+          },
+          () =>
+            observeWork("word-import-preview", async () => {
+              setRouteObservationIO({
+                input: { documentType, filename: file.name },
+              });
+              return docxBufferToImportedCvp(buf);
+            })
+        );
+        const protocolNo = imported.protocolNo.trim() || null;
+        return NextResponse.json({
+          deviationNo: protocolNo,
+          documentNo: protocolNo,
         });
       }
       case "none":

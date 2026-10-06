@@ -75,7 +75,8 @@ export function resolveDocumentType(
 
 /**
  * Word upload at create time. Investigation import stays pack-gated.
- * Generic-body import is available whenever the type is enabled.
+ * Generic-body and cleaning-verification-protocol import are available
+ * whenever the type is enabled.
  */
 export function isWordImportAvailable(
   type: DocumentType,
@@ -89,6 +90,7 @@ export function isWordImportAvailable(
     case "investigation":
       return pack.wordImportEnabled;
     case "generic_body":
+    case "cleaning_verification_protocol":
       return true;
     default: {
       const exhaustive: never = kind;

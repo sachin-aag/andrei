@@ -343,6 +343,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   plots copy the saved Analytics preview at the same 600px display width
   as right-click Insert graph (`CHART_DISPLAY_WIDTH_PX`). Do not shrink by
   a 300px height cap — that turns a sixpack into a thin unreadable strip.
+- `insert_image` source=document copies a cited figure from a ready PDF/DOCX
+  (`filename` + `page`, optional `figure` = visualInterpretation Figure N).
+  PDFs rasterize that page; Word copies an embedded PNG/JPEG (header/letterhead
+  skipped). Word drawings that are not rasters cannot be copied — attach a
+  PDF of the same file. Search first; do not invent a figure. `available_figures`
+  is not a proposal. Stay off the Plan allowlist.
 - Document **and** Agent chrome **propose** (red/green `ai_fix` comments;
   nothing lands until Apply / Dismiss, including Apply all / Dismiss all
   for one or more open suggestions). Same-turn `propose_edit` calls

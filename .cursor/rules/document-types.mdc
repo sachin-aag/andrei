@@ -88,6 +88,9 @@ const sections = getWorkspaceSections(report.documentType);
   (pending insert/delete marks persist and export as Word tracked changes).
   The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
   do not persist page-break nodes.
+- 3xper `cleaning_verification_protocol` Word import is also type-owned
+  (`wordImport.kind === "cleaning_verification_protocol"`). Do **not** turn on
+  pack `wordImportEnabled` — VQ and QSR stay without create-time upload.
 - Left-rail chrome is Attachments | Contents on every pack (Convergent layout:
   tabs on the first row, folder/upload on a second row while Attachments is
   selected). `getReportTableOfContents(documentType)` always returns an outline

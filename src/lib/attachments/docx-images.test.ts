@@ -6,6 +6,7 @@ import {
   assignDocxImagesToPages,
   extractDocxEmbeddedImages,
   formatDocxPageVisualInterpretation,
+  listDocxInsertCandidates,
 } from "@/lib/attachments/docx-images";
 
 /** 1×1 PNG */
@@ -108,6 +109,7 @@ describe("extractDocxEmbeddedImages", () => {
     expect(images[0]?.altText).toBe("Assay trend chart");
     expect(images[0]?.nearbyText).toContain("Before the chart");
     expect(images[0]?.bytes.equals(TINY_PNG)).toBe(true);
+    expect(images[0]?.sourcePart).toBe("body");
     expect(totalXmlChars).toBeGreaterThan(0);
   });
 
@@ -132,6 +134,7 @@ describe("extractDocxEmbeddedImages", () => {
     const { images } = extractDocxEmbeddedImages(buffer);
     expect(images.length).toBeGreaterThanOrEqual(1);
     expect(images[0]?.mediaType).toBe("image/png");
+    expect(images[0]?.sourcePart).toBe("header_footer");
   });
 });
 
@@ -151,6 +154,7 @@ describe("assignDocxImagesToPages", () => {
         charOffset: 10,
         nearbyText: "early",
         altText: null,
+        sourcePart: "body" as const,
       },
       {
         ordinal: 2,
@@ -160,12 +164,58 @@ describe("assignDocxImagesToPages", () => {
         charOffset: 250,
         nearbyText: "late",
         altText: null,
+        sourcePart: "body" as const,
       },
     ];
 
     const byPage = assignDocxImagesToPages(pages, images, 300);
     expect(byPage.get(1)?.map((image) => image.ordinal)).toEqual([1]);
     expect(byPage.get(3)?.map((image) => image.ordinal)).toEqual([2]);
+  });
+});
+
+describe("listDocxInsertCandidates", () => {
+  it("marks header rasters as letterhead and keeps body figures insertable", () => {
+    const pages = [
+      { pageNumber: 1, text: "a".repeat(100) },
+      { pageNumber: 2, text: "b".repeat(100) },
+    ];
+    const images = [
+      {
+        ordinal: 1,
+        bytes: TINY_PNG,
+        mediaType: "image/png",
+        filename: "logo.png",
+        charOffset: 0,
+        nearbyText: "Document header/footer",
+        altText: null,
+        sourcePart: "header_footer" as const,
+      },
+      {
+        ordinal: 2,
+        bytes: TINY_PNG,
+        mediaType: "image/png",
+        filename: "swab.png",
+        charOffset: 150,
+        nearbyText: "Swab sampling technique",
+        altText: "Swab figure",
+        sourcePart: "body" as const,
+      },
+    ];
+    const candidates = listDocxInsertCandidates(pages, images, 200);
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        figure: 1,
+        page: 1,
+        letterhead: true,
+      }),
+      expect.objectContaining({
+        figure: 2,
+        page: 2,
+        letterhead: false,
+        nearbyText: "Swab sampling technique",
+      }),
+    ]);
   });
 });
 

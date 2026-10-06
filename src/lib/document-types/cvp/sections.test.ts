@@ -15,6 +15,7 @@ describe("cleaning verification protocol sections", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     expect(def.key).toBe("cleaning_verification_protocol");
     expect(def.documentNoLabel).toBe("Protocol No.");
+    expect(def.wordImport).toEqual({ kind: "cleaning_verification_protocol" });
     expect(def.sections).toHaveLength(30);
     expect(def.sections.map((s) => s.key)).toEqual([...CVP_SECTION_KEYS]);
     expect(CVP_FORM_NO).toBe("QAD-SOP-PS-003-F08-00");

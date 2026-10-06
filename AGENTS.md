@@ -223,6 +223,10 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   tools. Composer scope is `@` tags. Voice is click start / click stop
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
+- `insert_image` `source=document` copies a cited figure from a ready PDF
+  (page raster) or Word file (embedded PNG/JPEG; letterhead skipped). Search
+  first; do not invent drawings. Word drawings that are not rasters need a
+  PDF of the same file.
 - A QSR RTM family-column cell persists as `{section} – {audit line}`
   from the protocol body page that prints that heading — not a
   cover/contents `Section 8` cite, and not a reused number-only `12.1`.

@@ -9,7 +9,7 @@ import {
   isInsightsEnabled,
   isStatisticalAnalysisEnabled,
 } from "./packs";
-import { engineerReportsSubtitle, getDocumentType } from "@/lib/document-types";
+import { engineerReportsSubtitle, getDocumentType, isWordImportAvailable } from "@/lib/document-types";
 
 describe("3xper customer pack", () => {
   it("enables vendor qualification, QSR, and the cleaning verification protocol", () => {
@@ -25,6 +25,13 @@ describe("3xper customer pack", () => {
     expect(isDocumentTypeEnabled("investigation_report", XPER_PACK)).toBe(false);
     expect(isDocumentTypeEnabled("design_verification", XPER_PACK)).toBe(false);
     expect(XPER_PACK.wordImportEnabled).toBe(false);
+    expect(isWordImportAvailable("cleaning_verification_protocol", XPER_PACK)).toBe(
+      true
+    );
+    expect(isWordImportAvailable("qualification_summary_report", XPER_PACK)).toBe(
+      false
+    );
+    expect(isWordImportAvailable("vendor_qualification", XPER_PACK)).toBe(false);
     expect(XPER_PACK.citationsAtEndOfSection).toBe(true);
     expect(XPER_PACK.expertReviewEnabled).toBe(false);
     expect(isStatisticalAnalysisEnabled(XPER_PACK)).toBe(true);
