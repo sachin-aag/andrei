@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import PizZip from "pizzip";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import type { reports } from "@/db/schema";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import {
@@ -118,5 +119,73 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
       "08-Apr-2026"
     );
+  });
+
+  it("puts protocol numbers and equipment ids in Document reference #", async () => {
+    function cited(body: string, sources: readonly string[]): JSONContent {
+      return {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: body }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "Citations:" }] },
+          ...sources.map((source, i) => ({
+            type: "paragraph" as const,
+            content: [{ type: "text" as const, text: `${i + 1}. ${source}` }],
+          })),
+        ],
+      };
+    }
+    const zip = await exportZip(
+      sectionsWith({
+        cvp_objective: {
+          narrative: cited("Sampling follows the cited pages [1][2][3].", [
+            "[ANFD-1302, p. 3]",
+            "[1 CVPR-ISM4-26-001-00 ISM Stage-4 Cleaning Verification Protocol, p. 22]",
+            "[Isosorbide Mononitrate (Oral and Injection) PDE, p. 1]",
+          ]),
+        },
+      })
+    );
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const headingAt = document.indexOf("CITATIONS");
+    const citationsTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        document.indexOf(tbl) > headingAt &&
+        visibleText(tbl).includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const rows = [...(citationsTable!.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g) ?? [])].map(
+      (row) =>
+        [...row[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)].map((cell) =>
+          [...cell[0].matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
+            .map((m) => m[1])
+            .join("")
+        )
+    );
+    expect(rows[0]).toEqual([
+      "Citation #",
+      "Document reference #",
+      "Description of Document",
+      "Reference page#",
+    ]);
+    expect(rows).toContainEqual([
+      "1",
+      "ANFD-1302",
+      "Agitated Nutsche Filter cum Drier",
+      "Page # 3",
+    ]);
+    expect(rows).toContainEqual([
+      "2",
+      "CVPR-ISM4-26-001-00",
+      "ISM Stage-4 Cleaning Verification Protocol",
+      "Page # 22",
+    ]);
+    expect(rows).toContainEqual([
+      "3",
+      "",
+      "Isosorbide Mononitrate (Oral and Injection) PDE",
+      "Page # 1",
+    ]);
   });
 });
