@@ -22,7 +22,7 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper Innoventure — **nine** `documentType`s (pack-gated):
+Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper Innoventure — **ten** `documentType`s (pack-gated):
 
 | `documentType` | Noun | Packs | Sections |
 |----------------|------|-------|----------|
@@ -35,6 +35,7 @@ Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper
 | `generic_document` | document | demo | one continuous `body` section (no criteria) |
 | `vendor_qualification` | vendor qualification | 3xper | QAD-SOP-MS-001-F04 Cover + A–N + scoring (`vq_*` keys) |
 | `qualification_summary_report` | qualification summary report | 3xper | QAD/016/F06-00 sections 1–7 (`qsr_*` keys) |
+| `cleaning_verification_protocol` | cleaning verification protocol | 3xper | QAD-SOP-PS-003-F08-00 sections 1.0–24.0 (`cvp_*` keys) |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
@@ -222,6 +223,10 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   tools. Composer scope is `@` tags. Voice is click start / click stop
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
+- `insert_image` `source=document` copies a cited figure from a ready PDF
+  (page raster) or Word file (embedded PNG/JPEG; letterhead skipped). Search
+  first; do not invent drawings. Word drawings that are not rasters need a
+  PDF of the same file.
 - A QSR RTM family-column cell persists as `{section} – {audit line}`
   from the protocol body page that prints that heading — not a
   cover/contents `Section 8` cite, and not a reused number-only `12.1`.

@@ -38,6 +38,7 @@ const {
   dbUpdateMock,
   getReportAnalyticsMock,
   isDocumentNoTakenMock,
+  loadDocumentFigureMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
   readDocumentPageMock: vi.fn(),
@@ -54,6 +55,7 @@ const {
   dbUpdateMock: vi.fn(),
   getReportAnalyticsMock: vi.fn(),
   isDocumentNoTakenMock: vi.fn(),
+  loadDocumentFigureMock: vi.fn(),
 }));
 
 vi.mock("@/db", () => ({
@@ -113,6 +115,11 @@ vi.mock("@/lib/attachments/overlay-stored-pages", () => ({
 
 vi.mock("@/lib/statistical-analysis/store", () => ({
   getReportAnalytics: (...args: unknown[]) => getReportAnalyticsMock(...args),
+}));
+
+vi.mock("@/lib/attachments/load-document-figure", () => ({
+  loadDocumentFigure: (...args: unknown[]) =>
+    loadDocumentFigureMock(...(args as [])),
 }));
 
 vi.mock("@/lib/reports/document-no", async (importOriginal) => {
@@ -670,6 +677,19 @@ describe("buildChatTools insert_image", () => {
         targetField: "narrative",
         reasoning: "Copy the Analytics scatter",
         image: { source: "analytics", analysisId: "anl_1" },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the swab figure from the protocol",
+        image: {
+          source: "document",
+          filename: "protocol.docx",
+          page: 12,
+          figure: 2,
+        },
       })
     ).toBe(true);
   });
@@ -1936,6 +1956,7 @@ describe("buildChatTools propose edits", () => {
     dbUpdateMock.mockReset();
     getReportAnalyticsMock.mockReset();
     getReportAnalyticsMock.mockResolvedValue(null);
+    loadDocumentFigureMock.mockReset();
     loadDocumentPageEvidenceMock.mockReset();
     loadDocumentPageEvidenceMock.mockResolvedValue([]);
     searchReportDocumentsManyMock.mockReset();
@@ -4051,6 +4072,89 @@ describe("buildChatTools propose edits", () => {
       targetField: "narrative",
     });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("proposes insert_image from a ready Word/PDF attachment figure", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    loadDocumentFigureMock.mockResolvedValue({
+      ok: true,
+      image: {
+        src: dataUrl,
+        alt: "Swab sampling technique",
+        width: 640,
+        mediaId: null,
+      },
+      filename: "protocol.docx",
+      page: 12,
+      attachmentId: "att_protocol",
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the swab figure from the protocol.",
+        image: {
+          source: "document",
+          filename: "protocol.docx",
+          page: 12,
+          figure: 2,
+        },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(loadDocumentFigureMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-1",
+        filename: "protocol.docx",
+        page: 12,
+        figure: 2,
+      })
+    );
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("lists insertable figures when a Word page has more than one raster", async () => {
+    loadDocumentFigureMock.mockResolvedValue({
+      ok: false,
+      status: "available_figures",
+      message:
+        "Page 12 of 'protocol.docx' has 2 insertable figures. Pass image.figure as the Figure N from visualInterpretation:\nFigure 2: Swab sampling technique\nFigure 3: ISM Stage-4 vessel",
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the vessel sketch.",
+        image: {
+          source: "document",
+          filename: "protocol.docx",
+          page: 12,
+        },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "available_figures" });
+    expect((result as { message: string }).message).toContain("Figure 2:");
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
   it("falls back to a server render when a plot has no captured preview", async () => {

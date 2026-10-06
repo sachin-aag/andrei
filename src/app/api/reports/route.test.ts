@@ -81,6 +81,10 @@ vi.mock("@/lib/import/docx-to-generic-document", () => ({
   docxBufferToGenericDocument: vi.fn(),
 }));
 
+vi.mock("@/lib/import/docx-to-cvp", () => ({
+  docxBufferToImportedCvp: vi.fn(),
+}));
+
 vi.mock("@/lib/observability/langfuse", () => ({
   flushLangfuseTraces: vi.fn().mockResolvedValue(undefined),
   observeWork: (_name: string, fn: () => unknown) => fn(),
@@ -102,11 +106,13 @@ import {
   DEMO_PACK,
   getCustomerPack,
   MJ_PACK,
+  XPER_PACK,
 } from "@/lib/customers/packs";
 import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
+import { docxBufferToImportedCvp } from "@/lib/import/docx-to-cvp";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import { recordAuditEvent, recordSectionVersion } from "@/lib/audit";
@@ -734,6 +740,79 @@ describe("/api/reports", () => {
       })
     );
     expect(recordSectionVersion).toHaveBeenCalled();
+  });
+
+  it("creates a cleaning verification protocol from a Word upload on 3xper", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(XPER_PACK);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    vi.mocked(docxBufferToImportedCvp).mockResolvedValueOnce({
+      protocolNo: "CVRP-ISM4-26-001",
+      metadata: {
+        productName: "Isosorbide Mononitrate (ISM Stage-4)",
+        productCode: "ISM",
+        stage: "ISM4",
+        plant: "Production Block-2",
+        department: "Production",
+        documentTitle: "Cleaning Verification Protocol",
+        version: "00",
+        effectiveDate: "",
+      },
+      sections: {
+        cvp_objective: {
+          narrative: { type: "doc", content: [{ type: "paragraph" }] },
+        },
+      },
+      warnings: ["Headers and footers were omitted. Export uses the Andrei document template header."],
+    });
+    const { values } = mockSuccessfulCreate("report-cvp");
+    mockSectionRowsSelect("report-cvp", ["cvp_objective"]);
+
+    const form = new FormData();
+    form.append("documentType", "cleaning_verification_protocol");
+    form.append("documentNo", "CVRP-ISM4-26-001");
+    form.append(
+      "file",
+      new File(["x"], "protocol.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "cleaning_verification_protocol",
+        documentNo: "CVRP-ISM4-26-001",
+        metadata: expect.objectContaining({
+          productName: "Isosorbide Mononitrate (ISM Stage-4)",
+          productCode: "ISM",
+          importedFromFilename: "protocol.docx",
+        }),
+      })
+    );
+    expect(persistImportedWordComments).not.toHaveBeenCalled();
+    expect(persistReportSourceDocx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-cvp",
+        filename: "protocol.docx",
+        uploadedById: engineer.id,
+      })
+    );
+    expect(recordSectionVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-cvp",
+        section: "cvp_objective",
+        forceSnapshot: true,
+      })
+    );
   });
 
   it("rejects a Word upload for design verification", async () => {

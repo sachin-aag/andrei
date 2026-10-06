@@ -52,6 +52,7 @@ import {
   DEMO_PACK,
   getCustomerPack,
   MJ_PACK,
+  XPER_PACK,
 } from "@/lib/customers/packs";
 
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
@@ -390,6 +391,27 @@ describe("CreateReportDialog", () => {
     expect(
       screen.queryByText(/drop pdfs or word docs/i)
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a Word upload field for Cleaning Verification Protocol on 3xper", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(XPER_PACK);
+    const user = userEvent.setup();
+    render(<DialogHarness />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    await pickDocumentType(user, "cleaning_verification_protocol");
+
+    expect(
+      screen.getByRole("heading", { name: /create cleaning verification protocol/i })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/protocol no/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/existing protocol/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/existing report/i)).not.toBeInTheDocument();
+
+    await pickDocumentType(user, "vendor_qualification");
+    expect(screen.queryByLabelText(/existing protocol/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/existing report/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/existing document/i)).not.toBeInTheDocument();
   });
 
   it("offers software and mechanical DV on Convergent, not investigation", async () => {

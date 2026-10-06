@@ -293,6 +293,7 @@ import {
 } from "@/lib/attachments/list-catalog";
 import { listAttachmentFolders } from "@/lib/attachments/folders";
 import { listActiveAttachments } from "@/lib/attachments/list-active";
+import { loadDocumentFigure } from "@/lib/attachments/load-document-figure";
 import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
@@ -442,6 +443,12 @@ export type InsertImageResult =
   | { status: "plain_field"; message: string }
   | { status: "image_not_found"; message: string }
   | { status: "available_plots"; message: string }
+  | { status: "available_figures"; message: string }
+  | {
+      status: "attachment_out_of_scope";
+      attachmentId: string;
+      message: string;
+    }
   | { status: "too_many_images"; message: string }
   | { status: "review_incomplete"; message: string };
 
@@ -3161,7 +3168,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), or source=analytics (analysisId). Empty anchorText appends before Citations.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), source=analytics (analysisId), or source=document (filename + page from a ready PDF/DOCX). Empty anchorText appends before Citations.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3208,6 +3215,31 @@ export function buildChatTools(opts: {
               .min(1)
               .describe(
                 "Saved Analytics plot id from the context map or a tagged @ plot."
+              ),
+          }),
+          z.object({
+            source: z.literal("document"),
+            filename: z
+              .string()
+              .trim()
+              .min(1)
+              .describe(
+                "Ready attachment filename from list_attachments or search_documents."
+              ),
+            page: z
+              .number()
+              .int()
+              .min(1)
+              .describe(
+                "1-based page from search_documents / read_document_page (PDF page or Word pseudo-page)."
+              ),
+            figure: z
+              .number()
+              .int()
+              .min(1)
+              .optional()
+              .describe(
+                "Figure N from that page's visualInterpretation. Required when the Word page has more than one insertable raster. Omit for a PDF page (the whole page is rasterized)."
               ),
           }),
         ]),
@@ -3341,6 +3373,40 @@ export function buildChatTools(opts: {
                   message: `'${analysis.title}' could not be rendered as a figure. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
                 };
           }
+        } else if (source.source === "document") {
+          const loadedFigure = await loadDocumentFigure({
+            reportId,
+            filename: source.filename,
+            page: source.page,
+            figure: source.figure,
+            allowedAttachmentIds: pinnedAttachmentIds,
+          });
+          if (!loadedFigure.ok) {
+            if (loadedFigure.status === "attachment_out_of_scope") {
+              return {
+                status: "attachment_out_of_scope",
+                attachmentId: loadedFigure.attachmentId,
+                message: loadedFigure.message,
+              };
+            }
+            if (loadedFigure.status === "available_figures") {
+              return {
+                status: "available_figures",
+                message: loadedFigure.message,
+              };
+            }
+            return {
+              status: "image_not_found",
+              message: loadedFigure.message,
+            };
+          }
+          citationLedger.record(
+            loadedFigure.filename,
+            loadedFigure.page,
+            loadedFigure.attachmentId,
+            { quote: loadedFigure.image.alt ?? "" }
+          );
+          resolved = { ok: true, image: loadedFigure.image };
         } else {
           const locator = resolveSectionImageLocator({
             destSection: section,
@@ -3589,7 +3655,7 @@ export function buildChatTools(opts: {
           return {
             status: "image_not_found",
             message:
-              "Could not insert this image. Call insert_image with source=chat, source=section (image.id from read_section), or source=analytics (analysisId from the context map). Do not put markdown image syntax in draft_field.",
+              "Could not insert this image. Call insert_image with source=chat, source=section (image.id from read_section), source=analytics (analysisId from the context map), or source=document (filename + page from a ready PDF/DOCX). Do not put markdown image syntax in draft_field.",
           };
         }
       }),

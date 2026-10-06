@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCurrentUser } from "@/lib/auth/session";
-import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
+import { DEMO_PACK, getCustomerPack, MJ_PACK, XPER_PACK } from "@/lib/customers/packs";
 import { POST } from "@/app/api/reports/import-preview/route";
 
 vi.mock("next/server", async (importOriginal) => {
@@ -47,6 +47,24 @@ vi.mock("@/lib/import/docx-to-generic-document", () => ({
   },
   docxBufferToGenericDocument: vi.fn().mockResolvedValue({
     narrative: { type: "doc", content: [{ type: "paragraph" }] },
+    warnings: [],
+  }),
+}));
+
+vi.mock("@/lib/import/docx-to-cvp", () => ({
+  docxBufferToImportedCvp: vi.fn().mockResolvedValue({
+    protocolNo: "CVRP-ISM4-26-001",
+    metadata: {
+      productName: "Isosorbide Mononitrate (ISM Stage-4)",
+      productCode: "ISM",
+      stage: "ISM4",
+      plant: "Production Block-2",
+      department: "Production",
+      documentTitle: "",
+      version: "00",
+      effectiveDate: "",
+    },
+    sections: {},
     warnings: [],
   }),
 }));
@@ -133,6 +151,33 @@ describe("/api/reports/import-preview", () => {
     await expect(response.json()).resolves.toEqual({
       deviationNo: null,
       documentNo: null,
+    });
+  });
+
+  it("returns the protocol number for a CVP Word preview on 3xper", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(XPER_PACK);
+
+    const form = new FormData();
+    form.append("documentType", "cleaning_verification_protocol");
+    form.append(
+      "file",
+      new File(["x"], "protocol.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports/import-preview", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      deviationNo: "CVRP-ISM4-26-001",
+      documentNo: "CVRP-ISM4-26-001",
     });
   });
 });

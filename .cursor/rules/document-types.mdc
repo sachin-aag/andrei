@@ -20,7 +20,8 @@ Reports are `investigation_report`, `failure_investigation_report` (MJ
 Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
 `equipment_lifecycle_report`, `generic_document` (demo pack only), or
-`vendor_qualification` / `qualification_summary_report` (3xper pack only). The registry is
+`vendor_qualification` / `qualification_summary_report` /
+`cleaning_verification_protocol` (3xper pack only). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 
@@ -77,7 +78,9 @@ const sections = getWorkspaceSections(report.documentType);
   `export.templatePath` and `buildTemplateData` (investigation still has an
   explicit DMAIC branch in `generate-docx.ts`; generic documents use
   `templates/generic-document-template.docx`; 3xper VQ uses
-  `templates/3xper-vendor-qualification-template.docx` via the DV xml merge).
+  `templates/3xper-vendor-qualification-template.docx` via the DV xml merge;
+  3xper CVP uses `templates/3xper-cleaning-verification-protocol-template.docx`
+  (`pnpm build-cvp-template`) with `{@cvp_*Xml}` slots).
 - `generic_document` is demo-only: one `body` section, `evaluation.kind === "none"`
   (hide Criteria / Run AI Check), headings enabled, Word import is type-owned
   (`wordImport.kind === "generic_body"` — do **not** set pack `wordImportEnabled`
@@ -85,6 +88,9 @@ const sections = getWorkspaceSections(report.documentType);
   (pending insert/delete marks persist and export as Word tracked changes).
   The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
   do not persist page-break nodes.
+- 3xper `cleaning_verification_protocol` Word import is also type-owned
+  (`wordImport.kind === "cleaning_verification_protocol"`). Do **not** turn on
+  pack `wordImportEnabled` — VQ and QSR stay without create-time upload.
 - Left-rail chrome is Attachments | Contents on every pack (Convergent layout:
   tabs on the first row, folder/upload on a second row while Attachments is
   selected). `getReportTableOfContents(documentType)` always returns an outline

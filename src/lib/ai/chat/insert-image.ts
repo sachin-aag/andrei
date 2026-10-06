@@ -151,10 +151,116 @@ export type AnalyticsImageSource = {
   analysisId: string;
 };
 
+export type DocumentImageSource = {
+  source: "document";
+  /** Ready attachment filename from list_attachments / search_documents. */
+  filename: string;
+  /** 1-based page (PDF page or Word mammoth pseudo-page). */
+  page: number;
+  /**
+   * Figure N from that page's visualInterpretation. Required when the page
+   * has more than one insertable raster. Omit for a PDF page raster.
+   */
+  figure?: number;
+};
+
 export type InsertImageSource =
   | ChatImageSource
   | SectionImageSource
-  | AnalyticsImageSource;
+  | AnalyticsImageSource
+  | DocumentImageSource;
+
+export type ListedDocumentFigure = {
+  figure: number;
+  page: number;
+  nearbyText: string;
+  altText: string | null;
+  letterhead: boolean;
+};
+
+function truncateFigureHint(text: string): string {
+  const trimmed = text.replace(/\s+/g, " ").trim();
+  if (trimmed.length <= 80) return trimmed;
+  return `${trimmed.slice(0, 77).trimEnd()}…`;
+}
+
+export function formatAvailableDocumentFigures(
+  filename: string,
+  page: number,
+  figures: ListedDocumentFigure[]
+): string {
+  if (figures.length === 0) {
+    return `No insertable figure on page ${page} of '${filename}'. Header/letterhead images are skipped. Word drawings that are not PNG/JPEG cannot be copied from a .docx — attach a PDF of the same file and insert that page.`;
+  }
+  const lines = figures.map((item) => {
+    const hint =
+      truncateFigureHint(item.nearbyText) ||
+      truncateFigureHint(item.altText ?? "") ||
+      "embedded raster";
+    return `Figure ${item.figure}: ${hint}`;
+  });
+  return `Page ${page} of '${filename}' has ${figures.length} insertable figure${
+    figures.length === 1 ? "" : "s"
+  }. Pass image.figure as the Figure N from visualInterpretation:\n${lines.join("\n")}`;
+}
+
+export function pickDocumentFigure(input: {
+  filename: string;
+  page: number;
+  figure?: number;
+  candidates: ListedDocumentFigure[];
+}):
+  | { ok: true; figure: number }
+  | { ok: false; message: string } {
+  const filename = input.filename.trim() || "unnamed";
+  const onPage = input.candidates.filter((item) => item.page === input.page);
+  const insertable = onPage.filter((item) => !item.letterhead);
+  const requested = input.figure;
+
+  if (requested != null) {
+    const hit = input.candidates.find((item) => item.figure === requested);
+    if (!hit) {
+      return {
+        ok: false,
+        message:
+          insertable.length === 0
+            ? formatAvailableDocumentFigures(filename, input.page, insertable)
+            : `No Figure ${requested} in '${filename}'. ${formatAvailableDocumentFigures(
+                filename,
+                input.page,
+                insertable
+              )}`,
+      };
+    }
+    if (hit.letterhead) {
+      return {
+        ok: false,
+        message: `Figure ${requested} is letterhead and cannot be inserted. ${formatAvailableDocumentFigures(
+          filename,
+          hit.page,
+          input.candidates.filter(
+            (item) => item.page === hit.page && !item.letterhead
+          )
+        )}`,
+      };
+    }
+    if (hit.page !== input.page) {
+      return {
+        ok: false,
+        message: `Figure ${requested} is on page ${hit.page} of '${filename}', not page ${input.page}. Retry insert_image with page=${hit.page} and figure=${requested}.`,
+      };
+    }
+    return { ok: true, figure: hit.figure };
+  }
+
+  if (insertable.length === 1) {
+    return { ok: true, figure: insertable[0]!.figure };
+  }
+  return {
+    ok: false,
+    message: formatAvailableDocumentFigures(filename, input.page, insertable),
+  };
+}
 
 export type ResolveAnalyticsImageResult =
   | { ok: true; image: SuggestionImageInsert }

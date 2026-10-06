@@ -38,6 +38,7 @@ import {
   CONVERGENT_DOCX_RUN_STYLE,
   MJ_FIR_DOCX_RUN_STYLE,
   QSR_DOCX_RUN_STYLE,
+  CVP_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
@@ -99,6 +100,7 @@ import {
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 import { applyQsrSlotsToDocxZip } from "@/lib/export/qsr/render";
 import { QSR_SECTION_KEYS, qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
+import { CVP_SECTION_KEYS } from "@/lib/document-types/cvp/sections";
 import { VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -566,12 +568,15 @@ export async function generateReportDocx({
   if (
     !omitCitations &&
     (report.documentType === "vendor_qualification" ||
-      report.documentType === "qualification_summary_report")
+      report.documentType === "qualification_summary_report" ||
+      report.documentType === "cleaning_verification_protocol")
   ) {
     const sectionKeys =
       report.documentType === "vendor_qualification"
         ? VQ_SECTION_KEYS
-        : QSR_SECTION_KEYS;
+        : report.documentType === "cleaning_verification_protocol"
+          ? CVP_SECTION_KEYS
+          : QSR_SECTION_KEYS;
     const unified = unifyReportCitationsForExport(exportSections, sectionKeys, {
       sourceIdentity: (source) =>
         threeXperCitationIdentityKey(source, exportSections),
@@ -598,7 +603,8 @@ export async function generateReportDocx({
     report.documentType === "equipment_lifecycle_report" ||
     report.documentType === "vendor_qualification" ||
     report.documentType === "failure_investigation_report" ||
-    report.documentType === "qualification_summary_report"
+    report.documentType === "qualification_summary_report" ||
+    report.documentType === "cleaning_verification_protocol"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,
@@ -757,9 +763,11 @@ async function generateDesignVerificationDocx({
       ? MJ_FIR_DOCX_RUN_STYLE
       : documentType === "qualification_summary_report"
         ? QSR_DOCX_RUN_STYLE
-        : pack.id === "convergent"
-        ? CONVERGENT_DOCX_RUN_STYLE
-        : undefined,
+        : documentType === "cleaning_verification_protocol"
+          ? CVP_DOCX_RUN_STYLE
+          : pack.id === "convergent"
+            ? CONVERGENT_DOCX_RUN_STYLE
+            : undefined,
     { pageSetup }
   );
   const def = getDocumentType(documentType);
