@@ -44,6 +44,27 @@ describe("cleaning verification protocol sections", () => {
     expect(tables[2]?.cells.some((cell) => cell.text === "MAXCONC")).toBe(true);
   });
 
+  it("strips a leftover Table 15 caption on the unused 15.1 identity shell at merge", () => {
+    const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
+    const narrative =
+      "narrative" in seed
+        ? structuredClone(seed.narrative)
+        : { type: "doc" as const, content: [] };
+    const tableIndex =
+      narrative.content?.findIndex((node) => node.type === "table") ?? -1;
+    narrative.content?.splice(tableIndex, 0, {
+      type: "paragraph",
+      content: [{ type: "text", text: "Table 15. Cvp Equipment Sampling" }],
+    });
+    const def = getDocumentType("cleaning_verification_protocol");
+    const merged = def.mergeSection("cvp_equipment_sampling", {
+      narrative,
+    }) as { narrative: { content?: Array<{ type?: string }> } };
+    const text = JSON.stringify(merged);
+    expect(text).not.toMatch(/Table 15/);
+    expect(text).not.toMatch(/Cvp Equipment Sampling/);
+  });
+
   it("prints a product-specific title when the cover product is set", () => {
     expect(cvpPrintedDocumentTitle(cvpMetadataFrom({}))).toBe(
       "Cleaning Verification Protocol for Equipment and Associated Auxiliary Systems"

@@ -112,7 +112,7 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("Isosorbide Mononitrate (ISM Stage-4)");
     expect(body).toContain("Production Block-2");
     expect(body).toContain("1.0 Approval Signatures");
-    expect(body).toContain("15.1 Equipment Sampling Plans");
+    expect(body).toContain("15.1–15.10 Equipment Sampling Plans");
     expect(header).toContain("CVRP-ISM4-26-001");
     expect(header).toContain("Production");
     expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(

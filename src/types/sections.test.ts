@@ -16,6 +16,9 @@ describe("displaySectionLabel", () => {
     expect(displaySectionLabel("cvp_maco")).toBe(
       "10.0 Maximum Allowable Carryover (MACO)"
     );
+    expect(displaySectionLabel("cvp_equipment_sampling")).toBe(
+      "15.1–15.10 Equipment Sampling Plans"
+    );
   });
 
   it("title-cases unknown keys instead of showing underscores", () => {

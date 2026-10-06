@@ -25,6 +25,7 @@ import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import {
   CVP_MACO_EQUIPMENT_HEADERS,
   CVP_MACO_FORMULA_HEADERS,
+  EMPTY_CVP_CONTENT,
 } from "@/lib/document-types/cvp/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
@@ -517,6 +518,9 @@ describe("applyTableOperation", () => {
   it("titles CVP table captions from the section label, not Cvp Maco", () => {
     expect(defaultTableCaptionTitle("cvp_maco")).toBe(
       "Maximum Allowable Carryover (MACO)"
+    );
+    expect(defaultTableCaptionTitle("cvp_equipment_sampling")).toBe(
+      "Equipment Sampling Plans"
     );
   });
 
@@ -2707,5 +2711,132 @@ describe("applyEditCells appliedOperation", () => {
     expect(cellText(result.doc, 2, 4)).toBe(
       "8.2.4 – Operational verification of agitator"
     );
+  });
+});
+
+function captionTexts(doc: JSONContent): string[] {
+  return (doc.content ?? [])
+    .filter((node) => node.type === "paragraph")
+    .map((node) => flattenForAnchor(node).text.trim())
+    .filter((text) => /^Table\s+\d+\./i.test(text));
+}
+
+function cvpNarrative(section: keyof typeof EMPTY_CVP_CONTENT): JSONContent {
+  const content = EMPTY_CVP_CONTENT[section];
+  if (!("narrative" in content)) {
+    throw new Error(`${section} is not a narrative section`);
+  }
+  return structuredClone(content.narrative);
+}
+
+function cvpTable(section: keyof typeof EMPTY_CVP_CONTENT): JSONContent {
+  const content = EMPTY_CVP_CONTENT[section];
+  if (!("table" in content)) {
+    throw new Error(`${section} is not a table section`);
+  }
+  return structuredClone(content.table);
+}
+
+describe("CVP seed-aware table numbering", () => {
+  it("does not caption the unused 15.1 identity shell", () => {
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "cvp_equipment_sampling",
+        content: { narrative: cvpNarrative("cvp_equipment_sampling") },
+      },
+    ]);
+    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    expect(captionTexts(doc)).toEqual([]);
+  });
+
+  it("strips a leftover Table 15. Cvp Equipment Sampling caption on the seed identity grid", () => {
+    const seed = cvpNarrative("cvp_equipment_sampling");
+    const tableIndex = seed.content?.findIndex((node) => node.type === "table") ?? -1;
+    seed.content?.splice(tableIndex, 0, {
+      type: "paragraph",
+      content: [{ type: "text", text: "Table 15. Cvp Equipment Sampling" }],
+    });
+    const { contents } = renumberFilledTableCaptions([
+      { section: "cvp_equipment_sampling", content: { narrative: seed } },
+    ]);
+    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    expect(flattenForAnchor(doc).text).not.toMatch(/Table\s+15\./i);
+    expect(flattenForAnchor(doc).text).not.toMatch(/Cvp Equipment Sampling/i);
+  });
+
+  it("captions identity once Details are filled, and upgrades a stale Cvp title", () => {
+    const filled = applyTableOperation(
+      cvpNarrative("cvp_equipment_sampling"),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, insertText: "20 KL" }],
+      },
+      { section: "cvp_equipment_sampling", targetField: "narrative" }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    expect(captionTexts(filled.doc)).toEqual([
+      "Table 1. Equipment Sampling Plans",
+    ]);
+
+    const stale: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Cvp Equipment Sampling" }],
+        },
+        ...(filled.doc.content ?? []).filter((node) => node.type === "table"),
+      ],
+    };
+    const { contents } = renumberFilledTableCaptions([
+      { section: "cvp_equipment_sampling", content: { narrative: stale } },
+    ]);
+    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    expect(captionTexts(doc)).toEqual(["Table 1. Equipment Sampling Plans"]);
+  });
+
+  it("captions complete WAF seed rows and leaves the empty rinse-calc shell unnumbered", () => {
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "cvp_rinse_volume",
+        content: { narrative: cvpNarrative("cvp_rinse_volume") },
+      },
+    ]);
+    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    expect(captionTexts(doc)).toEqual(["Table 1. Rinse Volume Calculation"]);
+  });
+
+  it("does not caption MACO PDE or equipment shells until a value is filled", () => {
+    const { contents: seedCaptioned } = renumberFilledTableCaptions([
+      { section: "cvp_maco", content: { narrative: cvpNarrative("cvp_maco") } },
+    ]);
+    const seedDoc = (seedCaptioned[0]?.content as { narrative: JSONContent })
+      .narrative;
+    expect(captionTexts(seedDoc)).toEqual([]);
+
+    const filled = applyTableOperation(
+      cvpNarrative("cvp_maco"),
+      {
+        kind: "edit_cells",
+        tableIndex: 1,
+        cells: [{ row: 1, col: 2, insertText: "0.1 mg/day" }],
+      },
+      { section: "cvp_maco", targetField: "narrative" }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    expect(captionTexts(filled.doc)).toEqual([
+      "Table 1. Maximum Allowable Carryover (MACO)",
+    ]);
+  });
+
+  it("still captions complete abbreviation seed rows as Table 1", () => {
+    const { contents } = renumberFilledTableCaptions([
+      { section: "cvp_abbreviations", content: { table: cvpTable("cvp_abbreviations") } },
+    ]);
+    const doc = (contents[0]?.content as { table: JSONContent }).table;
+    expect(captionTexts(doc)).toEqual(["Table 1. Abbreviations"]);
   });
 });

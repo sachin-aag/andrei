@@ -4,10 +4,17 @@ import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
 import {
   ELR_TABLE_CAPTION_TITLES,
+  EMPTY_ELR_CONTENT,
   elrTableHeadersForSection,
 } from "@/lib/document-types/elr/sections";
-import { QSR_RTM_FAMILY_HEADERS } from "@/lib/document-types/qsr/sections";
-import { CVP_SECTION_LABELS } from "@/lib/document-types/cvp/sections";
+import {
+  EMPTY_QSR_CONTENT,
+  QSR_RTM_FAMILY_HEADERS,
+} from "@/lib/document-types/qsr/sections";
+import {
+  CVP_SECTION_LABELS,
+  EMPTY_CVP_CONTENT,
+} from "@/lib/document-types/cvp/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -18,7 +25,7 @@ import {
 } from "@/lib/suggestions/block-insert";
 import { normalizeTrailingCitationBlockInDoc } from "@/lib/suggestions/citations-at-end";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
-import { displaySectionLabel } from "@/types/sections";
+import { displaySectionLabel, humanizeSectionKey } from "@/types/sections";
 
 /** Structured table mutation proposed via `edit_table` and stored on an `ai_fix`. */
 export type TableOperation =
@@ -273,8 +280,8 @@ export function countFilledTablesInDocument(
   contents: readonly DocumentTableContent[]
 ): number {
   let count = 0;
-  walkFilledTablesInDocument(contents, ({ table }) => {
-    if (tableHasData(table)) count += 1;
+  walkFilledTablesInDocument(contents, (location) => {
+    if (tableHasData(location.table, location)) count += 1;
   });
   return count;
 }
@@ -290,11 +297,11 @@ export function sectionForPrintedTableNumber(
   if (!Number.isInteger(printed) || printed < 1) return undefined;
   let ordinal = 0;
   let found: string | undefined;
-  walkFilledTablesInDocument(contents, ({ section, table }) => {
-    if (!tableHasData(table)) return;
+  walkFilledTablesInDocument(contents, (location) => {
+    if (!tableHasData(location.table, location)) return;
     ordinal += 1;
     if (ordinal === printed) {
-      found = section;
+      found = location.section;
       return false;
     }
   });
@@ -322,7 +329,7 @@ export function filledTableNumberInDocument(args: {
       section === args.target.section &&
       fieldMatches &&
       tableIndex === args.target.tableIndex;
-    if (!tableHasData(table) && !matched) return;
+    if (!tableHasData(table, { section, field, tableIndex }) && !matched) return;
     ordinal += 1;
     if (matched) {
       found = ordinal;
@@ -374,7 +381,8 @@ export function isFixedColumnTable(
   );
 }
 
-const SECTION_NUMBER_PREFIX_RE = /^\d+(?:\.\d+)*\s+/;
+const SECTION_NUMBER_PREFIX_RE =
+  /^\d+(?:\.\d+)*(?:[–-]\d+(?:\.\d+)*)?\s+/;
 
 export function defaultTableCaptionTitle(section: string): string {
   const elrTitle =
@@ -404,14 +412,99 @@ export function captionNumberAboveTable(
   return captionMatch(location.parent.content[location.index - 1]);
 }
 
-function tableHasData(table: JSONContent): boolean {
-  const rows = tableRows(table);
-  for (let i = 1; i < rows.length; i += 1) {
-    for (const cell of rowCells(rows[i]!)) {
-      if (cellPlainText(cell)) return true;
+type SeedTableLocation = {
+  section: string;
+  field: string;
+  tableIndex: number;
+};
+
+function emptySectionRecord(
+  section: string
+): Record<string, unknown> | undefined {
+  if (Object.hasOwn(EMPTY_CVP_CONTENT, section)) {
+    return EMPTY_CVP_CONTENT[section as keyof typeof EMPTY_CVP_CONTENT] as Record<
+      string,
+      unknown
+    >;
+  }
+  if (Object.hasOwn(EMPTY_ELR_CONTENT, section)) {
+    return EMPTY_ELR_CONTENT[section as keyof typeof EMPTY_ELR_CONTENT] as Record<
+      string,
+      unknown
+    >;
+  }
+  if (Object.hasOwn(EMPTY_QSR_CONTENT, section)) {
+    return EMPTY_QSR_CONTENT[section as keyof typeof EMPTY_QSR_CONTENT] as Record<
+      string,
+      unknown
+    >;
+  }
+  return undefined;
+}
+
+function seedTableAt(location: SeedTableLocation): JSONContent | undefined {
+  const empty = emptySectionRecord(location.section);
+  if (!empty) return undefined;
+  const path =
+    location.field ||
+    (empty.narrative !== undefined
+      ? "narrative"
+      : empty.table !== undefined
+        ? "table"
+        : "");
+  if (!path) return undefined;
+  return collectTables(getRichFieldValue(empty, path))[location.tableIndex];
+}
+
+function dataCellGrid(table: JSONContent): string[][] {
+  return tableRows(table)
+    .slice(1)
+    .map((row) => rowCells(row).map(cellPlainText));
+}
+
+function gridsMatch(live: string[][], seed: string[][]): boolean {
+  if (live.length !== seed.length) return false;
+  for (let row = 0; row < live.length; row += 1) {
+    const liveRow = live[row]!;
+    const seedRow = seed[row]!;
+    if (liveRow.length !== seedRow.length) return false;
+    for (let col = 0; col < liveRow.length; col += 1) {
+      if (liveRow[col] !== seedRow[col]) return false;
     }
   }
-  return false;
+  return true;
+}
+
+function seedLooksComplete(grid: string[][]): boolean {
+  if (grid.length === 0) return false;
+  return grid.every((row) => row.every((cell) => cell.length > 0));
+}
+
+/**
+ * True when the table should occupy a Table N caption. Completely blank data
+ * rows do not count. Seed-matching incomplete shells (CVP identity Capacity /
+ * MOC with empty Details, PDE with empty Value) do not count. Complete seed
+ * tables (WAF, abbreviations, responsibilities) do. Any cell that differs from
+ * the seed counts as filled.
+ */
+function tableHasData(table: JSONContent, location?: SeedTableLocation): boolean {
+  const live = dataCellGrid(table);
+  const hasAny = live.some((row) => row.some((cell) => cell.length > 0));
+  if (!hasAny) return false;
+  const seed = location ? seedTableAt(location) : undefined;
+  if (!seed) return true;
+  const seedGrid = dataCellGrid(seed);
+  if (gridsMatch(live, seedGrid)) return seedLooksComplete(seedGrid);
+  return true;
+}
+
+const STALE_PACK_PREFIX_RE = /^(Cvp|Qsr|Elr|Fir|Vq)\b/i;
+
+function captionTitleNeedsUpgrade(title: string, section: string): boolean {
+  const trimmed = title.trim();
+  if (!trimmed) return true;
+  if (trimmed === humanizeSectionKey(section)) return true;
+  return STALE_PACK_PREFIX_RE.test(trimmed);
 }
 
 function captionTitleFromParagraph(node: JSONContent): string {
@@ -430,10 +523,23 @@ function writeCaptionParagraph(
   node.content = [{ type: "text", text: `Table ${number}. ${title.trim()}` }];
 }
 
+function tableLocationFromContext(
+  tableIndex: number,
+  context?: TableOperationContext
+): SeedTableLocation | undefined {
+  if (!context?.section) return undefined;
+  return {
+    section: context.section,
+    field: context.targetField || "narrative",
+    tableIndex,
+  };
+}
+
 /**
  * Insert or rewrite `Table N. {title}` immediately above a filled table.
  * With `documentContents`, N is the filled-grid ordinal and a stale caption
- * is rewritten. Without it, an existing caption is kept (fill-order fallback).
+ * is rewritten. Without it, an existing caption is kept (fill-order fallback)
+ * unless the title is a leftover pack-prefix humanize (`Cvp Equipment Sampling`).
  */
 export function ensureCaptionOnFilledTable(
   doc: JSONContent,
@@ -442,24 +548,36 @@ export function ensureCaptionOnFilledTable(
 ): { doc: JSONContent; tableNumber?: number } {
   const tables = collectTables(doc);
   const table = tables[tableIndex];
-  if (!table || !tableHasData(table)) return { doc };
+  const seedLocation = tableLocationFromContext(tableIndex, context);
+  if (!table || !tableHasData(table, seedLocation)) return { doc };
   const location = collectTableLocations(doc)[tableIndex];
   if (!location?.parent.content) return { doc };
-  const defaultTitle = defaultTableCaptionTitle(context?.section ?? "");
+  const section = context?.section ?? "";
+  const defaultTitle = defaultTableCaptionTitle(section);
   const existingCaption = captionNumberAboveTable(doc, tableIndex);
   const useDocumentOrder = Boolean(context?.documentContents);
   const tableNumber = expectedTableNumber(doc, tableIndex, context);
   if (existingCaption !== null) {
-    if (!useDocumentOrder || existingCaption === tableNumber) {
-      return { doc, tableNumber: useDocumentOrder ? tableNumber : existingCaption };
-    }
     const captionNode = location.parent.content[location.index - 1];
-    if (captionNode) {
-      const title =
-        captionTitleFromParagraph(captionNode) || defaultTitle;
-      writeCaptionParagraph(captionNode, tableNumber, title);
+    const currentTitle = captionNode
+      ? captionTitleFromParagraph(captionNode)
+      : "";
+    const keepNumber = !useDocumentOrder || existingCaption === tableNumber;
+    const n = keepNumber
+      ? useDocumentOrder
+        ? tableNumber
+        : existingCaption
+      : tableNumber;
+    const title = captionTitleNeedsUpgrade(currentTitle, section)
+      ? defaultTitle
+      : currentTitle || defaultTitle;
+    if (
+      captionNode &&
+      (!keepNumber || captionTitleNeedsUpgrade(currentTitle, section))
+    ) {
+      writeCaptionParagraph(captionNode, n, title);
     }
-    return { doc, tableNumber };
+    return { doc, tableNumber: n };
   }
   location.parent.content.splice(
     location.index,
@@ -472,10 +590,12 @@ export function ensureCaptionOnFilledTable(
 /** Drop a leftover `Table N.` paragraph above an empty unused grid. */
 function stripCaptionAboveEmptyTable(
   doc: JSONContent,
-  tableIndex: number
+  tableIndex: number,
+  context?: TableOperationContext
 ): boolean {
   const table = collectTables(doc)[tableIndex];
-  if (!table || tableHasData(table)) return false;
+  const seedLocation = tableLocationFromContext(tableIndex, context);
+  if (!table || tableHasData(table, seedLocation)) return false;
   const location = collectTableLocations(doc)[tableIndex];
   if (!location?.parent.content) return false;
   if (captionMatch(location.parent.content[location.index - 1]) === null) {
@@ -483,6 +603,22 @@ function stripCaptionAboveEmptyTable(
   }
   location.parent.content.splice(location.index - 1, 1);
   return true;
+}
+
+/** Strip leftover captions on seed shells when loading a section (no SEQ). */
+export function stripCaptionsOnUnfilledTables(
+  doc: JSONContent,
+  context: { section: string; targetField: string }
+): JSONContent {
+  const working = structuredClone(doc);
+  const tableCount = collectTables(working).length;
+  for (let tableIndex = 0; tableIndex < tableCount; tableIndex += 1) {
+    stripCaptionAboveEmptyTable(working, tableIndex, {
+      section: context.section,
+      targetField: context.targetField,
+    });
+  }
+  return working;
 }
 
 /**
@@ -511,14 +647,15 @@ export function renumberFilledTableCaptions(
       for (let tableIndex = 0; tableIndex < tableCount; tableIndex += 1) {
         const table = collectTables(working)[tableIndex];
         if (!table) continue;
-        if (tableHasData(table)) {
-          ensureCaptionOnFilledTable(working, tableIndex, {
-            section: row.section,
-            targetField: field || "narrative",
-            documentContents: next,
-          });
+        const opContext: TableOperationContext = {
+          section: row.section,
+          targetField: field || "narrative",
+          documentContents: next,
+        };
+        if (tableHasData(table, tableLocationFromContext(tableIndex, opContext))) {
+          ensureCaptionOnFilledTable(working, tableIndex, opContext);
         } else {
-          stripCaptionAboveEmptyTable(working, tableIndex);
+          stripCaptionAboveEmptyTable(working, tableIndex, opContext);
         }
       }
       if (field === "") {

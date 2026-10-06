@@ -1,5 +1,6 @@
 import path from "node:path";
 import { CVP_PROMPT_VERSION } from "@/lib/customers/packs";
+import { stripCaptionsOnUnfilledTables } from "@/lib/suggestions/table-operation";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
@@ -157,7 +158,12 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
   const base = (EMPTY_CVP_CONTENT[key] as Record<string, unknown>)[field];
   const value =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
-  return { [field]: normalizeRichField(value ?? base) };
+  return {
+    [field]: stripCaptionsOnUnfilledTables(normalizeRichField(value ?? base), {
+      section: key,
+      targetField: field,
+    }),
+  };
 }
 
 export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
@@ -209,7 +215,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
       agent: [
         "Fill cover identity and 2.0 Objective, 3.0 Scope, and 4.0 Responsibilities from the attachments.",
         "Build the surface-area, rinse-volume, and MACO tables from the CPDR and PDE annexure.",
-        "Draft 15.1 Equipment Sampling Plans for each product-contact item in Scope.",
+        "Draft 15.1–15.10 Equipment Sampling Plans for each product-contact item in Scope.",
       ],
     },
     contextIdentity: cvpChatContextIdentity,
@@ -247,7 +253,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["cvp_sampling_procedure", [/\bsampling procedure\b/i, /\b13\.0\b/]],
       ["cvp_swab_locations", [/\bswab sample locations?\b/i, /\b14\.0\b/]],
       ["cvp_sampling_plan", [/\bsampling plan\b/i, /\b15\.0\b/]],
-      ["cvp_equipment_sampling", [/\bequipment sampling\b/i, /\b15\.1\b/]],
+      ["cvp_equipment_sampling", [/\bequipment sampling\b/i, /\b15\.(?:10|[1-9])\b/]],
       ["cvp_nitrosamine", [/\bnitrosamine\b/i, /\bndma\b/i, /\b15\.11\b/]],
       ["cvp_pgi", [/\bgenotoxic\b/i, /\bpgi\b/i, /\b15\.12\b/]],
       ["cvp_process_line", [/\bprocess line\b/i]],
