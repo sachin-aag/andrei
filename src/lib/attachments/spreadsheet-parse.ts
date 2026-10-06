@@ -72,14 +72,36 @@ function decodeCsvText(buffer: Buffer): string {
   if (buffer.length === 0) {
     throw new Error("File is not a valid CSV");
   }
-  for (const byte of buffer) {
-    if (byte === 0) {
-      throw new Error("File is not a valid CSV");
+  // ZIP magic — an .xlsx renamed to .csv.
+  if (
+    buffer.length >= 4 &&
+    buffer[0] === 0x50 &&
+    buffer[1] === 0x4b &&
+    buffer[2] === 0x03 &&
+    buffer[3] === 0x04
+  ) {
+    throw new Error("File is not a valid CSV");
+  }
+  const isUtf16Le = buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe;
+  const isUtf16Be = buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff;
+  // UTF-16 stores ASCII with NUL padding; skip the binary check for those BOMs.
+  if (!isUtf16Le && !isUtf16Be) {
+    for (const byte of buffer) {
+      if (byte === 0) {
+        throw new Error("File is not a valid CSV");
+      }
     }
   }
   let text: string;
-  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+  if (isUtf16Le) {
     text = buffer.subarray(2).toString("utf16le");
+  } else if (isUtf16Be) {
+    const swapped = Buffer.alloc(buffer.length - 2);
+    for (let i = 2; i + 1 < buffer.length; i += 2) {
+      swapped[i - 2] = buffer[i + 1]!;
+      swapped[i - 1] = buffer[i]!;
+    }
+    text = swapped.toString("utf16le");
   } else if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
     text = buffer.subarray(3).toString("utf8");
   } else {
