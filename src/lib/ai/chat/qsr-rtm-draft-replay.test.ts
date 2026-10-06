@@ -2597,18 +2597,13 @@ Complies`,
       status: "unsupported_facts",
       keepSearchOpen: true,
     });
-    const unsupported =
-      "unsupported" in result && Array.isArray(result.unsupported)
-        ? result.unsupported
-        : [];
+    const unsupported = (
+      result as {
+        unsupported?: Array<{ text?: string }>;
+      }
+    ).unsupported;
     expect(
-      unsupported
-        .map((row) =>
-          row && typeof row === "object" && "text" in row
-            ? String(row.text)
-            : ""
-        )
-        .join(" ")
+      (unsupported ?? []).map((row) => row.text ?? "").join(" ")
     ).toContain("24.50");
   });
 });
