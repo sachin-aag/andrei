@@ -427,6 +427,69 @@ const QSR_TOC: TableOfContentsEntry[] = [
   { label: "Conclusion", sectionKey: "qsr_conclusion" },
 ];
 
+/** QAD-SOP-PS-003-F08-00 Cleaning Verification Protocol. */
+const CVP_TOC: TableOfContentsEntry[] = [
+  { label: "Approval Signatures", sectionKey: "cvp_approvals" },
+  { label: "Objective", sectionKey: "cvp_objective" },
+  { label: "Scope", sectionKey: "cvp_scope" },
+  { label: "Responsibilities", sectionKey: "cvp_responsibilities" },
+  { label: "Background and Cleaning Procedure", sectionKey: "cvp_background" },
+  { label: "Pre-requisites", sectionKey: "cvp_prerequisites" },
+  { label: "Equipment Qualification Status", sectionKey: "cvp_qualification_status" },
+  { label: "Surface Area of the Equipment", sectionKey: "cvp_surface_area" },
+  { label: "Rinse Volume Calculation", sectionKey: "cvp_rinse_volume" },
+  { label: "Maximum Allowable Carryover (MACO)", sectionKey: "cvp_maco" },
+  {
+    label: "Acceptance Limit Calculation (Swab and Rinse)",
+    sectionKey: "cvp_acceptance_limits",
+  },
+  { label: "Cleaning Verification Methodology", sectionKey: "cvp_methodology" },
+  { label: "Sampling Procedure", sectionKey: "cvp_sampling_procedure" },
+  {
+    label: "Determination of Swab Sample Locations",
+    sectionKey: "cvp_swab_locations",
+  },
+  {
+    label: "Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary",
+    sectionKey: "cvp_sampling_plan",
+    children: [
+      { label: "Equipment Sampling Plans", sectionKey: "cvp_equipment_sampling" },
+      {
+        label: "Nitrosamine Limits in the Rinse Samples",
+        sectionKey: "cvp_nitrosamine",
+      },
+      {
+        label: "Potential Genotoxic Impurities Limits in the Rinse Samples",
+        sectionKey: "cvp_pgi",
+      },
+      {
+        label: "Process Line Cleaning Verification Summary",
+        sectionKey: "cvp_process_line",
+      },
+      {
+        label: "Manufacturing Area Cleaning Verification",
+        sectionKey: "cvp_manufacturing_area",
+      },
+      {
+        label: "Overall Cleaning Results Summary",
+        sectionKey: "cvp_overall_results",
+      },
+    ],
+  },
+  { label: "Testing Procedure", sectionKey: "cvp_testing_procedure" },
+  {
+    label: "Status of Cleaning Analytical Method Validation",
+    sectionKey: "cvp_method_validation",
+  },
+  { label: "Evaluation of Results and Reporting", sectionKey: "cvp_evaluation" },
+  { label: "Deviations", sectionKey: "cvp_deviations" },
+  { label: "Revalidation", sectionKey: "cvp_revalidation" },
+  { label: "Abbreviations", sectionKey: "cvp_abbreviations" },
+  { label: "Related Documents", sectionKey: "cvp_related_documents" },
+  { label: "List of Annexures", sectionKey: "cvp_annexures" },
+  { label: "History of the Document", sectionKey: "cvp_history" },
+];
+
 export function getConvergentTableOfContents(
   documentType: DocumentType
 ): TableOfContentsEntry[] | null {
@@ -534,6 +597,8 @@ function reportTableOfContentsRecipe(
       return VQ_TOC;
     case "qualification_summary_report":
       return QSR_TOC;
+    case "cleaning_verification_protocol":
+      return CVP_TOC;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;

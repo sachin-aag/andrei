@@ -12,10 +12,11 @@ import {
 import { engineerReportsSubtitle, getDocumentType } from "@/lib/document-types";
 
 describe("3xper customer pack", () => {
-  it("enables vendor qualification and the qualification summary report", () => {
+  it("enables vendor qualification, QSR, and the cleaning verification protocol", () => {
     expect(XPER_PACK.enabledDocumentTypes).toEqual([
       "vendor_qualification",
       "qualification_summary_report",
+      "cleaning_verification_protocol",
     ]);
     expect(isDocumentTypeEnabled("vendor_qualification", XPER_PACK)).toBe(true);
     expect(
@@ -42,6 +43,9 @@ describe("3xper customer pack", () => {
     );
     expect(getDocumentType("qualification_summary_report").label).toBe(
       "Qualification Summary Report"
+    );
+    expect(getDocumentType("cleaning_verification_protocol").label).toBe(
+      "Cleaning Verification Protocol"
     );
   });
 

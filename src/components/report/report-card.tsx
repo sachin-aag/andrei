@@ -24,6 +24,8 @@ function untitledFallback(documentType: DocumentType | undefined): string {
       return "Untitled vendor qualification";
     case "qualification_summary_report":
       return "Untitled qualification summary report";
+    case "cleaning_verification_protocol":
+      return "Untitled cleaning verification protocol";
     case "failure_investigation_report":
       return "Untitled DS investigation";
     case "investigation_report":

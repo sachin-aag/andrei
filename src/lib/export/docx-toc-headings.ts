@@ -221,6 +221,8 @@ export function tocHeadingSpecsForDocumentType(
     case "qualification_summary_report":
       // Headings and the Index are fixed paragraphs in the form template.
       return null;
+    case "cleaning_verification_protocol":
+      return null;
     case "failure_investigation_report":
       return FIR_TOC_HEADINGS;
     case "generic_document":

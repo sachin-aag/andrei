@@ -18,6 +18,7 @@ const ALL_TYPES: DocumentType[] = [
   "quality_risk_assessment",
   "generic_document",
   "vendor_qualification",
+  "cleaning_verification_protocol",
 ];
 
 function chipText(def: { chat: { examplePrompts: { plan: readonly string[]; agent: readonly string[] } } }) {
