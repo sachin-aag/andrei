@@ -53,7 +53,7 @@ const QSR_CATALOG_SECTIONS = [
 const CATALOG_NAME_COL = 0;
 const CATALOG_NUMBER_COL = 1;
 
-const FILE_EXTENSION = /\.(?:pdf|docx)$/i;
+const FILE_EXTENSION = /\.(?:pdf|docx|csv|xlsx)$/i;
 
 /**
  * Qualification-family labels ↔ abbreviations so a cite named

@@ -101,7 +101,7 @@ export function AdminAttachmentStorageBudgetPanel({
         <div>
           <h2 className="text-base font-semibold">Attachment storage</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Total PDF and Word file storage for this workspace. Linking a vault
+            Total PDF, Word, CSV, and Excel file storage for this workspace. Linking a vault
             file into a report does not count twice. When the hard limit is on,
             new uploads are blocked once stored bytes reach the cap.
           </p>

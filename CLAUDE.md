@@ -6,7 +6,7 @@ with this file, trust `AGENTS.md` / the rules / the code — then fix this file.
 
 ## Project
 
-Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification, a conclusion section, and a demo-only free-form Document (`generic_document`: one TipTap body, no criteria). MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, hides conclusion plus design verification, and adds Quality Risk Assessment (`quality_risk_assessment`, SOP/DP/QA/010) plus the Equipment Lifecycle Report (`equipment_lifecycle_report`) and Investigation Report DS (`failure_investigation_report`, SOP/QA/017-F01 R01). MJ is the only pack running two investigation forms, so it labels them by unit: **Investigation Report DP** (`investigation_report`, SOP/DP/QA/008, Drug Product) and **Investigation Report DS** (SOP/QA/017, Drug Substance). Demo and Convergent keep the plain `Investigation Report` label. Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). 3xper (`ANDREI_CUSTOMER=3xper`) is 3xper Innoventure branding with vendor qualification (`vendor_qualification`, QAD-SOP-MS-001-F04), the Qualification Summary Report (`qualification_summary_report`, QAD/016/F06-00), and the Cleaning Verification Protocol (`cleaning_verification_protocol`, QAD-SOP-PS-003-F08-00). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
+Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification, a conclusion section, and a demo-only free-form Document (`generic_document`: one TipTap body, no criteria). MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, hides conclusion plus design verification, and adds Quality Risk Assessment (`quality_risk_assessment`, SOP/DP/QA/010) plus the Equipment Lifecycle Report (`equipment_lifecycle_report`) and Investigation Report DS (`failure_investigation_report`, SOP/QA/017-F01 R01). MJ is the only pack running two investigation forms, so it labels them by unit: **Investigation Report DP** (`investigation_report`, SOP/DP/QA/008, Drug Product) and **Investigation Report DS** (SOP/QA/017, Drug Substance). Demo and Convergent keep the plain `Investigation Report` label. Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). 3xper (`ANDREI_CUSTOMER=3xper`) is 3xper Innoventure branding with vendor qualification (`vendor_qualification`, QAD-SOP-MS-001-F04), the Qualification Summary Report (`qualification_summary_report`, QAD/016/F06-00), and the Cleaning Verification Protocol (`cleaning_verification_protocol`, QAD-SOP-PS-003-F08-00). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX/CSV/XLSX ingest + chat retrieval), and DOCX export.
 
 ## Commands
 
@@ -86,7 +86,7 @@ and what each one stubs. Local config goes in `.env.local`.
 
 **Turbopack route registration bug:** In `pnpm dev`, a newly-added API route can fail to register on its first on-demand compile and return Next's HTML 404 page for every method. Fix: restart the dev server (optionally `rm -rf .next` first). This is a dev-server state issue, not a code bug.
 
-**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat / composer voice dictation need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` or Vertex (`GOOGLE_VERTEX_PROJECT` + WIF). PDF/DOCX ingest + embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`). Voice does **not** call Cloud Speech-to-Text.
+**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat / composer voice dictation need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` or Vertex (`GOOGLE_VERTEX_PROJECT` + WIF). PDF/DOCX extract and all ingest embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`); CSV/XLSX parse locally. Voice does **not** call Cloud Speech-to-Text.
 
 **Creating a workspace user locally:**
 ```bash
@@ -105,7 +105,7 @@ skill before working in the matching code:
   gate, pending-plan queue, document review, mentions, voice dictation.
 - `analytics-subsystem` — Report Analytics worksheet, sixpack / ANOVA / boxplot / histogram /
   scatter, analytics chat tools.
-- `attachments-retrieval` — PDF/DOCX ingest, chunk/embed, hybrid retrieval, the document vault.
+- `attachments-retrieval` — PDF/DOCX/CSV/XLSX ingest, chunk/embed, hybrid retrieval, the document vault.
 - `docx-pipeline` — DOCX import and DOCX export pipelines.
 
 The subsystems below are small enough to stay resident.

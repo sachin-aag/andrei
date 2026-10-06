@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v181-document-insert-image");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v182-spreadsheet-attachments");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -429,6 +429,7 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Retrieval mode: ADAPTIVE");
     expect(agent).toContain("Search the attachments first");
     expect(agent).toContain("list_attachments");
+    expect(agent).toContain("PDF vs Word vs CSV vs Excel");
     expect(agent).toContain("Do not start a document review");
   });
 

@@ -824,10 +824,10 @@ function libraryUploadCopy(state: LibraryUploadUi): {
               ? "These files aren't supported"
               : "This file isn't supported",
         description: canProceed
-          ? `The vault accepts PDF and Word documents. ${
+          ? `The vault accepts PDF, Word, CSV, and Excel files. ${
               plural ? "These files" : "This file"
             } will be skipped if you continue.`
-          : `The vault accepts PDF and Word documents. ${
+          : `The vault accepts PDF, Word, CSV, and Excel files. ${
               plural
                 ? "None of these files can be added."
                 : "This file can't be added."
@@ -1843,7 +1843,7 @@ export function DocumentLibrarySection({
       : inspectedAsset && !previewOpen
         ? `${inspectedAsset.filename} is selected`
         : isEmpty
-          ? "Drop PDF or Word files, or upload a folder"
+          ? "Drop PDF, Word, CSV, or Excel files, or upload a folder"
           : "Click a file to see its details"
     : checkedCount > 0
       ? `${checkedCount} selected`
@@ -1882,7 +1882,7 @@ export function DocumentLibrarySection({
           <h2 className="text-base font-semibold">Document vault</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
             Upload files or folders here, or drop them onto a folder. Nested
-            folders are kept. PDF and Word files are added; other types are
+            folders are kept. PDF, Word, CSV, and Excel files are added; other types are
             listed so you can skip them or cancel. Click a file to see details.
             Open a preview when you want to read it. Archive hides a file from
             this list; reports that already use it keep it. Restore from Archive

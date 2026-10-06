@@ -347,7 +347,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`filename` + `page`, optional `figure` = visualInterpretation Figure N).
   PDFs rasterize that page; Word copies an embedded PNG/JPEG (header/letterhead
   skipped). Word drawings that are not rasters cannot be copied — attach a
-  PDF of the same file. Search first; do not invent a figure. `available_figures`
+  PDF of the same file. CSV/XLSX ingest as markdown pages + `document_tables`
+  (no figures); `insert_image` stays PDF/DOCX only. Search first; do not invent
+  a figure. `available_figures`
   is not a proposal. Stay off the Plan allowlist.
 - Document **and** Agent chrome **propose** (red/green `ai_fix` comments;
   nothing lands until Apply / Dismiss, including Apply all / Dismiss all

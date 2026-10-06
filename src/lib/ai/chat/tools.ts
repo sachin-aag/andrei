@@ -285,6 +285,7 @@ import {
 } from "@/lib/attachments/retrieval";
 import { overlayNumericSignsOnReadPage } from "@/lib/attachments/overlay-stored-pages";
 import {
+  ATTACHMENT_CATALOG_FILE_KINDS,
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
   LIST_ATTACHMENTS_NOTE_MAX,
@@ -2307,9 +2308,9 @@ export function buildChatTools(opts: {
             `Folder path substring (nested paths included). Use ${LIST_ATTACHMENTS_ROOT_FOLDER} for files at the tree root.`
           ),
         fileType: z
-          .enum(["pdf", "docx", "other"])
+          .enum(ATTACHMENT_CATALOG_FILE_KINDS)
           .optional()
-          .describe("Filter to PDF, Word (.docx), or anything else."),
+          .describe("Filter to PDF, Word (.docx), CSV, Excel (.xlsx), or other."),
         status: z
           .enum(["all", "ready", "not_ready"])
           .optional()
@@ -2366,7 +2367,7 @@ export function buildChatTools(opts: {
           hint:
             catalog.nextOffset != null
               ? "Call again with offset=nextOffset to continue the file list. folders[] and fileTypes[] are already complete for this filter. Totals are the Attachments tree, not search hits."
-              : "folders[] and fileTypes[] are the folder and PDF/Word counts. These totals are the Attachments tree (including still-ingesting files unless status=ready). search_documents greps page text — use it when the question is which files mention a fact inside the PDF, not for the file set.",
+              : "folders[] and fileTypes[] are the folder and PDF/Word/CSV/Excel counts. These totals are the Attachments tree (including still-ingesting files unless status=ready). search_documents greps page text — use it when the question is which files mention a fact inside a file, not for the file set.",
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
         };
       },

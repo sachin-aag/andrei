@@ -5,7 +5,11 @@ import { Download, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
-import { kindFromMime } from "@/lib/attachments/file-types";
+import {
+  attachmentKindLabel,
+  kindFromMime,
+  usesHtmlPreview,
+} from "@/lib/attachments/file-types";
 import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
 
 export type AttachmentPreviewModel = {
@@ -65,9 +69,14 @@ export function AttachmentPreviewPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, onClose]);
 
-  const isDocx = kindFromMime(attachment.mimeType) === "docx";
-  const pageLabel = isDocx
-    ? "Word document"
+  const kind = kindFromMime(attachment.mimeType);
+  const htmlPreview = usesHtmlPreview(kind);
+  const pageLabel = htmlPreview
+    ? kind
+      ? attachment.pageCount && attachment.pageCount > 1
+        ? `${attachmentKindLabel(kind)} · ${visiblePage} of ${attachment.pageCount}`
+        : attachmentKindLabel(kind)
+      : "Document"
     : attachment.pageCount
       ? `Page ${visiblePage} of ${attachment.pageCount}`
       : `Page ${visiblePage}`;
@@ -130,7 +139,7 @@ export function AttachmentPreviewPanel({
       </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden overscroll-contain">
         {canPreview ? (
-          isDocx ? (
+          htmlPreview ? (
             <iframe
               key={previewUrl}
               src={previewUrl}

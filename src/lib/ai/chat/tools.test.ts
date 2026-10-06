@@ -401,7 +401,10 @@ describe("buildChatTools list_attachments", () => {
     ).toBe(false);
     expect(
       accepts(tools, "list_attachments", { fileType: "xlsx" })
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      accepts(tools, "list_attachments", { fileType: "csv" })
+    ).toBe(true);
     expect(tools.list_attachments?.description).toContain("Attachments tree");
     expect(tools.list_attachments?.description).toContain(
       "wrong tool for a file inventory"

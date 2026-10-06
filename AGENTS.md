@@ -194,7 +194,7 @@ is still warm. Home-list Open links go straight to `/edit` or `/review`
 | AI Check / suggestions | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | `ALLOW_TEST_SKIP_EVALUATION`, `ALLOW_TEST_SKIP_SUGGESTIONS` |
 | Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
 | Composer voice dictation | Same Gemini resolver as chat (Vertex WIF when `GOOGLE_VERTEX_PROJECT` is set). Native-script transcripts; assistant replies in English. Not Cloud Speech-to-Text | `ALLOW_TEST_STUB_SPEECH` |
-| PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
+| PDF/DOCX/CSV/XLSX ingest + embeddings | **Vertex** for PDF/DOCX extract and all embeddings (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). CSV/XLSX parse locally. Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
 
 CRUD, editor, review, and DOCX export work without AI keys.
 
