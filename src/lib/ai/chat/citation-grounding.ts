@@ -16,6 +16,7 @@ const LEDGER_TOOL_NAMES = new Set([
   "search_documents",
   "read_document_page",
   "finish_document_review",
+  "scan_attachments",
 ]);
 
 export type CitationPageDecision = "keep" | "drop" | "unknown";
@@ -196,6 +197,12 @@ export class CitationPageLedger {
    */
   recordedFilenames(): string[] {
     return this.files.map((file) => file.filename);
+  }
+
+  pageEvidence(filename: string, page: number): RecordedCitationPage | null {
+    const resolved = resolveCitedAttachment(this.files, filename);
+    if (resolved.status !== "found") return null;
+    return this.evidenceByKey.get(pageKey(resolved.attachment.id, page)) ?? null;
   }
 
   private idForFilename(filename: string): string {
@@ -426,6 +433,30 @@ function collectPagesFromToolOutput(
   if (rec.page && typeof rec.page === "object" && !Array.isArray(rec.page)) {
     recordRow(rec.page);
   }
+  const files = rec.files;
+  if (Array.isArray(files)) {
+    for (const file of files) {
+      if (!file || typeof file !== "object" || Array.isArray(file)) continue;
+      const fileRec = file as Record<string, unknown>;
+      recordRow(fileRec);
+      const filename =
+        typeof fileRec.filename === "string" ? fileRec.filename : "";
+      const attachmentId =
+        typeof fileRec.attachmentId === "string" ? fileRec.attachmentId : null;
+      const pages = fileRec.pages;
+      if (!Array.isArray(pages)) continue;
+      for (const page of pages) {
+        if (!page || typeof page !== "object" || Array.isArray(page)) continue;
+        const pageRec = page as Record<string, unknown>;
+        const pageNumber =
+          typeof pageRec.pageNumber === "number" ? pageRec.pageNumber : null;
+        if (!filename || pageNumber == null) continue;
+        record(filename, pageNumber, attachmentId, {
+          quote: quoteFromToolRow(pageRec),
+        });
+      }
+    }
+  }
 }
 
 function quoteFromToolRow(rec: Record<string, unknown>): string {
@@ -459,7 +490,7 @@ function quoteFromToolRow(rec: Record<string, unknown>): string {
   return pieces.join("\n");
 }
 
-function unwrapToolOutput(output: unknown): unknown {
+export function unwrapToolOutput(output: unknown): unknown {
   if (typeof output === "string") {
     const trimmed = output.trim();
     if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
@@ -472,7 +503,7 @@ function unwrapToolOutput(output: unknown): unknown {
   return output;
 }
 
-function toolNameFromPart(part: unknown): string | null {
+export function toolNameFromPart(part: unknown): string | null {
   if (!part || typeof part !== "object") return null;
   const rec = part as { type?: unknown; toolName?: unknown };
   if (typeof rec.toolName === "string" && rec.toolName.trim()) {
@@ -485,7 +516,7 @@ function toolNameFromPart(part: unknown): string | null {
   return null;
 }
 
-function toolOutputFromPart(part: unknown): unknown {
+export function toolOutputFromPart(part: unknown): unknown {
   if (!part || typeof part !== "object") return null;
   return (part as { output?: unknown }).output;
 }

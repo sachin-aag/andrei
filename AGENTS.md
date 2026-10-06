@@ -216,7 +216,13 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
 - Search-then-ask. Default retrieval is adaptive. Empty inventory tables need
   a finished matching document review before `edit_table` / `draft_rtm_table`. Hard facts in write
   tools must match a retrieved quote (`groundDraftText`). Every pack uses
-  `unsupportedFactPolicy: block`. Analytics `write_column` is not gated.
+  `unsupportedFactPolicy: block`. Prior assistant chat is not a keep-source
+  for unsupported facts (an echo of 24.50 m² does not persist). Ask (plan)
+  replies rewrite unsourced `[filename, p. N]` on persist and replace
+  unsourced hard facts with placeholders (attachment facts need a retrieved
+  quote; report/worksheet facts need `read_section` / `read_worksheet` this
+  turn). Analytics
+  `write_column` is not gated.
 - Saved fields use numbered `[n]` markers plus a trailing Citations list.
   Clicking a citation opens the in-app attachment tab (not a browser tab).
 - Follow the latest user message. Ask vs Agent is per send. Greetings strip
