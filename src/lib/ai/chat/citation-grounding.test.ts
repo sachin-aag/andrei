@@ -62,6 +62,48 @@ describe("CitationPageLedger", () => {
     expect(ledger.decision("protocol.pdf", 104)).toBe("drop");
   });
 
+  it("seeds pages and quotes from scan_attachments files[].pages[]", () => {
+    const ledger = new CitationPageLedger();
+    ledger.seedFromMessages([
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-scan_attachments",
+            toolCallId: "call_scan",
+            state: "output-available",
+            input: { query: "piping" },
+            output: {
+              status: "ok",
+              files: [
+                {
+                  attachmentId: "att-iq",
+                  filename: "Installation Qualification.PDF",
+                  pageCount: 40,
+                  spans: [],
+                  pages: [
+                    {
+                      pageNumber: 24,
+                      pageContext: "Jacket piping",
+                      transcript:
+                        "Jacket piping size 3.6 inch inlet. Outlet 14.1.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+    expect(ledger.decision("Installation Qualification.PDF", 24)).toBe("keep");
+    expect(ledger.decision("Installation Qualification.PDF", 12)).toBe("drop");
+    expect(
+      ledger.pageEvidence("Installation Qualification.PDF", 24)?.quote
+    ).toContain("3.6");
+  });
+
   it("seeds pages from finish_document_review citationDigest", () => {
     const ledger = new CitationPageLedger();
     ledger.seedFromMessages([

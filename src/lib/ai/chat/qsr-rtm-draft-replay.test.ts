@@ -14,6 +14,7 @@ import { emptyQsrContent, QSR_RTM_HEADERS } from "@/lib/document-types/qsr/secti
 import type { QsrSectionKey } from "@/lib/document-types/qsr/sections";
 import type { JSONContent } from "@tiptap/core";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
+import type { UIMessage } from "ai";
 
 /**
  * Production-incident replay for QSR section 5 (GLR-1301 / `qsr 2`).
@@ -315,6 +316,7 @@ function matchingRtmReview() {
 function buildTools(input: {
   section: QsrSectionKey;
   documentReview?: DocumentReviewSession;
+  messages?: UIMessage[];
 }) {
   return buildChatTools({
     reportId: REPORT_ID,
@@ -326,6 +328,7 @@ function buildTools(input: {
     documentReview: input.documentReview ?? matchingRtmReview(),
     unsupportedFactPolicy: "block",
     retrievalPolicy: "adaptive",
+    messages: input.messages,
   });
 }
 
@@ -409,6 +412,27 @@ async function readPqPage(
   });
   const read = await tools.read_document_page!.execute!(
     { attachmentId: PQ_ID, pageNumber },
+    TEST_TOOL_OPTIONS
+  );
+  expect(read).toMatchObject({ status: "found" });
+}
+
+async function readIqPage(
+  tools: ReturnType<typeof buildChatTools>,
+  pageNumber: number,
+  transcript: string
+) {
+  readDocumentPageMock.mockResolvedValueOnce({
+    attachmentId: IQ_ID,
+    filename: IQ_FILENAME,
+    pageNumber,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    printedPageLabel: String(pageNumber),
+  });
+  const read = await tools.read_document_page!.execute!(
+    { attachmentId: IQ_ID, pageNumber },
     TEST_TOOL_OPTIONS
   );
   expect(read).toMatchObject({ status: "found" });
@@ -2533,5 +2557,68 @@ Complies`,
         "Installation Qualification",
       ])
     );
+  });
+
+  it("does not persist 24.50 m² from an assistant echo when the IQ page only prints piping sizes", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValue([ursDoc(), iqDoc()]);
+    mockSection("qsr_rtm_process");
+    const tools = buildTools({
+      section: "qsr_rtm_process",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [{ type: "text", text: "fill table 6 from the IQ" }],
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "text",
+              text: `Heat transfer area is 24.50 m² [${IQ_FILENAME}, p. 24].`,
+            },
+          ],
+        },
+        {
+          id: "u2",
+          role: "user",
+          parts: [{ type: "text", text: "fill table 6 from the IQ" }],
+        },
+      ],
+    });
+    await readUrsPage(tools, 12);
+    await readIqPage(
+      tools,
+      24,
+      "Jacket piping size 3.6 inch inlet. Outlet 14.1. Coil installed."
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "qsr_rtm_process",
+        targetField: "table",
+        reasoning: "Fill heat transfer area from the IQ.",
+        operation: {
+          kind: "edit_cells",
+          tableIndex: 0,
+          cells: [
+            {
+              row: 1,
+              col: 2,
+              rowKey: "URS-62",
+              rowContext: "URS-62 Heat Transfer Area NLT 25.0 m²",
+              insertText: `24.50 m² [${IQ_FILENAME}, p. 24]`,
+            },
+          ],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "unsupported_facts" });
+    const text =
+      "message" in result && typeof result.message === "string"
+        ? result.message
+        : JSON.stringify(result);
+    expect(text).toMatch(/24\.50|unsupported/i);
   });
 });

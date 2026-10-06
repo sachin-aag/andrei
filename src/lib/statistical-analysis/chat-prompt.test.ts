@@ -19,7 +19,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA/boxplot/histogram policy or tools change", () => {
     expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe(
-      "analytics-chat-v65-orchestrator-no-page-drain"
+      "analytics-chat-v66-unsourced-ask-cites"
     );
   });
 
@@ -156,6 +156,8 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("switch the Ask/Agent control to Agent");
     expect(prompt).toContain("Ask mode: search and extract only");
     expect(prompt).toContain("Do not say the whole session is locked in Ask");
+    expect(prompt).toContain("Cite [filename, p. N] only when a tool this turn");
+    expect(prompt).toContain("Do not copy citations from earlier assistant messages");
     expect(prompt).not.toContain("The engineer can save the worksheet");
   });
 

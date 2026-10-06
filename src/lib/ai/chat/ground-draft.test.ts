@@ -1002,3 +1002,100 @@ describe("groundTableOperation explicit insert keep", () => {
     expect(cell).not.toContain("01-01-2099");
   });
 });
+
+describe("CVP 24.50 m² assistant-echo keep", () => {
+  const pipingQuote =
+    "Jacket piping size 3.6 inch inlet. Outlet 14.1. Coil installed.";
+  const invented =
+    "24.50 m² [Installation Qualification.PDF, p. 24]";
+
+  it("blocks 24.50 m² when the IQ page only prints piping sizes, even if the assistant already said it", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-62",
+            rowContext: "URS-62 Heat Transfer Area NLT 25.0 m²",
+            insertText: invented,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "Installation Qualification.PDF",
+          pageNumber: 24,
+          attachmentId: "att-iq",
+          quote: pipingQuote,
+        },
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 12,
+          attachmentId: "att-urs",
+          quote: "URS-62 Heat Transfer Area NLT 25.0 m² for the jacket.",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        tableCol: 2,
+        latestUserMessageText: "fill table 6 from the IQ",
+        recentAssistantTexts: [
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
+        ],
+      },
+    });
+    expect(result.blocked).toBe(true);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).not.toContain("24.50");
+    expect(cell).toContain("<number>");
+  });
+
+  it("still keeps 24.50 m² on an explicit go-ahead insert", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-62",
+            rowContext: "URS-62 Heat Transfer Area",
+            insertText: invented,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "Installation Qualification.PDF",
+          pageNumber: 24,
+          attachmentId: "att-iq",
+          quote: pipingQuote,
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        tableCol: 2,
+        latestUserMessageText: "go ahead and insert that",
+        recentAssistantTexts: [
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
+        ],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("24.50 m²");
+    expect(cell).not.toContain("<number>");
+  });
+});

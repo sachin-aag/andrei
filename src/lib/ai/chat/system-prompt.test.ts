@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v180-qsr-rtm-draft-fold");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v181-unsourced-ask-cites");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -137,6 +137,18 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("END of the section field");
     expect(prompt).toContain("Citations:");
     expect(prompt).toContain("cite it as [filename, p. N]");
+    expect(prompt).toContain("Do not copy citations from earlier assistant messages");
+    expect(prompt).toContain("Never cite a document you did not retrieve this turn");
+  });
+
+  it("tells Ask not to copy unsourced page cites", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
+    expect(prompt).toContain(
+      "Cite retrieved evidence only when a tool this turn returned that page"
+    );
+    expect(prompt).toContain(
+      "Do not copy [filename, p. N] from earlier assistant messages"
+    );
   });
 
   it("tells the model never to pass the section key as targetField", () => {

@@ -229,21 +229,48 @@ describe("isExplicitInsertRequest", () => {
 });
 
 describe("shouldKeepUnsupportedFact", () => {
-  it("keeps a date the prior assistant turn already stated", () => {
+  it("keeps a date the engineer stated this turn", () => {
     const fact = extractHardFacts("30-06-2025").find(
       (row) => row.kind === "date"
     )!;
     expect(
       shouldKeepUnsupportedFact(fact, {
-        latestUserMessageText: "use that date",
+        latestUserMessageText: "use 30-06-2025 from the approval sheet",
+        recentAssistantTexts: ["Ignore this assistant echo of 01-01-2099."],
+      })
+    ).toBe(true);
+  });
+
+  it("does not keep a number the prior assistant turn invented", () => {
+    const fact = extractHardFacts("24.50 m²").find(
+      (row) => row.kind === "number"
+    )!;
+    expect(fact.text).toContain("24.50");
+    expect(
+      shouldKeepUnsupportedFact(fact, {
+        latestUserMessageText: "fill table 6 from the IQ",
         recentAssistantTexts: [
-          "The URS approval sheet shows 30-06-2025.",
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it("keeps every fact on an explicit go-ahead insert", () => {
+    const fact = extractHardFacts("24.50 m²").find(
+      (row) => row.kind === "number"
+    )!;
+    expect(
+      shouldKeepUnsupportedFact(fact, {
+        latestUserMessageText: "go ahead and insert that",
+        recentAssistantTexts: [
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
         ],
       })
     ).toBe(true);
   });
 
-  it("does not keep an invented date absent from the thread", () => {
+  it("does not keep an invented date absent from the user message", () => {
     const fact = extractHardFacts("01-01-2099").find(
       (row) => row.kind === "date"
     )!;

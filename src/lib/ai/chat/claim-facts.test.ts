@@ -119,6 +119,9 @@ describe("instrument quantities", () => {
   });
 
   it("does not treat the trailing 0 in 25.0 as a measured zero", () => {
+    expect(extractHardFacts("NLT 25.0 m²").map((fact) => fact.text)).toContain(
+      "25.0 m²"
+    );
     expect(extractHardFacts("NLT 25.0 m²").map((fact) => fact.text)).not.toContain(
       "0"
     );
@@ -126,6 +129,13 @@ describe("instrument quantities", () => {
     expect(
       extractHardFacts("contaminated units 0").map((fact) => `${fact.kind}:${fact.text}`)
     ).toContain("number:0");
+  });
+
+  it("sees heat-transfer area as a gated quantity", () => {
+    expect(kinds("Heat transfer area 24.50 m²")).toContainEqual([
+      "number",
+      "24.50 m²",
+    ]);
   });
 
   it("keeps the leading minus on a URS operating-range temperature", () => {

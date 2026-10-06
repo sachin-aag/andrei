@@ -3,7 +3,8 @@
  * Tables stay strict. All other writes use frame: title-page / user /
  * 1 April–31 March bounds and facts already in this report are exempt; copied
  * attachment facts still need a page quote. An explicit insert, or a fact
- * already in this thread, still cites a page but is not dropped.
+ * the engineer stated this turn, still cites a page but is not dropped.
+ * Prior assistant chat is not a keep-source.
  */
 
 import type { DocumentType, SectionType } from "@/db/schema";
@@ -46,7 +47,10 @@ export type GroundDraftGrounding = {
    * date label on the page when the exact header is missing.
    */
   tableColumnLabel?: string;
-  /** Prior assistant turns — facts already in chat are not dropped on insert. */
+  /**
+   * Ignored for keep/drop. Prior assistant chat is not a source of truth —
+   * the model can invent a number, echo it in markdown, then cite it on write.
+   */
   recentAssistantTexts?: readonly string[];
 };
 
@@ -337,20 +341,14 @@ export function isExplicitInsertRequest(userText: string): boolean {
 
 export function conversationFactHaystack(source: {
   latestUserMessageText?: string;
-  recentAssistantTexts?: readonly string[];
 }): string {
-  return [
-    source.latestUserMessageText ?? "",
-    ...(source.recentAssistantTexts ?? []),
-  ]
-    .map((row) => row.trim())
-    .filter(Boolean)
-    .join("\n");
+  return (source.latestUserMessageText ?? "").trim();
 }
 
 /**
- * Explicit insert keeps every fact in the write. A fact already in this
- * thread is kept even on a mixed draft. Citations still run; drops do not.
+ * Explicit insert keeps every fact in the write. A fact the engineer
+ * stated this turn is kept even on a mixed draft. Prior assistant chat
+ * is not a keep-source. Citations still run; drops do not.
  */
 export function shouldKeepUnsupportedFact(
   fact: HardFact,
