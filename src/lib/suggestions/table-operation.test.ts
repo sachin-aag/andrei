@@ -13,6 +13,7 @@ import {
   isBannerTableRow,
   parseTableOperation,
   prefixTableCaptionMarkdown,
+  defaultTableCaptionTitle,
   renumberFilledTableCaptions,
   dropLeftoverPlaceholderCells,
   resolveEditCells,
@@ -21,6 +22,10 @@ import {
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
 import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
+import {
+  CVP_MACO_EQUIPMENT_HEADERS,
+  CVP_MACO_FORMULA_HEADERS,
+} from "@/lib/document-types/cvp/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
@@ -81,6 +86,33 @@ function twoTablesDoc(): JSONContent {
     content: [
       tableDoc(["A", "B"], [["a1", "b1"]]).content![0]!,
       tableDoc(["X", "Y"], [["x1", "y1"]]).content![0]!,
+    ],
+  };
+}
+
+function macoSeedDoc(): JSONContent {
+  const emptyEquipment = CVP_MACO_EQUIPMENT_HEADERS.map(() => "");
+  return {
+    type: "doc",
+    content: [
+      tableDoc([...CVP_MACO_EQUIPMENT_HEADERS], [emptyEquipment]).content![0]!,
+      tableDoc(
+        [...CVP_MACO_FORMULA_HEADERS],
+        [
+          ["PDE", "PDE value of the previous / worst-case residue (mg/day)", ""],
+          ["MBS", "Minimum batch size of the subsequent product (mg)", ""],
+          ["TDD", "Therapeutic daily dose of the subsequent product (mg)", ""],
+          ["MACO", "PDE × MBS / TDD", ""],
+        ]
+      ).content![0]!,
+      tableDoc(
+        [...CVP_MACO_FORMULA_HEADERS],
+        [
+          ["MAXCONC", "Allowable carryover limit (ppm or mg/kg)", ""],
+          ["MBS", "Minimum batch size considered (kg)", ""],
+          ["MACO", "MBS × MAXCONC", ""],
+        ]
+      ).content![0]!,
     ],
   };
 }
@@ -430,6 +462,62 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(result.doc.content?.filter((n) => n.type === "table")).toHaveLength(1);
     expect(cellText(result.doc, 0, 0, 0)).toBe("X");
+  });
+
+  it("retargets PDE/TDD edits from MACO table 0 onto the health-based formula grid", () => {
+    const result = applyTableOperation(macoSeedDoc(), {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 2, rowKey: "PDE", insertText: "0.1", expectedText: "" },
+        { row: 3, col: 2, rowKey: "TDD", insertText: "200", expectedText: "" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 2, 1)).toBe("0.1");
+    expect(cellText(result.doc, 3, 2, 1)).toBe("200");
+    expect(cellText(result.doc, 1, 0, 0)).toBe("");
+  });
+
+  it("refuses inserting formula headers as a data row of the MACO equipment table", () => {
+    const result = applyTableOperation(macoSeedDoc(), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      rows: [[
+        "Attribute",
+        "Description of Attribute",
+        "Value / Calculation",
+        ...CVP_MACO_EQUIPMENT_HEADERS.slice(3).map(() => ""),
+      ]],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("bad_scope");
+    expect(result.hint).toMatch(/tableIndex 1/);
+  });
+
+  it("refuses inserting a PDE row into the MACO equipment table", () => {
+    const result = applyTableOperation(macoSeedDoc(), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      rows: [[
+        "PDE",
+        "PDE value of the previous / worst-case residue (mg/day)",
+        "0.1",
+        ...CVP_MACO_EQUIPMENT_HEADERS.slice(3).map(() => ""),
+      ]],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("bad_scope");
+    expect(result.hint).toMatch(/PDE/);
+  });
+
+  it("titles CVP table captions from the section label, not Cvp Maco", () => {
+    expect(defaultTableCaptionTitle("cvp_maco")).toBe(
+      "Maximum Allowable Carryover (MACO)"
+    );
   });
 
   it("upgrades a delete of every data row into delete_table", () => {

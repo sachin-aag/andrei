@@ -7,6 +7,7 @@ import {
   elrTableHeadersForSection,
 } from "@/lib/document-types/elr/sections";
 import { QSR_RTM_FAMILY_HEADERS } from "@/lib/document-types/qsr/sections";
+import { CVP_SECTION_LABELS } from "@/lib/document-types/cvp/sections";
 import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -373,10 +374,15 @@ export function isFixedColumnTable(
   );
 }
 
+const SECTION_NUMBER_PREFIX_RE = /^\d+(?:\.\d+)*\s+/;
+
 export function defaultTableCaptionTitle(section: string): string {
   const elrTitle =
     ELR_TABLE_CAPTION_TITLES[section as keyof typeof ELR_TABLE_CAPTION_TITLES];
-  return elrTitle ?? displaySectionLabel(section);
+  if (elrTitle) return elrTitle;
+  const cvpTitle = CVP_SECTION_LABELS[section as keyof typeof CVP_SECTION_LABELS];
+  if (cvpTitle) return cvpTitle.replace(SECTION_NUMBER_PREFIX_RE, "");
+  return displaySectionLabel(section);
 }
 
 function captionMatch(node: JSONContent | undefined): number | null {
@@ -1137,6 +1143,80 @@ function headersOf(table: JSONContent): string[] {
   return header ? rowSnapshot(header) : [];
 }
 
+function tableRowKeys(table: JSONContent): Set<string> {
+  const keys = new Set<string>();
+  for (const row of tableRows(table).slice(1)) {
+    const first = normalizeTableCellText(cellPlainText(rowCells(row)[0]));
+    if (first) keys.add(first);
+  }
+  return keys;
+}
+
+function tableHasAllRowKeys(table: JSONContent | undefined, keys: readonly string[]): boolean {
+  if (!table || keys.length === 0) return false;
+  const live = tableRowKeys(table);
+  return keys.every((key) => live.has(key));
+}
+
+/**
+ * Default tableIndex is 0. On a multi-table field (CVP MACO: equipment + two
+ * formula grids) the model often edits PDE/TDD/MACO against the equipment
+ * table. If every rowKey lives on exactly one other grid, send the op there.
+ */
+function retargetTableOperation(
+  tables: JSONContent[],
+  operation: Exclude<TableOperation, { kind: "create_table" }>
+): Exclude<TableOperation, { kind: "create_table" }> {
+  if (operation.kind !== "edit_cells" || tables.length <= 1) return operation;
+  const keys = operation.cells
+    .map((cell) => normalizeTableCellText(cell.rowKey ?? ""))
+    .filter(Boolean);
+  if (keys.length === 0) return operation;
+  if (tableHasAllRowKeys(tables[operation.tableIndex], keys)) return operation;
+  const matches: number[] = [];
+  for (let i = 0; i < tables.length; i++) {
+    if (tableHasAllRowKeys(tables[i], keys)) matches.push(i);
+  }
+  if (matches.length !== 1) return operation;
+  return { ...operation, tableIndex: matches[0]! };
+}
+
+/**
+ * Inserting another grid's header (or a PDE/TDD/MACO row key) as a data row
+ * of table 0 is how section 10 collapsed into one mashed table on Apply.
+ */
+function siblingTableInsertConflict(
+  tables: JSONContent[],
+  operation: Extract<TableOperation, { kind: "insert_rows" }>
+): string | null {
+  if (tables.length <= 1 || operation.rows.length === 0) return null;
+  const first = operation.rows[0]!.map((cell) => normalizeTableCellText(cell));
+  for (let i = 0; i < tables.length; i++) {
+    if (i === operation.tableIndex) continue;
+    const headers = headersOf(tables[i]!).map((header) =>
+      normalizeTableCellText(header)
+    );
+    const headerMatch =
+      headers.length > 0 &&
+      headers.length <= first.length &&
+      headers.every((header, col) => header === (first[col] ?? ""));
+    if (headerMatch) {
+      return (
+        `Those cells are the headers of tableIndex ${i} in this field (${headers.join(" | ")}). ` +
+        `Edit that table instead of inserting them as a data row in tableIndex ${operation.tableIndex}.`
+      );
+    }
+    const firstCell = first[0] ?? "";
+    if (firstCell && tableRowKeys(tables[i]!).has(firstCell)) {
+      return (
+        `Row key "${firstCell}" belongs to tableIndex ${i}. ` +
+        `Copy that tableIndex from read_section; do not insert it into tableIndex ${operation.tableIndex}.`
+      );
+    }
+  }
+  return null;
+}
+
 function liveHeadersHint(headers: readonly string[]): string {
   if (headers.length === 0) return "Re-read with read_section.";
   const line = headers.map((header) => header.trim() || "(empty)").join(" | ");
@@ -1417,33 +1497,38 @@ export function applyTableOperation(
       "This field has no table. Use edit_table with kind create_table (headers plus rows) to add one."
     );
   }
-  const table = tables[operation.tableIndex];
+  const targeted = retargetTableOperation(tables, operation);
+  const table = tables[targeted.tableIndex];
   if (!table) {
     return fail(
       "bad_scope",
-      `tableIndex ${operation.tableIndex} does not exist (field has ${tables.length} table(s)). Re-read with read_section.`
+      `tableIndex ${targeted.tableIndex} does not exist (field has ${tables.length} table(s)). Re-read with read_section.`
     );
+  }
+  if (targeted.kind === "insert_rows") {
+    const conflict = siblingTableInsertConflict(tables, targeted);
+    if (conflict) return fail("bad_scope", conflict);
   }
 
   const fixedColumns = Boolean(
     context && isFixedColumnTable(context.section, context.targetField)
   );
 
-  switch (operation.kind) {
+  switch (targeted.kind) {
     case "edit_cells":
       return captionAfterFill(
-        applyEditCells(next, table, operation, fixedColumns),
-        operation.tableIndex,
+        applyEditCells(next, table, targeted, fixedColumns),
+        targeted.tableIndex,
         context
       );
     case "insert_rows":
       return captionAfterFill(
-        applyInsertRows(next, table, operation),
-        operation.tableIndex,
+        applyInsertRows(next, table, targeted),
+        targeted.tableIndex,
         context
       );
     case "delete_rows":
-      return applyDeleteRows(next, table, operation);
+      return applyDeleteRows(next, table, targeted);
     case "delete_table":
       if (fixedColumns) {
         return fail(
@@ -1451,7 +1536,7 @@ export function applyTableOperation(
           "This matrix has a fixed column schema. Do not remove the table. Edit cells or delete rows instead."
         );
       }
-      return applyDeleteTable(next, operation.tableIndex);
+      return applyDeleteTable(next, targeted.tableIndex);
     case "insert_column":
       if (fixedColumns) {
         return fail(
@@ -1460,8 +1545,8 @@ export function applyTableOperation(
         );
       }
       return captionAfterFill(
-        applyInsertColumn(next, table, operation),
-        operation.tableIndex,
+        applyInsertColumn(next, table, targeted),
+        targeted.tableIndex,
         context
       );
     case "delete_column":
@@ -1471,9 +1556,9 @@ export function applyTableOperation(
           "This matrix has a fixed column schema. Do not delete columns. Edit cells or delete rows instead."
         );
       }
-      return applyDeleteColumn(next, table, operation);
+      return applyDeleteColumn(next, table, targeted);
     default: {
-      const _exhaustive: never = operation;
+      const _exhaustive: never = targeted;
       return fail("invalid", `Unknown table operation: ${String(_exhaustive)}`);
     }
   }

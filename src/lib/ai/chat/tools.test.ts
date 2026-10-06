@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
+import { EMPTY_CVP_CONTENT } from "@/lib/document-types/cvp/sections";
 import { comments } from "@/db/schema";
 import {
   buildChatTools,
@@ -1503,6 +1504,50 @@ describe("buildChatTools document review", () => {
       TEST_TOOL_OPTIONS
     );
     expect(refused).toMatchObject({ status: "use_edit_table" });
+  });
+
+  it("refuses draft_field of CVP MACO because the seed has three tables", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-maco",
+                  reportId: "report-1",
+                  section: "cvp_maco",
+                  content: EMPTY_CVP_CONTENT.cvp_maco,
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentType: "cleaning_verification_protocol",
+      sectionScope: "cvp_maco",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "cvp_maco",
+        targetField: "narrative",
+        markdown: [
+          "| S. No. | Name of the Equipment | Equipment No. | Capacity | MOC |",
+          "| --- | --- | --- | --- | --- |",
+          "| 1 | Reactor | LF-1301 | 2000 L | SS |",
+          "| Attribute | Description of Attribute | Value / Calculation |",
+          "| --- | --- | --- |",
+          "| PDE | PDE value | 0.1 |",
+        ].join("\n"),
+        reasoning: "Fill MACO.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "use_edit_table" });
+    expect((refused as { message: string }).message).toMatch(/tableIndex 0/);
   });
 
   it("coerces ELR overallGrade and recommendation labels onto stored enums", async () => {

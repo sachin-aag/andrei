@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v182-spreadsheet-attachments");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v183-cvp-maco-tables");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -335,6 +335,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("create_table");
     expect(prompt).toContain("delete_table");
     expect(prompt).toContain("Do not use draft_field to create or delete a table");
+    expect(prompt).toContain(
+      "Do not draft_field a field that already has more than one table"
+    );
+    expect(prompt).toContain("tableIndex 0 equipment list");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

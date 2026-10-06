@@ -474,7 +474,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   returns `already_complete` for the same `|obj:` instead of resetting.
   Gate empty tables only — filling missing
   cells on a partial table is not another full walk. `draft_field` of
-  those `table` fields returns `use_edit_table`. Search hits include `citation`
+  those `table` fields returns `use_edit_table`. A narrative field that
+  already has more than one table (CVP MACO: equipment list + two formula
+  grids) also returns `use_edit_table` — do not rewrite it with
+  `draft_field`. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). The saved field converts those to numbered `[n]`
   markers plus a trailing Citations: list on every pack — there is no

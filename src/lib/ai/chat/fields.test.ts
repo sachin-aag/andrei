@@ -70,6 +70,7 @@ describe("sectionLabel", () => {
     expect(sectionLabel("revision_history")).toBe("Revision History");
     expect(sectionLabel("qra_revision_history")).toBe("Revision History");
     expect(sectionLabel("purpose_scope")).toBe("Purpose & Scope");
+    expect(sectionLabel("cvp_maco")).toBe("10.0 Maximum Allowable Carryover (MACO)");
   });
 
   it("never returns an underscore for a registered section", () => {

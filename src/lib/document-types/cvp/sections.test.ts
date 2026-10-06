@@ -9,6 +9,7 @@ import {
   cvpPrintedDocumentTitle,
   isCvpTableSectionKey,
 } from "./sections";
+import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 
 describe("cleaning verification protocol sections", () => {
   it("registers thirty F08 sections with a narrative or table field", () => {
@@ -27,6 +28,20 @@ describe("cleaning verification protocol sections", () => {
     }
     expect(CVP_TABLE_SECTION_KEYS).toContain("cvp_approvals");
     expect(isCvpTableSectionKey("cvp_objective")).toBe(false);
+  });
+
+  it("seeds MACO as three separate tables, not one grid", () => {
+    const seed = EMPTY_CVP_CONTENT.cvp_maco;
+    expect(seed).toHaveProperty("narrative");
+    const tables = summarizeTablesInDoc(
+      "narrative" in seed ? seed.narrative : { type: "doc", content: [] }
+    );
+    expect(tables).toHaveLength(3);
+    expect(tables[0]?.headers[0]).toBe("S. No.");
+    expect(tables[1]?.headers[0]).toBe("Attribute");
+    expect(tables[2]?.headers[0]).toBe("Attribute");
+    expect(tables[1]?.cells.some((cell) => cell.text === "PDE")).toBe(true);
+    expect(tables[2]?.cells.some((cell) => cell.text === "MAXCONC")).toBe(true);
   });
 
   it("prints a product-specific title when the cover product is set", () => {

@@ -256,11 +256,8 @@ export function markdownToDoc(
     }
 
     if (isTableRow(trimmed) && isTableSeparator(lines[i + 1]?.trim() ?? "")) {
-      const tableLines: string[] = [];
-      while (i < lines.length && isTableRow(lines[i]!.trim())) {
-        tableLines.push(lines[i]!.trim());
-        i++;
-      }
+      const tableLines = collectGfmTableLines(lines, i);
+      i += tableLines.length;
       const table = parseTable(tableLines);
       if (table) content.push(table);
       continue;
@@ -536,6 +533,24 @@ function isTableSeparator(trimmed: string): boolean {
   if (!isTableRow(trimmed)) return false;
   const cells = splitTableRow(trimmed);
   return cells.length > 0 && cells.every((c) => /^:?-{3,}:?$/.test(c.trim()));
+}
+
+/**
+ * Consecutive GFM tables with no blank line between them are still separate
+ * grids. Stop at the next header+separator so MACO formula tables are not
+ * swallowed as extra rows of the equipment list.
+ */
+function collectGfmTableLines(lines: readonly string[], start: number): string[] {
+  const header = lines[start]!.trim();
+  const separator = lines[start + 1]!.trim();
+  const tableLines = [header, separator];
+  let i = start + 2;
+  while (i < lines.length && isTableRow(lines[i]!.trim())) {
+    if (isTableSeparator(lines[i + 1]?.trim() ?? "")) break;
+    tableLines.push(lines[i]!.trim());
+    i++;
+  }
+  return tableLines;
 }
 
 function splitTableRow(trimmed: string): string[] {

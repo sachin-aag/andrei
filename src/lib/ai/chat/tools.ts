@@ -96,6 +96,7 @@ import {
   chatTargetFields,
   fieldFillState,
   isChatEditableSection,
+  listFieldTables,
   sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
@@ -543,6 +544,13 @@ const REVIEW_INCOMPLETE_MESSAGE =
   "Finish the document review (start_document_review → continue_document_review until coverage is complete → finish_document_review) before drafting.";
 const SEEDED_ELR_TABLE_MESSAGE =
   "This ELR evidence table is a seeded matrix. Fill it with edit_table (edit_cells / insert_rows). Do not rewrite the field with draft_field — finish_document_review findings are a sample, not the matrix.";
+function multiTableDraftFieldMessage(tableCount: number): string {
+  return (
+    `This field has ${tableCount} tables (tableIndex 0–${tableCount - 1}). ` +
+    `Fill each with edit_table — copy tableIndex and headers from read_section. ` +
+    `draft_field would collapse them into one table.`
+  );
+}
 
 function documentPageToolPayload(page: {
   attachmentId: string;
@@ -4688,6 +4696,17 @@ export function buildChatTools(opts: {
           return {
             status: "review_incomplete",
             message: REVIEW_INCOMPLETE_MESSAGE,
+          };
+        }
+        const liveTables = listFieldTables(
+          loaded.content,
+          section,
+          resolvedField
+        );
+        if (liveTables.length > 1) {
+          return {
+            status: "use_edit_table",
+            message: multiTableDraftFieldMessage(liveTables.length),
           };
         }
         const headerMismatch = liveTableHeadersMismatch({
