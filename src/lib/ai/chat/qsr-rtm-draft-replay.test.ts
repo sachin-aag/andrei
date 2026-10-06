@@ -354,27 +354,6 @@ async function readUrsPage(
   expect(read).toMatchObject({ status: "found" });
 }
 
-async function readIqPage(
-  tools: ReturnType<typeof buildChatTools>,
-  pageNumber: number,
-  transcript: string
-) {
-  readDocumentPageMock.mockResolvedValueOnce({
-    attachmentId: IQ_ID,
-    filename: IQ_FILENAME,
-    pageNumber,
-    transcript,
-    visualInterpretation: "",
-    pageContext: null,
-    printedPageLabel: String(pageNumber),
-  });
-  const read = await tools.read_document_page!.execute!(
-    { attachmentId: IQ_ID, pageNumber },
-    TEST_TOOL_OPTIONS
-  );
-  expect(read).toMatchObject({ status: "found" });
-}
-
 async function readOqPage(
   tools: ReturnType<typeof buildChatTools>,
   pageNumber: number,
