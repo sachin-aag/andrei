@@ -1,8 +1,10 @@
 /**
  * Ask (plan) replies are not run through write grounding. After the stream,
  * drop [filename, p. N] that this turn never retrieved, or whose quote does
- * not contain the nearby hard fact. Do not fail the turn. Do not keep a cite
- * because the number is already in a read_section table.
+ * not contain the nearby hard fact, and replace unsourced hard facts with
+ * placeholders. Do not fail the turn. Do not keep a cite because the number
+ * is already in a read_section table — report-read numbers stay without the
+ * fake file cite.
  */
 
 import type { UIMessage } from "ai";
@@ -10,12 +12,17 @@ import { splitSentences } from "@/lib/citations/citation-site";
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
 import {
   extractHardFacts,
+  replaceFactsWithPlaceholders,
   stripCitationBrackets,
 } from "@/lib/ai/chat/claim-facts";
+import { CitationPageLedger } from "@/lib/ai/chat/citation-grounding";
 import {
-  CitationPageLedger,
-} from "@/lib/ai/chat/citation-grounding";
-import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+  collectAskEvidence,
+  evidenceFromLedger,
+  factSupportedByQuote,
+  shouldKeepAskFact,
+  type LookupEvidence,
+} from "@/lib/ai/chat/fact-support";
 import {
   canonicalizeSourceCitationBracket,
   isSourceCitationBracket,
@@ -24,8 +31,11 @@ import {
 } from "@/lib/placeholders/citation-bracket";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 
-export const UNSOURCED_ASK_CITATION_NOTE =
-  "Some page citations were removed because those pages were not retrieved this turn, or the retrieved quote does not contain that fact.";
+export const UNSOURCED_ASK_GROUNDING_NOTE =
+  "Some values and page citations were removed because they were not on a page retrieved this turn or in a report section read this turn.";
+
+/** @deprecated Use UNSOURCED_ASK_GROUNDING_NOTE */
+export const UNSOURCED_ASK_CITATION_NOTE = UNSOURCED_ASK_GROUNDING_NOTE;
 
 const BRACKET_RE = /\[[^\]]+\]/g;
 
@@ -71,9 +81,7 @@ function rewriteAskCitationPart(
     const evidence = ledger.pageEvidence(parsed.filename, page);
     const quote = evidence?.quote.trim() ?? "";
     if (quote && nearby.length > 0) {
-      const supported = nearby.every((fact) =>
-        evidenceContainsFact(quote, fact)
-      );
+      const supported = nearby.every((fact) => factSupportedByQuote(quote, fact));
       if (!supported) continue;
     }
     kept.push(page);
@@ -103,7 +111,7 @@ function rewriteAskCitationBracket(
   );
 }
 
-export function rewriteUnsourcedAskCitations(
+function rewriteAskCitationText(
   text: string,
   ledger: CitationPageLedger
 ): { text: string; dropped: boolean } {
@@ -115,23 +123,77 @@ export function rewriteUnsourcedAskCitations(
     return rewriteAskCitationBracket(match, ledger, nearby);
   });
   const tidied = tidyDroppedCitations(text, rewritten);
-  if (tidied === text) return { text, dropped: false };
-  if (tidied.includes(UNSOURCED_ASK_CITATION_NOTE)) {
-    return { text: tidied, dropped: true };
+  return { text: tidied, dropped: tidied !== text };
+}
+
+function placeholderUnsupportedAskFacts(
+  original: string,
+  cited: string,
+  evidence: LookupEvidence
+): { text: string; placeholdered: boolean } {
+  const originalDrops = new Set(
+    extractHardFacts(original)
+      .filter((fact) => !shouldKeepAskFact(fact, evidence))
+      .map((fact) => `${fact.kind}:${fact.normalized}`)
+  );
+  if (originalDrops.size === 0) return { text: cited, placeholdered: false };
+  const toPlaceholder = extractHardFacts(cited).filter((fact) =>
+    originalDrops.has(`${fact.kind}:${fact.normalized}`)
+  );
+  if (toPlaceholder.length === 0) return { text: cited, placeholdered: false };
+  return {
+    text: replaceFactsWithPlaceholders(cited, toPlaceholder),
+    placeholdered: true,
+  };
+}
+
+function appendGroundingNote(text: string): string {
+  if (text.includes(UNSOURCED_ASK_GROUNDING_NOTE)) return text;
+  return `${text.trimEnd()}\n\n${UNSOURCED_ASK_GROUNDING_NOTE}`;
+}
+
+export function rewriteUnsourcedAskCitations(
+  text: string,
+  ledger: CitationPageLedger,
+  extras?: { reportHaystack?: string; userHaystack?: string }
+): { text: string; dropped: boolean } {
+  if (!text.trim()) return { text, dropped: false };
+  const cited = rewriteAskCitationText(text, ledger);
+  const grounded = placeholderUnsupportedAskFacts(
+    text,
+    cited.text,
+    evidenceFromLedger(ledger, extras)
+  );
+  if (!cited.dropped && !grounded.placeholdered) {
+    return { text, dropped: false };
   }
-  const withNote = `${tidied.trimEnd()}\n\n${UNSOURCED_ASK_CITATION_NOTE}`;
-  return { text: withNote, dropped: true };
+  return { text: appendGroundingNote(grounded.text), dropped: true };
+}
+
+function rewriteAskTextWithEvidence(
+  text: string,
+  ledger: CitationPageLedger,
+  evidence: LookupEvidence
+): { text: string; dropped: boolean } {
+  if (!text.trim()) return { text, dropped: false };
+  const cited = rewriteAskCitationText(text, ledger);
+  const grounded = placeholderUnsupportedAskFacts(text, cited.text, evidence);
+  if (!cited.dropped && !grounded.placeholdered) {
+    return { text, dropped: false };
+  }
+  return { text: appendGroundingNote(grounded.text), dropped: true };
 }
 
 export function rewriteAskCitationParts(
   parts: UIMessage["parts"],
-  ledger: CitationPageLedger
+  ledger: CitationPageLedger,
+  extras?: { reportHaystack?: string; userHaystack?: string }
 ): UIMessage["parts"] {
   let dropped = false;
   const next = parts.map((part) => {
     if (part.type !== "text") return part;
     const text = typeof part.text === "string" ? part.text : "";
-    const rewritten = rewriteUnsourcedAskCitations(text, ledger);
+    const rewritten = rewriteUnsourcedAskCitations(text, ledger, extras);
     if (!rewritten.dropped) return part;
     dropped = true;
     return { ...part, text: rewritten.text };
@@ -147,7 +209,19 @@ export function rewriteAskAssistantParts(input: {
   response: UIMessage;
 }): UIMessage["parts"] {
   if (input.mode !== "plan") return input.parts;
+  const messages = [...input.history, input.response];
   const ledger = new CitationPageLedger();
-  ledger.seedFromMessages([...input.history, input.response]);
-  return rewriteAskCitationParts(input.parts, ledger);
+  ledger.seedFromMessages(messages);
+  const evidence = collectAskEvidence({ messages, ledger });
+  let dropped = false;
+  const next = input.parts.map((part) => {
+    if (part.type !== "text") return part;
+    const text = typeof part.text === "string" ? part.text : "";
+    const rewritten = rewriteAskTextWithEvidence(text, ledger, evidence);
+    if (!rewritten.dropped) return part;
+    dropped = true;
+    return { ...part, text: rewritten.text };
+  });
+  if (!dropped) return input.parts;
+  return next;
 }

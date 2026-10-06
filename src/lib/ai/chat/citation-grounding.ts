@@ -490,7 +490,7 @@ function quoteFromToolRow(rec: Record<string, unknown>): string {
   return pieces.join("\n");
 }
 
-function unwrapToolOutput(output: unknown): unknown {
+export function unwrapToolOutput(output: unknown): unknown {
   if (typeof output === "string") {
     const trimmed = output.trim();
     if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
@@ -503,7 +503,7 @@ function unwrapToolOutput(output: unknown): unknown {
   return output;
 }
 
-function toolNameFromPart(part: unknown): string | null {
+export function toolNameFromPart(part: unknown): string | null {
   if (!part || typeof part !== "object") return null;
   const rec = part as { type?: unknown; toolName?: unknown };
   if (typeof rec.toolName === "string" && rec.toolName.trim()) {
@@ -516,7 +516,7 @@ function toolNameFromPart(part: unknown): string | null {
   return null;
 }
 
-function toolOutputFromPart(part: unknown): unknown {
+export function toolOutputFromPart(part: unknown): unknown {
   if (!part || typeof part !== "object") return null;
   return (part as { output?: unknown }).output;
 }

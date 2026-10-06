@@ -8,8 +8,8 @@
  */
 
 import type { DocumentType, SectionType } from "@/db/schema";
-import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { extractHardFacts, type HardFact } from "@/lib/ai/chat/claim-facts";
+import { factSupportedByHaystack } from "@/lib/ai/chat/fact-support";
 import { contextForPrompt } from "@/lib/ai/section-context";
 import { allIdentityMetadataKeys } from "@/lib/ai/chat/identity";
 import { elrChatContextIdentity } from "@/lib/document-types/elr/chat-identity";
@@ -316,7 +316,7 @@ export function isExemptFrameFact(
     if (isCanonicalFyBoundFact(fact, window)) return true;
   }
   return identityHaystacks(source).some((haystack) =>
-    evidenceContainsFact(haystack, fact)
+    factSupportedByHaystack(haystack, fact)
   );
 }
 
@@ -359,5 +359,5 @@ export function shouldKeepUnsupportedFact(
 ): boolean {
   if (isExplicitInsertRequest(source.latestUserMessageText ?? "")) return true;
   const haystack = conversationFactHaystack(source);
-  return haystack.length > 0 && evidenceContainsFact(haystack, fact);
+  return factSupportedByHaystack(haystack, fact);
 }

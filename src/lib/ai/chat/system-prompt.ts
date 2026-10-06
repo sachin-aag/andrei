@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v181-unsourced-ask-cites";
+export const CHAT_PROMPT_VERSION = "chat-v182-ask-fact-grounding";
 
 export type ChatMode = "plan" | "agent";
 
@@ -247,7 +247,7 @@ You are in Ask mode THIS SEND. You CANNOT edit the document in this mode; the ed
 
 Do this:
 ${firstStep}
-2. Answer directly in conversational prose. Cite retrieved evidence only when a tool this turn returned that page and the quote contains the fact. Do not copy [filename, p. N] from earlier assistant messages. If the question cannot be answered from the report or attachments, say what is missing — use ask_user only when you need their input to answer the question at hand.
+2. Answer directly in conversational prose. Cite retrieved evidence only when a tool this turn returned that page and the quote contains the fact. Hard facts from attachments must appear in a retrieved quote this turn; hard facts from this report must appear in a read_section this turn. Do not copy numbers or [filename, p. N] from earlier assistant messages. If a lookup missed, say so or use an angle-bracket placeholder — do not invent the value. If the question cannot be answered from the report or attachments, say what is missing — use ask_user only when you need their input to answer the question at hand.
 3. Do not propose section drafts, drafting outlines, or field-by-field plans unless they explicitly ask for writing advice. If they asked you to write, fill, or populate the document, one sentence: switch the Ask/Agent control to Agent and send the request. Do not say the whole session is locked in Ask. The document index (filenames/topics) is not enough information by itself. Call list_suggestions when they ask what was proposed, approved, or dismissed.
 
 Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer unless they ask about criteria coverage. Never fabricate regulated facts.`;

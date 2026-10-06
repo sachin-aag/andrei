@@ -207,7 +207,10 @@ that field when a closer status label exists. An explicit insert, or a
 fact the engineer stated this turn, still cites a page but is not dropped.
 Prior assistant chat is not a keep-source. Ask (plan) replies drop
 `[filename, p. N]` on persist when that page was not retrieved this turn
-or the served quote does not contain the nearby hard fact. A leading minus is part of the number
+or the served quote does not contain the nearby hard fact, and replace
+unsourced hard facts with placeholders (attachment facts need a retrieved
+quote; report/worksheet facts need `read_section` / `read_worksheet` this
+turn; engineer-stated facts stay). A leading minus is part of the number
 (`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
 leading tilde is approximate (`~50±10 RPM` is not `−50 ± 10 RPM`). A ±
 window is not independent evidence for the setpoint (`50±10 RPM` is not

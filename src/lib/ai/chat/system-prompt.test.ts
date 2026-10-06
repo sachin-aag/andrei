@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v181-unsourced-ask-cites");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v182-ask-fact-grounding");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -147,7 +147,10 @@ describe("buildChatSystemPrompt", () => {
       "Cite retrieved evidence only when a tool this turn returned that page"
     );
     expect(prompt).toContain(
-      "Do not copy [filename, p. N] from earlier assistant messages"
+      "Do not copy numbers or [filename, p. N] from earlier assistant messages"
+    );
+    expect(prompt).toContain(
+      "Hard facts from attachments must appear in a retrieved quote this turn"
     );
   });
 

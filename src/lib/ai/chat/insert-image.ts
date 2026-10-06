@@ -600,7 +600,9 @@ function userMessageText(message: UIMessage): string {
 }
 
 /** Most recent user turn only — confirmation ("yes, that one") must not inherit an earlier named miss. */
-export function latestUserMessageText(messages: UIMessage[]): string {
+export function latestUserMessageText(
+  messages: readonly UIMessage[]
+): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message?.role !== "user") continue;

@@ -31,7 +31,7 @@ import {
   rewriteCitationPagesInText,
   rewriteTableOperationCitations,
 } from "@/lib/ai/chat/citation-grounding";
-import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+import { factSupportedByQuote } from "@/lib/ai/chat/fact-support";
 import {
   analysisSupportingFact,
   type AnalysisEvidence,
@@ -149,7 +149,7 @@ function pageMatchesIdentifiers(
 ): boolean {
   return identifiers.some(
     (id) =>
-      evidenceContainsFact(page.quote, id) ||
+      factSupportedByQuote(page.quote, id) ||
       filenameMentionsIdentifier(page.filename, id)
   );
 }
@@ -233,7 +233,7 @@ function pageSupportsFact(
   if (rowKey && !factIsRowKey(fact, rowKey)) {
     return factSupportedForRowKey(quote, fact, rowKey);
   }
-  return evidenceContainsFact(quote, fact);
+  return factSupportedByQuote(quote, fact);
 }
 
 function resolveFact(

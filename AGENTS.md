@@ -217,7 +217,10 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   tools must match a retrieved quote (`groundDraftText`). Every pack uses
   `unsupportedFactPolicy: block`. Prior assistant chat is not a keep-source
   for unsupported facts (an echo of 24.50 m² does not persist). Ask (plan)
-  replies rewrite unsourced `[filename, p. N]` on persist. Analytics
+  replies rewrite unsourced `[filename, p. N]` on persist and replace
+  unsourced hard facts with placeholders (attachment facts need a retrieved
+  quote; report/worksheet facts need `read_section` / `read_worksheet` this
+  turn). Analytics
   `write_column` is not gated.
 - Saved fields use numbered `[n]` markers plus a trailing Citations list.
   Clicking a citation opens the in-app attachment tab (not a browser tab).
