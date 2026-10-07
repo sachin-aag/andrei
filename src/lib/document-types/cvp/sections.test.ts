@@ -129,7 +129,7 @@ describe("cleaning verification protocol sections", () => {
     expect(text).not.toMatch(/Cvp Equipment Sampling/);
   });
 
-  it("seeds one 15.1 box with only the identity table so draft_field can fill the rest", () => {
+  it("seeds shared 15.N boilerplate without swab/visual tables", () => {
     const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
     expect(seed).toHaveProperty("items");
     const nodes =
@@ -141,14 +141,28 @@ describe("cleaning verification protocol sections", () => {
         text: node.content?.[0]?.text,
       }));
     const tables = nodes.filter((node) => node.type === "table");
+    const text = JSON.stringify(nodes);
     expect(headings).toEqual([
       { level: 2, text: "15.1 Equipment name (Equipment No.)" },
       { level: 3, text: "15.1.1 Equipment details" },
+      { level: 3, text: "15.1.2 Supporting Documents and References" },
+      { level: 3, text: "15.1.5 Cleaning validation results summary" },
+      {
+        level: 3,
+        text: "15.1.7 Swab & Rinse samples analysis results summary",
+      },
+      {
+        level: 3,
+        text: "15.1.8 Rinse samples analysis results summary (Extraneous matter)",
+      },
     ]);
-    expect(tables).toHaveLength(1);
+    expect(tables).toHaveLength(4);
     expect(JSON.stringify(tables[0])).toContain("Capacity");
     expect(JSON.stringify(tables[0])).not.toContain("Shell height");
+    expect(text).toContain("[Plant]");
+    expect(text).toContain("Black and fiber particles should be absent");
     expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.3.1");
+    expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.6");
     expect(CVP_EQUIPMENT_H3_OUTLINE).toHaveLength(8);
     expect(CVP_EQUIPMENT_H4_OUTLINE[0]?.title).toBe("Worst-case locations");
   });
@@ -363,8 +377,16 @@ describe("cleaning verification protocol sections", () => {
     );
     expect(headings[0]?.[0]).toEqual([2, "15.1 Equipment name (Equipment No.)"]);
     expect(headings[0]).toContainEqual([3, "15.1.1 Equipment details"]);
+    expect(headings[0]).toContainEqual([
+      3,
+      "15.1.2 Supporting Documents and References",
+    ]);
     expect(headings[1]?.[0]).toEqual([2, "15.2 Equipment name (Equipment No.)"]);
     expect(headings[1]).toContainEqual([3, "15.2.1 Equipment details"]);
+    expect(headings[1]).toContainEqual([
+      3,
+      "15.2.2 Supporting Documents and References",
+    ]);
   });
 
   it("tells Agent that 15.N is a protocol with blank results and equipment-type outlines", () => {
@@ -380,14 +402,21 @@ describe("cleaning verification protocol sections", () => {
       "It shall be written in the cleaning verification report."
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "The empty box seeds **only** H2 + 15.N.1 identity"
+      "already has the **shared** 15.N boilerplate"
     );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("**Do not draft_field**");
     expect(CVP_DRAFTING_GUIDANCE).toContain("create_table: omit title");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "Do not replay these ISM4 source mismatches"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "skip 15.N.3.2 when identity has no shell"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "Upon completion of cleaning, rinse sample shall be collected"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "As a primary verification of equipment cleanliness"
     );
   });
 

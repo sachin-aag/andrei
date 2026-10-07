@@ -321,9 +321,20 @@ describe("mergeField on a multi-table CVP equipment box", () => {
     );
     expect(created.ok).toBe(true);
     if (!created.ok) return;
+    const tables: JSONContent[] = [];
+    const walk = (node: JSONContent) => {
+      if (node.type === "table") tables.push(node);
+      else (node.content ?? []).forEach(walk);
+    };
+    walk(created.doc);
+    const shellIndex = tables.length - 1;
     const shell = applyTableOperation(
       created.doc,
-      { kind: "edit_cells", tableIndex: 1, cells: [{ row: 1, col: 2, insertText: "3.18 m" }] },
+      {
+        kind: "edit_cells",
+        tableIndex: shellIndex,
+        cells: [{ row: 1, col: 2, insertText: "3.18 m" }],
+      },
       ctx
     );
     expect(shell.ok).toBe(true);
@@ -353,8 +364,8 @@ describe("mergeField on a multi-table CVP equipment box", () => {
     expect(cellText(merged, 0, 2, 1)).toBe("MSGL");
     expect(cellText(merged, 0, 3, 2)).toBe("Equipment Drawing / CPDR");
     expect(cellText(merged, 0, 1, 2)).toBe("");
-    expect(cellText(merged, 1, 1, 2)).toBe("3.18 m");
-    expect(cellText(merged, 1, 2, 2)).toBe("");
+    expect(cellText(merged, shellIndex, 1, 2)).toBe("3.18 m");
+    expect(cellText(merged, shellIndex, 2, 2)).toBe("");
     const text = JSON.stringify(merged);
     expect(text).toContain("Equipment details are established from the engineering drawings.");
     expect(text).toContain("Table 14. Equipment sampling");

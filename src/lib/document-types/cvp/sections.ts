@@ -364,7 +364,8 @@ export const CVP_EXTRANEOUS_RESULTS_HEADERS = [
 
 /**
  * Possible 15.N.M headings (Word import + Agent recipes). The empty box
- * only seeds H2 + 15.N.1 identity; other headings are added per equipment type.
+ * seeds the shared 15.N.1 / .2 / .5 / .7 / .8 boilerplate; 15.N.3 / .4 / .6
+ * are added per equipment type.
  */
 export const CVP_EQUIPMENT_H3_OUTLINE = [
   { number: "15.1.1", title: "Equipment details" },
@@ -654,6 +655,19 @@ const ANNEXURE_ROWS = [
 export const CVP_STANDARD_SWAB_LEVELS =
   "For equipment having a shell height of ≤ 2 m, a minimum of one horizontal sampling level shall be considered (middle level). For equipment having a shell height of > 2 m, the number of horizontal sampling levels is n = √H + 1, rounded up to the next whole number, where H is the equipment shell height in metres. The additional “+1” ensures adequate coverage of the shell surface. For vessels with a diameter ≤ 1 m, sample at two circumferential locations (0° and 180°) at each level. For vessels with a diameter > 1 m, sample at four circumferential locations (0°, 90°, 180°, and 270°) at each level.";
 
+/** Shared 15.N intro — fill [Plant] / FMEA / [duty] from cited pages. */
+export const CVP_EQUIPMENT_INTRO_SEED =
+  "The subject equipment is located in [Plant], a multipurpose manufacturing facility. The equipment is qualified for its intended use, and the cleaning validation approach, including sampling locations, has been established based on the approved FMEA (Ref. No. FMEA/[Equipment ID]-00). This equipment is used in [product/stage] manufacturing for [duty].";
+
+export const CVP_EQUIPMENT_DETAILS_SEED =
+  "The equipment details, including Material of Construction (MOC), product contact surface area, shell height, and shell diameter, shall be taken from CPDR Annexure-2 and the applicable equipment qualification documents.";
+
+export const CVP_EQUIPMENT_RESIDUE_INTRO_SEED =
+  "The following table summarizes the sampling locations and results for [analyte] residue analysis during the cleaning verification study. Results from the verification run shall be compared against the established acceptance criterion of NMT [limit].";
+
+export const CVP_EQUIPMENT_EXTRANEOUS_INTRO_SEED =
+  "As part of the cleaning verification study, final rinse samples shall be evaluated for extraneous matter to confirm that the cleaning process effectively removes visible foreign contaminants from product-contact surfaces. The examination shall include assessment for black particles, fibers, and other extraneous matter. The results shall be evaluated against the acceptance criterion that no black or fiber particles are observed in the rinse samples.";
+
 export function cvpEquipmentSamplingSeed(ordinal = 1): JSONContent {
   const n = `15.${ordinal}`;
   return {
@@ -661,16 +675,44 @@ export function cvpEquipmentSamplingSeed(ordinal = 1): JSONContent {
     content: [
       heading(2, `${n} Equipment name (Equipment No.)`),
       textParagraph(
-        "draft_field this box for the Scope item (vessel / reactor, filter with ML tank, specialty filter, or no-swab). The seed is only the identity table — add 15.N.2–8 headings and tables from the equipment-type recipe. Add equipment for each additional product-contact item in Scope — each new box is a blank 15.N template. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, and cited document numbers from CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
+        "Fill this box in place for the Scope item — do not draft_field (the seed already has the shared 15.N headings and boilerplate). Add 15.N.3 / 15.N.6 from the equipment-type recipe when the item is swabbed. Add equipment for each additional product-contact item in Scope — each new box is a blank 15.N template. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, and cited document numbers from CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
       ),
+      textParagraph(CVP_EQUIPMENT_INTRO_SEED),
       heading(3, `${n}.1 Equipment details`),
-      textParagraph(
-        "The equipment details, including material of construction (MOC) and product-contact surface area, shall be taken from the cited drawing / CPDR annexure."
-      ),
+      textParagraph(CVP_EQUIPMENT_DETAILS_SEED),
       table(CVP_EQUIPMENT_IDENTITY_HEADERS, [
         ["Capacity", "", ""],
         ["MOC", "", ""],
         ["Surface Area", "", ""],
+      ]),
+      heading(3, `${n}.2 Supporting Documents and References`),
+      table(CVP_EQUIPMENT_DOCUMENTS_HEADERS, [
+        ["BCR", "", ""],
+        ["Specification", "", ""],
+        ["Testing Procedure", "", ""],
+        ["Analytical Method Validation", "", ""],
+        ["Equipment Qualification", "", ""],
+      ]),
+      heading(3, `${n}.5 Cleaning validation results summary`),
+      heading(
+        3,
+        `${n}.7 Swab & Rinse samples analysis results summary`
+      ),
+      textParagraph(CVP_EQUIPMENT_RESIDUE_INTRO_SEED),
+      table(CVP_RESIDUE_RESULTS_HEADERS, [
+        ["", "", ""],
+        ["Limit", "", ""],
+        ["LOQ", "", ""],
+        ["LOD", "", ""],
+      ]),
+      heading(
+        3,
+        `${n}.8 Rinse samples analysis results summary (Extraneous matter)`
+      ),
+      textParagraph(CVP_EQUIPMENT_EXTRANEOUS_INTRO_SEED),
+      table(CVP_EXTRANEOUS_RESULTS_HEADERS, [
+        ["Rinse Sample", "NA", ""],
+        ["Limit", "Black and fiber particles should be absent", ""],
       ]),
       textParagraph("Inference:", true),
       textParagraph("It shall be written in the cleaning verification report."),
@@ -696,6 +738,8 @@ export function isStockEquipmentInstruction(text: string): boolean {
     /add equipment for each additional/i.test(text) ||
     /the seed is only the identity table/i.test(text) ||
     /draft_field this box for the Scope item/i.test(text) ||
+    /the seed already has the shared 15\.n headings/i.test(text) ||
+    /fill this box in place for the Scope item/i.test(text) ||
     /do not paste equipment-train diagrams/i.test(text) ||
     /do not invent a diagram/i.test(text) ||
     /^Table\s+\d+\./i.test(text)
