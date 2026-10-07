@@ -6,7 +6,10 @@ import {
   contentWithoutField,
   isExemptFrameFact,
   isExplicitInsertRequest,
+  isOperationalVolumeColumnLabel,
+  shouldKeepOperationalVolume,
   shouldKeepUnsupportedFact,
+  volumeSupportedForColumn,
 } from "./citation-exemption";
 import { extractHardFacts } from "./claim-facts";
 
@@ -282,5 +285,40 @@ describe("shouldKeepUnsupportedFact", () => {
         ],
       })
     ).toBe(false);
+  });
+});
+
+describe("operational volume columns", () => {
+  it("treats considered volume and rinse sample quantity as floors", () => {
+    expect(isOperationalVolumeColumnLabel("Considered volume")).toBe(true);
+    expect(isOperationalVolumeColumnLabel("Rinse sample quantity")).toBe(true);
+    expect(isOperationalVolumeColumnLabel("Rinse volume (L)")).toBe(true);
+    expect(
+      isOperationalVolumeColumnLabel("Rinse volume RF (L) SA × RF")
+    ).toBe(false);
+    expect(
+      isOperationalVolumeColumnLabel("Rinse volume SAF (L) SA × SAF × SF")
+    ).toBe(false);
+    const fiveL = extractHardFacts("5 L").find((row) => row.kind === "number")!;
+    expect(shouldKeepOperationalVolume(fiveL, "Considered volume")).toBe(true);
+    expect(shouldKeepOperationalVolume(fiveL, "Capacity")).toBe(false);
+  });
+
+  it("does not treat PFR capacity as a considered rinse volume", () => {
+    const fiveL = extractHardFacts("5 L").find((row) => row.kind === "number")!;
+    expect(
+      volumeSupportedForColumn(
+        "Plug Flow Reactor PFR-1301 (5 L HAS). Micron Filter MF-1301 size 10\".",
+        fiveL,
+        "Considered volume"
+      )
+    ).toBe(false);
+    expect(
+      volumeSupportedForColumn(
+        "MF-1301 micron filter considered rinse volume 5 L to flood the housing.",
+        fiveL,
+        "Considered volume"
+      )
+    ).toBe(true);
   });
 });

@@ -104,7 +104,7 @@ const IDENTIFIER_RE =
  * checked it.
  */
 const INSTRUMENT_UNIT =
-  "(?:mL|ml|µL|uL|(?<=\\s)L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|m²|m2|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
+  "(?:mL|ml|µL|uL|L\\/m(?:²|2)|(?<=\\s)L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|m²|m2|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
 
 /** −50 ± 10 RPM must stay one signed fact; `\b50` would drop the minus. */
 const PLUS_MINUS_MARK = String.raw`(?:±|\+\/-|\+\-|plus\s*\/\s*minus)`;
