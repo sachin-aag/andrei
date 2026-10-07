@@ -200,7 +200,7 @@ export function cvpEquipmentItemTitle(doc: JSONContent, ordinal: number): string
   return text || `15.${ordinal} Equipment name (Equipment No.)`;
 }
 
-function normalizeItem(doc: JSONContent, _ordinal: number): JSONContent {
+function normalizeItem(doc: JSONContent): JSONContent {
   const upgraded = upgradeCvpEquipmentSamplingNarrative(
     normalizeRichField(doc, { preserveHeadings: true })
   );
@@ -234,7 +234,7 @@ function docsFromRaw(raw: unknown): JSONContent[] {
 export function normalizeCvpEquipmentSamplingContent(
   raw: unknown
 ): CvpEquipmentSamplingContent {
-  const docs = docsFromRaw(raw).map((doc, index) => normalizeItem(doc, index + 1));
+  const docs = docsFromRaw(raw).map((doc) => normalizeItem(doc));
   return { items: docs.length > 0 ? docs : [emptyDoc()] };
 }
 
