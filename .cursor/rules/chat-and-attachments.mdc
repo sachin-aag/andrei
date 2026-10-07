@@ -175,7 +175,9 @@ against the citation ledger's served quotes (`groundDraftText`). That
 gate is fact-level (`citation-exemption.ts`): never skip a whole
 section. Exempt title-page / user-confirmed identity, the ELR
 1 April–31 March window, and facts already written in this report
-(sibling table or another section). Copied attachment facts still need
+(sibling table or another section). A product this-turn `calculate`
+returned is computed evidence (operands still need a page), same as a
+saved analysis. Copied attachment facts still need
 a page in Purpose, Responsibilities, assessments, and recaps. Tables
 stay strict. Finish seeds `reviewedEvidence` (every walked page, not the
 60-finding sample) so those transcripts can hydrate. Empty ledger or
@@ -204,7 +206,13 @@ cited files when the draft named them. A named date column (Effective Date) matc
 next to that same label first; if the exact label is missing, the
 closest date label on the page. A signature or observation date is not
 that field when a closer status label exists. An explicit insert, or a
-fact already in this thread, still cites a page but is not dropped. A leading minus is part of the number
+fact the engineer stated this turn, still cites a page but is not dropped.
+Prior assistant chat is not a keep-source. Ask (plan) replies drop
+`[filename, p. N]` on persist when that page was not retrieved this turn
+or the served quote does not contain the nearby hard fact, and replace
+unsourced hard facts with placeholders (attachment facts need a retrieved
+quote; report/worksheet facts need `read_section` / `read_worksheet` this
+turn; engineer-stated facts stay). A leading minus is part of the number
 (`−15 °C` is not `15 °C`; OCR-split `- 15` is evidence for `-15`). A
 leading tilde is approximate (`~50±10 RPM` is not `−50 ± 10 RPM`). A ±
 window is not independent evidence for the setpoint (`50±10 RPM` is not
@@ -311,6 +319,11 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   folder, PDF vs Word, status, filename/topic) use `list_attachments`
   (`src/lib/attachments/list-catalog.ts`). Copy it into
   `ANALYTICS_DOCUMENT_TOOL_NAMES`. Do not hide it in `searchLoopDirective`.
+  Arithmetic that is not printed on a page uses `calculate` (Document and
+  Analytics; Plan-allowlisted; copy into `ANALYTICS_DOCUMENT_TOOL_NAMES` and
+  Analytics `READ_AFTER_SEARCH_TOOLS`). This-turn products are computed
+  evidence — operands still need a retrieved quote. Do not multiply in the
+  model's head.
   Do not stuff an authoritative count into the Documents index instead.
   Content-inside-PDF “which files mention X” stays `search_documents`.
 - A tool-input schema violation must never end the engineer's turn.

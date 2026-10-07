@@ -954,6 +954,9 @@ export const PLAN_MODE_CHAT_TOOL_NAMES = [
   // Reads saved analysis results. Plan is exactly where an engineer inspects
   // the excursion comparison before deciding what the section should say.
   "read_analysis",
+  // Arithmetic on retrieved numbers (rinse volume, MACO). Read tool —
+  // Plan answers "what is 30.96 × 3" and Agent writes the product after.
+  "calculate",
   "start_document_review",
   "continue_document_review",
   "finish_document_review",

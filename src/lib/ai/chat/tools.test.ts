@@ -6428,3 +6428,23 @@ describe("buildChatTools draft_identity", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 });
+
+describe("calculate", () => {
+  it("evaluates rinse-volume expressions", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = (await tools.calculate!.execute!(
+      { expressions: ["30.96 × 3", "30.96 × 0.2 × 6"] },
+      TEST_TOOL_OPTIONS
+    )) as {
+      status: string;
+      results: Array<{ ok: boolean; display?: string; rounded?: number }>;
+    };
+    expect(result.status).toBe("ok");
+    expect(result.results[0]).toMatchObject({ ok: true, display: "92.88" });
+    expect(result.results[1]).toMatchObject({
+      ok: true,
+      display: "37.152",
+      rounded: 37,
+    });
+  });
+});

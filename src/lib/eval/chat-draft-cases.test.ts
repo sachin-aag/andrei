@@ -60,7 +60,7 @@ describe("chat-draft-cases.json", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("covers the QSR section 5 overblock, mixed identity, SOP titles, and a greeting", () => {
+  it("covers the QSR section 5 overblock, mixed identity, SOP titles, a greeting, and CVP 24.50", () => {
     const ids = new Set(cases.map((entry) => entry.id));
     expect(ids.has("qsr-rtm-cover-8000l")).toBe(true);
     expect(ids.has("qsr-rtm-vacuum-760mmhg")).toBe(true);
@@ -77,6 +77,7 @@ describe("chat-draft-cases.json", () => {
     expect(ids.has("qsr-rtm-oq-locator-temps")).toBe(true);
     expect(ids.has("qsr-rtm-oq-overflow-9320")).toBe(true);
     expect(ids.has("qsr-or-list-index-2.5")).toBe(true);
+    expect(ids.has("cvp-iq-24-50-assistant-echo-blocked")).toBe(true);
   });
 
   it("replays every public case against the current gate", () => {
