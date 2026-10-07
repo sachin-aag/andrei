@@ -168,6 +168,7 @@ import { rewriteAskAssistantParts } from "@/lib/ai/chat/ask-citation-rewrite";
 import {
   buildMentionBlock,
   mentionedAttachmentIds,
+  mentionedCvpEquipmentTargetField,
   mentionedSections,
   parseChatMentions,
   recoverDocumentMentionIds,
@@ -590,6 +591,7 @@ async function handleChatPost(
     actor: auditActorFromUser(user),
     pinnedAttachmentIds,
     mentionedSections: mentionedSections(mentions),
+    mentionedTargetField: mentionedCvpEquipmentTargetField(mentions),
     retrievalPolicy: retrieval.policy,
     documentReview,
     messages,

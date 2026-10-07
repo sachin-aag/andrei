@@ -8,7 +8,11 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { getDocumentType, resolveSection } from "@/lib/document-types";
 import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
-import { cvpEquipmentItemIndex } from "@/lib/document-types/cvp/equipment-item-path";
+import {
+  cvpEquipmentItemIndex,
+  cvpEquipmentItemIndexFromMentionId,
+  cvpEquipmentItemMentionId,
+} from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -53,17 +57,27 @@ export function isChatMentionableSection(
   value: string,
   documentType: DocumentType = "investigation_report"
 ): boolean {
+  if (cvpEquipmentItemIndexFromMentionId(value) != null) {
+    return documentType === "cleaning_verification_protocol";
+  }
   return (
     isChatEditableSection(value, documentType) ||
     (isChatIdentitySection(value) && hasChatIdentity(documentType))
   );
 }
 
+export type ChatMentionableSectionCandidate = {
+  id: string;
+  label: string;
+  keywords?: string;
+};
+
 /** Composer @ menu: identity first when the type has a cover/header form. */
 export function chatMentionableSectionCandidates(
-  documentType: DocumentType = "investigation_report"
-): Array<{ id: string; label: string }> {
-  const items: Array<{ id: string; label: string }> = [];
+  documentType: DocumentType = "investigation_report",
+  opts?: { equipmentItems?: ReadonlyArray<{ label: string }> }
+): ChatMentionableSectionCandidate[] {
+  const items: ChatMentionableSectionCandidate[] = [];
   if (hasChatIdentity(documentType)) {
     items.push({
       id: CHAT_IDENTITY_SECTION,
@@ -71,6 +85,21 @@ export function chatMentionableSectionCandidates(
     });
   }
   for (const section of chatEditableSections(documentType)) {
+    if (section === "cvp_equipment_sampling") {
+      const live = opts?.equipmentItems;
+      const boxes =
+        live && live.length > 0
+          ? live
+          : [{ label: "15.1 Equipment name (Equipment No.)" }];
+      for (const [index, child] of boxes.entries()) {
+        items.push({
+          id: cvpEquipmentItemMentionId(index),
+          label: child.label,
+          keywords: "equipment sampling",
+        });
+      }
+      continue;
+    }
     items.push({ id: section, label: sectionLabel(section) });
   }
   return items;

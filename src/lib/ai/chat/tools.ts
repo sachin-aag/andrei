@@ -1204,7 +1204,8 @@ function bindLoadedWriteField(
   requestedField: string,
   resolvedField: string,
   loaded: { sectionId: string; content: Record<string, unknown> },
-  preferEmptyItem = true
+  preferEmptyItem = true,
+  taggedItemField?: string
 ): {
   resolvedField: string;
   loaded: { sectionId: string; content: Record<string, unknown> };
@@ -1214,7 +1215,7 @@ function bindLoadedWriteField(
     requestedField,
     resolvedField,
     loaded.content,
-    { preferEmptyItem }
+    { preferEmptyItem, taggedItemField }
   );
   return {
     resolvedField: bound.targetField,
@@ -1451,6 +1452,8 @@ export function buildChatTools(opts: {
   pinnedAttachmentIds?: readonly string[];
   /** Sections the engineer tagged with @; readable even when out of scope. */
   mentionedSections?: readonly SectionType[];
+  /** Exclusive tagged 15.N path (`items.1`) when one equipment box is @-tagged. */
+  mentionedTargetField?: string;
   retrievalPolicy?: RetrievalPolicy;
   documentReview?: DocumentReviewSession;
   /** Citations at end of each field (Convergent pack, or generic documents). */
@@ -1830,6 +1833,7 @@ export function buildChatTools(opts: {
   const mentionedSections = (opts.mentionedSections ?? []).filter((section) =>
     isChatEditableSection(section, documentType)
   );
+  const mentionedTargetField = opts.mentionedTargetField;
   const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
   const scopeHint =
     sectionScope === "all"
@@ -2894,7 +2898,9 @@ export function buildChatTools(opts: {
           section,
           targetField,
           requestedResolved,
-          loadedRaw
+          loadedRaw,
+          true,
+          mentionedTargetField
         );
         if (
           emptyInventoryNeedsMatchingReview({
@@ -3394,7 +3400,9 @@ export function buildChatTools(opts: {
           section,
           targetField,
           requestedResolved,
-          loadedRaw
+          loadedRaw,
+          true,
+          mentionedTargetField
         );
 
         const source = image as InsertImageSource;
@@ -3805,6 +3813,7 @@ export function buildChatTools(opts: {
           retrievalPolicy,
           documentReview,
           blockPairing,
+          mentionedTargetField,
         }),
     }),
 
@@ -3884,7 +3893,8 @@ export function buildChatTools(opts: {
             targetField,
             requestedResolved,
             loadedRaw,
-            false
+            false,
+            mentionedTargetField
           );
 
           const locator = resolveSectionImageLocator({
@@ -4146,7 +4156,9 @@ export function buildChatTools(opts: {
           section,
           targetField,
           requestedResolved,
-          loadedRaw
+          loadedRaw,
+          true,
+          mentionedTargetField
         );
         if (
           emptyInventoryNeedsMatchingReview({
@@ -4697,7 +4709,9 @@ export function buildChatTools(opts: {
                 section,
                 targetField,
                 queueField,
-                queued
+                queued,
+                true,
+                mentionedTargetField
               ).resolvedField;
             }
           }
@@ -4777,7 +4791,9 @@ export function buildChatTools(opts: {
           section,
           targetField,
           requestedResolved,
-          loadedRaw
+          loadedRaw,
+          true,
+          mentionedTargetField
         );
         const field = {
           targetField: resolvedField,

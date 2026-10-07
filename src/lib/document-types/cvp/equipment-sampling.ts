@@ -16,14 +16,20 @@ import {
   upgradeCvpEquipmentSamplingNarrative,
 } from "@/lib/document-types/cvp/sections";
 import {
+  chatMentionParentSection,
   cvpEquipmentItemIndex,
+  cvpEquipmentItemIndexFromMentionId,
   cvpEquipmentItemIndexFromTarget,
+  cvpEquipmentItemMentionId,
   isCvpEquipmentItemField,
 } from "@/lib/document-types/cvp/equipment-item-path";
 
 export {
+  chatMentionParentSection,
   cvpEquipmentItemIndex,
+  cvpEquipmentItemIndexFromMentionId,
   cvpEquipmentItemIndexFromTarget,
+  cvpEquipmentItemMentionId,
   isCvpEquipmentItemField,
 };
 

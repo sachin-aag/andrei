@@ -1,5 +1,24 @@
 const ITEM_FIELD_RE = /^items\.(\d+)$/;
 const EQUIPMENT_ORDINAL_RE = /^15\.(\d+)\b/;
+const EQUIPMENT_MENTION_RE = /^cvp_equipment_sampling:items\.(\d+)$/;
+
+/** Composer @ id for one 15.N box (`cvp_equipment_sampling:items.1` = 15.2). */
+export function cvpEquipmentItemMentionId(index: number): string {
+  return `cvp_equipment_sampling:items.${index}`;
+}
+
+export function cvpEquipmentItemIndexFromMentionId(id: string): number | null {
+  const match = EQUIPMENT_MENTION_RE.exec(id.trim());
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+/** Strip a 15.N mention id to the parent section key; other ids pass through. */
+export function chatMentionParentSection(id: string): string {
+  return cvpEquipmentItemIndexFromMentionId(id) != null
+    ? "cvp_equipment_sampling"
+    : id;
+}
 
 export function isCvpEquipmentItemField(path: string): boolean {
   return ITEM_FIELD_RE.test(path);

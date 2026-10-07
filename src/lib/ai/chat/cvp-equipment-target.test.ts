@@ -5,7 +5,10 @@ import {
   cvpEquipmentItemIndexFromTarget,
   insertBlankCvpEquipmentItem,
 } from "@/lib/document-types/cvp/equipment-sampling";
-import { routeCvpEquipmentWriteField } from "@/lib/ai/chat/cvp-equipment-target";
+import {
+  bindCvpEquipmentWrite,
+  routeCvpEquipmentWriteField,
+} from "@/lib/ai/chat/cvp-equipment-target";
 import { fieldFillState, sectionFillState } from "@/lib/ai/chat/fields";
 
 function withFilledNote(doc: JSONContent): JSONContent {
@@ -84,6 +87,20 @@ describe("routeCvpEquipmentWriteField", () => {
       content,
     });
     expect(routed.targetField).toBe("items.0");
+  });
+
+  it("honors a tagged 15.2 box over the first empty item", () => {
+    const content = {
+      items: insertBlankCvpEquipmentItem([cvpEquipmentSamplingSeed(1)], 0),
+    };
+    const tagged = bindCvpEquipmentWrite(
+      "cvp_equipment_sampling",
+      "narrative",
+      "items.0",
+      content,
+      { taggedItemField: "items.1" }
+    );
+    expect(tagged.targetField).toBe("items.1");
   });
 
   it("creates items.1 when asked for 15.2 and only 15.1 exists", () => {

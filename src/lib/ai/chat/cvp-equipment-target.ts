@@ -68,18 +68,33 @@ export function routeCvpEquipmentWriteField(args: {
   };
 }
 
+/** A tagged 15.N box wins over generic `narrative` / `table` / a sibling items.N. */
+export function preferTaggedCvpEquipmentField(
+  section: SectionType,
+  requestedField: string,
+  taggedItemField: string | undefined
+): string {
+  if (section !== CVP_EQUIPMENT_SAMPLING_SECTION) return requestedField;
+  return taggedItemField ?? requestedField;
+}
+
 export function bindCvpEquipmentWrite(
   section: SectionType,
   requestedField: string,
   resolvedField: string,
   content: Record<string, unknown>,
-  opts?: { preferEmptyItem?: boolean }
+  opts?: { preferEmptyItem?: boolean; taggedItemField?: string }
 ): CvpEquipmentWriteRoute {
   if (section !== CVP_EQUIPMENT_SAMPLING_SECTION) {
     return { targetField: resolvedField, content };
   }
-  return routeCvpEquipmentWriteField({
+  const requested = preferTaggedCvpEquipmentField(
+    section,
     requestedField,
+    opts?.taggedItemField
+  );
+  return routeCvpEquipmentWriteField({
+    requestedField: requested,
     resolvedField,
     content,
     preferEmptyItem: opts?.preferEmptyItem,

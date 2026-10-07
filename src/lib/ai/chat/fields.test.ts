@@ -18,6 +18,7 @@ import {
   QSR_RTM_HEADERS,
 } from "@/lib/document-types/qsr/sections";
 import { EMPTY_VQ_CONTENT } from "@/lib/document-types/vq/sections";
+import { cvpEquipmentItemMentionId } from "@/lib/document-types/cvp/equipment-item-path";
 import {
   chatEditableSections,
   chatMentionableSectionCandidates,
@@ -62,6 +63,52 @@ describe("chatMentionableSectionCandidates", () => {
     expect(isChatMentionableSection("identity", "investigation_report")).toBe(
       false
     );
+  });
+
+  it("lists live 15.N equipment boxes instead of a single Equipment sampling tag", () => {
+    const one = chatMentionableSectionCandidates("cleaning_verification_protocol");
+    expect(one.some((item) => item.id === "cvp_equipment_sampling")).toBe(false);
+    expect(one).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: cvpEquipmentItemMentionId(0),
+          label: expect.stringMatching(/^15\.1\b/),
+        }),
+      ])
+    );
+    expect(one.some((item) => item.id === cvpEquipmentItemMentionId(1))).toBe(
+      false
+    );
+
+    const two = chatMentionableSectionCandidates(
+      "cleaning_verification_protocol",
+      {
+        equipmentItems: [
+          { label: "15.1 MIXED VESSEL (MV-1304)" },
+          { label: "15.2 Equipment name (Equipment No.)" },
+        ],
+      }
+    );
+    expect(two).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: cvpEquipmentItemMentionId(1),
+          label: expect.stringMatching(/^15\.2\b/),
+        }),
+      ])
+    );
+    expect(
+      isChatMentionableSection(
+        cvpEquipmentItemMentionId(1),
+        "cleaning_verification_protocol"
+      )
+    ).toBe(true);
+    expect(
+      isChatMentionableSection(
+        cvpEquipmentItemMentionId(1),
+        "investigation_report"
+      )
+    ).toBe(false);
   });
 });
 

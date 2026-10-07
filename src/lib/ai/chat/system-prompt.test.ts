@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v196-cvp-equipment-item-route");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v197-cvp-equipment-mention");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -683,6 +683,7 @@ describe("CVP equipment sampling targets", () => {
       documentType: "cleaning_verification_protocol",
     });
     expect(prompt).toContain("Write the next empty items.N");
+    expect(prompt).toContain("An @-tagged 15.N box is that items.N only");
     expect(prompt).toContain("Never create_table into a filled items.0");
   });
 });

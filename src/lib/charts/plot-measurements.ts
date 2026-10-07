@@ -441,6 +441,7 @@ export async function executePlotMeasurements(
     retrievalPolicy: RetrievalPolicy;
     documentReview: DocumentReviewSession;
     blockPairing?: SameTurnBlockPairing;
+    mentionedTargetField?: string;
   },
   deps: PlotMeasurementsDeps = DEFAULT_DEPS
 ): Promise<PlotMeasurementsResult> {
@@ -484,7 +485,8 @@ export async function executePlotMeasurements(
     input.section,
     input.targetField,
     requestedResolved,
-    loadedRaw.content
+    loadedRaw.content,
+    { taggedItemField: ctx.mentionedTargetField }
   );
   const resolvedField = bound.targetField;
   const loaded = { ...loadedRaw, content: bound.content };
