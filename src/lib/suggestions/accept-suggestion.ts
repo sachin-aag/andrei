@@ -685,14 +685,16 @@ export async function acceptSuggestion(args: {
       continue;
     }
     content = next.nextSection;
-    if (next.remainder === "conflict") {
-      if (item.id === args.comment.id) remainder = "conflict";
-      continue;
+    if (next.remainder === "conflict" && item.id === args.comment.id) {
+      remainder = "conflict";
     }
+    // Conflict still wrote the compatible operations. Resolving avoids
+    // re-injecting the original card onto already-merged text (the leftover
+    // Apply-all loop on cleaning-protocol queues).
     resolved.push(item);
     if (next.operations) operationsById.set(item.id, next.operations);
   }
-  if (resolved.length === 0 && remainder !== "conflict") {
+  if (resolved.length === 0) {
     return { ok: false, reason: "not_found" };
   }
   const cascaded = applyCaptionCascadeToAppliedSection({
@@ -718,26 +720,14 @@ export async function acceptSuggestion(args: {
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
-  const dismissed =
-    remainder === "conflict" && resolved.length === 0
-      ? []
-      : superseded.map((sibling) => ({
-          ...sibling,
-          status: "dismissed" as const,
-          content: withResolutionReason(
-            sibling.content,
-            resolutionReasonSupersededBy(args.comment.id)
-          ),
-        }));
-  if (remainder === "conflict" && resolved.length === 0) {
-    return {
-      ok: true,
-      nextSection: content,
-      nextRelatedSections: cascaded.related,
-      remainder: "conflict",
-      dismissed,
-    };
-  }
+  const dismissed = superseded.map((sibling) => ({
+    ...sibling,
+    status: "dismissed" as const,
+    content: withResolutionReason(
+      sibling.content,
+      resolutionReasonSupersededBy(args.comment.id)
+    ),
+  }));
   try {
     for (const item of resolved) {
       const operations = operationsById.get(item.id);

@@ -111,8 +111,8 @@ function applyOneInMemory(args: {
     ignorePlaceBeforePairedBlock: args.ignorePlaceBeforePairedBlock,
     documentContents: args.documentContents,
   });
-  if (!result.ok || result.remainder === "conflict") {
-    if (!result.ok && result.reason === "noop") {
+  if (!result.ok) {
+    if (result.reason === "noop") {
       args.dismissedIds.push(args.comment.id);
       args.alreadyPresentIds.add(args.comment.id);
       return args.sectionContent;
@@ -127,9 +127,6 @@ function applyOneInMemory(args: {
       return args.sectionContent;
     }
     args.skippedIds.push(args.comment.id);
-    if (result.ok && result.remainder === "conflict") {
-      return result.nextSection;
-    }
     return args.sectionContent;
   }
   args.appliedIds.push(args.comment.id);
@@ -258,6 +255,34 @@ export async function acceptAllSuggestions(args: {
       sectionContent: current,
       documentContents: contentsFor(comment.id, current),
     });
+  }
+
+  // First-pass locate runs against the original doc. A later apply can make
+  // a leftover unique (or create the table/anchor it needs). Retry those
+  // once the in-memory doc has moved — otherwise Apply all leaves 3 of 10
+  // open, and accepting the remainder writes then re-injects them.
+  const commentByIdForRetry = new Map(args.comments.map((row) => [row.id, row]));
+  let retryProgressed = appliedIds.length > 0 && skippedIds.length > 0;
+  while (retryProgressed) {
+    retryProgressed = false;
+    for (const id of [...skippedIds]) {
+      if (supersededIds.has(id) || alreadyPresentIds.has(id)) continue;
+      const leftover = commentByIdForRetry.get(id);
+      if (!leftover) continue;
+      applied.delete(id);
+      const skipAt = skippedIds.indexOf(id);
+      if (skipAt >= 0) skippedIds.splice(skipAt, 1);
+      const beforeApplied = appliedIds.length;
+      current = applyOneInMemory({
+        ...applyArgs,
+        comment: leftover,
+        sectionContent: current,
+        documentContents: contentsFor(leftover.id, current),
+      });
+      if (appliedIds.length > beforeApplied) {
+        retryProgressed = true;
+      }
+    }
   }
 
   if (

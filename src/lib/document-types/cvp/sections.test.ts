@@ -3,6 +3,7 @@ import type { JSONContent } from "@tiptap/core";
 import { getDocumentType } from "@/lib/document-types";
 import { CVP_DRAFTING_GUIDANCE } from "./drafting-guidance";
 import {
+  ensureCvpEquipmentFieldContent,
   insertBlankCvpEquipmentItem,
   normalizeCvpEquipmentSamplingContent,
 } from "./equipment-sampling";
@@ -326,6 +327,23 @@ describe("cleaning verification protocol sections", () => {
     expect(text).not.toContain("Duplicate this box");
     expect((text.match(/15\.1\.1 Equipment details/g) ?? []).length).toBe(1);
     expect((text.match(/It shall be written in the cleaning verification report\./g) ?? []).length).toBe(2);
+  });
+
+  it("does not retitle sibling 15.N boxes when applying one equipment item", () => {
+    const first = cvpEquipmentSamplingSeed(1);
+    const second = cvpEquipmentSamplingSeed(1);
+    const next = ensureCvpEquipmentFieldContent(
+      { items: [first, second] },
+      "items.0"
+    );
+    const items = next.items as JSONContent[];
+    const title = (doc: JSONContent | undefined) =>
+      (doc?.content ?? [])
+        .filter((node) => node.type === "heading" && Number(node.attrs?.level) === 2)
+        .map((node) => (node.content ?? []).map((t) => t.text ?? "").join(""))
+        .join("");
+    expect(title(items[1])).toContain("15.1 Equipment name");
+    expect(title(items[1])).not.toContain("15.2");
   });
 
   it("adds a blank 15.2 template that does not copy filled tables from 15.1", () => {
