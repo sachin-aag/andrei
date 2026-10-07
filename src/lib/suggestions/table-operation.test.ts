@@ -20,6 +20,7 @@ import {
   tableOperationInvalidHint,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
@@ -546,7 +547,7 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 2, 1)).toBe("Engineering");
   });
 
-  it("still rejects insert_rows when a filled snapshot cell changed", () => {
+  it("still rejects insert_rows when the identity snapshot cell changed", () => {
     const result = applyTableOperation(
       tableDoc(["H1", "H2"], [["changed", "row"]]),
       {
@@ -560,6 +561,77 @@ describe("applyTableOperation", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.status).toBe("stale");
+  });
+
+  it("still inserts when a sibling edit_cells rewrote a non-identity cell", () => {
+    const original = tableDoc(["H1", "H2"], [["Existing Qualification", "EQ-1"]]);
+    const modified = applyTableOperation(original, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          rowKey: "Existing Qualification",
+          expectedText: "EQ-1",
+          insertText: "EQ-1-REV",
+        },
+      ],
+    });
+    expect(modified.ok).toBe(true);
+    if (!modified.ok) return;
+
+    const inserted = applyTableOperation(modified.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "Existing Qualification",
+      rows: [["Design Qualification", "DQP-1"]],
+      expectedRowAtAfter: ["Existing Qualification", "EQ-1"],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(cellText(inserted.doc, 1, 1)).toBe("EQ-1-REV");
+    expect(cellText(inserted.doc, 2, 0)).toBe("Design Qualification");
+    expect(cellText(inserted.doc, 2, 1)).toBe("DQP-1");
+  });
+
+  it("still inserts after a painted filled-row modify preview", () => {
+    const original = tableDoc(["H1", "H2"], [["Existing Qualification", "EQ-1"]]);
+    const modify = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          rowKey: "Existing Qualification",
+          expectedText: "EQ-1",
+          insertText: "EQ-1-REV",
+        },
+      ],
+    };
+    const preview = buildTableOperationPreviewDoc(original, modify, {
+      id: "modify-1",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const inserted = applyTableOperation(preview.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "Existing Qualification",
+      rows: [["Design Qualification", "DQP-1"]],
+      expectedRowAtAfter: ["Existing Qualification", "EQ-1"],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(cellText(inserted.doc, 2, 0)).toBe("Design Qualification");
   });
 
   it("does not copy a banner colspan onto inserted data rows", () => {

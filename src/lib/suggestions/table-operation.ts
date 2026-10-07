@@ -1155,10 +1155,13 @@ function cellsMatch(
 }
 
 /**
- * `insert_rows` snapshots the live anchor row at persist. Apply-all (and
- * sequential Apply) may fill that empty seeded row first via a sibling
- * `edit_cells`. Previously empty snapshot cells may now have text; filled
- * snapshot cells must still match or the insert is stale.
+ * `insert_rows` snapshots the live anchor row at persist. The concurrency
+ * gate is the identity cell (first cell / afterRowKey): URS-7 is still
+ * URS-7 even when a sibling `edit_cells` rewrote Remarks or a family
+ * column on that same row. Apply-all and a painted modify preview both
+ * change those other cells; treating them as stale dropped the insert
+ * card (canPreview false, Apply not_found). Empty identity cells may
+ * still fill (seeded blank row). A changed identity cell is stale.
  */
 function expectedRowAtAfterStillValid(
   actual: readonly string[],
@@ -1166,18 +1169,12 @@ function expectedRowAtAfterStillValid(
 ): boolean {
   if (!expected) return true;
   const exp0 = normalizeTableCellText(expected[0] ?? "");
-  if (exp0.length > 0 && (actual[0] ?? "") !== exp0) return false;
+  if (exp0.length > 0) return (actual[0] ?? "") === exp0;
   if (actual.length !== expected.length) {
     const restEmpty = expected
       .slice(1)
       .every((cell) => normalizeTableCellText(cell).length === 0);
-    return exp0.length > 0 && restEmpty;
-  }
-  if (cellsMatch(actual, expected)) return true;
-  for (let i = 0; i < expected.length; i++) {
-    const exp = normalizeTableCellText(expected[i] ?? "");
-    if (exp.length === 0) continue;
-    if ((actual[i] ?? "") !== exp) return false;
+    return restEmpty;
   }
   return true;
 }
