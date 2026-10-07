@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { compact3xperLitreVolumesInDoc } from "@/lib/document-types/3xper-volume-style";
 import { emptyDoc, normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
   CVP_CLEANING_OPERATION_HEADERS,
@@ -405,9 +406,11 @@ function normalizeItem(doc: JSONContent): JSONContent {
   // Do not graft the 15.1 seed onto an items[] box — that put Duplicate-this-box
   // and empty outline headings back after the engineer deleted them (upgrade
   // still runs on legacy `narrative` in docsFromRaw).
-  return collapseCvpEquipmentItem(
-    splitWarpedCvpEquipmentTables(
-      normalizeRichField(doc, { preserveHeadings: true })
+  return compact3xperLitreVolumesInDoc(
+    collapseCvpEquipmentItem(
+      splitWarpedCvpEquipmentTables(
+        normalizeRichField(doc, { preserveHeadings: true })
+      )
     )
   );
 }

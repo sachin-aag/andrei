@@ -1,28 +1,42 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { useEffect, type ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { CvpEquipmentSamplingEditor } from "@/components/report/sections/cvp/cvp-equipment-sampling-editor";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { useGenericReportSection } from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import {
   EMPTY_CVP_CONTENT,
   CVP_SECTION_KEYS,
   CVP_SECTION_LABELS,
+  alignCvpMacoEquipmentHeaders,
   isCvpTableSectionKey,
   type CvpSectionContent,
   type CvpSectionKey,
 } from "@/lib/document-types/cvp/sections";
+import {
+  useGenericReportSection,
+  useReportData,
+} from "@/providers/report-provider";
 
 function CvpSectionEditor({ section }: { section: CvpSectionKey }) {
+  const { readOnly } = useReportData();
   const { update } = useGenericReportSection<CvpSectionContent>(section);
   const { status, lastSavedAt, value, flushSave } = useGenericSectionSave(section);
   const content =
     (value as CvpSectionContent | undefined) ?? EMPTY_CVP_CONTENT[section];
   const field = isCvpTableSectionKey(section) ? "table" : "narrative";
-  const doc = (content as Record<string, JSONContent | undefined>)[field];
+  const stored = (content as Record<string, JSONContent | undefined>)[field];
+  const doc =
+    section === "cvp_maco" && stored
+      ? alignCvpMacoEquipmentHeaders(stored)
+      : stored;
+
+  useEffect(() => {
+    if (section !== "cvp_maco" || readOnly || !stored || doc === stored) return;
+    update(() => ({ narrative: doc }) as CvpSectionContent);
+  }, [section, readOnly, stored, doc, update]);
 
   return (
     <SectionShell

@@ -6313,7 +6313,7 @@ describe("buildChatTools draft_identity", () => {
       expect.arrayContaining([
         { key: "equipmentName", value: "Glass Lined Reactor" },
         { key: "equipmentCode", value: "GLR-1301" },
-        { key: "capacity", value: "8000 L" },
+        { key: "capacity", value: "8k L" },
         { key: "plantSection", value: "Production Block-2" },
       ])
     );

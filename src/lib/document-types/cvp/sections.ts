@@ -188,11 +188,19 @@ export const CVP_MACO_EQUIPMENT_HEADERS = [
   "Equipment No.",
   "Capacity",
   "MOC",
-  "Used for this stage?",
-  "Used previous / subsequent to this product?",
-  "Minimum batch size",
+  "Is used for Stage-4?",
+  "Equipment used previous / subsequent to this product",
+  "Minimum batch size for this equipment manufactured",
   "Product contact / Non-product contact",
 ] as const;
+
+/** Earlier seed labels, rewritten onto the protocol wording above. */
+const PREVIOUS_MACO_EQUIPMENT_HEADER_LABELS: Readonly<Record<string, string>> = {
+  "used for this stage?": "Is used for Stage-4?",
+  "used previous / subsequent to this product?":
+    "Equipment used previous / subsequent to this product",
+  "minimum batch size": "Minimum batch size for this equipment manufactured",
+};
 
 export const CVP_MACO_FORMULA_HEADERS = [
   "Attribute",
@@ -407,6 +415,58 @@ function heading(level: 2 | 3 | 4, text: string): JSONContent {
     attrs: { level },
     content: [{ type: "text", text }],
   };
+}
+
+function nodePlain(node: JSONContent | undefined): string {
+  if (!node) return "";
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map(nodePlain).join("");
+}
+
+function replaceHeaderCellText(cell: JSONContent, text: string): JSONContent {
+  const paragraph = cell.content?.find((node) => node.type === "paragraph");
+  const textNode = paragraph?.content?.find((node) => node.type === "text");
+  const nextText: JSONContent = textNode?.marks
+    ? { type: "text", text, marks: textNode.marks }
+    : { type: "text", text };
+  return {
+    ...cell,
+    content: [{ type: "paragraph", content: [nextText] }],
+  };
+}
+
+/**
+ * MACO equipment-list headers follow the ISM Stage-4 protocol. Existing
+ * drafts that still use the shorter seed labels are rewritten in place.
+ */
+export function alignCvpMacoEquipmentHeaders(doc: JSONContent): JSONContent {
+  if (!doc.content) return doc;
+  let changed = false;
+  const content = doc.content.map((node) => {
+    if (node.type !== "table" || !node.content?.[0]) return node;
+    const header = node.content[0];
+    const cells = header.content ?? [];
+    const labels = cells.map((cell) =>
+      nodePlain(cell).replace(/\s+/g, " ").trim().toLowerCase()
+    );
+    const equipmentList =
+      labels.includes("name of the equipment") && labels.includes("moc");
+    if (!equipmentList) return node;
+    let rowChanged = false;
+    const nextCells = cells.map((cell, index) => {
+      const next = PREVIOUS_MACO_EQUIPMENT_HEADER_LABELS[labels[index] ?? ""];
+      if (!next) return cell;
+      rowChanged = true;
+      return replaceHeaderCellText(cell, next);
+    });
+    if (!rowChanged) return node;
+    changed = true;
+    return {
+      ...node,
+      content: [{ ...header, content: nextCells }, ...node.content.slice(1)],
+    };
+  });
+  return changed ? { ...doc, content } : doc;
 }
 
 function textParagraph(text: string, bold = false): JSONContent {

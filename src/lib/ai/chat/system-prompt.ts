@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v190-cvp-add-equipment";
+export const CHAT_PROMPT_VERSION = "chat-v192-cvp-maco-headers";
 
 export type ChatMode = "plan" | "agent";
 
@@ -54,7 +54,7 @@ function fieldTaxonomy(
     )
     .join(", ");
   const unitHint = fields.some((field) => field.keepUnits)
-    ? ". Capacity / Size keeps the printed unit (8000 L, 3.0 KL)"
+    ? ". Capacity / Size keeps the printed unit (8k L not 8000 L; 3.0 KL as printed)"
     : "";
   const identityLine = `- ${chatIdentityLabel(documentType)} [identity]: ${keys} — fill with draft_identity, not draft_field. Plain scalars only — never [filename, p. N], numbered [n], or a Citations: list${unitHint}`;
   return body ? `${identityLine}\n${body}` : identityLine;
@@ -269,7 +269,7 @@ function agentRules(opts: {
     ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / edit_table / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
     : "";
   const identityToolLine = opts.hasIdentity
-    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. One suggestion card for the whole header — the engineer Apply / Dismisses it like draft_field / edit_table / propose_edit. Duplicate document numbers fail here and at Apply. Remaining-section treats a complete proposal as done (do not wait for Apply). Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list).${opts.keepIdentityUnits ? " Capacity / Size includes the unit as printed (8000 L, 3.0 KL) — not a bare 8000." : ""} Do not use draft_field for these keys.`
+    ? `\n- draft_identity — fill cover/header identity scalars (equipment name, document number, …) from attachments. One suggestion card for the whole header — the engineer Apply / Dismisses it like draft_field / edit_table / propose_edit. Duplicate document numbers fail here and at Apply. Remaining-section treats a complete proposal as done (do not wait for Apply). Search first. ask_user only when a fact is still missing after search, or a fork (both Vial and Cartridge on an ELR). Pass the bare scalar — draft_identity values never include citations ([filename, p. N], numbered [n], or a Citations: list).${opts.keepIdentityUnits ? " Capacity / Size includes the unit as printed (8k L not 8000 L; 3.0 KL as printed) — not a bare 8000." : ""} Do not use draft_field for these keys.`
     : "";
   const hiddenWriteTools = opts.hasIdentity
     ? "draft_field / edit_table / propose_edit / insert_image / remove_image / draft_identity"

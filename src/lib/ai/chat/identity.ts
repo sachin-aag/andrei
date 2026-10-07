@@ -161,7 +161,7 @@ function parseCapacityNumber(raw: string): number | null {
  * When Capacity / Size is a bare number, copy the unit printed next to that
  * same figure on a cited page (`8000` + `Capacity 8000 L` → `8000 L`).
  * Unique labeled Capacity/Size wins; conflicting units stay bare; 8000 is
- * not converted to 8 KL.
+ * not converted to 8 KL (3xper later writes `8k L`).
  */
 export function attachIdentityCapacityUnits(
   value: string,

@@ -110,7 +110,8 @@ export type ChatIdentityField = {
   required?: boolean;
   /**
    * Restore a printed unit from cited quotes when the model writes a bare
-   * number (QSR Capacity / Size: `8000` → `8000 L`). No conversion (8000 ≠ 8 KL).
+   * number (QSR Capacity / Size: `8000` → `8000 L`, then 3xper `8k L`).
+   * No conversion to kilolitres (8000 ≠ 8 KL).
    */
   keepUnits?: boolean;
 };

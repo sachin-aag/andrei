@@ -9,9 +9,11 @@ import {
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
   CVP_FORM_NO,
+  CVP_MACO_EQUIPMENT_HEADERS,
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
   EMPTY_CVP_CONTENT,
+  alignCvpMacoEquipmentHeaders,
   cvpEquipmentSamplingSeed,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
@@ -58,11 +60,51 @@ describe("cleaning verification protocol sections", () => {
       "narrative" in seed ? seed.narrative : { type: "doc", content: [] }
     );
     expect(tables).toHaveLength(3);
-    expect(tables[0]?.headers[0]).toBe("S. No.");
+    expect(tables[0]?.headers).toEqual([...CVP_MACO_EQUIPMENT_HEADERS]);
+    expect(tables[0]?.headers).toContain("Is used for Stage-4?");
+    expect(tables[0]?.headers).toContain(
+      "Equipment used previous / subsequent to this product"
+    );
+    expect(tables[0]?.headers).toContain(
+      "Minimum batch size for this equipment manufactured"
+    );
     expect(tables[1]?.headers[0]).toBe("Attribute");
     expect(tables[2]?.headers[0]).toBe("Attribute");
     expect(tables[1]?.cells.some((cell) => cell.text === "PDE")).toBe(true);
     expect(tables[2]?.cells.some((cell) => cell.text === "MAXCONC")).toBe(true);
+  });
+
+  it("rewrites the previous MACO equipment header labels", () => {
+    const seed = EMPTY_CVP_CONTENT.cvp_maco;
+    const narrative =
+      "narrative" in seed ? structuredClone(seed.narrative) : { type: "doc" as const };
+    const header = narrative.content?.find((node) => node.type === "table")
+      ?.content?.[0];
+    const labels = [
+      "S. No.",
+      "Name of the Equipment",
+      "Equipment No.",
+      "Capacity",
+      "MOC",
+      "Used for this stage?",
+      "Used previous / subsequent to this product?",
+      "Minimum batch size",
+      "Product contact / Non-product contact",
+    ];
+    header?.content?.forEach((cell, index) => {
+      const text = cell.content?.[0]?.content?.[0];
+      if (text?.type === "text") text.text = labels[index] ?? text.text;
+    });
+    const aligned = alignCvpMacoEquipmentHeaders(narrative);
+    const headers = summarizeTablesInDoc(aligned)[0]?.headers;
+    expect(headers).toEqual([...CVP_MACO_EQUIPMENT_HEADERS]);
+    const merged = getDocumentType("cleaning_verification_protocol").mergeSection(
+      "cvp_maco",
+      { narrative }
+    ) as { narrative: JSONContent };
+    expect(summarizeTablesInDoc(merged.narrative)[0]?.headers).toEqual([
+      ...CVP_MACO_EQUIPMENT_HEADERS,
+    ]);
   });
 
   it("strips a leftover Table 15 caption on the unused 15.1 identity shell at merge", () => {
@@ -209,7 +251,8 @@ describe("cleaning verification protocol sections", () => {
       items: [{ type: "doc", content: [filled] }],
     }) as { items: JSONContent[] };
     const text = JSON.stringify(merged);
-    expect(text).toContain("10000 L");
+    expect(text).toContain("10k L");
+    expect(text).not.toContain("10000 L");
     expect(text).not.toContain("Duplicate this box");
     expect(text).not.toContain("Equipment name (Equipment No.)");
   });
@@ -271,7 +314,7 @@ describe("cleaning verification protocol sections", () => {
     );
     expect(h2s).toHaveLength(1);
     expect(JSON.stringify(h2s[0])).toContain("Glass Lined Reactor (GLR-1302)");
-    expect(text).toContain("10000 L [1]");
+    expect(text).toContain("10k L [1]");
     expect(text).not.toContain("Duplicate this box");
     expect((text.match(/15\.1\.1 Equipment details/g) ?? []).length).toBe(1);
     expect((text.match(/It shall be written in the cleaning verification report\./g) ?? []).length).toBe(2);

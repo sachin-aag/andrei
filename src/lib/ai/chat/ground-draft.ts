@@ -43,6 +43,10 @@ import {
   shouldKeepUnsupportedFact,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
+import {
+  compact3xperLitreVolumes,
+  usesCvpKLitreStyle,
+} from "@/lib/document-types/3xper-volume-style";
 import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
 import {
   attachLiveTableRowContext,
@@ -73,6 +77,15 @@ import {
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 
 export type { ClaimProvenance, ClaimProvenanceRecord } from "@/lib/ai/chat/claim-facts";
+
+function styleCvpDraftText(
+  text: string,
+  section: string | undefined,
+  blocked: boolean
+): string {
+  if (blocked || !usesCvpKLitreStyle(section)) return text;
+  return compact3xperLitreVolumes(text);
+}
 
 export type GroundDropReason = "fail_closed" | "unsourced_fact" | "qsr_extra";
 
@@ -591,17 +604,18 @@ export function groundDraftText(input: {
         ledger: input.ledger,
       });
   if (failClosed) {
+    const blocked = input.policy === "block";
     return {
-      text: cited,
+      text: styleCvpDraftText(cited, input.grounding?.section, blocked),
       provenance: { claims: [], policy: input.policy },
       unsupported: [syntheticUnsupportedFact(failClosed)],
-      blocked: input.policy === "block",
-      dropReason: input.policy === "block" ? "fail_closed" : undefined,
+      blocked,
+      dropReason: blocked ? "fail_closed" : undefined,
     };
   }
   if (!input.ledger.hasQuotedPages() || mode === "skip") {
     return {
-      text: cited,
+      text: styleCvpDraftText(cited, input.grounding?.section, false),
       provenance: { claims: [], policy: input.policy },
       unsupported: [],
       blocked: false,
@@ -703,7 +717,7 @@ export function groundDraftText(input: {
         ? "qsr_extra"
         : undefined;
   return {
-    text,
+    text: styleCvpDraftText(text, input.grounding?.section, blocked),
     provenance: { claims: provenanceClaims, policy: input.policy },
     unsupported: unsupportedFacts,
     blocked,

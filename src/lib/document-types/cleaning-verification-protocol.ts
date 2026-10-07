@@ -1,5 +1,6 @@
 import path from "node:path";
 import { CVP_PROMPT_VERSION } from "@/lib/customers/packs";
+import { compact3xperLitreVolumesInDoc } from "@/lib/document-types/3xper-volume-style";
 import { stripCaptionsOnUnfilledTables } from "@/lib/suggestions/table-operation";
 import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
@@ -21,6 +22,7 @@ import {
   CVP_SECTION_KEYS,
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
+  alignCvpMacoEquipmentHeaders,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpSectionKey,
@@ -173,9 +175,13 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
   }
   const field = fieldFor(key);
   const base = (EMPTY_CVP_CONTENT[key] as Record<string, unknown>)[field];
-  const normalized = mergeStoredRichField(raw, field, base, {
-    preserveHeadings: true,
-  });
+  const compacted = compact3xperLitreVolumesInDoc(
+    mergeStoredRichField(raw, field, base, {
+      preserveHeadings: true,
+    })
+  );
+  const normalized =
+    key === "cvp_maco" ? alignCvpMacoEquipmentHeaders(compacted) : compacted;
   return {
     [field]: stripCaptionsOnUnfilledTables(normalized, {
       section: key,

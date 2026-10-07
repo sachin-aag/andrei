@@ -18,4 +18,4 @@ Tables (keep the header row and column order exactly as seeded):
 - Other Details (Table 11): keep the seeded Parameter / Details rows, including Type of Agitator and Type of Mechanical Seal. Fill Details from a cited URS or protocol (Agitator Type: Cryo-Fix Anchor). Insert extra Parameter rows only when that label is on a cited page.
 
 
-Never invent document numbers, revisions, dates, volumes or ranges — copy them from a cited attachment page or leave the cell empty.`;
+Never invent document numbers, revisions, dates, volumes or ranges — copy them from a cited attachment page or leave the cell empty. Cover Capacity / Size uses k L for round thousands (8000 L → 8k L); keep printed KL (3.0 KL). Copy URS User requirements word for word, including a long-form 8000 L on that row.`;

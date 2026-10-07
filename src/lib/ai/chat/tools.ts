@@ -141,6 +141,7 @@ import {
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
+import { compact3xperLitreVolumes } from "@/lib/document-types/3xper-volume-style";
 import { coerceElrEnumDraft } from "@/lib/document-types/elr/draft-enums";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import type { CommitEditInput } from "@/lib/suggestions/apply-commit-content";
@@ -4971,7 +4972,7 @@ export function buildChatTools(opts: {
       .map((field) => `'${field.key}' (${field.label}${field.required ? ", required" : ""})`)
       .join(", ");
     const capacityUnitHint = identityCatalog.some((field) => field.keepUnits)
-      ? " Measured size (capacity) includes the printed unit (8000 L, 3.0 KL) — not a bare number."
+      ? " Measured size (capacity) includes the printed unit (8k L not 8000 L; 3.0 KL as printed) — not a bare number."
       : "";
     tools.draft_identity = tool({
       description:
@@ -4990,7 +4991,7 @@ export function buildChatTools(opts: {
                 .min(1)
                 .max(500)
                 .describe(
-                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list. Measured size fields keep the printed unit (8000 L, 3.0 KL)."
+                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list. Measured size fields keep the printed unit (8k L not 8000 L; 3.0 KL as printed)."
                 ),
             })
           )
@@ -5114,6 +5115,9 @@ export function buildChatTools(opts: {
           let value = sanitizeIdentityScalar(patch.value);
           if (field?.keepUnits) {
             value = attachIdentityCapacityUnits(value, identityQuotes);
+            if (documentType === "qualification_summary_report") {
+              value = compact3xperLitreVolumes(value);
+            }
           }
           return { key: patch.key, value };
         });

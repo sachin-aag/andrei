@@ -54,6 +54,15 @@ function numericForms(fact: HardFact): string[] {
     compact,
     glueOcrMinusSigns(fact.normalized),
   ]);
+  const kLitre = /^(-)?(\d+(?:\.\d+)?)kl$/.exec(compact);
+  if (kLitre) {
+    const litres = Number(kLitre[2]) * 1000;
+    if (Number.isFinite(litres)) {
+      forms.add(String(litres));
+      forms.add(`${litres}l`);
+    }
+    return [...forms].filter(Boolean);
+  }
   const re = /[-−–]?\d+(?:\.\d+)?/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(compact))) {
@@ -117,6 +126,26 @@ function numericNeedlePresent(haystack: string, needle: string): boolean {
   }
   const wantNegative = Boolean(parsed[1]);
   const digits = parsed[2]!;
+  const rest = (parsed[3] ?? "").replace(/\s+/g, "");
+  if (rest === "kl") {
+    const litres = Number(digits) * 1000;
+    if (!Number.isFinite(litres)) return false;
+    const litreStr = String(litres);
+    return (
+      new RegExp(
+        `(?<![\\d.])${escapeRegExp(digits)}\\s*k\\s*l\\b`,
+        "i"
+      ).test(haystack) ||
+      hasSignedMatch(
+        haystack,
+        new RegExp(
+          `(?<![\\d.])${escapeRegExp(litreStr)}(?!\\d)(?!\\s*\\.\\s*\\d)`,
+          "gi"
+        ),
+        wantNegative
+      )
+    );
+  }
   if (/^\d+\.\d+$/.test(digits)) {
     const [whole, frac] = digits.split(".");
     return hasSignedMatch(

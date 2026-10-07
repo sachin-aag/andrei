@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v190-cvp-add-equipment");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v192-cvp-maco-headers");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -175,7 +175,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Cover identity");
     expect(prompt).toContain("equipmentName");
     expect(prompt).toContain("draft_identity values never include citations");
-    expect(prompt).toContain("8000 L, 3.0 KL");
+    expect(prompt).toContain("8k L not 8000 L; 3.0 KL as printed");
     expect(prompt).toContain("keep printed unit");
     expect(prompt).toContain(
       "never put source brackets, numbered markers, or a Citations: list in those values"

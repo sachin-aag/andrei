@@ -22,6 +22,12 @@ describe("evidenceContainsFact", () => {
     ).toBe(true);
   });
 
+  it("matches 10k L against 10000 L", () => {
+    const volume = fact("Capacity 10k L");
+    expect(evidenceContainsFact("Capacity 10000 L", volume)).toBe(true);
+    expect(evidenceContainsFact("Jacket volume 10 L", volume)).toBe(false);
+  });
+
   it("matches 10,000 against 10000", () => {
     const count = fact("filled 10,000 units");
     expect(evidenceContainsFact("Units filled 10000", count)).toBe(true);
