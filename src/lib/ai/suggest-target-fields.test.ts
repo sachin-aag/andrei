@@ -69,6 +69,18 @@ describe("resolveTargetField", () => {
     expect(resolveTargetField("purpose", "purpose")).toBe("narrative");
   });
 
+  it("remaps legacy CVP equipment narrative onto items.0", () => {
+    expect(resolveTargetField("cvp_equipment_sampling", "narrative")).toBe(
+      "items.0"
+    );
+    expect(resolveTargetField("cvp_equipment_sampling", "items.0")).toBe(
+      "items.0"
+    );
+    expect(resolveTargetField("cvp_equipment_sampling", "items.2")).toBe(
+      "items.2"
+    );
+  });
+
   it("keeps a correct field path unchanged", () => {
     expect(resolveTargetField("purpose_scope", "narrative")).toBe("narrative");
     expect(resolveTargetField("improve", "correctiveActions")).toBe(

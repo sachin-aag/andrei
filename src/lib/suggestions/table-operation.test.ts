@@ -520,7 +520,7 @@ describe("applyTableOperation", () => {
       "Maximum Allowable Carryover (MACO)"
     );
     expect(defaultTableCaptionTitle("cvp_equipment_sampling")).toBe(
-      "Equipment Sampling Plans"
+      "Equipment sampling"
     );
   });
 
@@ -2816,6 +2816,9 @@ function captionTexts(doc: JSONContent): string[] {
 
 function cvpNarrative(section: keyof typeof EMPTY_CVP_CONTENT): JSONContent {
   const content = EMPTY_CVP_CONTENT[section];
+  if ("items" in content) {
+    return structuredClone(content.items[0]!);
+  }
   if (!("narrative" in content)) {
     throw new Error(`${section} is not a narrative section`);
   }
@@ -2835,10 +2838,10 @@ describe("CVP seed-aware table numbering", () => {
     const { contents } = renumberFilledTableCaptions([
       {
         section: "cvp_equipment_sampling",
-        content: { narrative: cvpNarrative("cvp_equipment_sampling") },
+        content: { items: [cvpNarrative("cvp_equipment_sampling")] },
       },
     ]);
-    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    const doc = (contents[0]?.content as { items: JSONContent[] }).items[0]!;
     expect(captionTexts(doc)).toEqual([]);
   });
 
@@ -2850,9 +2853,9 @@ describe("CVP seed-aware table numbering", () => {
       content: [{ type: "text", text: "Table 15. Cvp Equipment Sampling" }],
     });
     const { contents } = renumberFilledTableCaptions([
-      { section: "cvp_equipment_sampling", content: { narrative: seed } },
+      { section: "cvp_equipment_sampling", content: { items: [seed] } },
     ]);
-    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    const doc = (contents[0]?.content as { items: JSONContent[] }).items[0]!;
     expect(flattenForAnchor(doc).text).not.toMatch(/Table\s+15\./i);
     expect(flattenForAnchor(doc).text).not.toMatch(/Cvp Equipment Sampling/i);
   });
@@ -2865,12 +2868,12 @@ describe("CVP seed-aware table numbering", () => {
         tableIndex: 0,
         cells: [{ row: 1, col: 1, insertText: "20 KL" }],
       },
-      { section: "cvp_equipment_sampling", targetField: "narrative" }
+      { section: "cvp_equipment_sampling", targetField: "items.0" }
     );
     expect(filled.ok).toBe(true);
     if (!filled.ok) return;
     expect(captionTexts(filled.doc)).toEqual([
-      "Table 1. Equipment Sampling Plans",
+      "Table 1. Equipment sampling",
     ]);
 
     const stale: JSONContent = {
@@ -2884,10 +2887,10 @@ describe("CVP seed-aware table numbering", () => {
       ],
     };
     const { contents } = renumberFilledTableCaptions([
-      { section: "cvp_equipment_sampling", content: { narrative: stale } },
+      { section: "cvp_equipment_sampling", content: { items: [stale] } },
     ]);
-    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
-    expect(captionTexts(doc)).toEqual(["Table 1. Equipment Sampling Plans"]);
+    const doc = (contents[0]?.content as { items: JSONContent[] }).items[0]!;
+    expect(captionTexts(doc)).toEqual(["Table 1. Equipment sampling"]);
   });
 
   it("captions complete WAF seed rows and leaves the empty rinse-calc shell unnumbered", () => {

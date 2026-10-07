@@ -11,6 +11,7 @@ import {
   type CvpSectionContent,
   type CvpSectionKey,
 } from "@/lib/document-types/cvp/sections";
+import { normalizeCvpEquipmentSamplingContent } from "@/lib/document-types/cvp/equipment-sampling";
 import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
 
 const FIXED_HEADINGS: Record<string, CvpSectionKey> = {
@@ -175,6 +176,11 @@ function contentForSection(
     const tables = meaningful.filter((node) => node.type === "table");
     if (tables.length === 0) return null;
     return { table: { type: "doc", content: tables } };
+  }
+  if (key === "cvp_equipment_sampling") {
+    return normalizeCvpEquipmentSamplingContent({
+      narrative: { type: "doc", content: meaningful },
+    });
   }
   return { narrative: { type: "doc", content: meaningful } };
 }

@@ -4653,16 +4653,19 @@ export function buildChatTools(opts: {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
         const resolvedField = resolveTargetField(section, targetField);
-        const field = resolvedField
-          ? chatTargetFields(section).find((f) => f.targetField === resolvedField)
-          : undefined;
-        if (!resolvedField || !field) {
+        if (!resolvedField) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
+        const field = {
+          targetField: resolvedField,
+          kind: (isRichTargetField(section, resolvedField)
+            ? "rich"
+            : "plain") as "rich" | "plain",
+        };
         if (isElrInventoryTableField(documentType, section, resolvedField)) {
           return {
             status: "use_edit_table",
@@ -4715,10 +4718,7 @@ export function buildChatTools(opts: {
           resolvedField
         );
         const fill = fieldFillState(loaded.content, section, resolvedField);
-        if (
-          liveTables.length > 1 &&
-          !(fill === "empty" && section === "cvp_equipment_sampling")
-        ) {
+        if (liveTables.length > 1) {
           return {
             status: "use_edit_table",
             message: multiTableDraftFieldMessage(liveTables.length),

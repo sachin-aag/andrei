@@ -8,8 +8,9 @@ import { emptyDoc } from "@/lib/tiptap/rich-text";
  * chrome, and numbered headings are fixed in the Word template.
  *
  * Prefix every key with `cvp_`: SUGGEST_TARGET_FIELD_PATTERNS is a flat map
- * shared across types. Equipment-specific 15.1–15.10 blocks from a filled
- * protocol live in one `cvp_equipment_sampling` narrative, not hardcoded IDs.
+ * shared across types. Equipment sampling is `{ items: JSONContent[] }` — one
+ * TipTap box per product-contact item, numbered 15.1, 15.2, … (not hardcoded
+ * vessel IDs). Duplicate the box to add equipment.
  */
 export const CVP_FORM_NO = "QAD-SOP-PS-003-F08-00";
 
@@ -50,7 +51,11 @@ export type CvpSectionKey = (typeof CVP_SECTION_KEYS)[number];
 
 export type CvpNarrativeContent = { narrative: JSONContent };
 export type CvpTableContent = { table: JSONContent };
-export type CvpSectionContent = CvpNarrativeContent | CvpTableContent;
+export type CvpEquipmentSamplingContent = { items: JSONContent[] };
+export type CvpSectionContent =
+  | CvpNarrativeContent
+  | CvpTableContent
+  | CvpEquipmentSamplingContent;
 
 export const CVP_TABLE_SECTION_KEYS = [
   "cvp_approvals",
@@ -98,9 +103,9 @@ export const CVP_SECTION_LABELS: Record<CvpSectionKey, string> = {
   cvp_swab_locations: "14.0 Determination of Swab Sample Locations",
   cvp_sampling_plan:
     "15.0 Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary",
-  cvp_equipment_sampling: "15.1–15.10 Equipment Sampling Plans",
-  cvp_nitrosamine: "15.11 Nitrosamine Limits in the Rinse Samples",
-  cvp_pgi: "15.12 Potential Genotoxic Impurities Limits in the Rinse Samples",
+  cvp_equipment_sampling: "Equipment sampling",
+  cvp_nitrosamine: "Nitrosamine Limits in the Rinse Samples",
+  cvp_pgi: "Potential Genotoxic Impurities Limits in the Rinse Samples",
   cvp_process_line: "Process Line Cleaning Verification Summary",
   cvp_manufacturing_area: "Manufacturing Area Cleaning Verification",
   cvp_overall_results: "Overall Cleaning Results Summary",
@@ -350,31 +355,31 @@ export const CVP_EXTRANEOUS_RESULTS_HEADERS = [
 ] as const;
 
 /**
- * QAD-SOP-PS-003-F08-00 §15.1–15.10 inner outline. Numbers stay `15.N`
- * until chat copies the Scope ordinal (15.1, 15.2, …).
+ * QAD-SOP-PS-003-F08-00 per-equipment inner outline. Seed uses `15.1`;
+ * Duplicate / merge retitle to 15.2, 15.3, …
  */
 export const CVP_EQUIPMENT_H3_OUTLINE = [
-  { number: "15.N.1", title: "Equipment details" },
-  { number: "15.N.2", title: "Supporting Documents and References" },
-  { number: "15.N.3", title: "Swab sampling locations determination" },
-  { number: "15.N.4", title: "Cleaning operation results summary" },
-  { number: "15.N.5", title: "Cleaning validation results summary" },
-  { number: "15.N.6", title: "Visual inspection summary" },
+  { number: "15.1.1", title: "Equipment details" },
+  { number: "15.1.2", title: "Supporting Documents and References" },
+  { number: "15.1.3", title: "Swab sampling locations determination" },
+  { number: "15.1.4", title: "Cleaning operation results summary" },
+  { number: "15.1.5", title: "Cleaning validation results summary" },
+  { number: "15.1.6", title: "Visual inspection summary" },
   {
-    number: "15.N.7",
+    number: "15.1.7",
     title: "Reflux, Swab & Rinse samples analysis results summary",
   },
   {
-    number: "15.N.8",
+    number: "15.1.8",
     title: "Rinse samples analysis results summary (Extraneous matter)",
   },
 ] as const;
 
 export const CVP_EQUIPMENT_H4_OUTLINE = [
-  { number: "15.N.3.1", title: "Worst-case locations" },
-  { number: "15.N.3.2", title: "Calculation for shell wall swab locations" },
-  { number: "15.N.3.3", title: "Pictorial representation" },
-  { number: "15.N.3.4", title: "Rationale for swab sample locations" },
+  { number: "15.1.3.1", title: "Worst-case locations" },
+  { number: "15.1.3.2", title: "Calculation for shell wall swab locations" },
+  { number: "15.1.3.3", title: "Pictorial representation" },
+  { number: "15.1.3.4", title: "Rationale for swab sample locations" },
 ] as const;
 
 export const CVP_TABLE_HEADERS: Record<CvpTableSectionKey, readonly string[]> = {
@@ -589,15 +594,16 @@ const ANNEXURE_ROWS = [
 export const CVP_STANDARD_SWAB_LEVELS =
   "For equipment having a shell height of ≤ 2 m, a minimum of one horizontal sampling level shall be considered (middle level). For equipment having a shell height of > 2 m, the number of horizontal sampling levels is n = √H + 1, rounded up to the next whole number, where H is the equipment shell height in metres. The additional “+1” ensures adequate coverage of the shell surface. For vessels with a diameter ≤ 1 m, sample at two circumferential locations (0° and 180°) at each level. For vessels with a diameter > 1 m, sample at four circumferential locations (0°, 90°, 180°, and 270°) at each level.";
 
-function cvpEquipmentSamplingSeed(): JSONContent {
+export function cvpEquipmentSamplingSeed(ordinal = 1): JSONContent {
+  const n = `15.${ordinal}`;
   return {
     type: "doc",
     content: [
-      heading(2, "15.N Equipment name (Equipment No.)"),
+      heading(2, `${n} Equipment name (Equipment No.)`),
       textParagraph(
-        "Repeat this 15.N block once per Scope product-contact item in Scope order (15.1, 15.2, … up to 15.10). Replace 15.N with that ordinal and the equipment name (Equipment No.). Copy capacity, MOC, surface area, shell height/diameter, BCR, and method numbers from cited CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
+        "Duplicate this box for each additional product-contact item in Scope. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, shell height/diameter, BCR, and method numbers from cited CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
       ),
-      heading(3, "15.N.1 Equipment details"),
+      heading(3, `${n}.1 Equipment details`),
       textParagraph(
         "The equipment details, including material of construction (MOC), product-contact surface area, shell height, and shell diameter, shall be taken from the cited drawing / CPDR annexure."
       ),
@@ -610,7 +616,7 @@ function cvpEquipmentSamplingSeed(): JSONContent {
         ["Type of agitator", "", ""],
         ["No. of baffles", "", ""],
       ]),
-      heading(3, "15.N.2 Supporting Documents and References"),
+      heading(3, `${n}.2 Supporting Documents and References`),
       table(CVP_EQUIPMENT_DOCUMENTS_HEADERS, [
         ["BCR", "", ""],
         ["Specification", "", ""],
@@ -618,15 +624,15 @@ function cvpEquipmentSamplingSeed(): JSONContent {
         ["Analytical Method Validation", "", ""],
         ["Equipment Qualification (OQ)", "", ""],
       ]),
-      heading(3, "15.N.3 Swab sampling locations determination"),
-      heading(4, "15.N.3.1 Worst-case locations"),
+      heading(3, `${n}.3 Swab sampling locations determination`),
+      heading(4, `${n}.3.1 Worst-case locations`),
       textParagraph(
         "The following worst-case product-contact locations shall be included as mandatory swab sampling locations based on equipment design, accessibility, and residue accumulation."
       ),
       table(CVP_SWAB_LOCATION_HEADERS),
-      heading(4, "15.N.3.2 Calculation for shell wall swab locations"),
+      heading(4, `${n}.3.2 Calculation for shell wall swab locations`),
       textParagraph(
-        "The number of shell wall swab sampling locations is determined from the vessel shell height and diameter. Copy H and D from 15.N.1. n = √H + 1 (round up). Diameter ≤ 1 m → two circumferential locations; > 1 m → four (0°, 90°, 180°, 270°)."
+        `The number of shell wall swab sampling locations is determined from the vessel shell height and diameter. Copy H and D from ${n}.1. n = √H + 1 (round up). Diameter ≤ 1 m → two circumferential locations; > 1 m → four (0°, 90°, 180°, 270°).`
       ),
       table(CVP_SHELL_CALC_HEADERS, [
         ["Shell height (H)", "NA", "", ""],
@@ -635,31 +641,31 @@ function cvpEquipmentSamplingSeed(): JSONContent {
         ["No. of circumferential locations (C)", "", "", ""],
         ["Total No. of samples on wall surface (n × C)", "", "", ""],
       ]),
-      heading(4, "15.N.3.3 Pictorial representation"),
+      heading(4, `${n}.3.3 Pictorial representation`),
       textParagraph(
-        "Vessel sketches with labelled S-1 / S-2 callouts are Word drawings in the source form. List each Location ID in 15.N.3.1; do not invent a diagram unless insert_image copies a cited attachment figure."
+        `Vessel sketches with labelled S-1 / S-2 callouts are Word drawings in the source form. List each Location ID in ${n}.3.1; do not invent a diagram unless insert_image copies a cited attachment figure.`
       ),
-      heading(4, "15.N.3.4 Rationale for swab sample locations"),
+      heading(4, `${n}.3.4 Rationale for swab sample locations`),
       table(CVP_SWAB_RATIONALE_HEADERS),
-      heading(3, "15.N.4 Cleaning operation results summary"),
+      heading(3, `${n}.4 Cleaning operation results summary`),
       textParagraph(
         "Record cleaning parameters against the approved cleaning SOP / BCR. Protocol execution fills the batch column; leave it blank until a cited cleaning record exists."
       ),
       table(CVP_CLEANING_OPERATION_HEADERS),
-      heading(3, "15.N.5 Cleaning validation results summary"),
+      heading(3, `${n}.5 Cleaning validation results summary`),
       textParagraph(
         "Upon completion of cleaning, the equipment shall undergo visual inspection. Following satisfactory visual inspection, swab and rinse samples shall be collected as defined above."
       ),
-      heading(3, "15.N.6 Visual inspection summary"),
+      heading(3, `${n}.6 Visual inspection summary`),
       table(CVP_VISUAL_INSPECTION_HEADERS),
       heading(
         3,
-        "15.N.7 Reflux, Swab & Rinse samples analysis results summary"
+        `${n}.7 Reflux, Swab & Rinse samples analysis results summary`
       ),
       table(CVP_RESIDUE_RESULTS_HEADERS),
       heading(
         3,
-        "15.N.8 Rinse samples analysis results summary (Extraneous matter)"
+        `${n}.8 Rinse samples analysis results summary (Extraneous matter)`
       ),
       table(CVP_EXTRANEOUS_RESULTS_HEADERS),
       textParagraph("Inference:", true),
@@ -694,6 +700,7 @@ function isStockEquipmentInstruction(text: string): boolean {
   return (
     /insert one heading plus tables/i.test(text) ||
     /repeat this 15\.n block/i.test(text) ||
+    /duplicate this box/i.test(text) ||
     /do not paste equipment-train diagrams/i.test(text) ||
     /^Table\s+\d+\./i.test(text)
   );
@@ -718,6 +725,9 @@ function coerceEquipmentHeadingLevels(doc: JSONContent): JSONContent {
 /**
  * Existing reports stored a single identity table with no 15.N.M headings.
  * Graft filled tables into the F08 outline so reload matches the Word protocol.
+ * Never put the seed back onto an empty or prose-only field — that is what
+ * made a cleared TipTap box (and in-flight heading suggestions) snap back
+ * to the 15.N template on merge / chat refresh.
  */
 export function upgradeCvpEquipmentSamplingNarrative(
   doc: JSONContent
@@ -731,6 +741,12 @@ export function upgradeCvpEquipmentSamplingNarrative(
       paragraphPlain(node).length > 0 &&
       !isStockEquipmentInstruction(paragraphPlain(node))
   );
+  if (unusedTables.length === 0) {
+    return {
+      type: "doc",
+      content: liveNodes.length > 0 ? liveNodes : [{ type: "paragraph" }],
+    };
+  }
   const next: JSONContent[] = [];
   for (const node of cvpEquipmentSamplingSeed().content ?? []) {
     if (node.type !== "table") {
@@ -880,7 +896,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
         ]),
       };
     case "cvp_equipment_sampling":
-      return { narrative: cvpEquipmentSamplingSeed() };
+      return { items: [cvpEquipmentSamplingSeed(1)] };
     case "cvp_nitrosamine":
       return {
         table: tableDoc(CVP_NITROSAMINE_HEADERS, [

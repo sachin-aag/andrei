@@ -634,6 +634,33 @@ describe("locator — scoped edits", () => {
     expect(flattenForAnchor(out).text).not.toContain("##");
   });
 
+  it("replaces heading text when insert is an ATX line inside that heading", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 Equipment name (Equipment No.)" }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyAndAcceptRichEdit(
+      doc,
+      ATTRS.id,
+      {
+        anchorText: "15.1 Equipment name (Equipment No.)",
+        deleteText: "15.1 Equipment name (Equipment No.)",
+        insertText: "## 15.1 Glass Lined Reactor (GLR-1302)",
+      }
+    );
+    expect(status).toBe("located");
+    expect(out.content?.[0]?.type).toBe("heading");
+    expect(flattenForAnchor(out).text.trim()).toBe(
+      "15.1 Glass Lined Reactor (GLR-1302)"
+    );
+  });
+
   it("adds a bullet onto an existing list of the same kind", () => {
     const doc = listDoc(["First"]);
     const { status, doc: out } = applyEditToRichDoc(

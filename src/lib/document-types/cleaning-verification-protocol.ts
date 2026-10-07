@@ -1,7 +1,7 @@
 import path from "node:path";
 import { CVP_PROMPT_VERSION } from "@/lib/customers/packs";
 import { stripCaptionsOnUnfilledTables } from "@/lib/suggestions/table-operation";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   CVP_IDENTITY_FIELDS,
@@ -10,6 +10,11 @@ import {
 } from "./cvp/chat-identity";
 import { CVP_DRAFTING_GUIDANCE } from "./cvp/drafting-guidance";
 import { checkNarrativePresent, tableValuesCheck } from "./qsr/deterministic-checks";
+import {
+  concatCvpEquipmentItems,
+  CVP_EQUIPMENT_FIELD_PATTERN,
+  normalizeCvpEquipmentSamplingContent,
+} from "./cvp/equipment-sampling";
 import {
   CVP_DEFAULT_METADATA,
   CVP_FORM_NO,
@@ -20,7 +25,6 @@ import {
   cvpPrintedDocumentTitle,
   isCvpSectionKey,
   isCvpTableSectionKey,
-  upgradeCvpEquipmentSamplingNarrative,
   type CvpSectionKey,
 } from "./cvp/sections";
 
@@ -149,23 +153,31 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
   cvp_history: [],
 };
 
-function fieldFor(key: CvpSectionKey): "narrative" | "table" {
+function fieldFor(key: CvpSectionKey): "narrative" | "table" | "items.[]" {
+  if (key === "cvp_equipment_sampling") return CVP_EQUIPMENT_FIELD_PATTERN;
   return isCvpTableSectionKey(key) ? "table" : "narrative";
 }
 
 function mergeCvpSection(key: string, raw: unknown): unknown {
   if (!isCvpSectionKey(key)) return raw ?? {};
+  if (key === "cvp_equipment_sampling") {
+    const { items } = normalizeCvpEquipmentSamplingContent(raw);
+    return {
+      items: items.map((doc, index) =>
+        stripCaptionsOnUnfilledTables(doc, {
+          section: key,
+          targetField: `items.${index}`,
+        })
+      ),
+    };
+  }
   const field = fieldFor(key);
   const base = (EMPTY_CVP_CONTENT[key] as Record<string, unknown>)[field];
-  const value =
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
-  const normalized = normalizeRichField(value ?? base, { preserveHeadings: true });
-  const next =
-    key === "cvp_equipment_sampling"
-      ? upgradeCvpEquipmentSamplingNarrative(normalized)
-      : normalized;
+  const normalized = mergeStoredRichField(raw, field, base, {
+    preserveHeadings: true,
+  });
   return {
-    [field]: stripCaptionsOnUnfilledTables(next, {
+    [field]: stripCaptionsOnUnfilledTables(normalized, {
       section: key,
       targetField: field,
     }),
@@ -222,7 +234,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
       agent: [
         "Fill cover identity and 2.0 Objective, 3.0 Scope, and 4.0 Responsibilities from the attachments.",
         "Build the surface-area, rinse-volume, and MACO tables from the CPDR and PDE annexure.",
-        "Draft 15.1–15.10 Equipment Sampling Plans for each product-contact item in Scope.",
+        "Draft Equipment sampling (15.1, then Duplicate for each Scope product-contact item).",
       ],
     },
     contextIdentity: cvpChatContextIdentity,
@@ -261,8 +273,8 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["cvp_swab_locations", [/\bswab sample locations?\b/i, /\b14\.0\b/]],
       ["cvp_sampling_plan", [/\bsampling plan\b/i, /\b15\.0\b/]],
       ["cvp_equipment_sampling", [/\bequipment sampling\b/i, /\b15\.(?:10|[1-9])\b/]],
-      ["cvp_nitrosamine", [/\bnitrosamine\b/i, /\bndma\b/i, /\b15\.11\b/]],
-      ["cvp_pgi", [/\bgenotoxic\b/i, /\bpgi\b/i, /\b15\.12\b/]],
+      ["cvp_nitrosamine", [/\bnitrosamine\b/i, /\bndma\b/i]],
+      ["cvp_pgi", [/\bgenotoxic\b/i, /\bpgi\b/i]],
       ["cvp_process_line", [/\bprocess line\b/i]],
       ["cvp_manufacturing_area", [/\bmanufacturing area\b/i]],
       ["cvp_overall_results", [/\boverall (cleaning )?results\b/i]],
@@ -294,9 +306,13 @@ You never write to the document directly — every change is a PROPOSAL the engi
       const meta = cvpMetadataFrom(report.metadata);
       const byKey = Object.fromEntries(sections.map((s) => [s.section, s.content]));
       const field = (key: CvpSectionKey) => {
-        const content = byKey[key] as Record<string, unknown> | undefined;
+        const content = byKey[key];
+        if (key === "cvp_equipment_sampling") {
+          return concatCvpEquipmentItems(content);
+        }
         const name = fieldFor(key);
-        return content?.[name] ?? null;
+        const record = content as Record<string, unknown> | undefined;
+        return record?.[name] ?? null;
       };
       const xml: Record<string, unknown> = {};
       for (const key of CVP_SECTION_KEYS) {

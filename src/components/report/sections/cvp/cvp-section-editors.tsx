@@ -2,6 +2,7 @@
 
 import type { ComponentType } from "react";
 import type { JSONContent } from "@tiptap/core";
+import { CvpEquipmentSamplingEditor } from "@/components/report/sections/cvp/cvp-equipment-sampling-editor";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { useGenericReportSection } from "@/providers/report-provider";
@@ -51,6 +52,7 @@ function CvpSectionEditor({ section }: { section: CvpSectionKey }) {
 }
 
 function makeEditor(section: CvpSectionKey): ComponentType {
+  if (section === "cvp_equipment_sampling") return CvpEquipmentSamplingEditor;
   function Editor() {
     return <CvpSectionEditor section={section} />;
   }

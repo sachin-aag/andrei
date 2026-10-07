@@ -225,9 +225,9 @@ export const SECTION_LABELS: Record<string, string> = {
   cvp_swab_locations: "14.0 Determination of Swab Sample Locations",
   cvp_sampling_plan:
     "15.0 Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary",
-  cvp_equipment_sampling: "15.1–15.10 Equipment Sampling Plans",
-  cvp_nitrosamine: "15.11 Nitrosamine Limits in the Rinse Samples",
-  cvp_pgi: "15.12 Potential Genotoxic Impurities Limits in the Rinse Samples",
+  cvp_equipment_sampling: "Equipment sampling",
+  cvp_nitrosamine: "Nitrosamine Limits in the Rinse Samples",
+  cvp_pgi: "Potential Genotoxic Impurities Limits in the Rinse Samples",
   cvp_process_line: "Process Line Cleaning Verification Summary",
   cvp_manufacturing_area: "Manufacturing Area Cleaning Verification",
   cvp_overall_results: "Overall Cleaning Results Summary",

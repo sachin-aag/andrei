@@ -4,6 +4,7 @@ import {
   appendParagraphsToDoc,
   legacyStringToDoc,
   MAMMOTH_SOFT_BREAK,
+  mergeStoredRichField,
   normalizeRichField,
   richJsonToPlainText,
   stripSuggestionMarksFromDoc,
@@ -14,6 +15,28 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 
 describe("rich text helpers", () => {
+  it("keeps an explicit empty doc instead of restoring seed template text", () => {
+    const seed = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Duplicate this box for each equipment." }],
+        },
+      ],
+    };
+    const cleared = mergeStoredRichField(
+      { narrative: { type: "doc", content: [{ type: "paragraph" }] } },
+      "narrative",
+      seed
+    );
+    expect(richJsonToPlainText(cleared).trim()).toBe("");
+    const missing = mergeStoredRichField({}, "narrative", seed);
+    expect(richJsonToPlainText(missing)).toContain("Duplicate this box");
+    const clearedNull = mergeStoredRichField({ narrative: null }, "narrative", seed);
+    expect(richJsonToPlainText(clearedNull).trim()).toBe("");
+  });
+
   it("turns leftover phrase-level *italic* wrappers into italic marks", () => {
     const doc = normalizeRichField({
       type: "doc",

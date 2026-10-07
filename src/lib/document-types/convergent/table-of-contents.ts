@@ -1,6 +1,7 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
+import { cvpEquipmentTocChildren } from "@/lib/document-types/cvp/equipment-sampling";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
 import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
 import { VQ_SECTION_LABELS } from "@/lib/document-types/vq/sections";
@@ -10,6 +11,8 @@ export type TableOfContentsEntry = {
   label: string;
   sectionKey?: SectionType;
   children?: TableOfContentsEntry[];
+  /** Scroll target inside the section (CVP 15.1, 15.2, … cards). */
+  jumpId?: string;
 };
 
 /**
@@ -464,15 +467,15 @@ const CVP_TOC: TableOfContentsEntry[] = [
     sectionKey: "cvp_sampling_plan",
     children: [
       {
-        label: "15.1–15.10 Equipment Sampling Plans",
+        label: "15.1 Equipment name (Equipment No.)",
         sectionKey: "cvp_equipment_sampling",
       },
       {
-        label: "15.11 Nitrosamine Limits in the Rinse Samples",
+        label: "Nitrosamine Limits in the Rinse Samples",
         sectionKey: "cvp_nitrosamine",
       },
       {
-        label: "15.12 Potential Genotoxic Impurities Limits in the Rinse Samples",
+        label: "Potential Genotoxic Impurities Limits in the Rinse Samples",
         sectionKey: "cvp_pgi",
       },
       {
@@ -583,6 +586,7 @@ export function numberTableOfContents(
       : undefined;
     const numbered: TableOfContentsEntry = { label };
     if (entry.sectionKey != null) numbered.sectionKey = entry.sectionKey;
+    if (entry.jumpId != null) numbered.jumpId = entry.jumpId;
     if (children?.length) numbered.children = children;
     return numbered;
   });
@@ -628,12 +632,35 @@ function reportTableOfContentsRecipe(
  * when the type has one, otherwise the editor section list, then numbers
  * sections `1. 2. 3.` and subsections `1.1`.
  */
+function withLiveCvpEquipmentSampling(
+  recipe: TableOfContentsEntry[],
+  equipmentContent: unknown
+): TableOfContentsEntry[] {
+  const live = cvpEquipmentTocChildren(equipmentContent);
+  if (live.length === 0) return recipe;
+  return recipe.map((entry) => {
+    if (entry.sectionKey !== "cvp_sampling_plan" || !entry.children?.length) {
+      return entry;
+    }
+    const rest = entry.children.filter(
+      (child) => child.sectionKey !== "cvp_equipment_sampling"
+    );
+    return { ...entry, children: [...live, ...rest] };
+  });
+}
+
 export function getReportTableOfContents(
   documentType: DocumentType,
-  customerId = resolveCustomerId()
+  customerId = resolveCustomerId(),
+  liveSectionContent?: Record<string, unknown>
 ): TableOfContentsEntry[] {
   const recipe = reportTableOfContentsRecipe(documentType, customerId);
-  if (documentType === "cleaning_verification_protocol") return recipe;
+  if (documentType === "cleaning_verification_protocol") {
+    const equipment = liveSectionContent?.cvp_equipment_sampling;
+    return equipment === undefined
+      ? recipe
+      : withLiveCvpEquipmentSampling(recipe, equipment);
+  }
   return numberTableOfContents(recipe);
 }
 

@@ -189,7 +189,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           ? ` · ${suggestionBits.join(" / ")} suggestion(s)`
           : "")
     );
-    for (const field of chatTargetFields(section)) {
+    for (const field of chatTargetFields(section, content)) {
       const fieldState = fieldFillState(content, section, field.targetField);
       const fieldText = sectionFieldPlainText(content, section, field.targetField);
       if (fieldState === "empty") {

@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
-import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
+import { expandIndexedFieldPaths, RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
 import {
   ELR_TABLE_CAPTION_TITLES,
@@ -241,7 +241,7 @@ function richFieldDocsInSection(
   if (!content || typeof content !== "object") return [];
   const paths = RICH_FIELD_PATHS[section];
   if (paths && paths.length > 0 && !isTipTapDoc(content)) {
-    return paths.map((field) => ({
+    return expandIndexedFieldPaths(paths, content).map((field) => ({
       field,
       doc: getRichFieldValue(content as Record<string, unknown>, field),
     }));
@@ -447,11 +447,13 @@ function seedTableAt(location: SeedTableLocation): JSONContent | undefined {
   if (!empty) return undefined;
   const path =
     location.field ||
-    (empty.narrative !== undefined
-      ? "narrative"
-      : empty.table !== undefined
-        ? "table"
-        : "");
+    (Array.isArray(empty.items)
+      ? "items.0"
+      : empty.narrative !== undefined
+        ? "narrative"
+        : empty.table !== undefined
+          ? "table"
+          : "");
   if (!path) return undefined;
   return collectTables(getRichFieldValue(empty, path))[location.tableIndex];
 }

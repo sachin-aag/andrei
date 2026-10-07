@@ -114,10 +114,11 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("Production Block-2");
     expect(body).toContain("1.0 Approval Signatures");
     expect(body).toContain("15.0 Sampling Plan");
-    expect(body).toContain("15.N Equipment name (Equipment No.)");
-    expect(body).toContain("15.N.1 Equipment details");
-    expect(body).toContain("15.N.3.1 Worst-case locations");
-    expect(body).toContain("15.11 Nitrosamine Limits");
+    expect(body).toContain("15.1 Equipment name (Equipment No.)");
+    expect(body).toContain("15.1.1 Equipment details");
+    expect(body).toContain("15.1.3.1 Worst-case locations");
+    expect(body).toContain("Nitrosamine Limits");
+    expect(body).not.toContain("15.11 Nitrosamine");
     expect(body).not.toContain("15.1–15.10 Equipment Sampling Plans");
     expect(header).toContain("CVRP-ISM4-26-001");
     expect(header).toContain("Production");

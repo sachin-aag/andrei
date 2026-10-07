@@ -335,9 +335,9 @@ describe("getReportTableOfContents", () => {
     const sampling = toc.find((e) => e.sectionKey === "cvp_sampling_plan");
     expect(sampling?.label).toMatch(/^15\.0 /);
     expect(sampling?.children?.map((e) => e.label)).toEqual([
-      "15.1–15.10 Equipment Sampling Plans",
-      "15.11 Nitrosamine Limits in the Rinse Samples",
-      "15.12 Potential Genotoxic Impurities Limits in the Rinse Samples",
+      "15.1 Equipment name (Equipment No.)",
+      "Nitrosamine Limits in the Rinse Samples",
+      "Potential Genotoxic Impurities Limits in the Rinse Samples",
       "Process Line Cleaning Verification Summary",
       "Manufacturing Area Cleaning Verification",
       "Overall Cleaning Results Summary",
@@ -350,6 +350,56 @@ describe("getReportTableOfContents", () => {
       "cvp_manufacturing_area",
       "cvp_overall_results",
     ]);
+  });
+
+  it("replaces the 15.1 seed Contents row with live equipment H2 titles", () => {
+    const toc = getReportTableOfContents(
+      "cleaning_verification_protocol",
+      "3xper",
+      {
+        cvp_equipment_sampling: {
+          items: [
+            {
+              type: "doc",
+              content: [
+                {
+                  type: "heading",
+                  attrs: { level: 2 },
+                  content: [
+                    {
+                      type: "text",
+                      text: "15.1 Glass Lined Reactor (GLR-1302)",
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "doc",
+              content: [
+                {
+                  type: "heading",
+                  attrs: { level: 2 },
+                  content: [
+                    { type: "text", text: "15.2 Nutsche Filter (NF-1304)" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }
+    );
+    const sampling = toc.find((e) => e.sectionKey === "cvp_sampling_plan");
+    expect(sampling?.children?.slice(0, 2).map((e) => e.label)).toEqual([
+      "15.1 Glass Lined Reactor (GLR-1302)",
+      "15.2 Nutsche Filter (NF-1304)",
+    ]);
+    expect(sampling?.children?.slice(0, 2).map((e) => e.jumpId)).toEqual([
+      "cvp_equipment_sampling-item-0",
+      "cvp_equipment_sampling-item-1",
+    ]);
+    expect(sampling?.children?.[2]?.sectionKey).toBe("cvp_nitrosamine");
   });
 });
 

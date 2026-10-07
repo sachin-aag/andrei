@@ -24,8 +24,19 @@ describe("cleaning verification protocol sections", () => {
     expect(def.sections.map((s) => s.key)).toEqual([...CVP_SECTION_KEYS]);
     expect(CVP_FORM_NO).toBe("QAD-SOP-PS-003-F08-00");
     for (const key of CVP_SECTION_KEYS) {
-      const field = isCvpTableSectionKey(key) ? "table" : "narrative";
-      expect(EMPTY_CVP_CONTENT[key]).toHaveProperty(field);
+      const field =
+        key === "cvp_equipment_sampling"
+          ? "items.[]"
+          : isCvpTableSectionKey(key)
+            ? "table"
+            : "narrative";
+      if (key === "cvp_equipment_sampling") {
+        expect(EMPTY_CVP_CONTENT[key]).toHaveProperty("items");
+      } else {
+        expect(EMPTY_CVP_CONTENT[key]).toHaveProperty(
+          isCvpTableSectionKey(key) ? "table" : "narrative"
+        );
+      }
       expect(def.suggestTargetFieldPatterns[key]).toEqual([field]);
       expect(def.richFieldPaths[key]).toEqual([field]);
     }
@@ -50,30 +61,30 @@ describe("cleaning verification protocol sections", () => {
 
   it("strips a leftover Table 15 caption on the unused 15.1 identity shell at merge", () => {
     const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
-    const narrative =
-      "narrative" in seed
-        ? structuredClone(seed.narrative)
+    const item =
+      "items" in seed
+        ? structuredClone(seed.items[0])
         : { type: "doc" as const, content: [] };
     const tableIndex =
-      narrative.content?.findIndex((node) => node.type === "table") ?? -1;
-    narrative.content?.splice(tableIndex, 0, {
+      item.content?.findIndex((node) => node.type === "table") ?? -1;
+    item.content?.splice(tableIndex, 0, {
       type: "paragraph",
       content: [{ type: "text", text: "Table 15. Cvp Equipment Sampling" }],
     });
     const def = getDocumentType("cleaning_verification_protocol");
     const merged = def.mergeSection("cvp_equipment_sampling", {
-      narrative,
-    }) as { narrative: { content?: Array<{ type?: string; attrs?: { level?: number }; content?: Array<{ text?: string }> }> } };
+      items: [item],
+    }) as { items: Array<{ content?: Array<{ type?: string }> }> };
     const text = JSON.stringify(merged);
     expect(text).not.toMatch(/Table 15/);
     expect(text).not.toMatch(/Cvp Equipment Sampling/);
   });
 
-  it("seeds 15.N equipment sampling with H2–H4 outline headings", () => {
+  it("seeds one 15.1 equipment sampling box with H2–H4 outline headings", () => {
     const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
-    expect(seed).toHaveProperty("narrative");
+    expect(seed).toHaveProperty("items");
     const nodes =
-      "narrative" in seed ? (seed.narrative.content ?? []) : [];
+      "items" in seed ? (seed.items[0]?.content ?? []) : [];
     const headings = nodes
       .filter((node) => node.type === "heading")
       .map((node) => ({
@@ -82,15 +93,15 @@ describe("cleaning verification protocol sections", () => {
       }));
     expect(headings[0]).toEqual({
       level: 2,
-      text: "15.N Equipment name (Equipment No.)",
+      text: "15.1 Equipment name (Equipment No.)",
     });
     expect(headings).toContainEqual({
       level: 3,
-      text: "15.N.1 Equipment details",
+      text: "15.1.1 Equipment details",
     });
     expect(headings).toContainEqual({
       level: 4,
-      text: "15.N.3.1 Worst-case locations",
+      text: "15.1.3.1 Worst-case locations",
     });
     expect(headings.map((h) => h.text)).toEqual(
       expect.arrayContaining([
@@ -156,10 +167,24 @@ describe("cleaning verification protocol sections", () => {
     };
     const upgraded = upgradeCvpEquipmentSamplingNarrative(lumped);
     const text = JSON.stringify(upgraded);
-    expect(text).toContain("15.N.1 Equipment details");
+    expect(text).toContain("15.1.1 Equipment details");
     expect(text).toContain("10000 L");
     expect(text).not.toMatch(/Insert one heading plus tables/i);
     expect(upgraded.content?.some((node) => node.type === "heading")).toBe(true);
+  });
+
+  it("does not put the 15.1 seed back after the engineer clears the box", () => {
+    const def = getDocumentType("cleaning_verification_protocol");
+    const merged = def.mergeSection("cvp_equipment_sampling", {
+      items: [{ type: "doc", content: [{ type: "paragraph" }] }],
+    }) as { items: Array<{ content?: Array<{ type?: string }> }> };
+    const text = JSON.stringify(merged);
+    expect(text).not.toContain("Equipment name (Equipment No.)");
+    expect(text).not.toContain("Duplicate this box");
+    expect(merged.items).toHaveLength(1);
+    expect(merged.items[0]?.content?.some((node) => node.type === "table")).toBe(
+      false
+    );
   });
 
   it("prints a product-specific title when the cover product is set", () => {

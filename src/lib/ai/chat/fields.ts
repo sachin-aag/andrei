@@ -3,6 +3,7 @@ import { documentTypeEnum, type DocumentType, type SectionType } from "@/db/sche
 import { displaySectionLabel } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
+  expandIndexedFieldPaths,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
 import { getDocumentType, resolveSection } from "@/lib/document-types";
@@ -92,14 +93,15 @@ export type ChatTargetField = {
 };
 
 /** Editable target fields for a section (the authoritative suggestion field set). */
-export function chatTargetFields(section: SectionType): ChatTargetField[] {
+export function chatTargetFields(
+  section: SectionType,
+  content?: unknown
+): ChatTargetField[] {
   const patterns = SUGGEST_TARGET_FIELD_PATTERNS[section] ?? [];
-  return patterns
-    .filter((p) => !p.includes("[]"))
-    .map((targetField) => ({
-      targetField,
-      kind: isRichTargetField(section, targetField) ? "rich" : "plain",
-    }));
+  return expandIndexedFieldPaths(patterns, content).map((targetField) => ({
+    targetField,
+    kind: isRichTargetField(section, targetField) ? "rich" : "plain",
+  }));
 }
 
 /** Primary draftable field per section — used for summaries + stub drafting. */
@@ -123,6 +125,8 @@ export function primaryFieldForSection(section: SectionType): string {
       return "testers";
     case "results_and_discussions":
       return "table";
+    case "cvp_equipment_sampling":
+      return "items.0";
     default:
       if (
         section === "vq_section_g" ||
@@ -160,7 +164,7 @@ export function countSectionInlineImages(
   section: SectionType
 ): number {
   let total = 0;
-  for (const field of chatTargetFields(section)) {
+  for (const field of chatTargetFields(section, sectionContent)) {
     if (field.kind !== "rich") continue;
     total += countImagesInDoc(getRichFieldValue(sectionContent, field.targetField));
   }
@@ -203,7 +207,7 @@ export function sectionHasTable(
   content: Record<string, unknown> | undefined,
   section: SectionType
 ): boolean {
-  return chatTargetFields(section).some(
+  return chatTargetFields(section, content).some(
     (field) => listFieldTables(content, section, field.targetField).length > 0
   );
 }
@@ -426,7 +430,7 @@ export function sectionFillState(
   content: Record<string, unknown> | undefined,
   section: SectionType
 ): SectionFillState {
-  const fields = chatTargetFields(section);
+  const fields = chatTargetFields(section, content);
   if (fields.length === 0) {
     return fieldFillState(content, section, primaryFieldForSection(section));
   }
