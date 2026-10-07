@@ -5,6 +5,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 - MJ: `https://mj.andreihealth.com`
 - Demo: `https://demo.andreihealth.com`
 - Convergent: `https://convergent.andreihealth.com`
+- 3xper: `https://3xper.andreihealth.com`
 
 Successful logins from a non-`@andreihealth.com` address also email `sachin@andreihealth.com` and `aditya@andreihealth.com` (skipped when `ALLOW_TEST_LOGIN` is on).
 
@@ -93,5 +94,5 @@ Redeploy after changing env vars.
 
 1. The lock-screen / forgot-password UI now shows an error if Resend rejects the send. A successful “Check your email” screen means the API accepted the message. Audit `auth_password_reset` with `stage: send_failed` means the token was written and the provider failed.
 2. Resend dashboard → **Emails** — delivered, bounced, or suppressed?
-3. Vercel → Production → **Environment** — confirm `AUTH_URL` and `AUTH_EMAIL_FROM` (must match a verified Resend domain). A 403 from an unverified pack From address retries once as `noreply@andreihealth.com`.
+3. Vercel → Production → **Environment** — confirm `AUTH_URL` and `AUTH_EMAIL_FROM` (must match a verified Resend domain). A 403 from an unverified pack From address (magic link or password reset) retries once as `noreply@andreihealth.com`.
 4. Try password login after `set-workspace-password` to confirm the app works independent of mail
