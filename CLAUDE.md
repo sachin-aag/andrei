@@ -134,7 +134,7 @@ The subsystems below are small enough to stay resident.
 
 **Pipeline:**
 1. `gapCriteriaForSection()` (in `suggestion-gating.ts`) filters to failing criteria (not_met + partially_met) with no existing open ai_fix comment
-2. Prompt includes each failing criterion with status and reasoning. Editable `SECTION CONTENT` is built by `contextForSuggestionPrompt()` (`suggestion-section-context.ts`) using the **canonical anchor string** (`flattenForAnchor`) — no markdown pipes / `[equation]` tokens. Prior sections stay markdown via `contextForPrompt`. Eval is untouched.
+2. Prompt includes each failing criterion with status and reasoning. Editable `SECTION CONTENT` is built by `contextForSuggestionPrompt()` (`suggestion-section-context.ts`) using the **canonical anchor string** (`flattenForAnchor`) — no markdown pipes / `[equation]` tokens. Equations contribute `$latex$` (or `$equation$` if LaTeX is missing) so they can be quoted and deleted. Prior sections stay markdown via `contextForPrompt`. Eval is untouched.
 3. `generateText()` with Gemini 3.1-pro, temperature 0.4 (variety in phrasing). Schema returns `{ criterionKey, targetField, anchorText, deleteText, insertText, reasoning }`
 4. Gating drops suggestions via `probeRichEdit` / `probePlainEdit` (same code path as apply): bad criterion key, bad target field, empty edit, placeholder-only edit, not found, ambiguous, cross-cell
 5. `sortedOpenSuggestionsForSection()` orders: red first, then yellow, then criterion order. `activeSuggestionForSection()` returns highest-priority for UI.

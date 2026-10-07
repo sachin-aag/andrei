@@ -16,6 +16,10 @@ import {
 } from "@/lib/suggestions/citations-at-end";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import {
+  isMathAtomNode,
+  mathAtomDisplayText,
+} from "@/lib/tiptap/math-anchor";
+import {
   isTableRefNode,
   tableRefAttrsFromNode,
   tableRefDisplayText,
@@ -132,6 +136,10 @@ function textOf(node: JSONContent): string {
     }
     if (isTableRefNode(n)) {
       parts.push(tableRefDisplayText(tableRefAttrsFromNode(n)));
+      return;
+    }
+    if (isMathAtomNode(n)) {
+      parts.push(mathAtomDisplayText(n));
       return;
     }
     if (INLINE_ATOM_TYPES.has(n.type ?? "")) {

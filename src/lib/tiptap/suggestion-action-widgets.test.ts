@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Schema, type Mark, type Node as PMNode } from "@tiptap/pm/model";
 import { collectSuggestionActionWidgetPositions } from "@/lib/tiptap/suggestion-action-widgets";
+import { MATH_ATOM_ALLOWED_MARKS } from "@/lib/tiptap/math-anchor";
 import { TABLE_REF_ALLOWED_MARKS } from "@/lib/tiptap/table-ref-markdown";
 import { extendPosPastOpenBracketClose } from "@/lib/text/bracket-span";
 
@@ -174,5 +175,37 @@ describe("collectSuggestionActionWidgetPositions", () => {
     const positions = positionsFor(doc, "eval-ref");
     expect(positions).toHaveLength(1);
     expect(positions[0]).toBe(1 + "See ".length + ref.nodeSize);
+  });
+
+  it("anchors widgets after an insert-marked mathInline atom", () => {
+    const schema = new Schema({
+      nodes: {
+        doc: { content: "paragraph" },
+        paragraph: { content: "inline*", group: "block" },
+        text: { group: "inline" },
+        mathInline: {
+          inline: true,
+          group: "inline",
+          atom: true,
+          selectable: true,
+          marks: MATH_ATOM_ALLOWED_MARKS,
+          toDOM: () => ["span", { "data-math-node": "mathInline" }],
+          parseDOM: [{ tag: 'span[data-math-node="mathInline"]' }],
+        },
+      },
+      marks: markAttrs,
+    });
+    const { insert } = aiMarks(schema, "eval-math");
+    const math = schema.node("mathInline", { latex: "x=1" }, undefined, [insert]);
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("See "),
+        math,
+        schema.text("."),
+      ]),
+    ]);
+    const positions = positionsFor(doc, "eval-math");
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toBe(1 + "See ".length + math.nodeSize);
   });
 });

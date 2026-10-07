@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v183-ask-grounding-document-insert");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v184-equation-anchors");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -273,6 +273,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Inline images in report sections");
     expect(prompt).toContain("readingText marks each as [image:N]");
     expect(prompt).toContain("never include [image:N] markers in anchorText");
+  });
+
+  it("tells Agent to quote $latex$ equation tokens from field text", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("Equations in field text appear as `$latex$`");
+    expect(prompt).toContain("Never put `[equation]` in anchors");
+    expect(prompt).toContain("include its `$latex$` token from `text` in deleteText");
   });
 
   it("routes figure placement to insert_image instead of markdown", () => {

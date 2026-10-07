@@ -66,8 +66,7 @@ describe("suggestion vs eval section context isolation", () => {
     const suggestPrompt = contextForSuggestionPrompt("define", content);
     expect(suggestPrompt).not.toContain("|");
     expect(suggestPrompt).not.toContain("[equation]");
-    expect(suggestPrompt).toContain("See");
-    expect(suggestPrompt).toContain("for assay.");
+    expect(suggestPrompt).toContain("See $equation$ for assay.");
   });
 
   it("serializes DV table sections instead of dumping TipTap JSON", () => {
