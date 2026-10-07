@@ -1,8 +1,8 @@
 import type { SectionType } from "@/db/schema";
 import { fieldFillState } from "@/lib/ai/chat/fields";
+import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-item-path";
 import {
   CVP_EQUIPMENT_SAMPLING_SECTION,
-  cvpEquipmentItemIndexFromTarget,
   ensureCvpEquipmentItem,
   normalizeCvpEquipmentSamplingContent,
 } from "@/lib/document-types/cvp/equipment-sampling";

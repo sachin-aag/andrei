@@ -8,7 +8,7 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { getDocumentType, resolveSection } from "@/lib/document-types";
 import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
-import { cvpEquipmentItemIndex } from "@/lib/document-types/cvp/equipment-sampling";
+import { cvpEquipmentItemIndex } from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";

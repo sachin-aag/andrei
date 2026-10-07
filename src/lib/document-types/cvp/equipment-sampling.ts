@@ -15,6 +15,17 @@ import {
   isStockEquipmentInstruction,
   upgradeCvpEquipmentSamplingNarrative,
 } from "@/lib/document-types/cvp/sections";
+import {
+  cvpEquipmentItemIndex,
+  cvpEquipmentItemIndexFromTarget,
+  isCvpEquipmentItemField,
+} from "@/lib/document-types/cvp/equipment-item-path";
+
+export {
+  cvpEquipmentItemIndex,
+  cvpEquipmentItemIndexFromTarget,
+  isCvpEquipmentItemField,
+};
 
 export const CVP_EQUIPMENT_FIELD_PATTERN = "items.[]";
 export const CVP_EQUIPMENT_SAMPLING_SECTION = "cvp_equipment_sampling";
@@ -34,31 +45,6 @@ const EQUIPMENT_TABLE_HEADERS: readonly (readonly string[])[] = [
 ];
 
 const HEADING_ORDINAL_RE = /^(15\.(?:N|\d+))/;
-const ITEM_FIELD_RE = /^items\.(\d+)$/;
-
-export function isCvpEquipmentItemField(path: string): boolean {
-  return ITEM_FIELD_RE.test(path);
-}
-
-export function cvpEquipmentItemIndex(path: string): number | null {
-  const match = ITEM_FIELD_RE.exec(path);
-  if (!match) return null;
-  return Number(match[1]);
-}
-
-/** `items.N` or `15.N` / `15.N TITLE` → 0-based item index. `15.2.3` is item 15.2. */
-const EQUIPMENT_ORDINAL_RE = /^15\.(\d+)\b/;
-
-export function cvpEquipmentItemIndexFromTarget(target: string): number | null {
-  const trimmed = target.trim();
-  const item = cvpEquipmentItemIndex(trimmed);
-  if (item != null) return item;
-  const ordinal = EQUIPMENT_ORDINAL_RE.exec(trimmed);
-  if (!ordinal) return null;
-  const n = Number(ordinal[1]);
-  if (!Number.isInteger(n) || n < 1) return null;
-  return n - 1;
-}
 
 /** Pad missing `items.N` with the 15.N seed so apply does not merge against emptyDoc(). */
 export function ensureCvpEquipmentFieldContent(

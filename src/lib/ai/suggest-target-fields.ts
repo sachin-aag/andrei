@@ -1,5 +1,5 @@
 import type { SectionType } from "@/db/schema";
-import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-sampling";
+import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-item-path";
 
 /** Pattern entries use `[]` for a numeric array index slot. */
 export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = {
