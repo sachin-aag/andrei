@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   canAutoHealStaleNeonPreview,
   deleteNeonPreviewBranchesForGitRef,
+  deleteNeonPreviewBranchesForGitRefOnProjects,
   deleteStaleNeonPreviewBranches,
+  isSkippableNeonAccessError,
+  neonPreviewCleanupFailed,
   previewBranchNameCandidates,
 } from "@/lib/db/neon-preview-branch";
 
@@ -97,6 +100,116 @@ describe("deleteNeonPreviewBranchesForGitRef", () => {
     expect(result.deleted).toEqual(["preview/cursor/example"]);
     expect(result.missing).toEqual(["preview/pr-99-cursor/example"]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("deleteNeonPreviewBranchesForGitRefOnProjects", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.NEON_API_KEY;
+  });
+
+  it("deletes 3xper even when another pack returns 403", async () => {
+    process.env.NEON_API_KEY = "test-key";
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/projects/forbidden/branches") && !init?.method) {
+        return new Response("nope", { status: 403 });
+      }
+      if (
+        url.endsWith("/projects/dark-salad-24878113/branches") &&
+        !init?.method
+      ) {
+        return new Response(
+          JSON.stringify({
+            branches: [
+              { id: "br-3xper", name: "preview/cursor/example" },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      if (
+        url.endsWith("/projects/dark-salad-24878113/branches/br-3xper") &&
+        init?.method === "DELETE"
+      ) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { results } = await deleteNeonPreviewBranchesForGitRefOnProjects({
+      gitRef: "cursor/example",
+      projects: [
+        { label: "demo", id: "forbidden" },
+        { label: "3xper", id: "dark-salad-24878113" },
+      ],
+    });
+
+    expect(results[0]).toMatchObject({
+      label: "demo",
+      skipped: true,
+    });
+    expect(results[1]).toEqual({
+      label: "3xper",
+      projectId: "dark-salad-24878113",
+      deleted: ["preview/cursor/example"],
+      missing: [],
+    });
+    expect(neonPreviewCleanupFailed(results)).toBe(false);
+  });
+});
+
+describe("isSkippableNeonAccessError", () => {
+  it("treats 401/403/404 as skippable", () => {
+    expect(
+      isSkippableNeonAccessError(
+        new Error("Neon API GET /projects/x/branches failed (403): nope")
+      )
+    ).toBe(true);
+    expect(
+      isSkippableNeonAccessError(new Error("Neon API DELETE failed (500): boom"))
+    ).toBe(false);
+  });
+});
+
+describe("neonPreviewCleanupFailed", () => {
+  it("fails when every project errors, including skippable 403s", () => {
+    expect(
+      neonPreviewCleanupFailed([
+        {
+          label: "3xper",
+          projectId: "dark-salad-24878113",
+          deleted: [],
+          missing: [],
+          error: "403",
+          skipped: true,
+        },
+      ])
+    ).toBe(true);
+  });
+
+  it("succeeds when 3xper deleted and another pack 403s", () => {
+    expect(
+      neonPreviewCleanupFailed([
+        {
+          label: "demo",
+          projectId: "forbidden",
+          deleted: [],
+          missing: [],
+          error: "403",
+          skipped: true,
+        },
+        {
+          label: "3xper",
+          projectId: "dark-salad-24878113",
+          deleted: ["preview/cursor/example"],
+          missing: [],
+        },
+      ])
+    ).toBe(false);
   });
 });
 
