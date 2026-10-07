@@ -40,6 +40,13 @@ export type ClaimProvenanceRecord = {
     title: string;
     pages: CitedPage[];
   } | null;
+  /**
+   * Set when this-turn `calculate` evaluated this value. Traceability names
+   * the expression so the reader can check the arithmetic.
+   */
+  calculation?: {
+    expression: string;
+  } | null;
 };
 
 export type UnsupportedFactPolicy = "block" | "flag";
