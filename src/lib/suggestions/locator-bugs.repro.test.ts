@@ -49,22 +49,12 @@ describe("suggestion bugs — fixed by locator (Step 1 fixtures)", () => {
     expect(applyEditToRichDoc(doc, bad, ATTRS).status).toBe("not_found");
 
     const good: SuggestionEdit = {
-      anchorText: "See  for",
+      anchorText: "See $x=1$ for the assay",
       deleteText: "",
       insertText: " (Eq. 1)",
     };
-    // Collapsed match across the atom space
-    const status = probeRichEdit(doc, good);
-    expect(status).toBe(applyEditToRichDoc(doc, good, ATTRS).status);
-    expect(["located", "not_found"]).toContain(status);
-    // Prefer collapsed form that always works:
-    const collapsed: SuggestionEdit = {
-      anchorText: "See for the assay",
-      deleteText: "",
-      insertText: " (Eq. 1)",
-    };
-    expect(probeRichEdit(doc, collapsed)).toBe("located");
-    expect(applyEditToRichDoc(doc, collapsed, ATTRS).status).toBe("located");
+    expect(probeRichEdit(doc, good)).toBe("located");
+    expect(applyEditToRichDoc(doc, good, ATTRS).status).toBe("located");
   });
 
   it("markdown-pipe anchor not_found; cell text locates; gate ≡ apply", () => {

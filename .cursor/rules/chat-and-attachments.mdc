@@ -539,6 +539,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   not drift to untagged files. If the client drops a structured mention payload,
   recover an exact, unique `@filename` against that report's ready-document index.
 - Report body is not in `document_chunks`. Use `read_section`.
+  Equations in field `text` / `readingText` are `$latex$` (or `$equation$`
+  if LaTeX is missing) — quote those tokens in `propose_edit`, never
+  `[equation]`.
 
 ## Ingest
 

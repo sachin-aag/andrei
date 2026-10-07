@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { markdownHasTable, markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import { isMathAtomNode } from "@/lib/tiptap/math-anchor";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   insertNodesIntoFieldBody,
@@ -35,7 +36,7 @@ function markInserted(node: JSONContent, attrs: InsertMarkAttrs): void {
     ];
     return;
   }
-  if (node.type === "tableRef") {
+  if (node.type === "tableRef" || isMathAtomNode(node)) {
     const already = (node.marks ?? []).some(
       (mark) => mark.type === suggestionInsertMarkName
     );

@@ -1837,7 +1837,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
+        `Read the current text of an editable section. Returns text (equations as $latex$ or $equation$), readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). Quote $latex$ from text when a span includes an equation. Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -2756,12 +2756,14 @@ export function buildChatTools(opts: {
         deleteText: z
           .string()
           .default("")
-          .describe("Exact substring to remove (subset of anchor), or '' to only insert."),
+          .describe(
+            "Exact substring to remove (subset of anchor), or '' to only insert. To replace or remove an equation, include its `$latex$` token from text."
+          ),
         insertText: z
           .string()
           .default("")
           .describe(
-            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. Do not paste a GFM pipe table — use edit_table create_table. Table mentions are `[[table]]` (never `Table 1 [[table]]`)."
+            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. `$...$` becomes an equation (simple `$N_2$` stays as subscript). Do not paste a GFM pipe table — use edit_table create_table. Table mentions are `[[table]]` (never `Table 1 [[table]]`)."
           ),
         scope: z
           .object({
