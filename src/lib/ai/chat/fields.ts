@@ -7,6 +7,8 @@ import {
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
 import { getDocumentType, resolveSection } from "@/lib/document-types";
+import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
+import { cvpEquipmentItemIndex } from "@/lib/document-types/cvp/equipment-sampling";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -289,6 +291,10 @@ export function seedFieldDoc(
   targetField: string
 ): JSONContent | undefined {
   if (!isRichTargetField(section, targetField)) return undefined;
+  if (section === "cvp_equipment_sampling") {
+    const index = cvpEquipmentItemIndex(targetField);
+    if (index != null) return cvpEquipmentSamplingSeed(index + 1);
+  }
   const empty = emptyContentForSection(section);
   if (!empty) return undefined;
   return getRichFieldValue(empty, targetField);
@@ -437,6 +443,12 @@ export function sectionFillState(
   const states = fields.map((field) =>
     fieldFillState(content, section, field.targetField)
   );
+  if (section === "cvp_equipment_sampling") {
+    if (states.length === 0) return "empty";
+    if (states.every((state) => state === "empty")) return "empty";
+    if (states.every((state) => state === "filled")) return "filled";
+    return "partial";
+  }
   const aggregated: SectionFillState = states.every((state) => state === "empty")
     ? "empty"
     : states.some((state) => state === "filled")

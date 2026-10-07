@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v195-cvp-equipment-boilerplate";
+export const CHAT_PROMPT_VERSION = "chat-v196-cvp-equipment-item-route";
 
 export type ChatMode = "plan" | "agent";
 
@@ -39,6 +39,9 @@ function fieldTaxonomy(
 ): string {
   const body = chatSectionsInScope(scope, documentType)
     .map((section) => {
+      if (section === "cvp_equipment_sampling") {
+        return `- ${sectionLabel(section)} [${section}]: items.0, items.1, … (rich; 15.1, 15.2, … — one box per equipment. Write the next empty items.N. 15.2 or items.1 is the Add-equipment box; if that box is missing, pass items.1 / 15.2 and the tool adds it. Never create_table into a filled items.0 for a new equipment.)`;
+      }
       const fields = chatTargetFields(section)
         .map((f) => `${f.targetField} (${f.kind})`)
         .join(", ");
@@ -495,7 +498,7 @@ ${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements, write
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}
 
-targetField is the in-section path from the list above (usually \`narrative\` or \`table\`). NEVER pass the section key (e.g. purpose_scope, references, test_methods) as targetField.
+targetField is the in-section path from the list above (usually \`narrative\` or \`table\`; equipment sampling uses \`items.N\` / \`15.N\`). NEVER pass the section key (e.g. purpose_scope, references, test_methods) as targetField.
 
 ${modeRules}${analyzeBlock}${draftingGuidance}
 

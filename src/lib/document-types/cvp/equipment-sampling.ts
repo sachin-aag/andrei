@@ -46,6 +46,30 @@ export function cvpEquipmentItemIndex(path: string): number | null {
   return Number(match[1]);
 }
 
+/** `items.N` or `15.N` / `15.N TITLE` → 0-based item index. `15.2.3` is item 15.2. */
+const EQUIPMENT_ORDINAL_RE = /^15\.(\d+)\b/;
+
+export function cvpEquipmentItemIndexFromTarget(target: string): number | null {
+  const trimmed = target.trim();
+  const item = cvpEquipmentItemIndex(trimmed);
+  if (item != null) return item;
+  const ordinal = EQUIPMENT_ORDINAL_RE.exec(trimmed);
+  if (!ordinal) return null;
+  const n = Number(ordinal[1]);
+  if (!Number.isInteger(n) || n < 1) return null;
+  return n - 1;
+}
+
+/** Pad missing `items.N` with the 15.N seed so apply does not merge against emptyDoc(). */
+export function ensureCvpEquipmentFieldContent(
+  content: Record<string, unknown>,
+  targetField: string
+): Record<string, unknown> {
+  const index = cvpEquipmentItemIndexFromTarget(targetField);
+  if (index == null) return content;
+  return ensureCvpEquipmentItem(content, index);
+}
+
 export function cvpEquipmentItemAnchor(index: number): string {
   return `${CVP_EQUIPMENT_SAMPLING_SECTION}-item-${index}`;
 }

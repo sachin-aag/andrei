@@ -1,4 +1,5 @@
 import type { SectionType } from "@/db/schema";
+import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-sampling";
 
 /** Pattern entries use `[]` for a numeric array index slot. */
 export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = {
@@ -245,13 +246,16 @@ export function resolveTargetField(
   section: SectionType,
   targetField: string
 ): string | null {
-  if (
-    section === "cvp_equipment_sampling" &&
-    (targetField === "narrative" ||
+  if (section === "cvp_equipment_sampling") {
+    const itemIndex = cvpEquipmentItemIndexFromTarget(targetField);
+    if (itemIndex != null) return `items.${itemIndex}`;
+    if (
+      targetField === "narrative" ||
       targetField === "table" ||
-      targetField === section)
-  ) {
-    return "items.0";
+      targetField === section
+    ) {
+      return "items.0";
+    }
   }
   if (isAllowedTargetField(section, targetField)) return targetField;
   const allowed = concreteTargetFields(section);

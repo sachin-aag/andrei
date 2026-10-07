@@ -79,6 +79,10 @@ describe("resolveTargetField", () => {
     expect(resolveTargetField("cvp_equipment_sampling", "items.2")).toBe(
       "items.2"
     );
+    expect(resolveTargetField("cvp_equipment_sampling", "15.2")).toBe("items.1");
+    expect(
+      resolveTargetField("cvp_equipment_sampling", "15.2 MIXED VESSEL (MV-1305)")
+    ).toBe("items.1");
   });
 
   it("keeps a correct field path unchanged", () => {

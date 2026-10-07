@@ -28,6 +28,7 @@ import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import type { SuggestionApplyMode } from "@/lib/document-types";
 import { isCvpSectionKey } from "@/lib/document-types/cvp/sections";
+import { ensureCvpEquipmentFieldContent } from "@/lib/document-types/cvp/equipment-sampling";
 import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
 import {
   isApplyableStatus,
@@ -155,7 +156,6 @@ export function applySuggestionToContent(
   const {
     section,
     comment,
-    sectionContent,
     fieldContentPath,
     applyMode = "final",
     ignorePlaceBeforePairedBlock = false,
@@ -170,6 +170,10 @@ export function applySuggestionToContent(
     comment.contentPath,
     fieldContentPath ?? comment.contentPath ?? "narrative"
   );
+  const sectionContent =
+    section === "cvp_equipment_sampling"
+      ? ensureCvpEquipmentFieldContent(args.sectionContent, path)
+      : args.sectionContent;
 
   const resolved = resolveSuggestionMerge({
     section,

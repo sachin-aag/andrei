@@ -14,6 +14,7 @@ import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
+import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
 import {
   chatTargetFields,
   isChatEditableSection,
@@ -460,25 +461,33 @@ export async function executePlotMeasurements(
   if (!isChatEditableSection(input.section, ctx.documentType)) {
     return { status: "invalid_section", message: `Unknown section '${input.section}'.` };
   }
-  const resolvedField = resolveTargetField(input.section, input.targetField);
-  if (!resolvedField) {
+  const requestedResolved = resolveTargetField(input.section, input.targetField);
+  if (!requestedResolved) {
     return {
       status: "invalid_field",
       message: `'${input.targetField}' is not an editable field of ${input.section}.`,
       allowedFields: chatTargetFields(input.section).map((f) => f.targetField),
     };
   }
-  if (!isRichTargetField(input.section, resolvedField)) {
+  if (!isRichTargetField(input.section, requestedResolved)) {
     return {
       status: "plain_field",
-      message: `'${resolvedField}' is a plain-text field and cannot hold a chart. Insert into a rich narrative field instead.`,
+      message: `'${requestedResolved}' is a plain-text field and cannot hold a chart. Insert into a rich narrative field instead.`,
     };
   }
 
-  const loaded = await deps.loadSection(ctx.reportId, input.section);
-  if (!loaded) {
+  const loadedRaw = await deps.loadSection(ctx.reportId, input.section);
+  if (!loadedRaw) {
     return { status: "section_not_found", message: "Section not found." };
   }
+  const bound = bindCvpEquipmentWrite(
+    input.section,
+    input.targetField,
+    requestedResolved,
+    loadedRaw.content
+  );
+  const resolvedField = bound.targetField;
+  const loaded = { ...loadedRaw, content: bound.content };
 
   const query = input.query.replace(/\s+/g, " ").trim();
   const fieldDoc = getRichFieldValue(loaded.content, resolvedField);

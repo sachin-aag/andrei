@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v195-cvp-equipment-boilerplate");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v196-cvp-equipment-item-route");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -671,5 +671,18 @@ describe("claim strength", () => {
       });
       expect(prompt).toContain("## Claim strength (required)");
     }
+  });
+});
+
+describe("CVP equipment sampling targets", () => {
+  it("tells Agent to write 15.2 into items.1 rather than a filled 15.1", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "cleaning_verification_protocol",
+    });
+    expect(prompt).toContain("Write the next empty items.N");
+    expect(prompt).toContain("Never create_table into a filled items.0");
   });
 });

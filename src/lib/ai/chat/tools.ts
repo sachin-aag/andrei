@@ -27,6 +27,7 @@ import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
+import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
@@ -1198,6 +1199,29 @@ async function loadMergedSection(
   };
 }
 
+function bindLoadedWriteField(
+  section: SectionType,
+  requestedField: string,
+  resolvedField: string,
+  loaded: { sectionId: string; content: Record<string, unknown> },
+  preferEmptyItem = true
+): {
+  resolvedField: string;
+  loaded: { sectionId: string; content: Record<string, unknown> };
+} {
+  const bound = bindCvpEquipmentWrite(
+    section,
+    requestedField,
+    resolvedField,
+    loaded.content,
+    { preferEmptyItem }
+  );
+  return {
+    resolvedField: bound.targetField,
+    loaded: { sectionId: loaded.sectionId, content: bound.content },
+  };
+}
+
 type OpenTableRowCard = {
   suggestionId: string;
   operation: InsertRowsOperation | EditCellsOperation;
@@ -1947,7 +1971,7 @@ export function buildChatTools(opts: {
         const loaded = await loadMergedSection(reportId, section);
         if (!loaded) return { error: "section_not_found" as const };
 
-        const all = chatTargetFields(section);
+        const all = chatTargetFields(section, loaded.content);
         const requested =
           fields && fields.length > 0
             ? all.filter((f) => fields.includes(f.targetField))
@@ -2853,8 +2877,8 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
@@ -2862,10 +2886,16 @@ export function buildChatTools(opts: {
           };
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw
+        );
         if (
           emptyInventoryNeedsMatchingReview({
             documentType,
@@ -3341,20 +3371,31 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
-        if (!isRichTargetField(section, resolvedField)) {
+        if (!isRichTargetField(section, requestedResolved)) {
           return {
             status: "plain_field",
-            message: `'${resolvedField}' is a plain-text field and cannot hold an image. Insert into a rich narrative field instead.`,
+            message: `'${requestedResolved}' is a plain-text field and cannot hold an image. Insert into a rich narrative field instead.`,
           };
         }
+
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw
+        );
 
         const source = image as InsertImageSource;
         if (source.source === "section") {
@@ -3371,10 +3412,6 @@ export function buildChatTools(opts: {
           }
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
-          return { status: "section_not_found", message: "Section not found." };
-        }
         const staleInsert = unchangedOrStale(section, resolvedField, loaded.content);
         if (staleInsert) return staleInsert;
 
@@ -3823,20 +3860,32 @@ export function buildChatTools(opts: {
           if (!isChatEditableSection(section, documentType)) {
             return { status: "invalid_section", message: `Unknown section '${section}'.` };
           }
-          const resolvedField = resolveTargetField(section, targetField);
-          if (!resolvedField) {
+          const requestedResolved = resolveTargetField(section, targetField);
+          if (!requestedResolved) {
             return {
               status: "invalid_field",
               message: `'${targetField}' is not an editable field of ${section}.`,
               allowedFields: chatTargetFields(section).map((f) => f.targetField),
             };
           }
-          if (!isRichTargetField(section, resolvedField)) {
+          if (!isRichTargetField(section, requestedResolved)) {
             return {
               status: "plain_field",
-              message: `'${resolvedField}' is a plain-text field and cannot hold an image.`,
+              message: `'${requestedResolved}' is a plain-text field and cannot hold an image.`,
             };
           }
+
+          const loadedRaw = await loadMergedSection(reportId, section);
+          if (!loadedRaw) {
+            return { status: "section_not_found", message: "Section not found." };
+          }
+          const { resolvedField, loaded } = bindLoadedWriteField(
+            section,
+            targetField,
+            requestedResolved,
+            loadedRaw,
+            false
+          );
 
           const locator = resolveSectionImageLocator({
             destSection: section,
@@ -3858,10 +3907,6 @@ export function buildChatTools(opts: {
             };
           }
 
-          const loaded = await loadMergedSection(reportId, section);
-          if (!loaded) {
-            return { status: "section_not_found", message: "Section not found." };
-          }
           const staleRemove = unchangedOrStale(section, resolvedField, loaded.content);
           if (staleRemove) return staleRemove;
 
@@ -4072,18 +4117,18 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
-        if (!isRichTargetField(section, resolvedField)) {
+        if (!isRichTargetField(section, requestedResolved)) {
           return {
             status: "invalid_field",
-            message: `'${resolvedField}' is not a rich field and cannot hold a table.`,
+            message: `'${requestedResolved}' is not a rich field and cannot hold a table.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
@@ -4093,10 +4138,16 @@ export function buildChatTools(opts: {
           return { status: "invalid", hint: tableOperationInvalidHint(operation) };
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw
+        );
         if (
           emptyInventoryNeedsMatchingReview({
             documentType,
@@ -4637,8 +4688,19 @@ export function buildChatTools(opts: {
           (parsedForQueue.kind === "insert_rows" ||
             parsedForQueue.kind === "edit_cells")
         ) {
-          const queueField =
+          let queueField =
             resolveTargetField(section, targetField) ?? targetField;
+          if (section === "cvp_equipment_sampling") {
+            const queued = await loadMergedSection(reportId, section);
+            if (queued) {
+              queueField = bindLoadedWriteField(
+                section,
+                targetField,
+                queueField,
+                queued
+              ).resolvedField;
+            }
+          }
           return enqueueInsertRows(
             insertRowsQueues,
             insertRowsQueueKey(section, queueField, parsedForQueue.tableIndex),
@@ -4699,14 +4761,24 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw
+        );
         const field = {
           targetField: resolvedField,
           kind: (isRichTargetField(section, resolvedField)
@@ -4740,10 +4812,6 @@ export function buildChatTools(opts: {
           if (mismatch) return mismatch;
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
-          return { status: "section_not_found", message: "Section not found." };
-        }
         if (
           emptyInventoryNeedsMatchingReview({
             documentType,
