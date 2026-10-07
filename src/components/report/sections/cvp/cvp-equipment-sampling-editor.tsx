@@ -1,7 +1,7 @@
 "use client";
 
 import type { JSONContent } from "@tiptap/core";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import {
   appendCvpEquipmentItem,
   cvpEquipmentItemAnchor,
   cvpEquipmentItemTitle,
-  duplicateCvpEquipmentItem,
+  insertBlankCvpEquipmentItem,
   normalizeCvpEquipmentSamplingContent,
   removeCvpEquipmentItem,
   type CvpEquipmentSamplingContent,
@@ -33,7 +33,7 @@ export function CvpEquipmentSamplingEditor() {
   return (
     <SectionShell
       title={CVP_SECTION_LABELS[SECTION]}
-      description="One box per product-contact equipment. Duplicate to add 15.2, 15.3, … — numbering and Contents update automatically."
+      description="One box per product-contact equipment. Add equipment for a blank 15.2, 15.3, … box — numbering and Contents update automatically."
       status={status}
       lastSavedAt={lastSavedAt}
       section={SECTION}
@@ -50,7 +50,7 @@ export function CvpEquipmentSamplingEditor() {
               nextItems[index] = next;
               write(nextItems);
             }}
-            onDuplicate={() => write(duplicateCvpEquipmentItem(items, index))}
+            onAddEquipment={() => write(insertBlankCvpEquipmentItem(items, index))}
             onRemove={() => write(removeCvpEquipmentItem(items, index))}
             onFlushSave={flushSave}
           />
@@ -74,7 +74,7 @@ function CvpEquipmentItemCard({
   doc,
   canRemove,
   onChange,
-  onDuplicate,
+  onAddEquipment,
   onRemove,
   onFlushSave,
 }: {
@@ -82,7 +82,7 @@ function CvpEquipmentItemCard({
   doc: JSONContent;
   canRemove: boolean;
   onChange: (next: JSONContent) => void;
-  onDuplicate: () => void;
+  onAddEquipment: () => void;
   onRemove: () => void;
   onFlushSave: () => void;
 }) {
@@ -100,11 +100,11 @@ function CvpEquipmentItemCard({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={onDuplicate}
-            title="Duplicate this equipment box"
+            onClick={onAddEquipment}
+            title="Add a blank equipment box after this one"
           >
-            <Copy className="size-3.5" aria-hidden="true" />
-            Duplicate
+            <Plus className="size-3.5" aria-hidden="true" />
+            Add equipment
           </Button>
           {canRemove ? (
             <Button

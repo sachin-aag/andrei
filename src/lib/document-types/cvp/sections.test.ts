@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import { getDocumentType } from "@/lib/document-types";
+import {
+  insertBlankCvpEquipmentItem,
+  normalizeCvpEquipmentSamplingContent,
+} from "./equipment-sampling";
 import {
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
@@ -7,6 +12,7 @@ import {
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
   EMPTY_CVP_CONTENT,
+  cvpEquipmentSamplingSeed,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpTableSectionKey,
@@ -185,6 +191,111 @@ describe("cleaning verification protocol sections", () => {
     expect(merged.items[0]?.content?.some((node) => node.type === "table")).toBe(
       false
     );
+  });
+
+  it("does not graft Duplicate-this-box onto filled tables that lost their headings", () => {
+    const seed = cvpEquipmentSamplingSeed(1);
+    const identity = seed.content?.find((node) => node.type === "table");
+    const filled: JSONContent = JSON.parse(JSON.stringify(identity));
+    const detailsCell = filled.content?.[1]?.content?.[1];
+    if (detailsCell?.content?.[0]) {
+      detailsCell.content[0] = {
+        type: "paragraph",
+        content: [{ type: "text", text: "10000 L" }],
+      };
+    }
+    const def = getDocumentType("cleaning_verification_protocol");
+    const merged = def.mergeSection("cvp_equipment_sampling", {
+      items: [{ type: "doc", content: [filled] }],
+    }) as { items: JSONContent[] };
+    const text = JSON.stringify(merged);
+    expect(text).toContain("10000 L");
+    expect(text).not.toContain("Duplicate this box");
+    expect(text).not.toContain("Equipment name (Equipment No.)");
+  });
+
+  it("collapses stacked 15.1 outlines and promotes a GLR title paragraph to the H2", () => {
+    const seed = cvpEquipmentSamplingSeed(1);
+    const identity = seed.content?.find((node) => node.type === "table");
+    const filledIdentity: JSONContent = JSON.parse(JSON.stringify(identity));
+    const detailsCell = filledIdentity.content?.[1]?.content?.[1];
+    if (detailsCell?.content?.[0]) {
+      detailsCell.content[0] = {
+        type: "paragraph",
+        content: [{ type: "text", text: "10000 L [1]" }],
+      };
+    }
+    const stacked: JSONContent = {
+      type: "doc",
+      content: [
+        ...(seed.content ?? []).map((node) =>
+          node.type === "table" &&
+          JSON.stringify(node).includes('"Parameter"')
+            ? filledIdentity
+            : node
+        ),
+        ...((seed.content ?? []) as JSONContent[]),
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "15.1 Glass Lined Reactor (GLR-1302)" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The subject equipment GLR-1302 is located in Production Block-2.",
+            },
+          ],
+        },
+        ...((seed.content ?? []) as JSONContent[]),
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Inference:", marks: [{ type: "bold" }] }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "It shall be written in the cleaning verification report.",
+            },
+          ],
+        },
+      ],
+    };
+    const { items } = normalizeCvpEquipmentSamplingContent({ items: [stacked] });
+    const text = JSON.stringify(items[0]);
+    const h2s = (items[0]?.content ?? []).filter(
+      (node) => node.type === "heading" && Number(node.attrs?.level) === 2
+    );
+    expect(h2s).toHaveLength(1);
+    expect(JSON.stringify(h2s[0])).toContain("Glass Lined Reactor (GLR-1302)");
+    expect(text).toContain("10000 L [1]");
+    expect(text).not.toContain("Duplicate this box");
+    expect((text.match(/15\.1\.1 Equipment details/g) ?? []).length).toBe(1);
+    expect((text.match(/It shall be written in the cleaning verification report\./g) ?? []).length).toBe(2);
+  });
+
+  it("adds a blank 15.2 template that does not copy filled tables from 15.1", () => {
+    const seed = cvpEquipmentSamplingSeed(1);
+    const filled: JSONContent = JSON.parse(JSON.stringify(seed));
+    const identity = filled.content?.find((node) => node.type === "table");
+    const detailsCell = identity?.content?.[1]?.content?.[1];
+    if (detailsCell?.content?.[0]) {
+      detailsCell.content[0] = {
+        type: "paragraph",
+        content: [{ type: "text", text: "10000 L" }],
+      };
+    }
+    const next = insertBlankCvpEquipmentItem([filled], 0);
+    expect(next).toHaveLength(2);
+    expect(JSON.stringify(next[0])).toContain("10000 L");
+    expect(JSON.stringify(next[1])).not.toContain("10000 L");
+    const newH2 = (next[1]?.content ?? []).find(
+      (node) => node.type === "heading" && Number(node.attrs?.level) === 2
+    );
+    expect(JSON.stringify(newH2)).toContain("15.2 Equipment name (Equipment No.)");
   });
 
   it("prints a product-specific title when the cover product is set", () => {

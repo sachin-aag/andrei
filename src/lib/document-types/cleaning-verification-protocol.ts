@@ -234,7 +234,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
       agent: [
         "Fill cover identity and 2.0 Objective, 3.0 Scope, and 4.0 Responsibilities from the attachments.",
         "Build the surface-area, rinse-volume, and MACO tables from the CPDR and PDE annexure.",
-        "Draft Equipment sampling (15.1, then Duplicate for each Scope product-contact item).",
+        "Draft Equipment sampling (15.1, then Add equipment for each Scope product-contact item).",
       ],
     },
     contextIdentity: cvpChatContextIdentity,

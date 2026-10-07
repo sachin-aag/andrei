@@ -11,6 +11,7 @@ import {
   CVP_SWAB_RATIONALE_HEADERS,
   CVP_VISUAL_INSPECTION_HEADERS,
   cvpEquipmentSamplingSeed,
+  isStockEquipmentInstruction,
   upgradeCvpEquipmentSamplingNarrative,
 } from "@/lib/document-types/cvp/sections";
 
@@ -147,6 +148,206 @@ export function splitWarpedCvpEquipmentTables(doc: JSONContent): JSONContent {
   return { type: "doc", content: next };
 }
 
+const PLACEHOLDER_H2_RE = /equipment name\s*\(\s*equipment no\.?\s*\)/i;
+const HEADING_PREFIX_RE = /^15\.(?:N|\d+)(?:\.\d+)*\s*/i;
+
+const SEED_TABLE_BY_HEADER = (() => {
+  const map = new Map<string, JSONContent>();
+  for (const node of cvpEquipmentSamplingSeed(1).content ?? []) {
+    if (node.type !== "table") continue;
+    const key = tableHeaderKey(node);
+    if (key && !map.has(key)) map.set(key, node);
+  }
+  return map;
+})();
+
+function tableHeaderKey(table: JSONContent): string {
+  const header = table.content?.[0];
+  if (!header) return "";
+  return rowCells(header).join("|").toLowerCase();
+}
+
+function tableCellGrid(table: JSONContent): string[][] {
+  return (table.content ?? []).map((row) => rowCells(row));
+}
+
+function isScaffoldTable(table: JSONContent): boolean {
+  const key = tableHeaderKey(table);
+  const live = tableCellGrid(table);
+  const seed = key ? SEED_TABLE_BY_HEADER.get(key) : undefined;
+  if (!seed) {
+    return live.slice(1).every((row) => row.every((cell) => cell.length === 0));
+  }
+  const seedGrid = tableCellGrid(seed);
+  for (let r = 0; r < live.length; r++) {
+    const liveRow = live[r] ?? [];
+    const seedRow = seedGrid[r] ?? [];
+    for (let c = 0; c < Math.max(liveRow.length, seedRow.length); c++) {
+      const liveCell = (liveRow[c] ?? "").trim();
+      const seedCell = (seedRow[c] ?? "").trim();
+      if (liveCell && liveCell !== seedCell) return false;
+    }
+  }
+  return true;
+}
+
+function canonicalHeadingKey(text: string): string {
+  return text.replace(HEADING_PREFIX_RE, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function isPlaceholderEquipmentTitle(text: string): boolean {
+  return PLACEHOLDER_H2_RE.test(text);
+}
+
+function looksLikeEquipmentTitleParagraph(text: string): boolean {
+  return (
+    /^15\.(?:N|\d+)\s+\S/i.test(text) &&
+    !isPlaceholderEquipmentTitle(text) &&
+    !/^15\.(?:N|\d+)\.\d+/.test(text)
+  );
+}
+
+function headingNode(level: number, text: string): JSONContent {
+  return {
+    type: "heading",
+    attrs: { level },
+    content: [{ type: "text", text }],
+  };
+}
+
+function replaceLastTableWithKey(
+  out: JSONContent[],
+  key: string,
+  table: JSONContent
+): boolean {
+  for (let i = out.length - 1; i >= 0; i--) {
+    const node = out[i]!;
+    if (node.type === "table" && tableHeaderKey(node) === key) {
+      out[i] = table;
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldStripStockInstructions(doc: JSONContent): boolean {
+  const content = doc.content ?? [];
+  let h2Count = 0;
+  const headingKeys = new Set<string>();
+  for (const node of content) {
+    if (node.type === "heading") {
+      if (Number(node.attrs?.level) === 2) h2Count += 1;
+      const key = canonicalHeadingKey(headingText(node));
+      if (key && headingKeys.has(key) && Number(node.attrs?.level) !== 2) {
+        return true;
+      }
+      if (key) headingKeys.add(key);
+    }
+    if (node.type === "table" && !isScaffoldTable(node)) return true;
+  }
+  return h2Count > 1;
+}
+
+/**
+ * Drop stacked copies of the 15.1 outline (Agent append after a refused
+ * draft_field) and engineer-facing seed instructions once the box is filled.
+ * Keep the first filled table of each header and a single H2 — prefer a
+ * real equipment title over "Equipment name (Equipment No.)".
+ */
+export function collapseCvpEquipmentItem(doc: JSONContent): JSONContent {
+  const stripStock = shouldStripStockInstructions(doc);
+  const out: JSONContent[] = [];
+  const seenHeadings = new Set<string>();
+  const seenParagraphs = new Set<string>();
+  const tableState = new Map<string, "scaffold" | "filled">();
+  let h2Index = -1;
+  let afterExtraH2 = false;
+  let introInsertAt = 0;
+  let lastLabel = "";
+
+  for (const node of doc.content ?? []) {
+    if (node.type === "heading") {
+      const text = headingText(node);
+      const level = Number(node.attrs?.level);
+      if (level === 2) {
+        if (h2Index >= 0) {
+          const current = headingText(out[h2Index]!);
+          if (
+            isPlaceholderEquipmentTitle(current) &&
+            text &&
+            !isPlaceholderEquipmentTitle(text)
+          ) {
+            out[h2Index] = node;
+          }
+          afterExtraH2 = true;
+          introInsertAt = h2Index + 1;
+          lastLabel = "h2";
+          continue;
+        }
+        h2Index = out.length;
+        out.push(node);
+        afterExtraH2 = false;
+        lastLabel = "h2";
+        continue;
+      }
+      afterExtraH2 = false;
+      const key = canonicalHeadingKey(text);
+      if (!key || seenHeadings.has(key)) continue;
+      seenHeadings.add(key);
+      lastLabel = key;
+      out.push(node);
+      continue;
+    }
+    if (node.type === "table") {
+      afterExtraH2 = false;
+      const key = tableHeaderKey(node) || `anon-${out.length}`;
+      const scaffold = isScaffoldTable(node);
+      const prev = tableState.get(key);
+      if (prev === "filled") continue;
+      if (prev === "scaffold") {
+        if (scaffold) continue;
+        replaceLastTableWithKey(out, key, node);
+        tableState.set(key, "filled");
+        continue;
+      }
+      tableState.set(key, scaffold ? "scaffold" : "filled");
+      out.push(node);
+      continue;
+    }
+    const text = nodePlain(node).replace(/\s+/g, " ").trim();
+    if (!text) {
+      out.push(node);
+      continue;
+    }
+    if (looksLikeEquipmentTitleParagraph(text)) {
+      const title = headingNode(2, text);
+      if (h2Index >= 0) {
+        const current = headingText(out[h2Index]!);
+        if (isPlaceholderEquipmentTitle(current)) out[h2Index] = title;
+      } else {
+        h2Index = out.length;
+        out.push(title);
+      }
+      continue;
+    }
+    if (stripStock && isStockEquipmentInstruction(text)) continue;
+    if (/^inference:/i.test(text)) lastLabel = "inference";
+    else if (/^conclusion:/i.test(text)) lastLabel = "conclusion";
+    else if (/^citations?:/i.test(text)) lastLabel = "citations";
+    const paraKey = `${lastLabel}::${text.toLowerCase()}`;
+    if (seenParagraphs.has(paraKey)) continue;
+    seenParagraphs.add(paraKey);
+    if (afterExtraH2) {
+      out.splice(introInsertAt, 0, node);
+      introInsertAt += 1;
+      continue;
+    }
+    out.push(node);
+  }
+
+  return { type: "doc", content: out.length > 0 ? out : [{ type: "paragraph" }] };
+}
+
 export function splitCvpEquipmentDocIntoItems(doc: JSONContent): JSONContent[] {
   const groups: JSONContent[][] = [];
   let current: JSONContent[] = [];
@@ -201,12 +402,14 @@ export function cvpEquipmentItemTitle(doc: JSONContent, ordinal: number): string
 }
 
 function normalizeItem(doc: JSONContent): JSONContent {
-  const upgraded = upgradeCvpEquipmentSamplingNarrative(
-    normalizeRichField(doc, { preserveHeadings: true })
+  // Do not graft the 15.1 seed onto an items[] box — that put Duplicate-this-box
+  // and empty outline headings back after the engineer deleted them (upgrade
+  // still runs on legacy `narrative` in docsFromRaw).
+  return collapseCvpEquipmentItem(
+    splitWarpedCvpEquipmentTables(
+      normalizeRichField(doc, { preserveHeadings: true })
+    )
   );
-  // Do not retitle on merge — Duplicate / Add / Remove retitle explicitly.
-  // Auto-renumbering 15.N → 15.1 here made heading suggestions un-locatable.
-  return splitWarpedCvpEquipmentTables(upgraded);
 }
 
 function docsFromRaw(raw: unknown): JSONContent[] {
@@ -246,22 +449,22 @@ export function concatCvpEquipmentItems(content: unknown): JSONContent {
   };
 }
 
-export function duplicateCvpEquipmentItem(
+/** Insert a blank 15.N seed after `afterIndex`. Never copies filled tables. */
+export function insertBlankCvpEquipmentItem(
   items: JSONContent[],
-  sourceIndex: number
+  afterIndex: number
 ): JSONContent[] {
-  const source = items[sourceIndex] ?? cvpEquipmentSamplingSeed(items.length + 1);
+  const at = Math.max(0, Math.min(afterIndex + 1, items.length));
   const next = [
-    ...items.slice(0, sourceIndex + 1),
-    structuredClone(source),
-    ...items.slice(sourceIndex + 1),
+    ...items.slice(0, at),
+    cvpEquipmentSamplingSeed(at + 1),
+    ...items.slice(at),
   ];
   return next.map((doc, index) => retitleCvpEquipmentDoc(doc, index + 1));
 }
 
 export function appendCvpEquipmentItem(items: JSONContent[]): JSONContent[] {
-  const next = [...items, cvpEquipmentSamplingSeed(items.length + 1)];
-  return next.map((doc, index) => retitleCvpEquipmentDoc(doc, index + 1));
+  return insertBlankCvpEquipmentItem(items, items.length - 1);
 }
 
 export function removeCvpEquipmentItem(

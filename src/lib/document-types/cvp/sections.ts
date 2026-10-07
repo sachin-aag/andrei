@@ -10,7 +10,7 @@ import { emptyDoc } from "@/lib/tiptap/rich-text";
  * Prefix every key with `cvp_`: SUGGEST_TARGET_FIELD_PATTERNS is a flat map
  * shared across types. Equipment sampling is `{ items: JSONContent[] }` — one
  * TipTap box per product-contact item, numbered 15.1, 15.2, … (not hardcoded
- * vessel IDs). Duplicate the box to add equipment.
+ * vessel IDs). Add equipment inserts a blank 15.N template.
  */
 export const CVP_FORM_NO = "QAD-SOP-PS-003-F08-00";
 
@@ -356,7 +356,7 @@ export const CVP_EXTRANEOUS_RESULTS_HEADERS = [
 
 /**
  * QAD-SOP-PS-003-F08-00 per-equipment inner outline. Seed uses `15.1`;
- * Duplicate / merge retitle to 15.2, 15.3, …
+ * Add equipment / merge retitle to 15.2, 15.3, …
  */
 export const CVP_EQUIPMENT_H3_OUTLINE = [
   { number: "15.1.1", title: "Equipment details" },
@@ -601,7 +601,7 @@ export function cvpEquipmentSamplingSeed(ordinal = 1): JSONContent {
     content: [
       heading(2, `${n} Equipment name (Equipment No.)`),
       textParagraph(
-        "Duplicate this box for each additional product-contact item in Scope. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, shell height/diameter, BCR, and method numbers from cited CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
+        "Add equipment for each additional product-contact item in Scope — each new box is a blank 15.N template. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, shell height/diameter, BCR, and method numbers from cited CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
       ),
       heading(3, `${n}.1 Equipment details`),
       textParagraph(
@@ -696,12 +696,14 @@ function tableHeaderSignature(table: JSONContent): string {
     .toLowerCase();
 }
 
-function isStockEquipmentInstruction(text: string): boolean {
+export function isStockEquipmentInstruction(text: string): boolean {
   return (
     /insert one heading plus tables/i.test(text) ||
     /repeat this 15\.n block/i.test(text) ||
     /duplicate this box/i.test(text) ||
+    /add equipment for each additional/i.test(text) ||
     /do not paste equipment-train diagrams/i.test(text) ||
+    /do not invent a diagram/i.test(text) ||
     /^Table\s+\d+\./i.test(text)
   );
 }
