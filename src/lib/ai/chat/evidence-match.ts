@@ -86,17 +86,104 @@ function isNegativeSignBefore(haystack: string, index: number): boolean {
 function hasSignedMatch(
   haystack: string,
   re: RegExp,
-  wantNegative: boolean
+  wantNegative: boolean,
+  requiredUnit: string | null = null
 ): boolean {
   re.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(haystack))) {
     if (isNegativeSignBefore(haystack, match.index) === wantNegative) {
-      return true;
+      if (unitAgreesWithFact(haystack, match.index, match[0].length, requiredUnit)) {
+        return true;
+      }
     }
     if (match[0].length === 0) break;
   }
   return false;
+}
+
+/**
+ * Longest-first so L/m² wins over L, mL over L, kg/cm² over g.
+ * Haystacks are already lowercased by normalizeHaystack.
+ */
+const QUANTITY_UNIT_TOKEN =
+  String.raw`(?:l\/m(?:²|2)|kg\/cm(?:²|2)|ms\/cm|us\/cm|µs\/cm|µbar|ubar|mbar|mmhg|ml|µl|ul|cfu|units?|kpa|mpa|ppm|ppb|rpm|khz|lpm|m²|m2|µm|um|mm|cm|nm|hz|pa|psi|torr|bar|kg|mg|µg|ug|(?<![a-z])l(?![a-z])|(?<![a-z])g(?![a-z])|%)`;
+
+function normalizeQuantityUnit(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/µ/g, "u")
+    .replace(/²/g, "2")
+    .replace(/\s+/g, "")
+    .replace(/°/g, "");
+}
+
+/** Unit suffix on a drafted quantity (`5 L`, `3.5 Kg/cm²`). */
+export function quantityUnitFromFact(fact: HardFact): string | null {
+  if (
+    fact.kind !== "number" &&
+    fact.kind !== "duration" &&
+    fact.kind !== "temperature"
+  ) {
+    return null;
+  }
+  const fromText = quantityUnitFromFragment(fact.text);
+  if (fromText) return fromText;
+  return quantityUnitFromFragment(fact.normalized);
+}
+
+function quantityUnitFromFragment(text: string): string | null {
+  const compact = normalizeQuantityUnit(text.replace(/\s+/g, ""));
+  const match = new RegExp(`(?:${QUANTITY_UNIT_TOKEN})$`, "i").exec(compact);
+  return match ? normalizeQuantityUnit(match[0]!) : null;
+}
+
+/**
+ * Unit attached to a matched number: immediately after it, after a
+ * `± 10 RPM` window, at the end of a `5-10 L/m²` / `3 to 5 Kg/cm²` range,
+ * or in a preceding `(L)` header.
+ */
+function unitNearMatch(
+  haystack: string,
+  index: number,
+  matchLength: number
+): string | null {
+  const after = haystack.slice(index + matchLength);
+  const immediate = new RegExp(`^\\s*(${QUANTITY_UNIT_TOKEN})`, "i").exec(after);
+  if (immediate) return normalizeQuantityUnit(immediate[1]!);
+  const plusMinusTail = new RegExp(
+    `^\\s*(?:±|\\+\\/-|\\+-|plus\\s*\\/\\s*minus)\\s*\\d+(?:\\.\\d+)?\\s*(${QUANTITY_UNIT_TOKEN})`,
+    "i"
+  ).exec(after);
+  if (plusMinusTail) return normalizeQuantityUnit(plusMinusTail[1]!);
+  const rangeTail = new RegExp(
+    `^\\s*(?:[-–−]|to)\\s*-?\\s*\\d+(?:\\.\\d+)?\\s*(${QUANTITY_UNIT_TOKEN})`,
+    "i"
+  ).exec(after);
+  if (rangeTail) return normalizeQuantityUnit(rangeTail[1]!);
+  const before = haystack.slice(Math.max(0, index - 48), index);
+  const header = new RegExp(
+    `\\(\\s*(${QUANTITY_UNIT_TOKEN})\\s*\\)\\s*$`,
+    "i"
+  ).exec(before);
+  if (header) return normalizeQuantityUnit(header[1]!);
+  return null;
+}
+
+/**
+ * A draft unit (`5 L`) must not verify against a different page unit
+ * (`5-10 L/m²`). A page that prints the number with no unit (instrument
+ * log `192.4`, `Units filled 10000`) still supports the drafted quantity.
+ */
+function unitAgreesWithFact(
+  haystack: string,
+  index: number,
+  matchLength: number,
+  requiredUnit: string | null
+): boolean {
+  if (!requiredUnit) return true;
+  const found = unitNearMatch(haystack, index, matchLength);
+  return found === null || found === requiredUnit;
 }
 
 /**
@@ -107,8 +194,14 @@ function hasSignedMatch(
  * Integer 1600 matches OCR `1600.0` / `1600.00`, not `1600.5`.
  * A leading minus is part of the number: 15 °C is not evidence for −15 °C.
  * The high end of a range (150 in −20 to 150 °C) is not evidence for 20 °C.
+ * A unit on the draft (`5 L`) must not conflict with a different unit on
+ * the page (`5-10 L/m²`). A missing page unit is allowed (instrument logs).
  */
-function numericNeedlePresent(haystack: string, needle: string): boolean {
+function numericNeedlePresent(
+  haystack: string,
+  needle: string,
+  requiredUnit: string | null = null
+): boolean {
   const n = glueOcrMinusSigns(needle.toLowerCase());
   if (!n) return false;
   const parsed = /^(-)?(\d+(?:\.\d+)?)(.*)$/.exec(n);
@@ -125,7 +218,8 @@ function numericNeedlePresent(haystack: string, needle: string): boolean {
         `(?<![\\d.])${escapeRegExp(whole!)}\\s*\\.\\s*${escapeRegExp(frac!)}(?!\\d)(?!\\.\\d)`,
         "gi"
       ),
-      wantNegative
+      wantNegative,
+      requiredUnit
     );
   }
   if (/^\d+$/.test(digits)) {
@@ -134,12 +228,14 @@ function numericNeedlePresent(haystack: string, needle: string): boolean {
       hasSignedMatch(
         haystack,
         new RegExp(`(?<![\\d.])${escaped}(?!\\d)(?!\\s*\\.\\s*\\d)`, "gi"),
-        wantNegative
+        wantNegative,
+        requiredUnit
       ) ||
       hasSignedMatch(
         haystack,
         new RegExp(`(?<![\\d.])${escaped}\\s*\\.\\s*0+(?!\\d)`, "gi"),
-        wantNegative
+        wantNegative,
+        requiredUnit
       )
     );
   }
@@ -225,6 +321,8 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
         .replace(/\s+/g, " ")
     )
   );
+  const requiredUnit =
+    fact.kind === "number" ? quantityUnitFromFact(fact) : null;
   for (const needle of kindNeedles(fact)) {
     if (!needle) continue;
     if (fact.kind === "identifier") {
@@ -237,7 +335,7 @@ export function evidenceContainsFact(haystack: string, fact: HardFact): boolean 
       fact.kind === "duration" ||
       fact.kind === "temperature"
     ) {
-      if (numericNeedlePresent(numericHay, needle)) return true;
+      if (numericNeedlePresent(numericHay, needle, requiredUnit)) return true;
       continue;
     }
     if (includesNormalized(hay, needle.toLowerCase())) return true;

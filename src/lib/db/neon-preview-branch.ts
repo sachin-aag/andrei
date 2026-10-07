@@ -1,3 +1,8 @@
+import {
+  resolveNeonPreviewProjectIds,
+  type NeonPreviewProject,
+} from "@/lib/db/neon-preview-projects";
+
 const NEON_API_BASE = "https://console.neon.tech/api/v2";
 
 type NeonBranch = {
@@ -122,6 +127,68 @@ export async function deleteNeonPreviewBranchesForGitRef(input: {
   }
 
   return { deleted, missing };
+}
+
+const SKIPPABLE_NEON_STATUS = /\((401|403|404)\)/;
+
+export function isSkippableNeonAccessError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return SKIPPABLE_NEON_STATUS.test(message);
+}
+
+export type NeonPreviewCleanupProjectResult = {
+  label: string;
+  projectId: string;
+  deleted: string[];
+  missing: string[];
+  error?: string;
+  skipped?: boolean;
+};
+
+export async function deleteNeonPreviewBranchesForGitRefOnProjects(input: {
+  gitRef: string;
+  prNumber?: string | number | null;
+  projects?: NeonPreviewProject[];
+}): Promise<{ results: NeonPreviewCleanupProjectResult[] }> {
+  const projects = input.projects ?? resolveNeonPreviewProjectIds();
+  const results: NeonPreviewCleanupProjectResult[] = [];
+
+  for (const project of projects) {
+    try {
+      const { deleted, missing } = await deleteNeonPreviewBranchesForGitRef({
+        gitRef: input.gitRef,
+        prNumber: input.prNumber,
+        projectId: project.id,
+      });
+      results.push({
+        label: project.label,
+        projectId: project.id,
+        deleted,
+        missing,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      results.push({
+        label: project.label,
+        projectId: project.id,
+        deleted: [],
+        missing: [],
+        error: message,
+        skipped: isSkippableNeonAccessError(error),
+      });
+    }
+  }
+
+  return { results };
+}
+
+export function neonPreviewCleanupFailed(
+  results: NeonPreviewCleanupProjectResult[]
+): boolean {
+  if (results.length === 0) return true;
+  if (results.every((result) => result.error)) return true;
+  return results.some((result) => result.error && !result.skipped);
 }
 
 export async function deleteStaleNeonPreviewBranches(input: {

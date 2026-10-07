@@ -67,6 +67,14 @@ import {
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
 import {
+  CALCULATE_MAX_EXPRESSION_CHARS,
+  CALCULATE_MAX_EXPRESSIONS,
+  CALCULATE_TOOL_NAME,
+  calculateExpressions,
+  evidenceFromCalculateBatch,
+  type CalculationEvidence,
+} from "@/lib/ai/chat/calculate";
+import {
   recentAssistantMessageTexts,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
@@ -1584,6 +1592,12 @@ export function buildChatTools(opts: {
     }
     return analysisEvidenceCache;
   };
+  /**
+   * This-turn `calculate` results stand behind the product the same way a
+   * saved analysis stands behind Cp/Cpk. Seeded from this request only —
+   * prior assistant chat is not a keep-source.
+   */
+  const calculationFacts: CalculationEvidence[] = [];
   const sameTurnStated = new Map<string, string>();
   let tablePlaceholderLookupBounced = false;
   let overclaimBounced = false;
@@ -2151,6 +2165,31 @@ export function buildChatTools(opts: {
           suggestions: listed.slice(0, cap),
           note: "open = waiting for Apply/Dismiss (proposed, not landed). resolved = approved. dismissed = rejected. Never say a prior proposal is still waiting unless status is open. Never quote internal ids; name the section and a short preview instead.",
         };
+      },
+    }),
+
+    [CALCULATE_TOOL_NAME]: tool({
+      description:
+        "Evaluate arithmetic (rinse volume SA × RF, MACO PDE × MBS / TDD, √H + 1, considered-volume rounding). Call this before writing a product, quotient, or rounded litre that is not printed on a page. Pass the numbers — no units, no variables. Unicode × ÷ − √ are ok. Then write the display result (or `expression = display` when showing the working). Do not multiply in your head.",
+      inputSchema: z.object({
+        expressions: z
+          .array(
+            z
+              .string()
+              .trim()
+              .min(1)
+              .max(CALCULATE_MAX_EXPRESSION_CHARS)
+          )
+          .min(1)
+          .max(CALCULATE_MAX_EXPRESSIONS)
+          .describe(
+            "Arithmetic expressions, e.g. ['30.96 * 3', '30.96 * 0.2 * 6', 'round(37.152)']. Substitute numbers first; drop units."
+          ),
+      }),
+      execute: async ({ expressions }) => {
+        const batch = calculateExpressions(expressions);
+        calculationFacts.push(...evidenceFromCalculateBatch(batch));
+        return batch;
       },
     }),
 
@@ -2864,6 +2903,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: insertGrounding,
           analyses: analysisFacts,
+          calculations: calculationFacts,
         });
         let groundedSecond = rawSecond
           ? groundDraftText({
@@ -2872,6 +2912,7 @@ export function buildChatTools(opts: {
               policy: unsupportedFactPolicy,
               grounding: insertGrounding,
               analyses: analysisFacts,
+              calculations: calculationFacts,
             })
           : null;
         const leftoverInsert = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
@@ -2897,6 +2938,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: insertGrounding,
             analyses: analysisFacts,
+            calculations: calculationFacts,
           });
           groundedSecond = rawSecond
             ? groundDraftText({
@@ -2905,6 +2947,7 @@ export function buildChatTools(opts: {
                 policy: unsupportedFactPolicy,
                 grounding: insertGrounding,
                 analyses: analysisFacts,
+                calculations: calculationFacts,
               })
             : null;
         }
@@ -4118,6 +4161,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
+          calculations: calculationFacts,
           fieldDoc: captureDoc,
         });
         const tableNeedsRepair =
@@ -4137,6 +4181,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            calculations: calculationFacts,
             fieldDoc: captureDoc,
           });
         }
@@ -4147,6 +4192,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            calculations: calculationFacts,
             clearOptionalOnBlock: true,
             fieldDoc: captureDoc,
           });
@@ -4792,6 +4838,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: draftGrounding,
           analyses: draftAnalysisFacts,
+          calculations: calculationFacts,
         });
         const repair =
           citationGroundingRunsRepair(draftGrounding.mode ?? "strict") &&
@@ -4809,6 +4856,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: draftGrounding,
             analyses: draftAnalysisFacts,
+            calculations: calculationFacts,
           });
         }
         if (groundedDraft.blocked) {

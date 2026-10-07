@@ -533,6 +533,8 @@ describe("pickPlanModeChatTools", () => {
       continue_document_review: { kind: "continue" },
       finish_document_review: { kind: "finish" },
       ask_user: { kind: "ask" },
+      calculate: { kind: "calc" },
+      read_analysis: { kind: "analysis" },
       draft_field: { kind: "draft" },
       propose_edit: { kind: "edit" },
       insert_image: { kind: "image" },
@@ -551,9 +553,12 @@ describe("pickPlanModeChatTools", () => {
         "list_attachments",
         "list_suggestions",
         "ask_user",
+        "calculate",
+        "read_analysis",
       ])
     );
     expect(planTools).toHaveProperty("list_suggestions");
+    expect(planTools).toHaveProperty("calculate");
     expect(planTools).toMatchObject({
       start_document_review: { kind: "start" },
       continue_document_review: { kind: "continue" },
