@@ -53,9 +53,9 @@ export function ReportEditorToolbar() {
   const { activeFieldKey, activeFieldKind, getActiveEditor } = useReportEditors();
   const editor = getActiveEditor();
   useEditorToolbarState(editor);
-  const headingLevels = editorHeadingLevels(
-    getDocumentType(report.documentType)
-  );
+  const headingLevels = report
+    ? editorHeadingLevels(getDocumentType(report.documentType))
+    : false;
 
   const fieldLabel = useMemo(
     () => activeFieldLabel(activeFieldKey),
