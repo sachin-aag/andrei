@@ -584,6 +584,7 @@ describe("buildChatTools tagged sections", () => {
     expect(accepts(tools, "read_section", { section: "control" })).toBe(true);
     expect(tools.read_section?.description).toContain("tagged control");
     expect(tools.read_section?.description).toContain("structuredText");
+    expect(tools.read_section?.description).toContain("$latex$");
   });
 
   it("does not let a tagged section become editable", () => {

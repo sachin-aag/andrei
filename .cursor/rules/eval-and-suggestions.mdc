@@ -38,6 +38,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
   ELR `math.quantity_as_prose` is a deterministic repair: skip the LLM and
   persist a whole-field `ai_redraft` that flattens leftover quantity math.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
+  Equations contribute `$latex$` (or `$equation$` if LaTeX is missing) as
+  locatable atoms; overlapping deletes paint the whole equation.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
   frozen span. If merge reports identity but the stored delete/insert still

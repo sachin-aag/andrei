@@ -700,7 +700,7 @@ describe("groundTableOperation", () => {
     expect(result.blocked).toBe(true);
     expect(result.operation).toMatchObject({
       kind: "edit_cells",
-      cells: [{ insertText: "<identifier> [PQR-24-PR-102.pdf, p. 2]" }],
+      cells: [{ insertText: "<identifier>" }],
     });
   });
 
@@ -867,6 +867,96 @@ describe("groundTableOperation", () => {
     expect(result.text).toContain("5,000");
     expect(result.text).toContain("[PQR-24-PR-102.pdf, p. 8]");
     expect(result.text).not.toContain("[Planner.pdf, p. 22]");
+  });
+
+  it("strips a coincidental Stage-4 protocol cite from a 5 L GMP rinse floor", () => {
+    const protocol =
+      "CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol.docx";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 1,
+        cells: [
+          {
+            row: 8,
+            col: 7,
+            rowKey: "MF-1301",
+            rowContext: "Micron Filter MF-1301 10\" 0.14 m²",
+            insertText: `5 L [${protocol}, p. 3]`,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: protocol,
+          pageNumber: 3,
+          attachmentId: "att-cvp",
+          quote:
+            "Rinse Factor RF = 3L/m². Solvent Adherence Factor SAF. Table 7 WAF ranges 1–3 L/m², 3–5 L/m², 5-10 L/m².",
+        },
+        {
+          filename: protocol,
+          pageNumber: 1,
+          attachmentId: "att-cvp",
+          quote:
+            "Plug Flow Reactor PFR-1301 (5 L HAS). Micron Filter MF-1301 size 10\".",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "cvp_rinse_volume",
+        tableColumnLabel: "Considered volume",
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("5 L");
+    expect(cell).not.toContain("<number>");
+    expect(cell).not.toContain(protocol);
+    expect(cell).not.toMatch(/\[\d+\]/);
+  });
+
+  it("keeps the cite when the page prints that considered rinse volume", () => {
+    const protocol =
+      "CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol.docx";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 1,
+        cells: [
+          {
+            row: 8,
+            col: 7,
+            rowKey: "MF-1301",
+            insertText: `5 L [${protocol}, p. 4]`,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: protocol,
+          pageNumber: 4,
+          attachmentId: "att-cvp",
+          quote:
+            "MF-1301 micron filter considered rinse volume 5 L to flood the 10 inch housing.",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "cvp_rinse_volume",
+        tableColumnLabel: "Considered volume",
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("5 L");
+    expect(cell).toContain(`[${protocol}, p. 4]`);
   });
 });
 

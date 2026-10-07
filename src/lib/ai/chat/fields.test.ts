@@ -178,6 +178,33 @@ describe("sectionFieldForChat", () => {
     expect(chat.structuredText).toContain("tableIndex=0");
     expect(chat.structuredText).toContain("[1,0] mm");
   });
+
+  it("surfaces $latex$ in text and readingText so read_section can quote equations", () => {
+    const latex = String.raw`\frac{MACO}{A}`;
+    const chat = sectionFieldForChat(
+      {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Limit " },
+                { type: "mathInline", attrs: { latex } },
+                { type: "text", text: " mg/m²." },
+              ],
+            },
+          ],
+        },
+      },
+      "define",
+      "narrative",
+      []
+    );
+    expect(chat.text).toBe(String.raw`Limit $\frac{MACO}{A}$ mg/m².`);
+    expect(chat.readingText).toBe(chat.text);
+    expect(chat.text).not.toContain("[equation]");
+  });
 });
 
 describe("listFieldTables", () => {

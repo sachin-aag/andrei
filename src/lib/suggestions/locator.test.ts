@@ -42,8 +42,7 @@ describe("locator — flattenForAnchor", () => {
     const { text } = flattenForAnchor(doc);
     expect(text).not.toContain("[equation]");
     expect(text).not.toContain("[image]");
-    // Atom contributes one space; surrounding text may already have spaces.
-    expect(text.replace(/\s+/g, " ").trim()).toBe("See for the assay.");
+    expect(text).toBe("See $x=1$ for the assay.");
   });
 
   it("emits no markdown pipes for tables", () => {
@@ -177,10 +176,9 @@ describe("locator — locateEdit / probe", () => {
       insertText: " (Eq. 1)",
     };
     expect(probeRichEdit(doc, edit)).toBe("not_found");
-    // Canonical anchor (whitespace for atom) does locate:
     expect(
       probeRichEdit(doc, {
-        anchorText: "See  for",
+        anchorText: "See $equation$ for",
         deleteText: "",
         insertText: " (Eq. 1)",
       })

@@ -110,6 +110,11 @@ describe("instrument quantities", () => {
     expect(kinds("2 hours later")).toContainEqual(["duration", "2 hours"]);
   });
 
+  it("keeps L/m² as a compound unit instead of bare L", () => {
+    expect(kinds("WAF 5 L/m²")).toContainEqual(["number", "5 L/m²"]);
+    expect(kinds("WAF 5 L/m²").map((row) => row[1])).not.toContain("5 L");
+  });
+
   it("sees a kg/cm² operating-range pressure", () => {
     expect(kinds("Full Vacuum to 3.5 kg/cm²")).toContainEqual([
       "number",

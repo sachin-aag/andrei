@@ -9,6 +9,7 @@
 
 import type { DocumentType, SectionType } from "@/db/schema";
 import { extractHardFacts, type HardFact } from "@/lib/ai/chat/claim-facts";
+import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { factSupportedByHaystack } from "@/lib/ai/chat/fact-support";
 import { contextForPrompt } from "@/lib/ai/section-context";
 import { allIdentityMetadataKeys } from "@/lib/ai/chat/identity";
@@ -360,4 +361,67 @@ export function shouldKeepUnsupportedFact(
   if (isExplicitInsertRequest(source.latestUserMessageText ?? "")) return true;
   const haystack = conversationFactHaystack(source);
   return factSupportedByHaystack(haystack, fact);
+}
+
+/**
+ * Considered rinse volume / sample quantity may be a GMP operational floor
+ * (minimum to flood a filter housing) rather than a copied attachment number.
+ * RF/SAF calculated columns stay gated.
+ */
+export function isOperationalVolumeColumnLabel(
+  columnLabel: string | null | undefined
+): boolean {
+  const n = (columnLabel ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!n) return false;
+  if (/\b(?:rf|saf)\b/.test(n) || /sa\s*[×x]/.test(n)) return false;
+  if (/\bconsidered volume\b/.test(n)) return true;
+  if (/\brinse sample quantity\b/.test(n)) return true;
+  if (n === "rinse volume" || n === "rinse volume (l)") return true;
+  return false;
+}
+
+/** Unsourced considered-volume numbers persist without a citation. */
+export function shouldKeepOperationalVolume(
+  fact: HardFact,
+  columnLabel?: string
+): boolean {
+  if (fact.kind !== "number") return false;
+  return isOperationalVolumeColumnLabel(columnLabel);
+}
+
+const CAPACITY_VOLUME_HINT =
+  /\b(?:capacity|working volume|hold(?:ing)? volume)\b|\bhas\b/i;
+const RINSE_VOLUME_HINT =
+  /\b(?:rinse|considered volume|sample quantity|flood)\b/i;
+
+/**
+ * Considered/rinse volume cells must not verify against equipment capacity
+ * (`PFR-1301 (5 L HAS)`). Capacity columns may still use a unit match.
+ */
+export function volumeSupportedForColumn(
+  quote: string,
+  fact: HardFact,
+  columnLabel: string
+): boolean | null {
+  if (fact.kind !== "number") return null;
+  const operational = isOperationalVolumeColumnLabel(columnLabel);
+  const capacityCol = /\bcapacity\b/i.test(columnLabel);
+  if (!operational && !capacityCol) return null;
+  const present = evidenceContainsFact(quote, fact);
+  if (operational) {
+    if (!present) return false;
+    if (RINSE_VOLUME_HINT.test(quote)) return true;
+    return false;
+  }
+  if (capacityCol) {
+    if (!present) return false;
+    if (CAPACITY_VOLUME_HINT.test(quote) && !RINSE_VOLUME_HINT.test(quote)) {
+      return true;
+    }
+    if (RINSE_VOLUME_HINT.test(quote) && !CAPACITY_VOLUME_HINT.test(quote)) {
+      return false;
+    }
+    return present;
+  }
+  return null;
 }

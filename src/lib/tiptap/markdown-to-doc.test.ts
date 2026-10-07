@@ -487,6 +487,16 @@ describe("markdownToDoc", () => {
     ]);
   });
 
+  it("applies a pending suggestion mark onto a real equation atom", () => {
+    const nodes = inlineMarkdownToTextNodes(
+      String.raw`Limit $\frac{MACO}{A}$ mg/m².`,
+      [{ type: "suggestionInsert", attrs: { id: "sug-1" } }]
+    );
+    const math = nodes.find((node) => node.type === "mathInline");
+    expect(math?.attrs?.latex).toBe(String.raw`\frac{MACO}{A}`);
+    expect(math?.marks?.map((mark) => mark.type)).toEqual(["suggestionInsert"]);
+  });
+
   it("keeps SOP bold when a pending suggestion mark is also applied", () => {
     const nodes = inlineMarkdownToTextNodes(
       "pursuant to **SOP/DP/QA/007**.",

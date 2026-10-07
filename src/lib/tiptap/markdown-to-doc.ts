@@ -132,11 +132,16 @@ function textNode(text: string, marks: JSONContent["marks"] | undefined): JSONCo
   return marks?.length ? { type: "text", text, marks } : { type: "text", text };
 }
 
-function mathInlineNode(latex: string): JSONContent {
-  return {
+function mathInlineNode(
+  latex: string,
+  extraMarks?: JSONContent["marks"]
+): JSONContent {
+  const node: JSONContent = {
     type: "mathInline",
     attrs: { mathml: "", latex, omml: null, ommlDirty: true },
   };
+  if (extraMarks?.length) node.marks = extraMarks;
+  return node;
 }
 
 function latexToInlineNodes(
@@ -147,7 +152,7 @@ function latexToInlineNodes(
   if (simple) return simple;
   const quantity = quantityLatexToTextNodes(latex, extraMarks);
   if (quantity) return quantity;
-  return [mathInlineNode(latex)];
+  return [mathInlineNode(latex, extraMarks)];
 }
 
 function shouldConvertDollarInner(inner: string): boolean {

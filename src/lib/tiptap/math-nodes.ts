@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MathNodeView } from "@/components/report/tiptap/math-node-view";
+import { MATH_ATOM_ALLOWED_MARKS } from "@/lib/tiptap/math-anchor";
 
 export type MathNodeAttrs = {
   mathml: string;
@@ -40,6 +41,7 @@ function createMathNode(name: "mathInline" | "mathBlock", display: "inline" | "b
     atom: true,
     selectable: true,
     draggable: true,
+    marks: MATH_ATOM_ALLOWED_MARKS,
     addAttributes() {
       return sharedMathAttrs;
     },
