@@ -13,6 +13,8 @@ import {
   getPasswordPolicy,
 } from "@/lib/auth/password-policy";
 import { scheduleExternalLoginAlert } from "@/lib/auth/external-login-alert";
+import { resolveResendFromAddress } from "@/lib/auth/resend-email";
+import { sendMagicLinkVerificationRequest } from "@/lib/auth/send-magic-link-email";
 import {
   clearFailedLoginAttempts,
   findWorkspaceUserForLogin,
@@ -43,7 +45,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   }),
   providers: [
     Resend({
-      from: process.env.AUTH_EMAIL_FROM ?? "noreply@andreihealth.com",
+      from: resolveResendFromAddress(),
+      sendVerificationRequest: sendMagicLinkVerificationRequest,
     }),
     Credentials({
       credentials: {
