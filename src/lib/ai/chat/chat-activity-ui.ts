@@ -917,6 +917,32 @@ function buildGenericNode(info: ChatToolPartInfo): ActivitySurfaceNode {
       children: [],
     };
   }
+  if (info.toolName === "calculate") {
+    const pending = isToolPending(info);
+    const results = Array.isArray(info.output?.results)
+      ? info.output.results
+      : [];
+    const okCount = results.filter(
+      (row) => row && typeof row === "object" && (row as { ok?: unknown }).ok === true
+    ).length;
+    const expressions = Array.isArray(info.input?.expressions)
+      ? info.input.expressions.length
+      : results.length;
+    return {
+      kind: "generic",
+      label: pending
+        ? "Calculating…"
+        : okCount > 0
+          ? `Calculated ${okCount} value${okCount === 1 ? "" : "s"}`
+          : expressions > 0
+            ? "Calculation failed"
+            : "Calculated",
+      pending,
+      tone: pending || okCount > 0 ? "muted" : "warn",
+      expandable: false,
+      children: [],
+    };
+  }
   if (info.toolName === "read_analysis") {
     const pending = isToolPending(info);
     const single = typeof info.input?.analysisId === "string";

@@ -604,4 +604,33 @@ describe("readChatToolPart", () => {
     if (done[0]?.kind !== "activity") return;
     expect(done[0].node.label).toBe("Checked suggestions (2 open)");
   });
+
+  it("names calculate while pending and after results land", () => {
+    const pending = buildChatActivityBlocks([
+      toolPart("calculate", "input-available", {
+        expressions: ["30.96 * 3"],
+      }),
+    ] as never);
+    expect(pending).toHaveLength(1);
+    if (pending[0]?.kind !== "activity") return;
+    expect(pending[0].node.label).toBe("Calculating…");
+
+    const done = buildChatActivityBlocks([
+      toolPart(
+        "calculate",
+        "output-available",
+        { expressions: ["30.96 * 3", "30.96 * 0.2 * 6"] },
+        {
+          status: "ok",
+          results: [
+            { ok: true, display: "92.88" },
+            { ok: true, display: "37.152" },
+          ],
+        }
+      ),
+    ] as never);
+    expect(done).toHaveLength(1);
+    if (done[0]?.kind !== "activity") return;
+    expect(done[0].node.label).toBe("Calculated 2 values");
+  });
 });

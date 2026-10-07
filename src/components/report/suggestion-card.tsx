@@ -160,9 +160,13 @@ function SuggestionTraceability({
   // the analysis so the reader can check the derivation, not just the paper.
   const computedTitles = [
     ...new Set(
-      provenance.claims
-        .map((claim) => claim.analysis?.title?.trim())
-        .filter((title): title is string => Boolean(title))
+      provenance.claims.flatMap((claim) => {
+        const analysis = claim.analysis?.title?.trim();
+        if (analysis) return [analysis];
+        const expression = claim.calculation?.expression?.trim();
+        if (expression) return [`calculate (${expression})`];
+        return [];
+      })
     ),
   ];
   return (

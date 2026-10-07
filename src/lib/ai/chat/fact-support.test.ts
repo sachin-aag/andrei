@@ -147,4 +147,50 @@ describe("collectAskEvidence", () => {
     const fact = areaFact();
     expect(classifyLookupFactSupport(fact, evidence)).toBe("report");
   });
+
+  it("keeps a calculate product as computed evidence", () => {
+    const ledger = new CitationPageLedger();
+    ledger.record("cpdr.pdf", 8, "att-1", {
+      quote: "Internal surface area 30.96 m². RF = 3.",
+    });
+    const messages: UIMessage[] = [
+      {
+        id: "u1",
+        role: "user",
+        parts: [{ type: "text", text: "what is 30.96 × 3?" }],
+      },
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-calculate",
+            toolCallId: "c1",
+            state: "output-available",
+            input: { expressions: ["30.96 * 3"] },
+            output: {
+              status: "ok",
+              results: [
+                {
+                  ok: true,
+                  expression: "30.96 * 3",
+                  result: 92.88,
+                  display: "92.88",
+                  rounded: 93,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const evidence = collectAskEvidence({ messages, ledger });
+    const product = extractHardFacts("92.88 L")[0]!;
+    expect(classifyLookupFactSupport(product, evidence)).toBe("computed");
+    expect(shouldKeepAskFact(product, evidence)).toBe(true);
+    const operand = extractHardFacts("30.96 m²")[0]!;
+    expect(classifyLookupFactSupport(operand, evidence)).toBe("quote");
+    const invented = extractHardFacts("999 L")[0]!;
+    expect(shouldKeepAskFact(invented, evidence)).toBe(false);
+  });
 });

@@ -32,6 +32,7 @@ const READ_AFTER_SEARCH_TOOLS = [
   "ask_user",
   "read_worksheet",
   "extract_numeric_series",
+  "calculate",
 ] as const;
 
 const WRITE_AFTER_SEARCH_TOOLS = [
