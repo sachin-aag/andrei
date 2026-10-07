@@ -15,6 +15,12 @@ import {
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { latestUserMessageText } from "@/lib/ai/chat/insert-image";
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
+import {
+  CALCULATE_TOOL_NAME,
+  calculationEvidenceFromToolOutput,
+  calculationSupportingFact,
+  type CalculationEvidence,
+} from "@/lib/ai/chat/calculate";
 
 const REPORT_LOOKUP_TOOLS = new Set(["read_section", "read_worksheet"]);
 const ATTACHMENT_EXTRACT_TOOLS = new Set([
@@ -29,9 +35,16 @@ export type LookupEvidence = {
   reportHaystack: string;
   /** Latest user message — engineer-stated facts. */
   userHaystack: string;
+  /** This-turn `calculate` products (not operands). */
+  calculations?: readonly CalculationEvidence[];
 };
 
-export type LookupFactSupport = "quote" | "report" | "user" | "none";
+export type LookupFactSupport =
+  | "quote"
+  | "report"
+  | "user"
+  | "computed"
+  | "none";
 
 /** True when served page / extract text supports this hard fact. */
 export function factSupportedByQuote(quote: string, fact: HardFact): boolean {
@@ -64,6 +77,9 @@ export function classifyLookupFactSupport(
   if (attachmentQuotesSupportFact(evidence.quotes, fact)) return "quote";
   if (factSupportedByHaystack(evidence.userHaystack, fact)) return "user";
   if (factSupportedByHaystack(evidence.reportHaystack, fact)) return "report";
+  if (calculationSupportingFact(fact, evidence.calculations ?? [])) {
+    return "computed";
+  }
   return "none";
 }
 
@@ -75,6 +91,7 @@ export function factHasAttachmentCite(fact: HardFact): boolean {
 
 export function lookupEvidenceWasCollected(evidence: LookupEvidence): boolean {
   if (evidence.reportHaystack.trim()) return true;
+  if ((evidence.calculations ?? []).length > 0) return true;
   return evidence.quotes.some((quote) => quote.trim().length > 0);
 }
 
@@ -89,7 +106,12 @@ export function shouldKeepAskFact(
   evidence: LookupEvidence
 ): boolean {
   const support = classifyLookupFactSupport(fact, evidence);
-  if (support === "quote" || support === "user" || support === "report") {
+  if (
+    support === "quote" ||
+    support === "user" ||
+    support === "report" ||
+    support === "computed"
+  ) {
     return true;
   }
   if (factHasAttachmentCite(fact)) return false;
@@ -107,11 +129,18 @@ export function collectAskEvidence(input: {
     if (page.quote.trim()) quotes.push(page.quote);
   }
   const reportParts: string[] = [];
+  const calculations: CalculationEvidence[] = [];
   for (const message of input.messages) {
     for (const part of message.parts ?? []) {
       const name = toolNameFromPart(part);
       if (!name) continue;
       const output = toolOutputFromPart(part);
+      if (name === CALCULATE_TOOL_NAME) {
+        calculations.push(
+          ...calculationEvidenceFromToolOutput(unwrapToolOutput(output))
+        );
+        continue;
+      }
       if (REPORT_LOOKUP_TOOLS.has(name)) {
         reportParts.push(...stringsFromReportLookup(output));
         continue;
@@ -126,6 +155,7 @@ export function collectAskEvidence(input: {
     reportHaystack: reportParts.join("\n"),
     userHaystack:
       input.userHaystack ?? latestUserMessageText(input.messages),
+    calculations,
   };
 }
 
@@ -189,5 +219,6 @@ export function evidenceFromLedger(
       .filter((quote) => quote.trim().length > 0),
     reportHaystack: extras?.reportHaystack ?? "",
     userHaystack: extras?.userHaystack ?? "",
+    calculations: [],
   };
 }

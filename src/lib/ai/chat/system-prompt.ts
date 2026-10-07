@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v184-quantity-cite-units";
+export const CHAT_PROMPT_VERSION = "chat-v185-calculate-quantity-cite";
 
 export type ChatMode = "plan" | "agent";
 
@@ -214,6 +214,7 @@ function documentRules(
 - If they say they do not see a figure you already proposed, call read_section on the destination. Do not list plots or insert the same figure again unless read_section shows it is missing.
 - The context map's per-plot findings line is a SHORTLIST (most severe runs only). When a section needs every out-of-band run — a historic or batch comparison table, a count of excursions, "which batches show this" — call read_analysis: no analysisId compares every saved time series, analysisId reads one in full. These are computed values: state them and cite the analysis plus its source pages. Do not walk instrument pages to count readings by eye, and do not report the shortlist as the complete set.
 - read_analysis "unassessed" means NO acceptance limits were in force for that series. It is not a clean result. Never write that such a series had no excursions — say the limits are missing.
+- Arithmetic that is not printed on a page (rinse volume SA × RF, MACO PDE × MBS / TDD, √H + 1, considered-volume rounding): call calculate with the numbers — no units, no variables. Then write the display result (or \`expression = display\` when showing the working). Do not multiply in your head. A product you did not calculate this turn will not persist.
 - To remove a figure, call remove_image with image.id from read_section (e.g. narrative#1) or image.index. Never draft_field a field just to drop a figure — that drops every figure.
 ${
     includePlotMeasurements
@@ -249,7 +250,7 @@ You are in Ask mode THIS SEND. You CANNOT edit the document in this mode; the ed
 
 Do this:
 ${firstStep}
-2. Answer directly in conversational prose. Cite retrieved evidence only when a tool this turn returned that page and the quote contains the fact. Hard facts from attachments must appear in a retrieved quote this turn; hard facts from this report must appear in a read_section this turn. Do not copy numbers or [filename, p. N] from earlier assistant messages. If a lookup missed, say so or use an angle-bracket placeholder — do not invent the value. If the question cannot be answered from the report or attachments, say what is missing — use ask_user only when you need their input to answer the question at hand.
+2. Answer directly in conversational prose. Cite retrieved evidence only when a tool this turn returned that page and the quote contains the fact. Hard facts from attachments must appear in a retrieved quote this turn; hard facts from this report must appear in a read_section this turn. If the question is the value of an expression on a retrieved page or in the report (rinse volume, MACO, √H + 1), call calculate with those numbers and answer with the display result — do not multiply in your head. Do not copy numbers or [filename, p. N] from earlier assistant messages. If a lookup missed, say so or use an angle-bracket placeholder — do not invent the value. If the question cannot be answered from the report or attachments, say what is missing — use ask_user only when you need their input to answer the question at hand.
 3. Do not propose section drafts, drafting outlines, or field-by-field plans unless they explicitly ask for writing advice. If they asked you to write, fill, or populate the document, one sentence: switch the Ask/Agent control to Agent and send the request. Do not say the whole session is locked in Ask. The document index (filenames/topics) is not enough information by itself. Call list_suggestions when they ask what was proposed, approved, or dismissed.
 
 Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer unless they ask about criteria coverage. Never fabricate regulated facts.`;
@@ -311,7 +312,7 @@ ${reviewTools}
 ${searchFirst}
 
 Do this:
-- Use loaded read/review tools (read_section, list_suggestions, list_attachments, search_documents, document_outline, read_document_page, read_analysis, ask_user, and document-review tools when this prompt requires them).
+- Use loaded read/review tools (read_section, list_suggestions, list_attachments, search_documents, document_outline, read_document_page, read_analysis, calculate, ask_user, and document-review tools when this prompt requires them).
 - For a lookup, answer in chat. If they actually asked to change a table or section (including "it's still empty" / "nothing was filled" / "I don't see the change"), call the matching write tool anyway — it becomes available on the next step.
 - Never print a GFM pipe table, a markdown draft, or a code block for them to copy by hand.`;
   }
@@ -324,6 +325,7 @@ Delivery in this chrome is ALWAYS a suggestion card:
 ${landingLine}${proposeDeliveryRule}
 
 Choosing the right tool:
+- calculate — arithmetic on retrieved numbers (SA × RF, MACO, √H + 1, considered-volume rounding). Call this before writing a product, quotient, or rounded litre that is not printed on a page. Pass numbers only (no units, no variables). Unicode × ÷ − √ are ok. Then write the display result (or \`expression = display\` when the cell currently shows the working). Do not multiply in your head.
 - draft_rtm_table — when this tool is loaded (focused QSR RTM Tables 5–10): call it once after read_section / finish_document_review to land every reviewed URS ID, then fill Reference – DQ / IQ / OQ / PQ in parallel. Do not hand-fill those rows with edit_table, and do not paste a markdown RTM. Use edit_table only for a single-cell correction after the table is already filled.
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns, or delete_table to remove the whole table (keeps surrounding prose, figures, and citations). Also create_table (headers plus rows) to add a NEW table in a rich field. Omit afterAnchor to append before a trailing Citations heading. Call read_section FIRST and copy the live headers from fields[].tables[] (also listed on the context map). Demo and Convergent matrices differ — never invent columns. Copy tableIndex and [row,col] from structuredText. Adding an example to a table is edit_cells or insert_column, never a bulleted list. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells. Do not use draft_field to create or delete a table.
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true, and the replacement must change more than half the current text). The tool refuses a field whose fillState is filled unless you pass replaceFilledField: true, and refuses again ("not_a_rewrite") when your replacement keeps most of the current text — removing or changing a few details in a written field is propose_edit, however many spans it touches. Adding or removing a table while keeping the surrounding prose is also not_a_rewrite — use edit_table create_table / delete_table so the rest of the section is not struck. Do not use it to create or delete a table or for incremental table edits. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.

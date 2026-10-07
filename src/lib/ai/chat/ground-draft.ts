@@ -36,6 +36,10 @@ import {
   analysisSupportingFact,
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
+import {
+  calculationSupportingFact,
+  type CalculationEvidence,
+} from "@/lib/ai/chat/calculate";
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
   isExemptFrameFact,
@@ -253,6 +257,7 @@ function resolveFact(
     sentence: string;
     context?: string;
     analyses?: readonly AnalysisEvidence[];
+    calculations?: readonly CalculationEvidence[];
     section?: string;
     columnLabel?: string;
     presenceFallback?: boolean;
@@ -404,6 +409,23 @@ function resolveFact(
         title: backing.title,
         pages: backing.pages,
       },
+    };
+  }
+
+  // Same argument as analyses: a product the calculate tool just returned is
+  // derivable, not invented. Operands still have to sit on a retrieved page.
+  const calculated = calculationSupportingFact(
+    fact,
+    extras.calculations ?? []
+  );
+  if (calculated) {
+    return {
+      text: fact.text,
+      kind: fact.kind,
+      status: "verified",
+      cited: cited[0] ?? null,
+      source: null,
+      calculation: { expression: calculated.expression },
     };
   }
 
@@ -653,6 +675,8 @@ export function groundDraftText(input: {
   context?: string;
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
+  /** This-turn `calculate` results whose products count as evidence. */
+  calculations?: readonly CalculationEvidence[];
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
@@ -712,6 +736,7 @@ export function groundDraftText(input: {
       sentence: sentenceAround(cited, fact.start, fact.end),
       context: input.context,
       analyses: input.analyses,
+      calculations: input.calculations,
       section: input.grounding?.section,
       columnLabel: resolveTableColumnLabel({
         section: input.grounding?.section,
@@ -779,11 +804,16 @@ export function groundDraftText(input: {
 
   // A verified fact with no source is a frame exemption — identity, a date
   // bound, something already in the report — and has nothing to trace. One
-  // backed by a saved analysis does: Traceability shows the analysis and the
-  // pages its rows came from.
+  // backed by a saved analysis or this-turn calculate does: Traceability
+  // shows the derivation.
   const provenanceClaims = records.filter(
     (record) =>
-      !(record.status === "verified" && !record.source && !record.analysis)
+      !(
+        record.status === "verified" &&
+        !record.source &&
+        !record.analysis &&
+        !record.calculation
+      )
   );
 
   const dropReason: GroundDropReason | undefined = !blocked
@@ -809,6 +839,8 @@ export function groundTableOperation(input: {
   grounding?: GroundDraftGrounding;
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
+  /** This-turn `calculate` results whose products count as evidence. */
+  calculations?: readonly CalculationEvidence[];
   /**
    * After repair, empty unsupported RTM family / Remarks cells
    * instead of blocking the URS copy.
@@ -928,6 +960,7 @@ export function groundTableOperation(input: {
       },
       context,
       analyses: input.analyses,
+      calculations: input.calculations,
     });
     const clearOptional =
       Boolean(input.clearOptionalOnBlock) &&

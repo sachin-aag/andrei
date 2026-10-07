@@ -119,6 +119,7 @@ export const ANALYTICS_DOCUMENT_TOOL_NAMES = [
   "read_document_page",
   "document_outline",
   "ask_user",
+  "calculate",
 ] as const;
 
 export const ANALYTICS_CHAT_READ_TOOL_NAMES = [
