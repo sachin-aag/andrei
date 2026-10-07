@@ -18,7 +18,7 @@ Do generate:
 Standard pieces:
 - Responsibilities: keep the seeded department rows; do not invent new functions. Fill only if a cited SOP names a different owner.
 - WAF table (9.0): keep the four surface-type rows (polished SS, rough SS, glass lined, PTFE/Halar) unless a cited page prints different factors.
-- Rinse Volume (L) = Surface Area (m²) × Rinse Factor (L/m²). Copy RF, SAF, SF, considered volume, and sample quantity from a cited page. The SAF formula is SA × SAF × SF.
+- Rinse Volume (L) = Surface Area (m²) × Rinse Factor (L/m²). Copy RF, SAF, and SF from a cited page. The SAF formula is SA × SAF × SF. Considered volume and rinse sample quantity may be a GMP operational floor (minimum to flood a 10" filter housing or vessel) when the calculated RF/SAF volume is too small to sample — write that floor without a citation. Do not cite a methodology page, WAF ranges in L/m², or an equipment capacity (PFR-1301 5 L HAS) as the source of a considered rinse volume.
 - Health-based MACO = PDE × MBS / TDD; general-limit MACO = MBS × MAXCONC; use the lower value. PDE and TDD come from cited annexures, not from the product name.
 - Swab locations: copy n = √H + 1 (H = shell height in m, round up). Diameter ≤ 1 m → 0° and 180°; > 1 m → 0°, 90°, 180°, 270°. Mandatory reactor locations: top dish, bottom dish, manhole, agitator, discharge valve.
 - 15.1 Equipment sampling: one heading Name (Equipment No.) per Scope product-contact item, then the identity / documents / locations / dimensions / rationale / cleaning-parameter / results tables. Do not hardcode MV-1304 — copy each ID from Scope or the attached P&ID / CPDR.

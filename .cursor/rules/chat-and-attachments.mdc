@@ -265,7 +265,14 @@ the facts are still missing. Table leftovers bounce once
 fill the cell; a retry in the same turn may persist leftover `<date>` /
 `<identifier>` / `<number>`, but other leftover `<…>` cells are dropped
 instead of persisting `<remarks>` / `<result>`. Uncited
-numbers do not `citation_move` onto a coincidental ledger page. Analytics
+numbers do not `citation_move` onto a coincidental ledger page. A cited
+number does not move onto another page of the same file just because the
+digits appear there (PFR-1301 5 L HAS is not a rinse volume). A drafted
+unit must not conflict with a different page unit (`5 L` is not
+`5-10 L/m²`); a page that prints the number with no unit still supports
+it. Unsupported citations next to the number are stripped. CVP considered
+volume / rinse sample quantity may persist uncited as a GMP operational
+floor. Analytics
 `write_column` stays ungated.
 
 ## Spectrum
