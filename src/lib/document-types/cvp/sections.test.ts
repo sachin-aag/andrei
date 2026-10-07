@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { getDocumentType } from "@/lib/document-types";
+import { CVP_DRAFTING_GUIDANCE } from "./drafting-guidance";
 import {
   insertBlankCvpEquipmentItem,
   normalizeCvpEquipmentSamplingContent,
@@ -128,7 +129,7 @@ describe("cleaning verification protocol sections", () => {
     expect(text).not.toMatch(/Cvp Equipment Sampling/);
   });
 
-  it("seeds one 15.1 equipment sampling box with H2–H4 outline headings", () => {
+  it("seeds one 15.1 box with only the identity table so draft_field can fill the rest", () => {
     const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
     expect(seed).toHaveProperty("items");
     const nodes =
@@ -139,24 +140,17 @@ describe("cleaning verification protocol sections", () => {
         level: node.attrs?.level,
         text: node.content?.[0]?.text,
       }));
-    expect(headings[0]).toEqual({
-      level: 2,
-      text: "15.1 Equipment name (Equipment No.)",
-    });
-    expect(headings).toContainEqual({
-      level: 3,
-      text: "15.1.1 Equipment details",
-    });
-    expect(headings).toContainEqual({
-      level: 4,
-      text: "15.1.3.1 Worst-case locations",
-    });
-    expect(headings.map((h) => h.text)).toEqual(
-      expect.arrayContaining([
-        ...CVP_EQUIPMENT_H3_OUTLINE.map((item) => `${item.number} ${item.title}`),
-        ...CVP_EQUIPMENT_H4_OUTLINE.map((item) => `${item.number} ${item.title}`),
-      ])
-    );
+    const tables = nodes.filter((node) => node.type === "table");
+    expect(headings).toEqual([
+      { level: 2, text: "15.1 Equipment name (Equipment No.)" },
+      { level: 3, text: "15.1.1 Equipment details" },
+    ]);
+    expect(tables).toHaveLength(1);
+    expect(JSON.stringify(tables[0])).toContain("Capacity");
+    expect(JSON.stringify(tables[0])).not.toContain("Shell height");
+    expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.3.1");
+    expect(CVP_EQUIPMENT_H3_OUTLINE).toHaveLength(8);
+    expect(CVP_EQUIPMENT_H4_OUTLINE[0]?.title).toBe("Worst-case locations");
   });
 
   it("upgrades a lumped identity table into the 15.N.M outline", () => {
@@ -339,6 +333,62 @@ describe("cleaning verification protocol sections", () => {
       (node) => node.type === "heading" && Number(node.attrs?.level) === 2
     );
     expect(JSON.stringify(newH2)).toContain("15.2 Equipment name (Equipment No.)");
+  });
+
+  it("restores flattened 15.N outline paragraphs as headings and renumbers by box", () => {
+    const flatten = (doc: JSONContent): JSONContent => ({
+      ...doc,
+      content: (doc.content ?? []).map((node) =>
+        node.type === "heading"
+          ? {
+              type: "paragraph",
+              content: (node.content ?? []).map((t) => ({
+                ...t,
+                marks: [{ type: "bold" }],
+              })),
+            }
+          : node
+      ),
+    });
+    const { items } = normalizeCvpEquipmentSamplingContent({
+      items: [flatten(cvpEquipmentSamplingSeed(2)), flatten(cvpEquipmentSamplingSeed(2))],
+    });
+    const headings = items.map((item) =>
+      (item.content ?? [])
+        .filter((node) => node.type === "heading")
+        .map((node) => [
+          Number(node.attrs?.level),
+          (node.content ?? []).map((t) => t.text ?? "").join(""),
+        ])
+    );
+    expect(headings[0]?.[0]).toEqual([2, "15.1 Equipment name (Equipment No.)"]);
+    expect(headings[0]).toContainEqual([3, "15.1.1 Equipment details"]);
+    expect(headings[1]?.[0]).toEqual([2, "15.2 Equipment name (Equipment No.)"]);
+    expect(headings[1]).toContainEqual([3, "15.2.1 Equipment details"]);
+  });
+
+  it("tells Agent that 15.N is a protocol with blank results and equipment-type outlines", () => {
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "Equipment sampling (15.1, 15.2, …) is a **protocol**, not a report"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "Subsections are **not identical for every item**"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("No-swab item");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("**Results stay empty.**");
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "It shall be written in the cleaning verification report."
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "The empty box seeds **only** H2 + 15.N.1 identity"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("create_table: omit title");
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "Do not replay these ISM4 source mismatches"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "skip 15.N.3.2 when identity has no shell"
+    );
   });
 
   it("prints a product-specific title when the cover product is set", () => {

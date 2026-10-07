@@ -363,8 +363,8 @@ export const CVP_EXTRANEOUS_RESULTS_HEADERS = [
 ] as const;
 
 /**
- * QAD-SOP-PS-003-F08-00 per-equipment inner outline. Seed uses `15.1`;
- * Add equipment / merge retitle to 15.2, 15.3, …
+ * Possible 15.N.M headings (Word import + Agent recipes). The empty box
+ * only seeds H2 + 15.N.1 identity; other headings are added per equipment type.
  */
 export const CVP_EQUIPMENT_H3_OUTLINE = [
   { number: "15.1.1", title: "Equipment details" },
@@ -661,73 +661,17 @@ export function cvpEquipmentSamplingSeed(ordinal = 1): JSONContent {
     content: [
       heading(2, `${n} Equipment name (Equipment No.)`),
       textParagraph(
-        "Add equipment for each additional product-contact item in Scope — each new box is a blank 15.N template. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, shell height/diameter, BCR, and method numbers from cited CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
+        "draft_field this box for the Scope item (vessel / reactor, filter with ML tank, specialty filter, or no-swab). The seed is only the identity table — add 15.N.2–8 headings and tables from the equipment-type recipe. Add equipment for each additional product-contact item in Scope — each new box is a blank 15.N template. Numbering (15.1, 15.2, …) updates automatically. Copy capacity, MOC, surface area, and cited document numbers from CPDR / IQ / specification pages. Do not paste equipment-train diagrams or vessel sketches."
       ),
       heading(3, `${n}.1 Equipment details`),
       textParagraph(
-        "The equipment details, including material of construction (MOC), product-contact surface area, shell height, and shell diameter, shall be taken from the cited drawing / CPDR annexure."
+        "The equipment details, including material of construction (MOC) and product-contact surface area, shall be taken from the cited drawing / CPDR annexure."
       ),
       table(CVP_EQUIPMENT_IDENTITY_HEADERS, [
         ["Capacity", "", ""],
         ["MOC", "", ""],
         ["Surface Area", "", ""],
-        ["Shell height", "", ""],
-        ["Shell diameter", "", ""],
-        ["Type of agitator", "", ""],
-        ["No. of baffles", "", ""],
       ]),
-      heading(3, `${n}.2 Supporting Documents and References`),
-      table(CVP_EQUIPMENT_DOCUMENTS_HEADERS, [
-        ["BCR", "", ""],
-        ["Specification", "", ""],
-        ["Testing Procedure", "", ""],
-        ["Analytical Method Validation", "", ""],
-        ["Equipment Qualification (OQ)", "", ""],
-      ]),
-      heading(3, `${n}.3 Swab sampling locations determination`),
-      heading(4, `${n}.3.1 Worst-case locations`),
-      textParagraph(
-        "The following worst-case product-contact locations shall be included as mandatory swab sampling locations based on equipment design, accessibility, and residue accumulation."
-      ),
-      table(CVP_SWAB_LOCATION_HEADERS),
-      heading(4, `${n}.3.2 Calculation for shell wall swab locations`),
-      textParagraph(
-        `The number of shell wall swab sampling locations is determined from the vessel shell height and diameter. Copy H and D from ${n}.1. n = √H + 1 (round up). Diameter ≤ 1 m → two circumferential locations; > 1 m → four (0°, 90°, 180°, 270°).`
-      ),
-      table(CVP_SHELL_CALC_HEADERS, [
-        ["Shell height (H)", "NA", "", ""],
-        ["No. of horizontal levels (n = √H+1)", "", "", ""],
-        ["Shell Diameter (D)", "NA", "", ""],
-        ["No. of circumferential locations (C)", "", "", ""],
-        ["Total No. of samples on wall surface (n × C)", "", "", ""],
-      ]),
-      heading(4, `${n}.3.3 Pictorial representation`),
-      textParagraph(
-        `Vessel sketches with labelled S-1 / S-2 callouts are Word drawings in the source form. List each Location ID in ${n}.3.1; do not invent a diagram unless insert_image copies a cited attachment figure.`
-      ),
-      heading(4, `${n}.3.4 Rationale for swab sample locations`),
-      table(CVP_SWAB_RATIONALE_HEADERS),
-      heading(3, `${n}.4 Cleaning operation results summary`),
-      textParagraph(
-        "Record cleaning parameters against the approved cleaning SOP / BCR. Protocol execution fills the batch column; leave it blank until a cited cleaning record exists."
-      ),
-      table(CVP_CLEANING_OPERATION_HEADERS),
-      heading(3, `${n}.5 Cleaning validation results summary`),
-      textParagraph(
-        "Upon completion of cleaning, the equipment shall undergo visual inspection. Following satisfactory visual inspection, swab and rinse samples shall be collected as defined above."
-      ),
-      heading(3, `${n}.6 Visual inspection summary`),
-      table(CVP_VISUAL_INSPECTION_HEADERS),
-      heading(
-        3,
-        `${n}.7 Reflux, Swab & Rinse samples analysis results summary`
-      ),
-      table(CVP_RESIDUE_RESULTS_HEADERS),
-      heading(
-        3,
-        `${n}.8 Rinse samples analysis results summary (Extraneous matter)`
-      ),
-      table(CVP_EXTRANEOUS_RESULTS_HEADERS),
       textParagraph("Inference:", true),
       textParagraph("It shall be written in the cleaning verification report."),
       textParagraph("Conclusion:", true),
@@ -744,24 +688,14 @@ function paragraphPlain(node: JSONContent): string {
     .trim();
 }
 
-function tableHeaderSignature(table: JSONContent): string {
-  const headerRow = table.content?.[0];
-  if (headerRow?.type !== "tableRow") return "";
-  return (headerRow.content ?? [])
-    .map((cell) => {
-      const first = cell.content?.[0];
-      return first ? paragraphPlain(first) : paragraphPlain(cell);
-    })
-    .join("|")
-    .toLowerCase();
-}
-
 export function isStockEquipmentInstruction(text: string): boolean {
   return (
     /insert one heading plus tables/i.test(text) ||
     /repeat this 15\.n block/i.test(text) ||
     /duplicate this box/i.test(text) ||
     /add equipment for each additional/i.test(text) ||
+    /the seed is only the identity table/i.test(text) ||
+    /draft_field this box for the Scope item/i.test(text) ||
     /do not paste equipment-train diagrams/i.test(text) ||
     /do not invent a diagram/i.test(text) ||
     /^Table\s+\d+\./i.test(text)
@@ -786,10 +720,8 @@ function coerceEquipmentHeadingLevels(doc: JSONContent): JSONContent {
 
 /**
  * Existing reports stored a single identity table with no 15.N.M headings.
- * Graft filled tables into the F08 outline so reload matches the Word protocol.
- * Never put the seed back onto an empty or prose-only field — that is what
- * made a cleared TipTap box (and in-flight heading suggestions) snap back
- * to the 15.N template on merge / chat refresh.
+ * Wrap that table in H2 + 15.N.1 only — do not graft unused swab/results
+ * shells. Never put the seed back onto an empty or prose-only field.
  */
 export function upgradeCvpEquipmentSamplingNarrative(
   doc: JSONContent
@@ -809,33 +741,15 @@ export function upgradeCvpEquipmentSamplingNarrative(
       content: liveNodes.length > 0 ? liveNodes : [{ type: "paragraph" }],
     };
   }
-  const next: JSONContent[] = [];
-  for (const node of cvpEquipmentSamplingSeed().content ?? []) {
-    if (node.type !== "table") {
-      next.push(node);
-      continue;
-    }
-    const signature = tableHeaderSignature(node);
-    const matchIndex = unusedTables.findIndex(
-      (table) => tableHeaderSignature(table) === signature
-    );
-    if (matchIndex >= 0) {
-      next.push(unusedTables.splice(matchIndex, 1)[0]!);
-    } else {
-      next.push(node);
-    }
-  }
-  const inferIdx = next.findIndex(
-    (node) =>
-      node.type === "paragraph" && /^inference:/i.test(paragraphPlain(node))
-  );
-  next.splice(
-    inferIdx >= 0 ? inferIdx : next.length,
-    0,
-    ...leftover,
-    ...unusedTables
-  );
-  return { type: "doc", content: next };
+  return {
+    type: "doc",
+    content: [
+      heading(2, "15.1 Equipment name (Equipment No.)"),
+      heading(3, "15.1.1 Equipment details"),
+      ...unusedTables,
+      ...leftover,
+    ],
+  };
 }
 
 function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {

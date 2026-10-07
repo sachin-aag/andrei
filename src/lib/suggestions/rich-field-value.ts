@@ -10,12 +10,18 @@ function isIndexPart(part: string): boolean {
   return /^\d+$/.test(part);
 }
 
-/** Read a rich JSONContent field from section JSON by dot path (`items.0`). */
+/**
+ * Read a rich JSONContent field from section JSON by dot path (`items.0`).
+ * Heading nodes are kept: this read feeds apply/merge, which write back, and
+ * flattening here permanently turns CVP 15.N outlines into bold paragraphs.
+ * Editors and export coerce headings per profile when they render.
+ */
 export function getRichFieldValue(
   content: Record<string, unknown>,
   path: string,
-  options?: NormalizeRichFieldOptions
+  overrides?: NormalizeRichFieldOptions
 ): JSONContent {
+  const options: NormalizeRichFieldOptions = { preserveHeadings: true, ...overrides };
   if (
     path === "items.0" &&
     !Array.isArray(content.items) &&

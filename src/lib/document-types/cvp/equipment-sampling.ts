@@ -200,12 +200,22 @@ function isPlaceholderEquipmentTitle(text: string): boolean {
   return PLACEHOLDER_H2_RE.test(text);
 }
 
-function looksLikeEquipmentTitleParagraph(text: string): boolean {
-  return (
-    /^15\.(?:N|\d+)\s+\S/i.test(text) &&
-    !isPlaceholderEquipmentTitle(text) &&
-    !/^15\.(?:N|\d+)\.\d+/.test(text)
-  );
+const OUTLINE_PARAGRAPH_RE = /^15\.(?:N|\d+)((?:\.\d+){0,2})\s+[A-Za-z(]/i;
+const OUTLINE_TITLE_MAX = 120;
+
+/**
+ * Bold "15.N.M Title" paragraphs (heading nodes flattened by an older apply
+ * path) become H2/H3/H4 again so retitling and the 15.N split can see them.
+ */
+function promoteOutlineParagraph(node: JSONContent): JSONContent {
+  if (node.type !== "paragraph" || nodeHasSuggestionMarks(node)) return node;
+  if ((node.content ?? []).some((child) => child.type !== "text")) return node;
+  const text = headingText(node);
+  if (text.length > OUTLINE_TITLE_MAX || /[.:;]$/.test(text)) return node;
+  const match = OUTLINE_PARAGRAPH_RE.exec(text);
+  if (!match) return node;
+  const depth = match[1] ? match[1].split(".").length - 1 : 0;
+  return headingNode(2 + depth, text);
 }
 
 function headingNode(level: number, text: string): JSONContent {
@@ -266,7 +276,8 @@ export function collapseCvpEquipmentItem(doc: JSONContent): JSONContent {
   let introInsertAt = 0;
   let lastLabel = "";
 
-  for (const node of doc.content ?? []) {
+  for (const raw of doc.content ?? []) {
+    const node = promoteOutlineParagraph(raw);
     if (node.type === "heading") {
       const text = headingText(node);
       const level = Number(node.attrs?.level);
@@ -318,17 +329,6 @@ export function collapseCvpEquipmentItem(doc: JSONContent): JSONContent {
     const text = nodePlain(node).replace(/\s+/g, " ").trim();
     if (!text) {
       out.push(node);
-      continue;
-    }
-    if (looksLikeEquipmentTitleParagraph(text)) {
-      const title = headingNode(2, text);
-      if (h2Index >= 0) {
-        const current = headingText(out[h2Index]!);
-        if (isPlaceholderEquipmentTitle(current)) out[h2Index] = title;
-      } else {
-        h2Index = out.length;
-        out.push(title);
-      }
       continue;
     }
     if (stripStock && isStockEquipmentInstruction(text)) continue;
@@ -440,7 +440,9 @@ function docsFromRaw(raw: unknown): JSONContent[] {
 export function normalizeCvpEquipmentSamplingContent(
   raw: unknown
 ): CvpEquipmentSamplingContent {
-  const docs = docsFromRaw(raw).map((doc) => normalizeItem(doc));
+  const docs = docsFromRaw(raw).map((doc, i) =>
+    retitleCvpEquipmentDoc(normalizeItem(doc), i + 1)
+  );
   return { items: docs.length > 0 ? docs : [emptyDoc()] };
 }
 
