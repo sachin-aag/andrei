@@ -52,14 +52,35 @@ const EQUIPMENT_TABLE_HEADERS: readonly (readonly string[])[] = [
 
 const HEADING_ORDINAL_RE = /^(15\.(?:N|\d+))/;
 
-/** Pad missing `items.N` with the 15.N seed so apply does not merge against emptyDoc(). */
+/**
+ * Pad missing `items.N` so apply does not merge against emptyDoc().
+ * Normalize only the target box. Retitling every sibling (15.N → 15.1)
+ * desyncs still-open propose_edit anchors and is why leftover equipment
+ * cards fail Apply all, then loop when accepted one by one.
+ */
 export function ensureCvpEquipmentFieldContent(
   content: Record<string, unknown>,
   targetField: string
 ): Record<string, unknown> {
   const index = cvpEquipmentItemIndexFromTarget(targetField);
   if (index == null) return content;
-  return ensureCvpEquipmentItem(content, index);
+  if (
+    !Array.isArray(content.items) &&
+    Object.prototype.hasOwnProperty.call(content, "narrative")
+  ) {
+    return ensureCvpEquipmentItem(content, index);
+  }
+  const items = (
+    Array.isArray(content.items) ? content.items : []
+  ).filter((item): item is JSONContent => Boolean(item) && typeof item === "object");
+  while (items.length <= index) {
+    items.push(cvpEquipmentSamplingSeed(items.length + 1));
+  }
+  const target = items[index];
+  if (target) {
+    items[index] = normalizeItem(target);
+  }
+  return { ...content, items };
 }
 
 export function cvpEquipmentItemAnchor(index: number): string {
