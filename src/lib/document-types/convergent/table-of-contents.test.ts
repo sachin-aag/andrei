@@ -328,13 +328,21 @@ describe("getReportTableOfContents", () => {
   it("lists the 3xper cleaning verification protocol 1.0–24.0 outline", () => {
     const toc = getReportTableOfContents("cleaning_verification_protocol", "3xper");
     expect(toc[0]).toEqual({
-      label: "1. Approval Signatures",
+      label: "1.0 Approval Signatures",
       sectionKey: "cvp_approvals",
     });
     expect(toc.at(-1)?.sectionKey).toBe("cvp_history");
-    expect(
-      toc.find((e) => e.sectionKey === "cvp_sampling_plan")?.children?.map((e) => e.sectionKey)
-    ).toEqual([
+    const sampling = toc.find((e) => e.sectionKey === "cvp_sampling_plan");
+    expect(sampling?.label).toMatch(/^15\.0 /);
+    expect(sampling?.children?.map((e) => e.label)).toEqual([
+      "15.1–15.10 Equipment Sampling Plans",
+      "15.11 Nitrosamine Limits in the Rinse Samples",
+      "15.12 Potential Genotoxic Impurities Limits in the Rinse Samples",
+      "Process Line Cleaning Verification Summary",
+      "Manufacturing Area Cleaning Verification",
+      "Overall Cleaning Results Summary",
+    ]);
+    expect(sampling?.children?.map((e) => e.sectionKey)).toEqual([
       "cvp_equipment_sampling",
       "cvp_nitrosamine",
       "cvp_pgi",

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getDocumentType } from "@/lib/document-types";
 import {
+  CVP_EQUIPMENT_H3_OUTLINE,
+  CVP_EQUIPMENT_H4_OUTLINE,
   CVP_FORM_NO,
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
@@ -8,6 +10,7 @@ import {
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpTableSectionKey,
+  upgradeCvpEquipmentSamplingNarrative,
 } from "./sections";
 import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 
@@ -28,6 +31,7 @@ describe("cleaning verification protocol sections", () => {
     }
     expect(CVP_TABLE_SECTION_KEYS).toContain("cvp_approvals");
     expect(isCvpTableSectionKey("cvp_objective")).toBe(false);
+    expect(def.editorProfile).toBe("report_headings");
   });
 
   it("seeds MACO as three separate tables, not one grid", () => {
@@ -59,10 +63,103 @@ describe("cleaning verification protocol sections", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     const merged = def.mergeSection("cvp_equipment_sampling", {
       narrative,
-    }) as { narrative: { content?: Array<{ type?: string }> } };
+    }) as { narrative: { content?: Array<{ type?: string; attrs?: { level?: number }; content?: Array<{ text?: string }> }> } };
     const text = JSON.stringify(merged);
     expect(text).not.toMatch(/Table 15/);
     expect(text).not.toMatch(/Cvp Equipment Sampling/);
+  });
+
+  it("seeds 15.N equipment sampling with H2–H4 outline headings", () => {
+    const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
+    expect(seed).toHaveProperty("narrative");
+    const nodes =
+      "narrative" in seed ? (seed.narrative.content ?? []) : [];
+    const headings = nodes
+      .filter((node) => node.type === "heading")
+      .map((node) => ({
+        level: node.attrs?.level,
+        text: node.content?.[0]?.text,
+      }));
+    expect(headings[0]).toEqual({
+      level: 2,
+      text: "15.N Equipment name (Equipment No.)",
+    });
+    expect(headings).toContainEqual({
+      level: 3,
+      text: "15.N.1 Equipment details",
+    });
+    expect(headings).toContainEqual({
+      level: 4,
+      text: "15.N.3.1 Worst-case locations",
+    });
+    expect(headings.map((h) => h.text)).toEqual(
+      expect.arrayContaining([
+        ...CVP_EQUIPMENT_H3_OUTLINE.map((item) => `${item.number} ${item.title}`),
+        ...CVP_EQUIPMENT_H4_OUTLINE.map((item) => `${item.number} ${item.title}`),
+      ])
+    );
+  });
+
+  it("upgrades a lumped identity table into the 15.N.M outline", () => {
+    const lumped = {
+      type: "doc" as const,
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Insert one heading plus tables per product-contact equipment from Scope (Name (Equipment No.)).",
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Parameter" }] }],
+                },
+                {
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Details" }] }],
+                },
+                {
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Reference" }] }],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Capacity" }] }],
+                },
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "10000 L" }] }],
+                },
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "" }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const upgraded = upgradeCvpEquipmentSamplingNarrative(lumped);
+    const text = JSON.stringify(upgraded);
+    expect(text).toContain("15.N.1 Equipment details");
+    expect(text).toContain("10000 L");
+    expect(text).not.toMatch(/Insert one heading plus tables/i);
+    expect(upgraded.content?.some((node) => node.type === "heading")).toBe(true);
   });
 
   it("prints a product-specific title when the cover product is set", () => {

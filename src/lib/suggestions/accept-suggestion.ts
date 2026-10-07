@@ -27,6 +27,8 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import type { SuggestionApplyMode } from "@/lib/document-types";
+import { isCvpSectionKey } from "@/lib/document-types/cvp/sections";
+import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
 import {
   isApplyableStatus,
   type LocateStatus,
@@ -159,6 +161,10 @@ export function applySuggestionToContent(
     ignorePlaceBeforePairedBlock = false,
   } = args;
   const persistAsTrackedChange = applyMode === "tracked_change";
+  const headingNodes =
+    persistAsTrackedChange ||
+    isCvpSectionKey(section) ||
+    section === GENERIC_DOCUMENT_SECTION;
   const path = resolveSuggestionFieldPath(
     section,
     comment.contentPath,
@@ -245,7 +251,7 @@ export function applySuggestionToContent(
               section,
               path,
               redraft.markdown,
-              { headingNodes: persistAsTrackedChange }
+              { headingNodes }
             );
       return { ok: true, nextSection };
     } catch (error) {

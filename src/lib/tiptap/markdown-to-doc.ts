@@ -27,7 +27,7 @@ export type MarkdownToDocOptions = {
   headingNodes?: boolean;
 };
 
-const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
+const ATX_HEADING_RE = /^(#{1,4})\s+(.*)$/;
 
 /**
  * CommonMark-ish emphasis: no space after the opener or before the closer.
@@ -267,7 +267,7 @@ export function stripInlineMarkdown(text: string): string {
     );
 }
 
-/** ATX `#`–`###` line → heading node or bold paragraph. */
+/** ATX `#`–`####` line → heading node or bold paragraph. */
 export function atxHeadingParagraph(
   text: string,
   options?: MarkdownToDocOptions
@@ -276,7 +276,7 @@ export function atxHeadingParagraph(
   if (!heading) return null;
   const headingText = stripInlineMarkdown(heading[2]!);
   if (!headingText) return null;
-  const level = Math.min(3, heading[1]!.length);
+  const level = Math.min(4, heading[1]!.length);
   if (options?.headingNodes) {
     return {
       type: "heading",
@@ -307,9 +307,9 @@ function paragraphIsPlainInline(node: JSONContent): boolean {
 }
 
 /**
- * Turn persisted paragraphs that still start with `#` / `##` / `###` into the
- * same bold paragraphs `markdownToDoc` emits, so Improve/Control don't show
- * literal hashes.
+ * Turn persisted paragraphs that still start with `#` / `##` / `###` /
+ * `####` into the same bold paragraphs `markdownToDoc` emits, so
+ * Improve/Control don't show literal hashes.
  */
 export function promoteAtxHeadingsInDoc(
   doc: JSONContent,
@@ -333,8 +333,9 @@ export function promoteAtxHeadingsInDoc(
  *
  * Supported (matches what the drafting prompt allows the model to emit):
  * - paragraphs (one line = one paragraph)
- * - headings `#` … `###` → bold paragraph by default (section editors have
- *   no heading node). Pass `{ headingNodes: true }` for generic documents.
+ * - headings `#` … `####` → bold paragraph by default (most section editors
+ *   have no heading node). Pass `{ headingNodes: true }` for generic
+ *   documents and CVP 15.N.M blocks.
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
  * - `**bold**`, `*italic*`, and `_italic_` inline emphasis

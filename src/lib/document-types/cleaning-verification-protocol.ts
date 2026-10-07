@@ -20,6 +20,7 @@ import {
   cvpPrintedDocumentTitle,
   isCvpSectionKey,
   isCvpTableSectionKey,
+  upgradeCvpEquipmentSamplingNarrative,
   type CvpSectionKey,
 } from "./cvp/sections";
 
@@ -158,8 +159,13 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
   const base = (EMPTY_CVP_CONTENT[key] as Record<string, unknown>)[field];
   const value =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
+  const normalized = normalizeRichField(value ?? base, { preserveHeadings: true });
+  const next =
+    key === "cvp_equipment_sampling"
+      ? upgradeCvpEquipmentSamplingNarrative(normalized)
+      : normalized;
   return {
-    [field]: stripCaptionsOnUnfilledTables(normalizeRichField(value ?? base), {
+    [field]: stripCaptionsOnUnfilledTables(next, {
       section: key,
       targetField: field,
     }),
@@ -173,6 +179,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   documentNoLabel: "Protocol No.",
   documentNoPlaceholder: "e.g. CVRP-ISM4-26-001",
   wordImport: { kind: "cleaning_verification_protocol" },
+  editorProfile: "report_headings",
   evaluation: { kind: "criteria" },
   citationsAtEndOfSection: true,
   sections: CVP_SECTION_KEYS.map((key, index) => ({

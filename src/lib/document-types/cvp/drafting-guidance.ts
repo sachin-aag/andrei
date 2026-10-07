@@ -22,7 +22,20 @@ Standard pieces:
 - Health-based MACO = PDE × MBS / TDD; general-limit MACO = MBS × MAXCONC; use the lower value. PDE and TDD come from cited annexures, not from the product name.
 - MACO (10.0) is three tables in one narrative. tableIndex 0 = equipment list (S. No. | Name of the Equipment | Equipment No. | Capacity | MOC | …). tableIndex 1 = health-based formula (Attribute | Description of Attribute | Value / Calculation — PDE, MBS, TDD, MACO). tableIndex 2 = general-limit formula (same three columns — MAXCONC, MBS, MACO). Copy tableIndex from read_section. Never draft_field this field. Never insert_rows of the formula headers into table 0.
 - Swab locations: copy n = √H + 1 (H = shell height in m, round up). Diameter ≤ 1 m → 0° and 180°; > 1 m → 0°, 90°, 180°, 270°. Mandatory reactor locations: top dish, bottom dish, manhole, agitator, discharge valve.
-- 15.1–15.10 Equipment sampling: one heading 15.N Name (Equipment No.) per Scope product-contact item in Scope order (15.1, 15.2, … up to 15.10). Then the identity / documents / locations / dimensions / rationale / cleaning-parameter / results tables. Do not caption an unused seed identity table (Capacity / MOC / Internal surface area with empty Details) as Table N. 15.11 is Nitrosamine; 15.12 is PGI. Do not hardcode MV-1304 — copy each ID from Scope or the attached P&ID / CPDR.
+- 15.1–15.10 Equipment sampling: one \`## 15.N Name (Equipment No.)\` heading per Scope product-contact item in Scope order (15.1, 15.2, … up to 15.10). Under each equipment heading keep this inner outline as \`###\` / \`####\` headings (do not fake them with bold paragraphs):
+  - 15.N.1 Equipment details (identity table Parameter | Details | Reference)
+  - 15.N.2 Supporting Documents and References (Documents | Document # | Effective / Approval date)
+  - 15.N.3 Swab sampling locations determination
+    - 15.N.3.1 Worst-case locations (Location ID | Description)
+    - 15.N.3.2 Calculation for shell wall swab locations (Parameter | Calculation | Value | Remarks) when the item is a vessel
+    - 15.N.3.3 Pictorial representation — describe locations; do not invent a drawing
+    - 15.N.3.4 Rationale for swab sample locations (Swab ID | Description | Rationale | No. of samples)
+  - 15.N.4 Cleaning operation results summary
+  - 15.N.5 Cleaning validation results summary
+  - 15.N.6 Visual inspection summary
+  - 15.N.7 Reflux, Swab & Rinse samples analysis results summary
+  - 15.N.8 Extraneous matter
+  The empty field already seeds one 15.N skeleton with those headings and tables. Replace 15.N with the Scope ordinal and equipment name, fill the tables, then append the next 15.N+1 block. Do not caption an unused seed identity table (Capacity / MOC / area with empty Details) as Table N. 15.11 is Nitrosamine; 15.12 is PGI. Do not hardcode MV-1304 — copy each ID from Scope or the attached P&ID / CPDR.
 - Nitrosamine / PGI: first data row is Limit NMT (ppm) across the impurity columns, then one row per equipment. Flattened columns are the form’s inner impurity names.
 - Manufacturing area: two rows per equipment (Verified by Production, then QA) with the same Equipment ID. The paper form merges that ID vertically — the editor does not.
 - History: keep Version 00 / New document unless a cited revision exists.

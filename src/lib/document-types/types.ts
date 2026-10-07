@@ -131,7 +131,11 @@ export type EvaluationCapability = { kind: "criteria" } | { kind: "none" };
 
 export type SuggestionApplyMode = "final" | "tracked_change";
 
-export type EditorProfile = "report_section" | "generic_document";
+export type EditorProfile =
+  | "report_section"
+  | "generic_document"
+  /** Section editors with H2–H4 (CVP 15.N / 15.N.M / 15.N.M.P). */
+  | "report_headings";
 
 export type DocumentTypeDefinition = {
   key: DocumentType;
@@ -153,7 +157,10 @@ export type DocumentTypeDefinition = {
   evaluation?: EvaluationCapability;
   /** How accepting an AI suggestion is persisted. Default `final`. */
   suggestionApplyMode?: SuggestionApplyMode;
-  /** TipTap schema/toolbar profile. Default `report_section` (no heading nodes). */
+  /**
+   * TipTap schema/toolbar profile. Default `report_section` (no heading
+   * nodes). `report_headings` keeps H2–H4 in section fields (CVP 15.N.M).
+   */
   editorProfile?: EditorProfile;
   /**
    * Numbered `[n]` markers at the claim, with `[filename, p. N]` parked
@@ -247,4 +254,30 @@ export function suggestionApplyModeFor(
 
 export function editorProfileFor(def: DocumentTypeDefinition): EditorProfile {
   return def.editorProfile ?? "report_section";
+}
+
+/** Heading nodes survive merge / chat apply (generic body and CVP 15.N.M). */
+export function preservesHeadingNodes(def: DocumentTypeDefinition): boolean {
+  return (
+    def.editorProfile === "generic_document" ||
+    def.editorProfile === "report_headings"
+  );
+}
+
+export function editorHeadingLevels(
+  def: DocumentTypeDefinition
+): readonly (1 | 2 | 3 | 4)[] | false {
+  switch (def.editorProfile) {
+    case "generic_document":
+      return [1, 2, 3];
+    case "report_headings":
+      return [2, 3, 4];
+    case "report_section":
+    case undefined:
+      return false;
+    default: {
+      const exhaustive: never = def.editorProfile;
+      return exhaustive;
+    }
+  }
 }

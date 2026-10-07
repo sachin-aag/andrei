@@ -4714,7 +4714,11 @@ export function buildChatTools(opts: {
           section,
           resolvedField
         );
-        if (liveTables.length > 1) {
+        const fill = fieldFillState(loaded.content, section, resolvedField);
+        if (
+          liveTables.length > 1 &&
+          !(fill === "empty" && section === "cvp_equipment_sampling")
+        ) {
           return {
             status: "use_edit_table",
             message: multiTableDraftFieldMessage(liveTables.length),
@@ -4734,7 +4738,6 @@ export function buildChatTools(opts: {
         }
         const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
         if (staleDraft) return staleDraft;
-        const fill = fieldFillState(loaded.content, section, resolvedField);
         if (fill === "filled") {
           if (replaceFilledField !== true) {
             return { status: "field_filled", message: FIELD_FILLED_MESSAGE };

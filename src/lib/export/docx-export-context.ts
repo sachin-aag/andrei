@@ -81,7 +81,7 @@ export type DocxExportContext = {
   /** Numeric citation markers in the field currently being converted. */
   citationNumbers?: ReadonlySet<number>;
   /**
-   * Emit Word Heading1–3 paragraph styles for TipTap heading nodes.
+   * Emit Word Heading1–4 paragraph styles for TipTap heading nodes.
    * Investigation/DV keep headings as bold body paragraphs.
    */
   useHeadingStyles: boolean;

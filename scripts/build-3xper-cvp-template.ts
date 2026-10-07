@@ -158,6 +158,17 @@ function tagHeaderPart(xml: string, withEffectiveDate: boolean): string {
 
 const PAGE_BREAK = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
 
+/** Paper TOC omits vessel 15.1–15.10 blocks and the unnumbered 15.x extras. */
+const CVP_PAPER_TOC_SKIP = new Set([
+  "cvp_equipment_sampling",
+  "cvp_process_line",
+  "cvp_manufacturing_area",
+  "cvp_overall_results",
+]);
+
+/** 15.N headings live in `{@cvp_equipment_samplingXml}`, not a wrapper H1. */
+const CVP_SKIP_BODY_HEADING = new Set(["cvp_equipment_sampling"]);
+
 function headingPara(text: string): string {
   return (
     `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:keepNext/>` +
@@ -176,18 +187,20 @@ function rawXmlPara(tag: string): string {
 }
 
 function tocTable(): string {
-  const rows = CVP_SECTION_KEYS.map((key) => {
-    const label = CVP_SECTION_LABELS[key];
-    return (
-      `<w:tr><w:tc><w:tcPr><w:tcW w:w="10000" w:type="dxa"/></w:tcPr>` +
-      `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr>` +
-      `<w:r><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
-      `<w:t xml:space="preserve">${label
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")}</w:t></w:r></w:p></w:tc></w:tr>`
-    );
-  }).join("");
+  const rows = CVP_SECTION_KEYS.filter((key) => !CVP_PAPER_TOC_SKIP.has(key))
+    .map((key) => {
+      const label = CVP_SECTION_LABELS[key];
+      return (
+        `<w:tr><w:tc><w:tcPr><w:tcW w:w="10000" w:type="dxa"/></w:tcPr>` +
+        `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr>` +
+        `<w:r><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
+        `<w:t xml:space="preserve">${label
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")}</w:t></w:r></w:p></w:tc></w:tr>`
+      );
+    })
+    .join("");
   return (
     `<w:tbl><w:tblPr><w:tblW w:w="10000" w:type="dxa"/>` +
     `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>` +
@@ -204,7 +217,9 @@ function sectionBody(): string[] {
     PAGE_BREAK,
   ];
   for (const key of CVP_SECTION_KEYS) {
-    out.push(headingPara(CVP_SECTION_LABELS[key]));
+    if (!CVP_SKIP_BODY_HEADING.has(key)) {
+      out.push(headingPara(CVP_SECTION_LABELS[key]));
+    }
     out.push(rawXmlPara(`${key}Xml`));
   }
   return out;

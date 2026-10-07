@@ -448,11 +448,14 @@ function wrapParagraph(text: string, ctx?: DocxExportContext): string {
   )}</w:t></w:r></w:p>`;
 }
 
-function headingStyleName(level: unknown): "Heading1" | "Heading2" | "Heading3" {
+function headingStyleName(
+  level: unknown
+): "Heading1" | "Heading2" | "Heading3" | "Heading4" {
   const n = typeof level === "number" ? level : Number(level);
   if (n <= 1 || Number.isNaN(n)) return "Heading1";
-  if (n >= 3) return "Heading3";
-  return "Heading2";
+  if (n === 2) return "Heading2";
+  if (n === 3) return "Heading3";
+  return "Heading4";
 }
 
 function headingToXml(
