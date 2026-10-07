@@ -750,6 +750,105 @@ describe("acceptSuggestion same-turn table pair", () => {
     expect(resolved).toHaveLength(2);
   });
 
+  it("accepts a table afterAnchor by applying the open heading first", async () => {
+    const fetches: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        fetches.push({ url: String(url), body });
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+    const heading: CommentRecord = {
+      ...comment,
+      id: "lead-visual",
+      section: "purpose",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "15.3.6 Visual inspection\nAs a primary verification of equipment cleanliness.",
+        reasoning: "heading",
+      }),
+      anchorText: "",
+      contentPath: "narrative",
+    };
+    const tableWithAnchor: CommentRecord = {
+      ...comment,
+      id: "tbl-visual",
+      section: "purpose",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "table",
+        tableOperation: {
+          kind: "create_table",
+          headers: ["VCS", "Meaning"],
+          rows: [["1", "Design"]],
+          afterAnchor: "15.3.6 Visual inspection",
+        },
+      }),
+      anchorText: "Create a 2-column table with 1 row",
+      contentPath: "narrative",
+    };
+    const result = await acceptSuggestion({
+      reportId,
+      section: "purpose",
+      comment: tableWithAnchor,
+      sectionContent: field,
+      openComments: [heading, tableWithAnchor],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const order = labels(result.nextSection);
+    expect(order.some((label) => label.includes("15.3.6 Visual inspection"))).toBe(
+      true
+    );
+    expect(order.indexOf("new-table")).toBeGreaterThan(
+      order.findIndex((label) => label.includes("15.3.6 Visual inspection"))
+    );
+    const resolved = fetches.filter(
+      (call) =>
+        String(call.body && (call.body as { status?: string }).status) ===
+        "resolved"
+    );
+    expect(resolved).toHaveLength(2);
+  });
+
+  it("still lands create_table when afterAnchor is missing and there is no heading card", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+    const orphanTable: CommentRecord = {
+      ...comment,
+      id: "tbl-orphan",
+      section: "purpose",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "table",
+        tableOperation: {
+          kind: "create_table",
+          headers: ["VCS", "Meaning"],
+          rows: [["1", "Design"]],
+          afterAnchor: "15.3.6 Visual inspection",
+        },
+      }),
+      anchorText: "Create a 2-column table with 1 row",
+      contentPath: "narrative",
+    };
+    const result = await acceptSuggestion({
+      reportId,
+      section: "purpose",
+      comment: orphanTable,
+      sectionContent: field,
+      openComments: [orphanTable],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(labels(result.nextSection)).toContain("new-table");
+  });
+
   it("does not dismiss the sibling when one card is ignored", async () => {
     vi.stubGlobal(
       "fetch",

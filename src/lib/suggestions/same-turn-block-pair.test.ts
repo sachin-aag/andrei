@@ -175,4 +175,34 @@ describe("findOpenBlockPair / sortCommentsForPairedApply", () => {
     const ordered = sortCommentsForPairedApply([block, leadIn]);
     expect(ordered.map((item) => item.id)).toEqual(["lead", "tbl"]);
   });
+
+  it("pairs create_table afterAnchor with an open heading that has no pairing ids", () => {
+    const heading = comment("lead-visual", {
+      deleteText: "",
+      insertText: "## 15.3.6 Visual inspection\nAs a primary verification.",
+      reasoning: "heading",
+    });
+    const table = comment("tbl-visual", {
+      deleteText: "",
+      insertText: "",
+      reasoning: "table",
+      tableOperation: {
+        kind: "create_table",
+        headers: ["Sample description / location", "Results"],
+        afterAnchor: "15.3.6 Visual inspection",
+      },
+    });
+    const open = [heading, table];
+    expect(findOpenBlockPair(table, open)).toEqual({
+      leadIn: heading,
+      block: table,
+    });
+    expect(findOpenBlockPair(heading, open)).toEqual({
+      leadIn: heading,
+      block: table,
+    });
+    expect(sortCommentsForPairedApply([table, heading]).map((item) => item.id)).toEqual(
+      ["lead-visual", "tbl-visual"]
+    );
+  });
 });

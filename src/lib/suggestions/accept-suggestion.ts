@@ -44,7 +44,10 @@ import {
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
-import { applyTableOperation, type DocumentTableContent } from "@/lib/suggestions/table-operation";
+import {
+  applyTableOperationForPersist,
+  type DocumentTableContent,
+} from "@/lib/suggestions/table-operation";
 import {
   cascadeFilledTableCaptionsInSections,
   documentContentsFromReportState,
@@ -288,7 +291,7 @@ export function applySuggestionToContent(
         nextSection: setRichFieldValue(sectionContent, path, nextDoc),
       };
     }
-    const result = applyTableOperation(doc, payload.tableOperation, {
+    const result = applyTableOperationForPersist(doc, payload.tableOperation, {
       section,
       targetField: path,
       documentContents: args.documentContents,

@@ -180,4 +180,37 @@ describe("partitionBulkApplies", () => {
     expect(partition.overlapping).toEqual([]);
     expect(partition.unlocatableIds).toEqual(["s1"]);
   });
+
+  it("clusters create_table afterAnchor with the open heading it names", () => {
+    const heading = comment(
+      "lead-visual",
+      "",
+      "## 15.3.6 Visual inspection\nAs a primary verification.",
+      ""
+    );
+    const table: CommentRecord = {
+      ...heading,
+      id: "tbl-visual",
+      content: JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "table",
+        tableOperation: {
+          kind: "create_table",
+          headers: ["Sample description / location", "Results"],
+          afterAnchor: "15.3.6 Visual inspection",
+        },
+      }),
+      anchorText: "Create a 2-column table with 1 row",
+    };
+    const partition = partitionBulkApplies({
+      section: "define",
+      comments: [table, heading],
+      sectionContent,
+    });
+    expect(partition.independent).toEqual([]);
+    expect(partition.overlapping.map((group) => group.map((c) => c.id))).toEqual([
+      ["tbl-visual", "lead-visual"],
+    ]);
+  });
 });

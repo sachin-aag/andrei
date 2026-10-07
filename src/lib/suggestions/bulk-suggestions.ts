@@ -22,11 +22,13 @@ import {
   withResolutionReason,
 } from "@/lib/suggestions/supersession";
 import {
-  parseAiFixCommentContent,
   sectionOrderWithOpenSuggestions,
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
-import { sortCommentsForPairedApply } from "@/lib/suggestions/same-turn-block-pair";
+import {
+  findOpenBlockPair,
+  sortCommentsForPairedApply,
+} from "@/lib/suggestions/same-turn-block-pair";
 import {
   cascadeFilledTableCaptionsInSections,
   documentContentsFromReportState,
@@ -235,15 +237,19 @@ export async function acceptAllSuggestions(args: {
       const clusterIds = new Set(ordered.map((member) => member.id));
       for (const member of ordered) {
         if (supersededIds.has(member.id)) continue;
-        const payload = parseAiFixCommentContent(member.content);
         current = applyOneInMemory({
           ...applyArgs,
           comment: member,
           sectionContent: current,
-          ignorePlaceBeforePairedBlock: Boolean(
-            payload.pairedBlockSuggestionId &&
-              clusterIds.has(payload.pairedBlockSuggestionId)
-          ),
+          ignorePlaceBeforePairedBlock: (() => {
+            const pair = findOpenBlockPair(member, ordered);
+            return Boolean(
+              pair &&
+                pair.leadIn.id === member.id &&
+                pair.block.id !== member.id &&
+                clusterIds.has(pair.block.id)
+            );
+          })(),
           documentContents: contentsFor(member.id, current),
         });
       }
