@@ -56,6 +56,37 @@ const PREVIEW_ATTRS = {
   kind: "fix" as const,
 };
 
+it("previews a cell list as list items, not one paragraph", () => {
+  const doc = tableDoc(["Department", "Responsibility"], [["Quality Assurance", ""]]);
+  const result = buildTableOperationPreviewDoc(
+    doc,
+    {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          expectedText: "",
+          insertText:
+            "- Preparation and review of the protocol.\n- Collection of swab samples.",
+        },
+      ],
+    },
+    PREVIEW_ATTRS
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const table = (result.doc.content ?? []).find((node) => node.type === "table")!;
+  const rows = (table.content ?? []).filter((node) => node.type === "tableRow");
+  const cell = (rows[1]!.content ?? []).filter(
+    (node) => node.type === "tableCell"
+  )[1]!;
+  expect(cell.content?.some((node) => node.type === "bulletList")).toBe(true);
+  expect(JSON.stringify(cell)).toContain(suggestionInsertMarkName);
+  expect(JSON.stringify(cell)).toContain("Collection of swab samples.");
+});
+
 function rowHasInsertMark(doc: JSONContent, row: number): boolean {
   const table = (doc.content ?? []).find((n) => n.type === "table");
   const rows = (table?.content ?? []).filter((n) => n.type === "tableRow");

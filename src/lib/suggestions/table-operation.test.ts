@@ -8,6 +8,7 @@ import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
   captureTableOperationSnapshots,
+  summarizeTablesInDoc,
   existingTableCountFromContents,
   filledTableNumberInDocument,
   isBannerTableRow,
@@ -232,6 +233,101 @@ describe("applyTableOperation", () => {
     ).content![1] as JSONContent;
     const textNode = manufacturerCell.content![0]!.content![0]!;
     expect(textNode.marks).toEqual([{ type: "bold" }]);
+  });
+
+  it("stores two or more list lines in a cell as a real list", () => {
+    const result = applyTableOperation(
+      tableDoc(["Department", "Responsibility"], [["Quality Assurance", ""]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: "",
+            insertText:
+              "- Preparation and review of the protocol.\n- Collection of swab samples.",
+          },
+        ],
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cell = (
+      result.doc.content!.find((node) => node.type === "table")!.content![1] as JSONContent
+    ).content![1] as JSONContent;
+    expect(cell.content?.[0]?.type).toBe("bulletList");
+    expect(cell.content?.[0]?.content).toHaveLength(2);
+    expect(cellText(result.doc, 1, 1)).toBe(
+      "Preparation and review of the protocol. Collection of swab samples."
+    );
+    expect(summarizeTablesInDoc(result.doc)[0]?.cells[3]?.text).toBe(
+      "- Preparation and review of the protocol.\n- Collection of swab samples."
+    );
+
+    const again = applyTableOperation(result.doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          expectedText: "",
+          insertText:
+            "- Preparation and review of the protocol.\n- Collection of swab samples.",
+        },
+      ],
+    });
+    expect(again).toMatchObject({ ok: false, status: "already_present" });
+  });
+
+  it("stores numbered cell lines as an ordered list and leaves one dash as prose", () => {
+    const numbered = applyTableOperation(
+      tableDoc(["Department", "Responsibility"], [["Production", ""]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: "",
+            insertText:
+              "1. Execution of the cleaning activity\n2. Collection of rinse samples.",
+          },
+        ],
+      }
+    );
+    expect(numbered.ok).toBe(true);
+    if (!numbered.ok) return;
+    const numberedCell = (
+      numbered.doc.content!.find((node) => node.type === "table")!.content![1] as JSONContent
+    ).content![1] as JSONContent;
+    expect(numberedCell.content?.[0]?.type).toBe("orderedList");
+
+    const single = applyTableOperation(
+      tableDoc(["Department", "Responsibility"], [["Production", ""]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: "",
+            insertText: "- Not a list",
+          },
+        ],
+      }
+    );
+    expect(single.ok).toBe(true);
+    if (!single.ok) return;
+    const singleCell = (
+      single.doc.content!.find((node) => node.type === "table")!.content![1] as JSONContent
+    ).content![1] as JSONContent;
+    expect(singleCell.content?.[0]?.type).toBe("paragraph");
+    expect(cellText(single.doc, 1, 1)).toBe("- Not a list");
   });
 
   it("edits several cells atomically without touching others", () => {

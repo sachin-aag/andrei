@@ -996,6 +996,100 @@ describe("narrativeToDocxXml tables", () => {
     expect(narrativeToDocxXml(doc)).toContain('<w:gridSpan w:val="2"/>');
   });
 
+  it("exports bullet and ordered lists inside a table cell", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Department"),
+                textCell("tableHeader", "Responsibility"),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableCell", "Quality Assurance"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      attrs: { listStyle: "dash" },
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                {
+                                  type: "text",
+                                  text: "Preparation and review of the protocol.",
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Collection of swab samples." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      type: "orderedList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Submit the samples to QC." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const bulletNumId = ctx.allocatedNumIds[0];
+    const orderedNumId = ctx.allocatedNumIds[1];
+    const cellStart = xml.indexOf("Preparation and review of the protocol.");
+    const cellXml = xml.slice(
+      xml.lastIndexOf("<w:tc>", cellStart),
+      xml.indexOf("</w:tc>", cellStart)
+    );
+
+    expect(cellXml).toContain("Preparation and review of the protocol.");
+    expect(cellXml).toContain("Collection of swab samples.");
+    expect(cellXml).toContain("Submit the samples to QC.");
+    expect(cellXml.match(new RegExp(`<w:numId w:val="${bulletNumId}"/>`, "g"))).toHaveLength(2);
+    expect(cellXml).toContain(`<w:numId w:val="${orderedNumId}"/>`);
+  });
+
   it("emits Word numbering for dash and ordered lists", () => {
     const ctx = exportCtx();
     const doc: JSONContent = {

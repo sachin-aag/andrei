@@ -448,6 +448,104 @@ export function markdownToPlainText(markdown: string): string {
     .trim();
 }
 
+/**
+ * Cell text that is a real list (at least two `- `, `• `, `* `, or `1. ` lines
+ * of the same kind) becomes list blocks. A single marker line stays prose so
+ * an ordinary sentence is not turned into a list.
+ * Returns null when the cell should stay one paragraph.
+ */
+export function tableCellContentFromText(text: string): JSONContent[] | null {
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .split(HTML_BR_SPLIT_RE)
+    .flatMap((segment) => segment.split("\n"));
+
+  type Item = {
+    kind: "bullet" | "ordered";
+    text: string;
+    listStyle: "dash" | "disc";
+  };
+  type Chunk =
+    | { type: "prose"; lines: string[] }
+    | { type: "list"; items: Item[] };
+
+  const chunks: Chunk[] = [];
+  let prose: string[] = [];
+  let items: Item[] = [];
+
+  const flushProse = () => {
+    if (prose.length === 0) return;
+    chunks.push({ type: "prose", lines: prose });
+    prose = [];
+  };
+  const flushItems = () => {
+    if (items.length === 0) return;
+    if (items.length >= 2) {
+      chunks.push({ type: "list", items });
+    } else {
+      const only = items[0]!;
+      const marker =
+        only.kind === "ordered" ? "1. " : only.listStyle === "disc" ? "• " : "- ";
+      prose.push(`${marker}${only.text}`);
+    }
+    items = [];
+  };
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const parsed = parseListItemLine(trimmed);
+    if (!parsed) {
+      flushItems();
+      prose.push(trimmed);
+      continue;
+    }
+    const styleLine = parseListLine(trimmed);
+    const listStyle = styleLine?.kind === "bullet" ? styleLine.listStyle : "dash";
+    const item: Item = { kind: parsed.kind, text: parsed.text, listStyle };
+    if (items.length > 0 && items[0]!.kind !== item.kind) flushItems();
+    if (prose.length > 0 && items.length === 0) flushProse();
+    items.push(item);
+  }
+  flushItems();
+  flushProse();
+
+  if (!chunks.some((chunk) => chunk.type === "list")) return null;
+
+  const blocks: JSONContent[] = [];
+  for (const chunk of chunks) {
+    if (chunk.type === "prose") {
+      const body = chunk.lines.join("\n").trim();
+      if (!body) continue;
+      const content = inlineMarkdownToTextNodesWithBreaks(body);
+      blocks.push({
+        type: "paragraph",
+        content: content.length > 0 ? content : undefined,
+      });
+      continue;
+    }
+    const kind = chunk.items[0]!.kind;
+    const listStyle = chunk.items[0]!.listStyle;
+    blocks.push({
+      type: kind === "ordered" ? "orderedList" : "bulletList",
+      ...(kind === "bullet" ? { attrs: { listStyle } } : {}),
+      content: chunk.items.map((item) => {
+        const content = item.text ? inlineMarkdownToTextNodes(item.text) : [];
+        return {
+          type: "listItem",
+          content: [
+            {
+              type: "paragraph",
+              content: content.length > 0 ? content : undefined,
+            },
+          ],
+        };
+      }),
+    });
+  }
+  return blocks.length > 0 ? blocks : null;
+}
+
 function parseListItemLine(
   trimmed: string
 ): { kind: "ordered" | "bullet"; text: string } | null {

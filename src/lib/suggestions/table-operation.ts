@@ -15,7 +15,10 @@ import {
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
 } from "@/lib/document-types/cvp/sections";
-import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
+import {
+  inlineMarkdownToTextNodesWithBreaks,
+  tableCellContentFromText,
+} from "@/lib/tiptap/markdown-to-doc";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
@@ -907,6 +910,29 @@ function nextCellText(cell: TableCellEdit): string {
   return normalizeTableCellText(normalizeSuggestionInsertText(cell.insertText));
 }
 
+/** Live cell text equals this insert, including when the insert is a list. */
+export function cellInsertMatchesLive(cell: JSONContent, text: string): boolean {
+  const live = cellPlainText(cell);
+  const normalized = normalizeSuggestionInsertText(text);
+  const blocks = tableCellContentFromText(normalized);
+  if (!blocks) return live === normalizeTableCellText(normalized);
+  return live === cellPlainText({ type: "tableCell", content: blocks });
+}
+
+export function cellContentFromInsert(text: string): JSONContent[] {
+  const normalized = normalizeSuggestionInsertText(text);
+  if (!normalized) return [{ type: "paragraph" }];
+  const listed = tableCellContentFromText(normalized);
+  if (listed) return listed;
+  const content = inlineMarkdownToTextNodesWithBreaks(normalized);
+  return [
+    {
+      type: "paragraph",
+      content: content.length > 0 ? content : undefined,
+    },
+  ];
+}
+
 /**
  * Whole-cell leftover tokens, including HTML-shaped labels such as
  * `<section>` that live placeholder scanning skips.
@@ -1140,7 +1166,7 @@ export function resolveEditCells(
       };
     }
     firstNextByCoord.set(coord, next);
-    if (next === live) {
+    if (cellInsertMatchesLive(node, cell.insertText)) {
       sawIdentity = true;
       continue;
     }
@@ -1149,8 +1175,7 @@ export function resolveEditCells(
     // snapshotted from the stale numeric index — the row key is the
     // concurrency token, not that leftover cell text.
     if (cell.expectedText !== undefined && !rematchedAway) {
-      const expected = normalizeTableCellText(cell.expectedText);
-      if (live !== expected) {
+      if (!cellInsertMatchesLive(node, cell.expectedText)) {
         sawStale = true;
         continue;
       }
@@ -1252,6 +1277,40 @@ export type TableInventory = TableInventoryEntry & {
   cells: TableCellCoordinate[];
 };
 
+/** List cells keep their markers so a later edit can write the list back. */
+function cellInventoryText(cell: JSONContent): string {
+  const blocks = cell.content ?? [];
+  const hasList = blocks.some(
+    (block) => block.type === "bulletList" || block.type === "orderedList"
+  );
+  if (!hasList) return cellPlainText(cell);
+  const lines: string[] = [];
+  let number = 1;
+  for (const block of blocks) {
+    if (block.type === "bulletList") {
+      const marker = block.attrs?.listStyle === "disc" ? "• " : "- ";
+      for (const item of block.content ?? []) {
+        if (item.type !== "listItem") continue;
+        const text = flattenForAnchor(item).text.replace(/\s+/g, " ").trim();
+        lines.push(`${marker}${text}`);
+      }
+      continue;
+    }
+    if (block.type === "orderedList") {
+      for (const item of block.content ?? []) {
+        if (item.type !== "listItem") continue;
+        const text = flattenForAnchor(item).text.replace(/\s+/g, " ").trim();
+        lines.push(`${number}. ${text}`);
+        number += 1;
+      }
+      continue;
+    }
+    const text = flattenForAnchor(block).text.replace(/\s+/g, " ").trim();
+    if (text) lines.push(text);
+  }
+  return lines.join("\n");
+}
+
 /** Coordinate inventory for read_section / structuredText so models pick tableIndex first. */
 export function summarizeTablesInDoc(doc: JSONContent): TableInventory[] {
   return collectTables(doc).map((table, tableIndex) => {
@@ -1260,7 +1319,7 @@ export function summarizeTablesInDoc(doc: JSONContent): TableInventory[] {
     const cells: TableCellCoordinate[] = [];
     rows.forEach((row, r) => {
       rowCells(row).forEach((cell, col) => {
-        cells.push({ row: r, col, text: cellPlainText(cell) || "(empty)" });
+        cells.push({ row: r, col, text: cellInventoryText(cell) || "(empty)" });
       });
     });
     return {
@@ -1401,15 +1460,6 @@ function expectedRowAtAfterStillValid(
   return true;
 }
 
-function cellParagraphFromText(text: string): JSONContent {
-  const normalized = normalizeSuggestionInsertText(text);
-  if (!normalized) return { type: "paragraph" };
-  return {
-    type: "paragraph",
-    content: inlineMarkdownToTextNodesWithBreaks(normalized),
-  };
-}
-
 function makeCell(
   type: "tableHeader" | "tableCell",
   text: string,
@@ -1418,12 +1468,12 @@ function makeCell(
   return {
     type,
     attrs: attrs ? structuredClone(attrs) : { ...DEFAULT_CELL_ATTRS },
-    content: [cellParagraphFromText(text)],
+    content: cellContentFromInsert(text),
   };
 }
 
 function setCellText(cell: JSONContent, text: string): void {
-  cell.content = [cellParagraphFromText(text)];
+  cell.content = cellContentFromInsert(text);
 }
 
 function fail(

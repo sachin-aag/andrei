@@ -2,6 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   applyTableOperation,
+  cellContentFromInsert,
   cellPlainText,
   ensureCaptionOnFilledTable,
   normalizeTableCellText,
@@ -241,6 +242,23 @@ function paintCellEditPreview(
   attrs: RedraftPreviewAttrs
 ): void {
   const before = cellPlainText(cell);
+  const listed = cellContentFromInsert(edit.insertText);
+  const isList = listed.some(
+    (block) => block.type === "bulletList" || block.type === "orderedList"
+  );
+  if (isList) {
+    for (const block of listed) markAllText(block, suggestionInsertMarkName, attrs);
+    const content: JSONContent[] = [];
+    if (before) {
+      content.push({
+        type: "paragraph",
+        content: [markedRun(before, suggestionDeleteMarkName, attrs)!],
+      });
+    }
+    content.push(...listed);
+    cell.content = content;
+    return;
+  }
   const after = normalizeTableCellText(
     normalizeSuggestionInsertText(edit.insertText)
   );

@@ -734,30 +734,47 @@ function runProperties(
   return rPr;
 }
 
-function listToXml(node: JSONContent, ctx: DocxExportContext): string {
+type ListXmlOptions = {
+  bold?: boolean;
+  align?: string | null;
+  keepNext?: boolean;
+  runSize?: string;
+};
+
+function listToXml(
+  node: JSONContent,
+  ctx: DocxExportContext | undefined,
+  options: ListXmlOptions = {}
+): string {
   const listType = node.type === "orderedList" ? "orderedList" : "bulletList";
-  const numId = allocateListNumId(
-    ctx,
-    listType,
-    (node.attrs?.listStyle as string | undefined) ?? null
-  );
+  const numId = ctx
+    ? allocateListNumId(
+        ctx,
+        listType,
+        (node.attrs?.listStyle as string | undefined) ?? null
+      )
+    : null;
   const parts: string[] = [];
   for (const item of node.content ?? []) {
-    if (item.type === "listItem") {
-      let numbered = true;
-      for (const child of item.content ?? []) {
-        parts.push(
-          paragraphToXml(
-            child,
-            false,
-            null,
-            numbered ? numId : null,
-            false,
-            ctx
-          )
-        );
-        numbered = false;
+    if (item.type !== "listItem") continue;
+    let numbered = true;
+    for (const child of item.content ?? []) {
+      if (child.type === "bulletList" || child.type === "orderedList") {
+        parts.push(listToXml(child, ctx, options));
+        continue;
       }
+      parts.push(
+        paragraphToXml(
+          child,
+          options.bold ?? false,
+          options.align ?? null,
+          numbered ? numId : null,
+          options.keepNext ?? false,
+          ctx,
+          options.runSize
+        )
+      );
+      numbered = false;
     }
   }
   return parts.join("");
@@ -1039,11 +1056,19 @@ function tableCellToXml(
     : (hAlign ?? "left");
   const cellSize = ctx?.tableCellSizeHalfPoints ?? undefined;
   const content = paragraphs
-    .map((p) => {
-      if (p.type === "paragraph") {
-        return paragraphToXml(p, isHeader, cellAlign, null, keepNext, ctx, cellSize);
+    .map((block) => {
+      if (block.type === "bulletList" || block.type === "orderedList") {
+        return listToXml(block, ctx, {
+          bold: isHeader,
+          align: cellAlign,
+          keepNext,
+          runSize: cellSize,
+        });
       }
-      return paragraphToXml(p, false, cellAlign, null, keepNext, ctx, cellSize);
+      if (block.type === "paragraph") {
+        return paragraphToXml(block, isHeader, cellAlign, null, keepNext, ctx, cellSize);
+      }
+      return paragraphToXml(block, false, cellAlign, null, keepNext, ctx, cellSize);
     })
     .join("");
 
