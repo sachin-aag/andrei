@@ -1297,6 +1297,56 @@ describe("buildChatTools document review", () => {
     });
   });
 
+  it("resolves a review filename onto the matching ready attachment id", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_sheet",
+        filename: "LF-1301 data sheet.xlsx",
+        description: null,
+        pageCount: 3,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_other",
+        filename: "other.pdf",
+        description: null,
+        pageCount: 9,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_sheet",
+        filename: "LF-1301 data sheet.xlsx",
+        pageNumber: 1,
+        transcript: "LOQ 0.05 ppm",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "Extract LOQ/LOD for 15.3 LF-1301",
+        attachmentIds: ["data sheet.xlsx"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_sheet"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_sheet"],
+    });
+  });
+
   it("walks every QSR lifecycle file for Table 3 without asking which attachment", async () => {
     listReadyDocumentsForReportMock.mockResolvedValueOnce([
       {
@@ -4061,6 +4111,37 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
+  it("does not treat flatten-identical TipTap JSON as section_changed", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    );
+    mockDefineSectionSelect({
+      type: "doc",
+      attrs: { normalized: true },
+      content: [
+        {
+          type: "paragraph",
+          attrs: { textAlign: "left" },
+          content: [
+            {
+              type: "text",
+              text: "The assay failed due to temperature drift.",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
   it("proposes insert_image from a saved Analytics plot", async () => {
     const tinyPng =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -4969,6 +5050,64 @@ describe("buildChatTools propose edits", () => {
     const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
     expect(patchedLead.pairedBlockSuggestionId).toBe(tableId);
     expect(patchedLead.placeBeforePairedBlock).toBe("table");
+  });
+
+  it("pairs create_table afterAnchor with a same-turn heading that is not in the saved field", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "## 15.3.6 Visual inspection\nAs a primary verification of equipment cleanliness.",
+        reasoning: "Add the visual heading.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the visual table.",
+        operation: {
+          kind: "create_table",
+          headers: ["Sample description / location", "Results"],
+          rows: [["Production Chemist verification", ""]],
+          afterAnchor: "15.3.6 Visual inspection",
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(2);
+    const leadId = String(inserted[0]!.id);
+    const tablePayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(tablePayload.placeAfterSuggestionId).toBe(leadId);
+    expect(tablePayload.tableOperation).toMatchObject({
+      kind: "create_table",
+    });
+    expect(
+      (tablePayload.tableOperation as { afterAnchor?: string } | undefined)
+        ?.afterAnchor
+    ).toBeFalsy();
   });
 
   it("pairs create_table then the empty-anchor lead-in in reverse order", async () => {

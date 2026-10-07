@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import { EMPTY_ELR_CONTENT } from "@/lib/document-types/elr/sections";
+import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
+import {
+  insertBlankCvpEquipmentItem,
+} from "@/lib/document-types/cvp/equipment-sampling";
 import { getDocumentType } from "@/lib/document-types";
 import {
   emptyQsrContent,
@@ -149,6 +154,71 @@ describe("seedSectionQueuePlan", () => {
         "qsr_conclusion",
       ])
     );
+  });
+
+  it("queues empty 15.N boxes when equipment sampling is only partial", () => {
+    const filled: JSONContent = {
+      ...cvpEquipmentSamplingSeed(1),
+      content: [
+        ...(cvpEquipmentSamplingSeed(1).content ?? []),
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Equipment identity filled from IQ report for MV-1304 mixed vessel sampling.",
+            },
+          ],
+        },
+      ],
+    };
+    const items = insertBlankCvpEquipmentItem(
+      insertBlankCvpEquipmentItem([filled], 0),
+      1
+    );
+    const seeded = seedSectionQueuePlan({
+      userText: "Draft the remaining sections",
+      documentType: "cleaning_verification_protocol",
+      sections: {
+        cvp_equipment_sampling: { items },
+      },
+      promptVersion: "chat-v199-cvp-equipment-loop",
+    });
+    const keys = seeded?.items.map((item) => item.sectionKey) ?? [];
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "cvp_equipment_sampling:items.1",
+        "cvp_equipment_sampling:items.2",
+      ])
+    );
+    expect(keys).not.toContain("cvp_equipment_sampling");
+    expect(
+      keys.filter((key) => key.startsWith("cvp_equipment_sampling:items."))
+    ).toEqual([
+      "cvp_equipment_sampling:items.1",
+      "cvp_equipment_sampling:items.2",
+    ]);
+    expect(seeded?.items[0]?.state).toBe("in_progress");
+  });
+
+  it("does not pair two 15.N boxes on one remaining-section turn", () => {
+    const started = plan([
+      {
+        sectionKey: "cvp_equipment_sampling:items.2",
+        label: "15.3 LEAF FILTER (LF-1301)",
+        state: "in_progress",
+      },
+      {
+        sectionKey: "cvp_equipment_sampling:items.3",
+        label: "15.4 ANF (ANF-1301)",
+        state: "queued",
+      },
+    ]);
+    expect(
+      currentPlanTurnSections(started, "cleaning_verification_protocol").map(
+        (item) => item.sectionKey
+      )
+    ).toEqual(["cvp_equipment_sampling:items.2"]);
   });
 
   it("does not queue ELR Attachments even when that table is empty", () => {
@@ -760,6 +830,31 @@ describe("plan prompt and metadata", () => {
     expect(block).not.toContain("overallGrade");
   });
 
+  it("tells Agent to finish one 15.N box in a burst without afterAnchor on a pending heading", () => {
+    const block = planPromptBlock(
+      plan([
+        {
+          sectionKey: "cvp_equipment_sampling:items.2",
+          label: "15.3 LEAF FILTER (LF-1301)",
+          state: "in_progress",
+        },
+        {
+          sectionKey: "cvp_equipment_sampling:items.3",
+          label: "15.4 ANF (ANF-1301)",
+          state: "queued",
+        },
+      ]),
+      "cleaning_verification_protocol"
+    );
+    expect(block).toContain("This turn: **15.3 LEAF FILTER (LF-1301)**");
+    expect(block).toContain("Do not start 15.4 ANF (ANF-1301)");
+    expect(block).toContain("Draft only this 15.N box");
+    expect(block).toContain("create_table with empty afterAnchor");
+    expect(block).toContain(
+      "Do not restart document review when equipment-sampling coverage already finished"
+    );
+  });
+
   it("reads continuation and autoContinue from message metadata", () => {
     expect(
       continuationFromMetadata({
@@ -1137,6 +1232,25 @@ describe("plan prompt and metadata", () => {
     });
   });
 
+  it("drafts both the parent section and the 15.N mention id from targetField", () => {
+    const live = livePlanProgressFromParts([
+      {
+        type: "tool-propose_edit",
+        state: "output-available",
+        input: {
+          section: "cvp_equipment_sampling",
+          targetField: "items.2",
+          insertText: "## 15.3.6 Visual inspection",
+        },
+        output: { status: "proposed" },
+      },
+    ]);
+    expect(live.draftedSectionKeys).toEqual([
+      "cvp_equipment_sampling",
+      "cvp_equipment_sampling:items.2",
+    ]);
+  });
+
   it("does not treat a bounced inventory write as drafted", () => {
     const live = livePlanProgressFromParts([
       {
@@ -1264,6 +1378,25 @@ describe("plan prompt and metadata", () => {
         documentType: "qualification_summary_report",
       })
     ).toBe("Draft section 2,3,4");
+    expect(
+      planCoverageObjective(
+        plan([
+          {
+            sectionKey: "cvp_equipment_sampling:items.2",
+            label: "15.3 LEAF FILTER (LF-1301)",
+            state: "in_progress",
+          },
+        ]),
+        "Continue the remaining sections.",
+        { documentType: "cleaning_verification_protocol" }
+      )
+    ).toBe("cvp_equipment_sampling");
+    expect(
+      planCoverageObjective(null, "Continue the remaining sections.", {
+        documentType: "cleaning_verification_protocol",
+        sectionScope: "cvp_equipment_sampling:items.2",
+      })
+    ).toBe("cvp_equipment_sampling");
   });
 
   it("stamps the section being drafted, not a leftover plan pointer", () => {
@@ -1321,6 +1454,13 @@ describe("plan prompt and metadata", () => {
         userText: "fill Qualification history",
       })
     ).toBe("elr_qualification");
+    expect(
+      resolveReviewCoverageObjective({
+        routeObjective: "cvp_equipment_sampling:items.2",
+        toolObjective: "Extract LOQ/LOD for 15.3 LF-1301",
+        documentType: "cleaning_verification_protocol",
+      })
+    ).toBe("cvp_equipment_sampling");
   });
 
   it("refuses draft_field only for ELR inventory tables, not DV Results", () => {

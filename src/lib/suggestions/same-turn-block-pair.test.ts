@@ -10,6 +10,7 @@ import {
   sortCommentsForPairedApply,
   takeUnusedBlock,
   takeUnusedLeadIn,
+  takeUnusedLeadInMatchingAnchor,
 } from "@/lib/suggestions/same-turn-block-pair";
 
 function comment(
@@ -104,6 +105,38 @@ describe("same-turn registry", () => {
     });
     expect(takeUnusedBlock(pairing, "define", "narrative")).toBeUndefined();
     expect(takeUnusedBlock(pairing, "purpose", "narrative")?.kind).toBe("table");
+  });
+
+  it("pairs afterAnchor with the heading insert that contains it", () => {
+    const pairing = createSameTurnBlockPairing();
+    recordLeadIn(pairing, {
+      suggestionId: "lead-worst",
+      section: "cvp_equipment_sampling",
+      targetField: "items.2",
+      payload: {
+        deleteText: "",
+        insertText: "## 15.3.3 Pictorial representation",
+        reasoning: "",
+      },
+    });
+    recordLeadIn(pairing, {
+      suggestionId: "lead-visual",
+      section: "cvp_equipment_sampling",
+      targetField: "items.2",
+      payload: {
+        deleteText: "",
+        insertText: "## 15.3.6 Visual inspection\nAs a primary verification.",
+        reasoning: "",
+      },
+    });
+    expect(
+      takeUnusedLeadInMatchingAnchor(
+        pairing,
+        "cvp_equipment_sampling",
+        "items.2",
+        "15.3.6 Visual inspection"
+      )?.suggestionId
+    ).toBe("lead-visual");
   });
 });
 

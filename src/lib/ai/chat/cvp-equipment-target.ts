@@ -3,7 +3,7 @@ import { fieldFillState } from "@/lib/ai/chat/fields";
 import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-item-path";
 import {
   CVP_EQUIPMENT_SAMPLING_SECTION,
-  ensureCvpEquipmentItem,
+  ensureCvpEquipmentFieldContent,
   normalizeCvpEquipmentSamplingContent,
 } from "@/lib/document-types/cvp/equipment-sampling";
 
@@ -64,7 +64,7 @@ export function routeCvpEquipmentWriteField(args: {
   }
   return {
     targetField: `items.${index}`,
-    content: ensureCvpEquipmentItem(args.content, index),
+    content: ensureCvpEquipmentFieldContent(args.content, `items.${index}`),
   };
 }
 

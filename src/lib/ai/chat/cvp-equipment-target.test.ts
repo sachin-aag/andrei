@@ -113,6 +113,28 @@ describe("routeCvpEquipmentWriteField", () => {
     expect(routed.targetField).toBe("items.1");
     expect(routed.content.items).toHaveLength(2);
   });
+
+  it("does not retitle a sibling 15.N box when binding a write", () => {
+    const sibling: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 MIXED VESSEL (MV-1304)" }],
+        },
+      ],
+    };
+    const bound = bindCvpEquipmentWrite(
+      "cvp_equipment_sampling",
+      "items.0",
+      "items.0",
+      { items: [withFilledNote(cvpEquipmentSamplingSeed(1)), sibling] }
+    );
+    const text = JSON.stringify((bound.content.items as JSONContent[])[1]);
+    expect(text).toContain("15.1 MIXED VESSEL (MV-1304)");
+    expect(text).not.toContain("15.2 MIXED VESSEL");
+  });
 });
 
 describe("cvp_equipment_sampling sectionFillState", () => {

@@ -405,7 +405,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   of a Page N of M split; ELR Attachments is filled at Word export from the
   live file list (do not draft `elr_attachments`);
   investigation and DV queues still advance on the table or narrative they
-  already draft. Working… hides
+  already draft. Cleaning Verification Protocol equipment sampling queues
+  each empty 15.N box (`cvp_equipment_sampling:items.N`) as its own remaining-section
+  item (one turn per box; `|obj:cvp_equipment_sampling` reuses a finished walk).
+  Working… hides
   when the stream is idle even if the optimistic send still has a stale
   pending id after hydrate. The agent-done notice is `Assistant is done
   with {section}`. Do not toast a false “hit an error” between successful

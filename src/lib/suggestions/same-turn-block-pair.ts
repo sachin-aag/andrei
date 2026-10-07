@@ -64,6 +64,13 @@ function sameField(
   return a.section === section && a.targetField === targetField;
 }
 
+function insertTextContainsAnchor(insertText: string, afterAnchor: string): boolean {
+  const needle = afterAnchor.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!needle) return false;
+  const hay = insertText.replace(/\s+/g, " ").trim().toLowerCase();
+  return hay.includes(needle);
+}
+
 export function takeUnusedLeadIn(
   pairing: SameTurnBlockPairing,
   section: SectionType,
@@ -72,6 +79,39 @@ export function takeUnusedLeadIn(
   const hit = [...pairing.leadIns]
     .reverse()
     .find((item) => !item.used && sameField(item, section, targetField));
+  if (hit) hit.used = true;
+  return hit;
+}
+
+export function hasUnusedLeadInMatchingAnchor(
+  pairing: SameTurnBlockPairing,
+  section: SectionType,
+  targetField: string,
+  afterAnchor: string
+): boolean {
+  return pairing.leadIns.some(
+    (item) =>
+      !item.used &&
+      sameField(item, section, targetField) &&
+      insertTextContainsAnchor(item.payload.insertText, afterAnchor)
+  );
+}
+
+/** Pair create_table afterAnchor with a heading that is still an open same-turn card. */
+export function takeUnusedLeadInMatchingAnchor(
+  pairing: SameTurnBlockPairing,
+  section: SectionType,
+  targetField: string,
+  afterAnchor: string
+): TurnLeadIn | undefined {
+  const hit = [...pairing.leadIns]
+    .reverse()
+    .find(
+      (item) =>
+        !item.used &&
+        sameField(item, section, targetField) &&
+        insertTextContainsAnchor(item.payload.insertText, afterAnchor)
+    );
   if (hit) hit.used = true;
   return hit;
 }

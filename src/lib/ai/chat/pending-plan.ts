@@ -1,5 +1,7 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
+  chatTargetFields,
+  fieldFillState,
   isChatEditableSection,
   isEmptyTableScaffoldDoc,
   seedFieldDoc,
@@ -30,6 +32,13 @@ import {
   type ChatIdentityReport,
 } from "@/lib/ai/chat/identity";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import {
+  CVP_EQUIPMENT_SAMPLING_SECTION,
+  cvpEquipmentItemIndexFromMentionId,
+  cvpEquipmentItemIndexFromTarget,
+  cvpEquipmentItemMentionId,
+  cvpEquipmentItemTitle,
+} from "@/lib/document-types/cvp/equipment-sampling";
 
 /** Client-sent user turn that continues a server-owned section queue. */
 export const CHAT_AUTO_CONTINUE_TEXT = "Continue the remaining sections.";
@@ -220,6 +229,54 @@ export function inventorySectionSet(
   return new Set(getDocumentType(documentType).chat.inventorySections ?? []);
 }
 
+function isCvpEquipmentPlanItem(sectionKey: string): boolean {
+  return cvpEquipmentItemIndexFromMentionId(sectionKey) != null;
+}
+
+function isInventoryPlanSection(
+  documentType: DocumentType,
+  sectionKey: string
+): boolean {
+  if (inventorySectionSet(documentType).has(sectionKey)) return true;
+  return isCvpEquipmentPlanItem(sectionKey);
+}
+
+function coverageSectionFromPlanKey(
+  sectionKey: string,
+  documentType: DocumentType
+): string | null {
+  if (isCvpEquipmentPlanItem(sectionKey)) return CVP_EQUIPMENT_SAMPLING_SECTION;
+  if (isChatEditableSection(sectionKey, documentType)) return sectionKey;
+  return null;
+}
+
+function cvpEquipmentEmptyPlanItems(
+  content: Record<string, unknown> | undefined
+): ChatPlanItem[] {
+  const record = content ?? {};
+  const fields = chatTargetFields(CVP_EQUIPMENT_SAMPLING_SECTION, record);
+  const items: ChatPlanItem[] = [];
+  for (const field of fields) {
+    if (
+      fieldFillState(record, CVP_EQUIPMENT_SAMPLING_SECTION, field.targetField) !==
+      "empty"
+    ) {
+      continue;
+    }
+    const index = cvpEquipmentItemIndexFromTarget(field.targetField);
+    if (index == null) continue;
+    items.push({
+      sectionKey: cvpEquipmentItemMentionId(index),
+      label: cvpEquipmentItemTitle(
+        getRichFieldValue(record, field.targetField),
+        index + 1
+      ),
+      state: "queued",
+    });
+  }
+  return items;
+}
+
 export function isInventoryTableField(
   documentType: DocumentType,
   section: string,
@@ -328,7 +385,7 @@ export function planKeepsComprehensive(
   if (!plan || plan.paused) return false;
   const current = plan.items.find((item) => item.state === "in_progress");
   if (!current) return false;
-  return inventorySectionSet(documentType).has(current.sectionKey);
+  return isInventoryPlanSection(documentType, current.sectionKey);
 }
 
 export function seedSectionQueuePlan(input: {
@@ -349,6 +406,10 @@ export function seedSectionQueuePlan(input: {
     });
   }
   for (const section of def.chat.draftOrder) {
+    if (section === CVP_EQUIPMENT_SAMPLING_SECTION) {
+      items.push(...cvpEquipmentEmptyPlanItems(input.sections[section]));
+      continue;
+    }
     const fill = sectionFillState(input.sections[section], section);
     if (fill !== "empty") continue;
     items.push({
@@ -393,6 +454,10 @@ export function seedNamedSectionQueuePlan(input: {
   for (const section of named) {
     if (seen.has(section)) continue;
     seen.add(section);
+    if (section === CVP_EQUIPMENT_SAMPLING_SECTION) {
+      items.push(...cvpEquipmentEmptyPlanItems(input.sections[section]));
+      continue;
+    }
     const fill = sectionFillState(input.sections[section], section);
     if (fill !== "empty") continue;
     items.push({
@@ -502,7 +567,6 @@ export function currentPlanTurnSections(
 ): ChatPlanItem[] {
   const current = plan.items.find((item) => item.state === "in_progress");
   if (!current) return [];
-  const inventory = inventorySectionSet(documentType);
   const currentIndex = plan.items.findIndex(
     (item) => item.sectionKey === current.sectionKey
   );
@@ -510,8 +574,8 @@ export function currentPlanTurnSections(
   if (
     next &&
     next.state === "queued" &&
-    !inventory.has(current.sectionKey) &&
-    !inventory.has(next.sectionKey)
+    !isInventoryPlanSection(documentType, current.sectionKey) &&
+    !isInventoryPlanSection(documentType, next.sectionKey)
   ) {
     return [current, next];
   }
@@ -541,6 +605,11 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
   const nextLine = next
     ? `Do not start ${next.label}. The next request continues automatically.`
     : "This is the last item in the queue.";
+  const cvpEquipmentLine = turn.some((item) =>
+    isCvpEquipmentPlanItem(item.sectionKey)
+  )
+    ? " Draft only this 15.N box (the items.N field). One burst: fill seeded 15.N.1 / .2 / .5 / .7 / .8 slots, then add missing 15.N.3 / .6 (and .4 only when a cited protocol prints it). After propose_edit of a new heading, create_table with empty afterAnchor so the table pairs with that heading — do not afterAnchor a heading that is still an open card. Do not restart document review when equipment-sampling coverage already finished."
+    : "";
   const elrSiblingLine =
     documentType === "equipment_lifecycle_report"
       ? " Evidence tables are not done after edit_table alone — draft narrative in the same turn with a count from the rows (and trend for breakdowns/alarms). Access Control is not done until every annexure Sr. row is copied, including the continuation page of a Page N of M split. Risk overallGrade is low|medium|high (max of row priority and downtime/scrap floor). Conclusion recommendation is continue|early_requalification|capa|other."
@@ -552,7 +621,7 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
     : "";
   return `## Multi-section plan
 The engineer asked to draft several sections (${done} of ${total} done). This turn: ${labels}.
-Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${identityLine}${elrSiblingLine}`;
+Draft only ${turn.length === 1 ? "this section" : "these two sections"}. ${nextLine}${identityLine}${elrSiblingLine}${cvpEquipmentLine}`;
 }
 
 function toolNamesFromParts(parts: unknown): string[] {
@@ -628,14 +697,20 @@ export function planCoverageObjective(
 ): string {
   const documentType = options?.documentType ?? "investigation_report";
   const scope = options?.sectionScope?.trim() ?? "";
-  if (scope && scope !== "all" && isChatEditableSection(scope, documentType)) {
-    return scope;
+  const scoped = coverageSectionFromPlanKey(scope, documentType);
+  if (scope && scope !== "all" && scoped) {
+    return scoped;
   }
   const detected = coverageSectionFromUserText(userText, documentType);
   if (detected) return detected;
   if (plan && !plan.paused) {
     const current = plan.items.find((item) => item.state === "in_progress");
-    if (current?.sectionKey) return current.sectionKey;
+    if (current?.sectionKey) {
+      return (
+        coverageSectionFromPlanKey(current.sectionKey, documentType) ??
+        current.sectionKey
+      );
+    }
   }
   return userText.trim().slice(0, 80);
 }
@@ -653,25 +728,20 @@ export function resolveReviewCoverageObjective(input: {
   sectionScope?: string | null;
 }): string {
   const scope = input.sectionScope?.trim() ?? "";
-  if (
-    scope &&
-    scope !== "all" &&
-    isChatEditableSection(scope, input.documentType)
-  ) {
-    return scope;
+  const scoped = coverageSectionFromPlanKey(scope, input.documentType);
+  if (scope && scope !== "all" && scoped) {
+    return scoped;
   }
   const fromUser = input.userText
     ? coverageSectionFromUserText(input.userText, input.documentType)
     : null;
   if (fromUser) return fromUser;
   const tool = input.toolObjective.trim();
-  if (tool && isChatEditableSection(tool, input.documentType)) {
-    return tool;
-  }
+  const toolSection = coverageSectionFromPlanKey(tool, input.documentType);
+  if (toolSection) return toolSection;
   const route = input.routeObjective?.trim() ?? "";
-  if (route && isChatEditableSection(route, input.documentType)) {
-    return route;
-  }
+  const routeSection = coverageSectionFromPlanKey(route, input.documentType);
+  if (routeSection) return routeSection;
   return tool || route;
 }
 
@@ -799,19 +869,32 @@ export function livePlanProgressFromParts(parts: unknown): LivePlanProgress {
     const key =
       typeof sectionFromInput === "string" ? sectionFromInput.trim() : "";
     if (!key) continue;
+    const targetField =
+      typeof (input as { targetField?: unknown }).targetField === "string"
+        ? (input as { targetField: string }).targetField.trim()
+        : "";
+    const itemIndex = cvpEquipmentItemIndexFromTarget(targetField);
+    const itemKey =
+      key === CVP_EQUIPMENT_SAMPLING_SECTION && itemIndex != null
+        ? cvpEquipmentItemMentionId(itemIndex)
+        : null;
+    const draftedKeys = itemKey ? [key, itemKey] : [key];
     const state = typeof rec.state === "string" ? rec.state : "";
     if (state === "output-available") {
-      if (
-        planEditToolLanded(rec) &&
-        !draftedSectionKeys.includes(key)
-      ) {
-        draftedSectionKeys.push(key);
+      if (planEditToolLanded(rec)) {
+        for (const drafted of draftedKeys) {
+          if (!draftedSectionKeys.includes(drafted)) {
+            draftedSectionKeys.push(drafted);
+          }
+        }
       }
-      if (inFlightSectionKey === key) inFlightSectionKey = null;
+      if (inFlightSectionKey === key || inFlightSectionKey === itemKey) {
+        inFlightSectionKey = null;
+      }
       continue;
     }
     if (state === "output-error") continue;
-    inFlightSectionKey = key;
+    inFlightSectionKey = itemKey ?? key;
   }
   return {
     draftedSectionKeys,
