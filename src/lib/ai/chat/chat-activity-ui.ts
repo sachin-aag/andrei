@@ -69,6 +69,7 @@ const EDIT_TOOLS = new Set([
   "draft_field",
   "insert_image",
   "remove_image",
+  "annotate_image",
   "draft_identity",
   "select_analyze_method",
 ]);

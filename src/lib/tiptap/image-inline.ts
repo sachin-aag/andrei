@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { ImageInlineNodeView } from "@/components/report/tiptap/image-inline-node-view";
 import { parseChartSpec, type ChartSpec } from "@/lib/charts/chart-spec";
+import { parseImageDrawing, type ImageDrawing } from "@/lib/drawings/overlay";
 
 export type ImageInlineAttrs = {
   src: string;
@@ -10,6 +11,8 @@ export type ImageInlineAttrs = {
   mediaId?: string | null;
   /** Agent-generated plot provenance. null on human photos. */
   chartSpec?: ChartSpec | null;
+  /** Vector arrows/labels on top of the raster. */
+  drawing?: ImageDrawing | null;
   /** Set while an Agent insert is pending review; stripped on accept. */
   suggestionId?: string | null;
   /** Pending Agent insert vs proposed deletion; omitted/null means a committed figure. */
@@ -60,6 +63,15 @@ export const ImageInline = Node.create({
           const spec = parseChartSpec(attributes.chartSpec);
           if (!spec) return {};
           return { "data-chart-spec": JSON.stringify(spec) };
+        },
+      },
+      drawing: {
+        default: null,
+        parseHTML: (element) => parseImageDrawing(element.getAttribute("data-drawing")),
+        renderHTML: (attributes) => {
+          const drawing = parseImageDrawing(attributes.drawing);
+          if (!drawing || drawing.shapes.length === 0) return {};
+          return { "data-drawing": JSON.stringify(drawing) };
         },
       },
     };

@@ -30,6 +30,7 @@ import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections"
 import { getUser } from "@/lib/auth/user-directory";
 import { isHiddenExpertReviewerEmail } from "@/lib/reports/hidden-expert-reviewer";
 import { formatCalendarDate } from "@/lib/utils";
+import { flattenDrawingsInValue } from "@/lib/drawings/flatten";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
 import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
@@ -598,6 +599,12 @@ export async function generateReportDocx({
             : "qsr",
     });
   }
+  exportSections = await Promise.all(
+    exportSections.map(async (row) => ({
+      ...row,
+      content: await flattenDrawingsInValue(row.content),
+    }))
+  );
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
       report,

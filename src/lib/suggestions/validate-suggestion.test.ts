@@ -918,6 +918,136 @@ describe("validateSuggestionLocate table operations", () => {
   });
 });
 
+describe("validateSuggestionLocate drawing operations", () => {
+  const PNG =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const drawing = {
+    version: 1 as const,
+    shapes: [
+      {
+        id: "callout-1-label",
+        type: "label" as const,
+        x: 0.03,
+        y: 0.4,
+        w: 0.22,
+        h: 0.08,
+        text: "S-1",
+        color: "#c62828",
+      },
+      {
+        id: "callout-1-arrow",
+        type: "arrow" as const,
+        x1: 0.25,
+        y1: 0.44,
+        x2: 0.58,
+        y2: 0.5,
+        color: "#c62828",
+      },
+    ],
+  };
+  const figureDoc = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "imageInline",
+            attrs: { src: PNG, alt: "Vessel", width: 400 },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("round-trips a drawingOperation through the ai_fix payload", () => {
+    const payload = parseAiFixCommentContent(
+      serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "Annotate: S-1",
+        reasoning: "Label the dish",
+        drawingOperation: { index: 1, drawing },
+      })
+    );
+    expect(payload.drawingOperation?.index).toBe(1);
+    expect(payload.drawingOperation?.drawing.shapes).toHaveLength(2);
+  });
+
+  it("stays locatable when the figure is still in the field", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "Annotate: S-1",
+        reasoning: "Label the dish",
+        drawingOperation: { index: 1, drawing },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", { narrative: figureDoc });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
+  });
+
+  it("treats matching overlays as already present", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "Annotate: S-1",
+        reasoning: "Label the dish",
+        drawingOperation: { index: 1, drawing },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "imageInline",
+                attrs: { src: PNG, alt: "Vessel", width: 400, drawing },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(false);
+    expect(v.mergeStatus).toBe("noop");
+  });
+
+  it("marks the operation stale when the figure is gone", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "Annotate: S-1",
+        reasoning: "Label the dish",
+        drawingOperation: { index: 1, drawing },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "No figure." }] }],
+      },
+    });
+    expect(v.canApply).toBe(false);
+    expect(v.documentChanged).toBe(true);
+    expect(v.locateStatus).toBe("not_found");
+  });
+});
+
 describe("reviewOrderOpenSuggestions", () => {
   const sectionContent = {
     narrative: {

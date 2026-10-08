@@ -130,7 +130,7 @@ export function spanForSuggestionComment(args: {
 
   const payload = parseAiFixCommentContent(args.comment.content);
   if (payload.tableOperationInvalid) return null;
-  if (payload.tableOperation) {
+  if (payload.tableOperation || payload.drawingOperation) {
     return { commentId: args.comment.id, path, ranges: [], wholeField: false };
   }
 

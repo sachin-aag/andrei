@@ -42,6 +42,7 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
+import { drawingPreviewSummary } from "@/lib/drawings/overlay";
 import {
   afterPaint,
   delay,
@@ -192,6 +193,9 @@ function SuggestionTraceability({
 }
 
 function figureChangeSummary(payload: ParsedAiFixPayload): string | null {
+  if (payload.drawingOperation) {
+    return drawingPreviewSummary(payload.drawingOperation.drawing);
+  }
   const insert = payload.insertImage;
   const remove = payload.removeImage;
   if (!insert && !remove) return null;
@@ -276,6 +280,8 @@ export function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
+            : card.kind === "fix" && card.payload.drawingOperation
+              ? "Figure annotation"
             : card.kind === "fix" &&
                 card.payload.insertImage &&
                 card.payload.removeImage &&

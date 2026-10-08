@@ -706,7 +706,16 @@ function inlineNodesToRuns(
       const src = child.attrs?.src as string | undefined;
       if (src) {
         const width = child.attrs?.width as number | undefined;
-        parts.push(registerInlineImage(ctx, src, width));
+        const flattenedSrc =
+          typeof child.attrs?.flattenedSrc === "string"
+            ? child.attrs.flattenedSrc
+            : null;
+        parts.push(
+          registerInlineImage(ctx, src, width, {
+            drawing: child.attrs?.drawing,
+            flattenedSrc,
+          })
+        );
       }
       emittedBoundarySpace = false;
     } else if (child.type === "mathInline") {

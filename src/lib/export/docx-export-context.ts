@@ -1,4 +1,15 @@
+import {
+  isEmptyImageDrawing,
+  parseImageDrawing,
+  type ImageDrawing,
+} from "@/lib/drawings/overlay";
 import type { ListNumberingBases } from "@/lib/export/docx-numbering";
+import {
+  annotatedAlternateContentXml,
+  annotatedGroupInlineXml,
+  overlayLayoutFromPhoto,
+  pictureInlineXml,
+} from "@/lib/export/docx-annotated-image";
 import {
   DEFAULT_A4_PAGE_SETUP,
   type DocxPageSetup,
@@ -29,6 +40,11 @@ export type DocxCommentExportEntry = {
 const MIN_INLINE_EXPORT_WIDTH_PX = 96;
 const MAX_INLINE_EXPORT_WIDTH_PX = 600;
 const EMU_PER_PX = 9525;
+
+export type InlineImageExportOptions = {
+  drawing?: ImageDrawing | null;
+  flattenedSrc?: string | null;
+};
 
 export type DocxParagraphAlign = "left" | "center" | "right" | "both";
 
@@ -332,14 +348,45 @@ export function extensionForMime(mimeType: string): string {
   }
 }
 
-/** Register an inline image and return OOXML drawing markup for a w:r. */
-export function registerInlineImage(
+type RegisteredImage = {
+  relId: string;
+  fileName: string;
+  intrinsicWidth: number | null;
+  intrinsicHeight: number | null;
+  cx: number;
+  cy: number;
+  docPrId: number;
+};
+
+function displaySize(
+  intrinsicWidth: number | null,
+  intrinsicHeight: number | null,
+  widthPx?: number | null
+): { width: number; height: number; cx: number; cy: number } {
+  let width = widthPx ?? intrinsicWidth ?? 400;
+  if (intrinsicWidth && width < MIN_INLINE_EXPORT_WIDTH_PX) {
+    width = Math.min(intrinsicWidth, MAX_INLINE_EXPORT_WIDTH_PX);
+  }
+  width = Math.max(1, Math.min(width, MAX_INLINE_EXPORT_WIDTH_PX));
+  const height =
+    intrinsicWidth && intrinsicHeight
+      ? Math.max(1, Math.round((width * intrinsicHeight) / intrinsicWidth))
+      : Math.round(width * 0.75);
+  return {
+    width,
+    height,
+    cx: Math.round(width * EMU_PER_PX),
+    cy: Math.round(height * EMU_PER_PX),
+  };
+}
+
+function pushImageMedia(
   ctx: DocxExportContext,
   dataUrl: string,
-  widthPx?: number | null
-): string {
+  displayWidthPx?: number | null
+): RegisteredImage | null {
   const parsed = parseDataUrl(dataUrl);
-  if (!parsed) return "";
+  if (!parsed) return null;
 
   const ext = extensionForMime(parsed.mimeType);
   const fileName = `image${ctx.nextImageIndex}.${ext}`;
@@ -352,61 +399,93 @@ export function registerInlineImage(
   const dims = readRasterDimensions(parsed.bytes, parsed.mimeType);
   const intrinsicWidth = dims?.width ?? null;
   const intrinsicHeight = dims?.height ?? null;
-
-  let width = widthPx ?? intrinsicWidth ?? 400;
-  if (intrinsicWidth && width < MIN_INLINE_EXPORT_WIDTH_PX) {
-    width = Math.min(intrinsicWidth, MAX_INLINE_EXPORT_WIDTH_PX);
-  }
-  width = Math.max(1, Math.min(width, MAX_INLINE_EXPORT_WIDTH_PX));
-
-  const height =
-    intrinsicWidth && intrinsicHeight
-      ? Math.max(1, Math.round((width * intrinsicHeight) / intrinsicWidth))
-      : Math.round(width * 0.75);
-
-  const cx = Math.round(width * EMU_PER_PX);
-  const cy = Math.round(height * EMU_PER_PX);
+  const size = displaySize(intrinsicWidth, intrinsicHeight, displayWidthPx);
 
   ctx.media.push({
     relId,
     fileName,
     bytes: parsed.bytes,
     contentType: parsed.mimeType,
-    widthPx: width,
-    heightPx: height,
+    widthPx: size.width,
+    heightPx: size.height,
   });
 
-  const docPrId = relNum;
+  return {
+    relId,
+    fileName,
+    intrinsicWidth,
+    intrinsicHeight,
+    cx: size.cx,
+    cy: size.cy,
+    docPrId: relNum,
+  };
+}
+
+/** Register an inline image and return OOXML drawing markup for a w:r. */
+export function registerInlineImage(
+  ctx: DocxExportContext,
+  dataUrl: string,
+  widthPx?: number | null,
+  options?: InlineImageExportOptions
+): string {
+  const drawing = parseImageDrawing(options?.drawing);
+  if (!drawing || isEmptyImageDrawing(drawing)) {
+    const media = pushImageMedia(ctx, dataUrl, widthPx);
+    if (!media) return "";
+    return (
+      `<w:r>${runProperties(ctx)}` +
+      pictureInlineXml({
+        relId: media.relId,
+        fileName: media.fileName,
+        cx: media.cx,
+        cy: media.cy,
+        docPrId: media.docPrId,
+      }) +
+      `</w:r>`
+    );
+  }
+
+  const flattenedSrc =
+    typeof options?.flattenedSrc === "string" && options.flattenedSrc.length > 0
+      ? options.flattenedSrc
+      : null;
+  const fallback = pushImageMedia(ctx, flattenedSrc ?? dataUrl, widthPx);
+  if (!fallback) return "";
+  const original =
+    flattenedSrc && flattenedSrc !== dataUrl
+      ? pushImageMedia(ctx, dataUrl, widthPx)
+      : fallback;
+  if (!original) return "";
+
+  const photoW = original.intrinsicWidth ?? 400;
+  const photoH = original.intrinsicHeight ?? 300;
+  const layout = overlayLayoutFromPhoto(
+    photoW,
+    photoH,
+    drawing,
+    fallback.cx,
+    fallback.cy
+  );
 
   return (
     `<w:r>${runProperties(ctx)}` +
-    `<w:drawing>` +
-    `<wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">` +
-    `<wp:extent cx="${cx}" cy="${cy}"/>` +
-    `<wp:docPr id="${docPrId}" name="${escapeXml(fileName)}"/>` +
-    `<wp:cNvGraphicFramePr>` +
-    `<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>` +
-    `</wp:cNvGraphicFramePr>` +
-    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
-    `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
-    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
-    `<pic:nvPicPr>` +
-    `<pic:cNvPr id="${docPrId}" name="${escapeXml(fileName)}"/>` +
-    `<pic:cNvPicPr/>` +
-    `</pic:nvPicPr>` +
-    `<pic:blipFill>` +
-    `<a:blip r:embed="${relId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>` +
-    `<a:stretch><a:fillRect/></a:stretch>` +
-    `</pic:blipFill>` +
-    `<pic:spPr>` +
-    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
-    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
-    `</pic:spPr>` +
-    `</pic:pic>` +
-    `</a:graphicData>` +
-    `</a:graphic>` +
-    `</wp:inline>` +
-    `</w:drawing>` +
+    annotatedAlternateContentXml({
+      choiceXml: annotatedGroupInlineXml({
+        photoRelId: original.relId,
+        photoFileName: original.fileName,
+        drawing,
+        layout,
+        docPrId: fallback.docPrId,
+        font: ctx.runFont,
+      }),
+      fallbackXml: pictureInlineXml({
+        relId: fallback.relId,
+        fileName: fallback.fileName,
+        cx: fallback.cx,
+        cy: fallback.cy,
+        docPrId: fallback.docPrId + 50,
+      }),
+    }) +
     `</w:r>`
   );
 }
@@ -420,12 +499,4 @@ function runProperties(ctx: DocxExportContext): string {
     `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/>` +
     `</w:rPr>`
   );
-}
-
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

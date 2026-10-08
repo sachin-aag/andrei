@@ -91,7 +91,7 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan. Write tools (`edit_table`, `draft_rtm_table`,
-  `draft_field`, `propose_edit`) stay off that list. Internal
+  `draft_field`, `propose_edit`, `annotate_image`) stay off that list. Internal
   `unsupported_tool` is the exception — keep it out of the allowlist and
   `activeTools`; `repairChatToolCall` remaps a hallucinated name such as
   `edit_table` onto it so `AI_NoSuchToolError` cannot fail the chat. On Agent
@@ -234,7 +234,12 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
 - `insert_image` `source=document` copies a cited figure from a ready PDF
   (page raster) or Word file (embedded PNG/JPEG; letterhead skipped). Search
   first; do not invent drawings. Word drawings that are not rasters need a
-  PDF of the same file.
+  PDF of the same file. `annotate_image` proposes S-n / location callouts
+  (arrows + labels) on a figure already in the field. Labels sit outside
+  the photo (left stack, or nearest edge when tip coords are given). Apply
+  writes the overlay, save scales the figure so overflow callouts stay
+  visible, then the engineer can drag tips. Stay off Plan. Do not generate
+  vessel pixels.
 - A QSR RTM family-column cell persists as `{section} – {audit line}`
   from the protocol body page that prints that heading — not a
   cover/contents `Section 8` cite, and not a reused number-only `12.1`.

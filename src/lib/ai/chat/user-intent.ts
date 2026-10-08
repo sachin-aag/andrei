@@ -23,6 +23,7 @@ export const DOCUMENT_WRITE_TOOLS = [
   "draft_rtm_table",
   "insert_image",
   "remove_image",
+  "annotate_image",
   "plot_measurements",
   "select_analyze_method",
   "draft_identity",
