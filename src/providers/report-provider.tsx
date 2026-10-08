@@ -190,8 +190,9 @@ type ReportContextValue = {
     >
   >;
   /**
-   * Set after suggestions succeed — workspace scrolls to this newly
-   * generated card (not the first open). Does not collapse the assistant.
+   * Set after suggestions succeed — workspace mounts the section and focuses
+   * this newly generated card (not the first open). Does not collapse the
+   * assistant or change scroll position.
    */
   suggestionsFocus: { section: SectionType; commentId: string } | null;
   clearSuggestionsFocus: () => void;
@@ -725,7 +726,7 @@ export function ReportProvider({
     );
     if (generated?.section) {
       // A parked "Go to next" bridge pins the gutter to the previous section.
-      // Clear it so scroll/focus land on the newly generated card.
+      // Clear it so focus lands on the newly generated card.
       setSuggestionApplyTransition({});
       setSuggestionsFocus({
         section: generated.section,
