@@ -7,6 +7,7 @@ import {
   tableRefNode,
 } from "@/lib/tiptap/table-ref-markdown";
 import {
+  normalizeDegreeLatex,
   quantityLatexToPlainText,
   quantityLatexToTextNodes,
   shouldFlattenDollarLatex,
@@ -148,9 +149,10 @@ function latexToInlineNodes(
   latex: string,
   extraMarks?: JSONContent["marks"]
 ): JSONContent[] {
-  const simple = simpleLatexToTextNodes(latex, extraMarks);
+  const normalized = normalizeDegreeLatex(latex.trim());
+  const simple = simpleLatexToTextNodes(normalized, extraMarks);
   if (simple) return simple;
-  const quantity = quantityLatexToTextNodes(latex, extraMarks);
+  const quantity = quantityLatexToTextNodes(normalized, extraMarks);
   if (quantity) return quantity;
   return [mathInlineNode(latex, extraMarks)];
 }
