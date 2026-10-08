@@ -393,7 +393,7 @@ describe("CreateReportDialog", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows a Word upload field for Cleaning Verification Protocol on 3xper", async () => {
+  it("shows a Word upload field for Cleaning Validation Protocol on 3xper", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(XPER_PACK);
     const user = userEvent.setup();
     render(<DialogHarness />);
@@ -402,7 +402,7 @@ describe("CreateReportDialog", () => {
     await pickDocumentType(user, "cleaning_verification_protocol");
 
     expect(
-      screen.getByRole("heading", { name: /create cleaning verification protocol/i })
+      screen.getByRole("heading", { name: /create cleaning validation protocol/i })
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/protocol no/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/existing protocol/i)).toBeInTheDocument();

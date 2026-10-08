@@ -424,7 +424,7 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   of a Page N of M split; ELR Attachments is filled at Word export from the
   live file list (do not draft `elr_attachments`);
   investigation and DV queues still advance on the table or narrative they
-  already draft. Cleaning Verification Protocol equipment sampling queues
+  already draft. Cleaning Validation Protocol equipment sampling queues
   each empty 15.N box (`cvp_equipment_sampling:items.N`) as its own remaining-section
   item (one turn per box; `|obj:cvp_equipment_sampling` reuses a finished walk).
   Working… hides

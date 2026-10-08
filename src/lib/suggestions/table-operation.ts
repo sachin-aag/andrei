@@ -11,6 +11,7 @@ import {
   EMPTY_QSR_CONTENT,
   QSR_RTM_FAMILY_HEADERS,
 } from "@/lib/document-types/qsr/sections";
+import { placeCvpAnalyticalFooter } from "@/lib/document-types/cvp/cycle-upgrade";
 import {
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
@@ -736,6 +737,16 @@ export function prefixTableCaptionMarkdown(
     markdown: `Table ${expected}. ${title.trim()}\n\n${trimmed}`,
     tableNumber: expected,
   };
+}
+
+function stampAnalyticalFooter(
+  result: TableOperationResult,
+  table: JSONContent
+): TableOperationResult {
+  if (!result.ok) return result;
+  const placed = placeCvpAnalyticalFooter(table);
+  if (placed !== table) table.content = placed.content;
+  return result;
 }
 
 function captionAfterFill(
@@ -1626,7 +1637,7 @@ function applyCreateTable(
       ? row.slice(0, colCount)
       : [...row, ...Array.from({ length: colCount - row.length }, () => "")]
   );
-  const table: JSONContent = {
+  const table = placeCvpAnalyticalFooter({
     type: "table",
     content: [
       {
@@ -1638,7 +1649,7 @@ function applyCreateTable(
         content: row.map((cell) => makeCell("tableCell", cell)),
       })),
     ],
-  };
+  });
   const title = operation.title?.trim() ?? "";
   const existing = context?.documentContents
     ? countFilledTablesInDocument(context.documentContents)
@@ -1703,13 +1714,16 @@ export function applyTableOperation(
   switch (targeted.kind) {
     case "edit_cells":
       return captionAfterFill(
-        applyEditCells(next, table, targeted, fixedColumns),
+        stampAnalyticalFooter(
+          applyEditCells(next, table, targeted, fixedColumns),
+          table
+        ),
         targeted.tableIndex,
         context
       );
     case "insert_rows":
       return captionAfterFill(
-        applyInsertRows(next, table, targeted),
+        stampAnalyticalFooter(applyInsertRows(next, table, targeted), table),
         targeted.tableIndex,
         context
       );

@@ -48,11 +48,16 @@ describe("docx page setup", () => {
     expect(landscape).toContain('w:code="9"');
   });
 
-  it("lands 15+ equal columns on landscape for the A4 content band", () => {
-    expect(tableNeedsLandscapePage(14, 10469)).toBe(false);
-    expect(tableNeedsLandscapePage(15, 10469)).toBe(true);
-    expect(tableNeedsLandscapePage(19, 10469)).toBe(true);
+  it("lands 8+ columns on landscape for the A4 content band", () => {
+    expect(tableNeedsLandscapePage(7, 10469)).toBe(false);
+    expect(tableNeedsLandscapePage(8, 10469)).toBe(true);
+    expect(tableNeedsLandscapePage(9, 10469)).toBe(true);
     expect(tableNeedsLandscapePage(1, 10469)).toBe(false);
+  });
+
+  it("lands fewer than 8 columns when equal-width portrait cells would be under 0.5\"", () => {
+    expect(tableNeedsLandscapePage(7, 5000)).toBe(true);
+    expect(tableNeedsLandscapePage(7, 5040)).toBe(false);
   });
 
   it("moves a landscape section break to before the table name and title", () => {

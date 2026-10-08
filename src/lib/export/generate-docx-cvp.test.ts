@@ -40,7 +40,7 @@ function cvpReport(): typeof reports.$inferSelect {
       version: "00",
       effectiveDate: "08-Apr-2026",
       documentTitle:
-        "Cleaning Verification Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)",
+        "Cleaning Validation Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)",
     },
     status: "draft",
     createdAt: new Date("2026-01-01"),
@@ -108,6 +108,16 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain(' TOC \\o "1-1" ');
     expect(document).toContain('<w:pStyle w:val="TOCHeading"/>');
     expect(document).toContain("TABLE OF CONTENTS");
+    expect(visibleText(document)).toContain("CLEANING VALIDATION PROTOCOL");
+    expect(visibleText(document)).not.toContain("CLEANING VERIFICATION PROTOCOL");
+    expect(document).toContain("CLEANING VALIDATION METHODOLOGY");
+    expect(document).not.toContain("CLEANING VERIFICATION METHODOLOGY");
+    expect(visibleText(zip.file("word/header1.xml")?.asText() ?? "")).toContain(
+      "CLEANING VALIDATION PROTOCOL"
+    );
+    expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
+      "CLEANING VALIDATION PROTOCOL"
+    );
     expect(paragraphContaining(document, "APPROVAL SIGNATURES")).toContain(
       '<w:numId w:val="3"/>'
     );
@@ -139,11 +149,22 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("15.1.2 Supporting Documents");
     expect(body).not.toContain("15.1.3.1 Worst-case locations");
     expect(body).toContain("NITROSAMINE LIMITS");
+    expect(body).toContain(
+      "The rinse samples collected from the equipment after completion of the cleaning procedure"
+    );
+    expect(body).toContain(
+      "Swab and rinse samples collected during the cleaning validation study"
+    );
+    expect(body).toContain(
+      "The cleaning procedure shall be considered validated when all cleaning results comply"
+    );
     expect(body).not.toContain("15.11 Nitrosamine");
     expect(body).not.toContain("15.1–15.10 Equipment Sampling Plans");
     expect(body).not.toContain("1.0 Approval Signatures");
     expect(body).not.toContain("15.1 Equipment name (Equipment No.)");
     expect(header).toContain("CVRP-ISM4-26-001");
+    expect(header).toContain("Cleaning Validation Protocol");
+    expect(header).not.toContain("Cleaning Verification Protocol");
     expect(header).toContain("Production");
     expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
       "08-Apr-2026"
@@ -371,6 +392,42 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain('<w:tblLayout w:type="fixed"/>');
   });
 
+  it("exports tables with 8+ columns on a landscape page", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const innerTables =
+      document.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
+    const rinse =
+      innerTables.find((table) =>
+        visibleText(table).includes("Rinse volume RF")
+      ) ?? "";
+    expect(rinse, "rinse calculation table").toBeTruthy();
+    const tableAt = document.indexOf(rinse);
+    const landscapeAt = document.indexOf('w:orient="landscape"', tableAt);
+    expect(landscapeAt).toBeGreaterThan(tableAt);
+    const widths = [...rinse.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      Number(m[1])
+    );
+    expect(widths).toHaveLength(9);
+    const gridSum = widths.reduce((sum, w) => sum + w, 0);
+    expect(gridSum).toBeGreaterThan(10469);
+    expect(gridSum).toBeLessThanOrEqual(15394);
+
+    const waf =
+      innerTables.find((table) => {
+        const text = visibleText(table);
+        return text.includes("WAF") && text.includes("Surface Type");
+      }) ?? "";
+    expect(waf, "WAF table").toBeTruthy();
+    const wafAt = document.indexOf(waf);
+    expect(wafAt).toBeGreaterThan(-1);
+    expect(wafAt).toBeLessThan(tableAt);
+    const landscapeBeforeRinse = document
+      .slice(wafAt, tableAt)
+      .includes('w:orient="landscape"');
+    expect(landscapeBeforeRinse).toBe(false);
+  });
+
   it("uses yellow centered header cells like the source protocol", async () => {
     const zip = await exportZip(sectionsWith());
     const document = zip.file("word/document.xml")?.asText() ?? "";
@@ -411,7 +468,7 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(
       paragraphContaining(
         document,
-        "This protocol applies to the cleaning verification"
+        "This protocol applies to the cleaning validation"
       )
     ).toContain("<w:widowControl/>");
   });

@@ -103,6 +103,14 @@ function mapRows(tbl: string, fn: (tr: string, index: number) => string): string
   );
 }
 
+function replaceVerificationTitle(xml: string): string {
+  return xml
+    .replaceAll("Cleaning Verification Protocol", "Cleaning Validation Protocol")
+    .replaceAll("CLEANING VERIFICATION PROTOCOL", "CLEANING VALIDATION PROTOCOL")
+    .replace(/>(\s*)VERIFICATION(\s*)</g, ">$1VALIDATION$2<")
+    .replace(/>(\s*)Verification(\s*)</g, ">$1Validation$2<");
+}
+
 function tagCoverTable(tbl: string): string {
   const tags = [
     "{productName}",
@@ -200,9 +208,10 @@ function main() {
   const sectPr = els.at(-1);
   if (!sectPr?.startsWith("<w:sectPr")) fail("final sectPr moved");
 
-  const cover = fromSource
+  const cover = (fromSource
     ? [...els.slice(0, coverTableIdx), tagCoverTable(els[coverTableIdx]!)]
-    : els.slice(0, coverTableIdx + 1);
+    : els.slice(0, coverTableIdx + 1)
+  ).map(replaceVerificationTitle);
   const body = [...cover, ...sectionBody(), sectPr];
   zip.file(
     "word/document.xml",
@@ -212,11 +221,15 @@ function main() {
   if (fromSource) {
     zip.file(
       "word/header1.xml",
-      tagHeaderPart(cleanXml(zip.file("word/header1.xml")?.asText() ?? fail("no header1")), false)
+      replaceVerificationTitle(
+        tagHeaderPart(cleanXml(zip.file("word/header1.xml")?.asText() ?? fail("no header1")), false)
+      )
     );
     zip.file(
       "word/header2.xml",
-      tagHeaderPart(cleanXml(zip.file("word/header2.xml")?.asText() ?? fail("no header2")), true)
+      replaceVerificationTitle(
+        tagHeaderPart(cleanXml(zip.file("word/header2.xml")?.asText() ?? fail("no header2")), true)
+      )
     );
     for (const name of ["word/footer1.xml", "word/footer2.xml"]) {
       const file = zip.file(name);
@@ -227,6 +240,11 @@ function main() {
     zip.file("word/_rels/document.xml.rels", stripBodyImageRels(rels));
     for (let i = 1; i <= 8; i += 1) {
       zip.remove(`word/media/image${i}.png`);
+    }
+  } else {
+    for (const name of ["word/header1.xml", "word/header2.xml"] as const) {
+      const file = zip.file(name);
+      if (file) zip.file(name, replaceVerificationTitle(file.asText()));
     }
   }
 

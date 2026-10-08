@@ -35,7 +35,7 @@ Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper
 | `generic_document` | document | demo | one continuous `body` section (no criteria) |
 | `vendor_qualification` | vendor qualification | 3xper | QAD-SOP-MS-001-F04 Cover + A–N + scoring (`vq_*` keys) |
 | `qualification_summary_report` | qualification summary report | 3xper | QAD/016/F06-00 sections 1–7 (`qsr_*` keys) |
-| `cleaning_verification_protocol` | cleaning verification protocol | 3xper | QAD-SOP-PS-003-F08-00 sections 1.0–24.0 (`cvp_*` keys) |
+| `cleaning_verification_protocol` | cleaning validation protocol | 3xper | QAD-SOP-PS-003-F08-00 sections 1.0–24.0 (`cvp_*` keys); three consecutive batches |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.

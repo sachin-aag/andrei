@@ -49,9 +49,10 @@ function textCell(
   };
 }
 
-function nColTable(columnCount: number): JSONContent {
+function nColTable(columnCount: number, colWidths?: number[]): JSONContent {
   return {
     type: "table",
+    attrs: colWidths ? { colWidths } : undefined,
     content: [
       {
         type: "tableRow",
@@ -779,6 +780,14 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).not.toContain('w:orient="landscape"');
   });
 
+  it("does not rotate a 7-column table onto a landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [nColTable(7)],
+    });
+    expect(xml).not.toContain('w:orient="landscape"');
+  });
+
   it("forceLandscapeTables rotates a 4-column table onto a landscape page", () => {
     const xml = narrativeToDocxXml(
       {
@@ -828,10 +837,10 @@ describe("narrativeToDocxXml tables", () => {
     expect(landscapeAt).toBeGreaterThan(footnoteAt);
   });
 
-  it("puts a many-column table on a landscape section and uses the landscape content band", () => {
+  it("puts an 8-column table on a landscape section and uses the landscape content band", () => {
     const xml = narrativeToDocxXml({
       type: "doc",
-      content: [nColTable(19)],
+      content: [nColTable(8)],
     });
 
     expect(xml).toContain('w:orient="landscape"');
@@ -845,21 +854,39 @@ describe("narrativeToDocxXml tables", () => {
     const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
       parseInt(m[1]!, 10)
     );
-    expect(cols).toHaveLength(19);
+    expect(cols).toHaveLength(8);
     const sum = cols.reduce((a, b) => a + b, 0);
     expect(sum).toBeGreaterThan(10469);
     expect(sum).toBeLessThanOrEqual(15394);
   });
 
+  it("stretches stored 8-column widths to the landscape content band", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        nColTable(8, [460, 1172, 1172, 983, 915, 1407, 1595, 2178]),
+      ],
+    });
+    expect(xml).toContain('w:orient="landscape"');
+    const innerMatch = xml.match(/<w:tbl>[\s\S]*?(<w:tbl>[\s\S]*?<\/w:tbl>)/);
+    const innerXml = innerMatch?.[1] ?? "";
+    const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    expect(cols).toHaveLength(8);
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(sum).toBe(15394);
+  });
+
   it("keeps consecutive wide tables in one landscape section", () => {
     const xml = narrativeToDocxXml({
       type: "doc",
-      content: [nColTable(15), nColTable(16)],
+      content: [nColTable(8), nColTable(9)],
     });
     const landscapeBreaks = xml.match(/w:orient="landscape"/g) ?? [];
     expect(landscapeBreaks).toHaveLength(1);
     expect(xml).toContain("C1");
-    expect(xml).toContain("C16");
+    expect(xml).toContain("C9");
   });
 
   it("returns to portrait after a wide table so following paragraphs stay upright", () => {
@@ -867,7 +894,7 @@ describe("narrativeToDocxXml tables", () => {
       type: "doc",
       content: [
         { type: "paragraph", content: [{ type: "text", text: "Before" }] },
-        nColTable(15),
+        nColTable(8),
         { type: "paragraph", content: [{ type: "text", text: "After" }] },
       ],
     });
@@ -896,7 +923,7 @@ describe("narrativeToDocxXml tables", () => {
             },
           ],
         },
-        nColTable(15),
+        nColTable(8),
       ],
     });
     const assessmentAt = xml.indexOf("Assessment stays portrait");
@@ -925,7 +952,7 @@ describe("narrativeToDocxXml tables", () => {
           type: "paragraph",
           content: [{ type: "text", text: "Associated instruments" }],
         },
-        nColTable(16),
+        nColTable(8),
       ],
     });
     const breakAt = xml.indexOf("<w:sectPr>");
@@ -950,7 +977,7 @@ describe("narrativeToDocxXml tables", () => {
             },
           ],
         },
-        nColTable(15),
+        nColTable(8),
       ],
     });
     const assessmentAt = xml.indexOf("Nine qualification stages");
