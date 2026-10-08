@@ -289,4 +289,49 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
     expect(document).toContain('<w:tblLayout w:type="fixed"/>');
   });
+
+  it("uses yellow centered header cells like the source protocol", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const approval = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) => {
+        const text = visibleText(tbl);
+        return text.includes("Function") && text.includes("Designation");
+      }
+    );
+    expect(approval, "approval table").toBeTruthy();
+    expect(approval).toContain('w:fill="FFFF00"');
+    expect(approval).not.toContain('w:fill="D9D9D9"');
+    expect(approval).toContain('<w:jc w:val="center"/>');
+  });
+
+  it("centers compact tables and uses TableGrid print chrome", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const waf = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) => {
+        const text = visibleText(tbl);
+        return text.includes("WAF") && text.includes("Surface Type");
+      }
+    );
+    expect(waf, "WAF table").toBeTruthy();
+    const tblPr = waf!.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+    expect(tblPr).toContain('<w:jc w:val="center"/>');
+    expect(tblPr).toContain("<w:tblCellMar>");
+    expect(tblPr).toContain('<w:left w:w="108" w:type="dxa"/>');
+    expect(tblPr).not.toContain("<w:tblBorders>");
+    const rows = [...(waf!.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g) ?? [])].map(
+      (row) => row[0]
+    );
+    expect(rows[0]).toContain("<w:tblHeader/>");
+    for (const row of rows) {
+      expect(row).not.toContain("<w:cantSplit/>");
+    }
+    expect(
+      paragraphContaining(
+        document,
+        "This protocol applies to the cleaning verification"
+      )
+    ).toContain("<w:widowControl/>");
+  });
 });

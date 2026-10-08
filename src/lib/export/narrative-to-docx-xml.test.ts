@@ -8,6 +8,8 @@ import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
   CVP_DOCX_RUN_STYLE,
+  QSR_DOCX_RUN_STYLE,
+  VQ_DOCX_RUN_STYLE,
   createDocxExportContext,
 } from "@/lib/export/docx-export-context";
 import { generateReportDocx } from "@/lib/export/generate-docx";
@@ -63,6 +65,10 @@ function nColTable(columnCount: number): JSONContent {
 
 function tableRows(xml: string): string[] {
   return [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((match) => match[0]);
+}
+
+function firstTblPr(xml: string): string {
+  return xml.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
 }
 
 /**
@@ -1303,6 +1309,7 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).not.toContain("[1]");
     expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
     expect(xml).toContain('w:line="360"');
+    expect(xml).toContain("<w:widowControl/>");
   });
 
   it("uses source protocol column widths and dxa table width for CVP", () => {
@@ -1357,6 +1364,99 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain('<w:gridCol w:w="1996"/>');
     expect(xml).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
     expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    expect(xml).toContain('w:fill="FFFF00"');
+    expect(xml).not.toContain('w:fill="D9D9D9"');
+    expect(xml).toContain('<w:jc w:val="center"/>');
+  });
+
+  it("centers 3xper narrative tables and uses TableGrid print chrome", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Worst-case surface factor." }],
+          },
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "S. No"),
+                  textCell("tableHeader", "Surface Type"),
+                  textCell("tableHeader", "WAF (L/m²)"),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", "1"),
+                  textCell("tableCell", "Polished Stainless Steel"),
+                  textCell("tableCell", "0.1-0.3"),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    const tblPr = firstTblPr(xml);
+    expect(tblPr).toContain('<w:jc w:val="center"/>');
+    expect(tblPr).toContain('<w:tblCellMar>');
+    expect(tblPr).toContain('<w:left w:w="108" w:type="dxa"/>');
+    expect(tblPr).toContain('<w:right w:w="108" w:type="dxa"/>');
+    expect(tblPr).not.toContain("<w:tblBorders>");
+    expect(tblPr).toContain('<w:tblStyle w:val="TableGrid"/>');
+    expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    const rows = tableRows(xml);
+    expect(rows[0]).toContain("<w:tblHeader/>");
+    expect(rows[0]).not.toContain("<w:cantSplit/>");
+    expect(rows[1]).not.toContain("<w:cantSplit/>");
+    expect(xml).toContain("<w:widowControl/>");
+    expect(xml).not.toMatch(/<w:tc[\s\S]*?<w:widowControl\/>/);
+  });
+
+  it("applies the same table chrome to QSR overflow and VQ narrative tables", () => {
+    for (const style of [QSR_DOCX_RUN_STYLE, VQ_DOCX_RUN_STYLE]) {
+      const xml = narrativeToDocxXmlWithContext(
+        {
+          type: "doc",
+          content: [
+            {
+              type: "table",
+              content: [
+                {
+                  type: "tableRow",
+                  content: [
+                    textCell("tableHeader", "Item"),
+                    textCell("tableHeader", "Value"),
+                  ],
+                },
+                {
+                  type: "tableRow",
+                  content: [
+                    textCell("tableCell", "A"),
+                    textCell("tableCell", "B"),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        createDocxExportContext(undefined, style)
+      ).xml;
+      const tblPr = firstTblPr(xml);
+      expect(tblPr).toContain('<w:jc w:val="center"/>');
+      expect(tblPr).toContain("<w:tblCellMar>");
+      expect(tblPr).not.toContain("<w:tblBorders>");
+      expect(tableRows(xml)[1]).not.toContain("<w:cantSplit/>");
+    }
   });
 
   it("parses plain text dash lists into numbered Word XML", () => {

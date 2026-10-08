@@ -24,6 +24,16 @@ export const THREE_XPER_CITATION_HEADERS = [
   "Reference page#",
 ] as const;
 
+/** Keep the appendix left-aligned with explicit borders; ignore 3xper body chrome. */
+const CITATIONS_TABLE_OVERRIDE = {
+  tableJustify: undefined,
+  tableUseStyleBorders: false,
+  tableBorderColor: "000000",
+  tableCellMar: false,
+  widowControl: false,
+  tableRowCantSplit: true,
+} as const satisfies Partial<DocxRunStyle>;
+
 /** Grey banners on the VQ paper form, not QSR gold. */
 const VQ_CITATIONS_RUN_STYLE: DocxRunStyle = {
   font: "Times New Roman",
@@ -34,14 +44,23 @@ const VQ_CITATIONS_RUN_STYLE: DocxRunStyle = {
   listParagraphStyle: true,
   tableKeepTogetherWrapper: false,
   tableWidthPct: "5000",
-  tableBorderColor: "000000",
   tableHeaderAlign: "center",
+  ...CITATIONS_TABLE_OVERRIDE,
 };
 
 const QSR_CITATIONS_RUN_STYLE: DocxRunStyle = {
   ...QSR_DOCX_RUN_STYLE,
   paragraphAlign: "left",
   tableHeaderAlign: "center",
+  ...CITATIONS_TABLE_OVERRIDE,
+};
+
+/** Keep CITATIONS grey even when CVP form tables use yellow headers. */
+const CVP_CITATIONS_RUN_STYLE: DocxRunStyle = {
+  ...CVP_DOCX_RUN_STYLE,
+  tableHeaderFill: "D9D9D9",
+  tableHeaderAlign: "center",
+  ...CITATIONS_TABLE_OVERRIDE,
 };
 
 const QSR_CATALOG_SECTIONS = [
@@ -617,7 +636,7 @@ export function threeXperCitationsAppendixXml(
     options.variant === "vq"
       ? VQ_CITATIONS_RUN_STYLE
       : options.variant === "cvp"
-        ? CVP_DOCX_RUN_STYLE
+        ? CVP_CITATIONS_RUN_STYLE
         : QSR_CITATIONS_RUN_STYLE;
   const ctx = createDocxExportContext(undefined, runStyle);
   const heading =
