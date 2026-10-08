@@ -98,6 +98,50 @@ describe("prepareReportChatStep (characterization)", () => {
     });
   });
 
+  it("forces propose_edit after read for leftover 15.N.1 prose even when tables exist", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          preferProposeEdit: true,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+          steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+        })
+      )
+    ).toEqual({
+      activeTools: ["propose_edit"],
+      toolChoice: { type: "tool", toolName: "propose_edit" },
+    });
+  });
+
+  it("forces propose_edit after two edit_table fails on leftover 15.N prose", () => {
+    const failed = (id: string): SearchLoopStep => ({
+      toolCalls: [{ toolName: "edit_table", toolCallId: id }],
+      toolResults: [
+        {
+          toolName: "edit_table",
+          toolCallId: id,
+          output: { status: "not_found" },
+        },
+      ],
+    });
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          preferProposeEdit: true,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+          steps: [failed("a"), failed("b")],
+        })
+      )
+    ).toEqual({
+      activeTools: ["propose_edit"],
+      toolChoice: { type: "tool", toolName: "propose_edit" },
+    });
+  });
+
   it("forces draft_field after read when they asked to redraft a filled box", () => {
     expect(
       prepareReportChatStep(

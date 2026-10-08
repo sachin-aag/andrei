@@ -215,6 +215,17 @@ describe("classifyChatUserIntent", () => {
     expect(
       classifyChatUserIntent({ userText: "make 15.6 as MLT-1303" }).kind
     ).toBe("write");
+    expect(
+      classifyChatUserIntent({ userText: "go ahead and make these" }).kind
+    ).toBe("write");
+    expect(classifyChatUserIntent({ userText: "go for 15.6.1" }).kind).toBe(
+      "write"
+    );
+    expect(
+      classifyChatUserIntent({
+        userText: "updated these but a few more suggestions need to be made",
+      }).kind
+    ).toBe("write");
   });
 
   it("classifies polite write requests as write, not questions", () => {

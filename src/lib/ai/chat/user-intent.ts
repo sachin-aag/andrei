@@ -74,7 +74,7 @@ const AFFIRMATION_PREFIX_RE =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|alright|absolutely|definitely|go ahead|do it|please do|sounds good|yes please|go for it|do that)\b[\s,.!:;–—-]*/i;
 
 const WRITE_RE =
-  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|re-?draft|put|place|paste|enter|load|import|save|start over|from scratch)\b|\bmake\s+\d+(?:\.\d+)+\s+as\b/i;
+  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|re-?draft|put|place|paste|enter|load|import|save|start over|from scratch)\b|\bmake\s+\d+(?:\.\d+)+\s+as\b|\bmake these\b|\bgo for \d+(?:\.\d+)+\b|\b(?:more )?suggestions? need to be (?:made|inserted|landed|applied)\b/i;
 
 const START_REPORT_RE =
   /\b(?:start|begin|kick ?off)\b.{0,48}\b(?:report|draft|document|writing|this)\b|\b(?:let'?s|please)\s+(?:start|begin|go)\b/i;

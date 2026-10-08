@@ -9,6 +9,7 @@ import {
   isExplicitDocumentEdit,
   isExplicitSectionRewrite,
   isLandWholeDraftRequest,
+  isRemainingProseEdit,
   isWholeFieldReplaceTurn,
   withoutDraftFieldTools,
 } from "./already-drafted";
@@ -72,6 +73,24 @@ describe("isLandWholeDraftRequest", () => {
   });
 });
 
+describe("isRemainingProseEdit", () => {
+  it("matches leftover 15.N heading/prose after tables landed", () => {
+    expect(isRemainingProseEdit("go for 15.6.1")).toBe(true);
+    expect(isRemainingProseEdit("insert suggestions for 15.6.1")).toBe(true);
+    expect(isRemainingProseEdit("go ahead and make these")).toBe(true);
+    expect(
+      isRemainingProseEdit(
+        "updated these but a few more suggestions need to be made"
+      )
+    ).toBe(true);
+    expect(isRemainingProseEdit("insertions are really failing for 15.6")).toBe(
+      true
+    );
+    expect(isRemainingProseEdit("insert the suggestion")).toBe(false);
+    expect(isRemainingProseEdit("make 15.6 as mlt 1303")).toBe(false);
+  });
+});
+
 describe("isWholeFieldReplaceTurn", () => {
   it("treats insert-it after a 15.N redraft as a whole-field replace", () => {
     expect(
@@ -105,6 +124,13 @@ describe("isExplicitDocumentEdit", () => {
     ).toBe(true);
     expect(
       isExplicitDocumentEdit("insertions are really failing for 15.6")
+    ).toBe(true);
+    expect(isExplicitDocumentEdit("go ahead and make these")).toBe(true);
+    expect(isExplicitDocumentEdit("go for 15.6.1")).toBe(true);
+    expect(
+      isExplicitDocumentEdit(
+        "updated these but a few more suggestions need to be made"
+      )
     ).toBe(true);
   });
 
@@ -417,6 +443,7 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("Do not call search_documents or ask_user yet");
     expect(block).toContain("targeted propose_edit");
     expect(block).toContain("insert, apply, or edit the document");
+    expect(block).toContain("leftover 15.N heading");
     expect(block).toContain("Do not say write tools are disabled");
     expect(block).toContain("hint field is an expected format");
     expect(block).toContain("Material gap only");

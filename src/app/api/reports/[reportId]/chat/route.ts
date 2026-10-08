@@ -66,6 +66,7 @@ import {
 import {
   alreadyDraftedGapHints,
   isExplicitDocumentEdit,
+  isRemainingProseEdit,
   isWholeFieldReplaceTurn,
 } from "@/lib/ai/chat/already-drafted";
 import {
@@ -766,6 +767,7 @@ async function handleChatPost(
             userText,
             recentUserMessageTexts(messages)
           ),
+          preferProposeEdit: isRemainingProseEdit(userText),
           inScopeRtmSection: isQsrRtmSection(sectionScope),
         });
         return {

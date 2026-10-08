@@ -88,6 +88,12 @@ export type PrepareReportChatStepInput = {
    */
   explicitSectionRewrite?: boolean;
   /**
+   * Leftover 15.N heading / 15.N.1 prose after the tables already landed
+   * ("go for 15.6.1", "make these", insertions failing). Force propose_edit
+   * even though equipment sampling always has tables.
+   */
+  preferProposeEdit?: boolean;
+  /**
    * Focused section is one QSR RTM table (Tables 5–10). Force
    * `draft_rtm_table` on the first write instead of `edit_table`.
    */
@@ -122,6 +128,9 @@ function explicitDocumentEditWriteTool(
   if (input.explicitSectionRewrite && toolIsAvailable(input, "draft_field")) {
     return "draft_field";
   }
+  if (input.preferProposeEdit && toolIsAvailable(input, "propose_edit")) {
+    return "propose_edit";
+  }
   if (input.inScopeHasTable && toolIsAvailable(input, "edit_table")) {
     return "edit_table";
   }
@@ -132,7 +141,8 @@ function explicitDocumentEditWriteTool(
  * An explicit "put it in the document" turn must not end as a chat summary.
  * Step 0 reads the section. The following step calls draft_field on a
  * whole-field rewrite, draft_rtm_table when a QSR RTM table is in scope,
- * edit_table when any other table is in scope, otherwise propose_edit.
+ * propose_edit for leftover 15.N heading/prose, edit_table when any other
+ * table is in scope, otherwise propose_edit.
  */
 function explicitDocumentEditStep(
   input: PrepareReportChatStepInput
@@ -327,6 +337,18 @@ export function prepareReportChatStep(
     asTableEditSteps(input.steps)
   );
   if (tableEditDirective === "finish") {
+    if (
+      input.explicitDocumentEdit &&
+      input.preferProposeEdit &&
+      !input.explicitSectionRewrite &&
+      toolIsAvailable(input, "propose_edit") &&
+      !stepsIncludeTool(input.steps, "propose_edit")
+    ) {
+      return {
+        activeTools: ["propose_edit"],
+        toolChoice: { type: "tool", toolName: "propose_edit" },
+      };
+    }
     return { activeTools: [] };
   }
   if (
