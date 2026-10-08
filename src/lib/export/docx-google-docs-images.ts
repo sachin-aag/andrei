@@ -56,6 +56,7 @@ function stripUseLocalDpiFromXml(xml: string): string {
  */
 function syncDrawingExtents(xml: string, mediaDims: Map<string, { width: number; height: number }>): string {
   return xml.replace(/<wp:inline\b[\s\S]*?<\/wp:inline>/g, (inline) => {
+    if (inline.includes("wpg:wgp") || inline.includes("<wps:wsp")) return inline;
     const blipMatch = /<a:blip r:embed="([^"]+)"/.exec(inline);
     const extentMatch = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(inline);
     if (!blipMatch || !extentMatch) return inline;

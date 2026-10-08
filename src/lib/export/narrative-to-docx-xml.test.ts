@@ -1573,7 +1573,66 @@ describe("narrativeToDocxXml advanced formatting", () => {
 
     const xml = narrativeToDocxXml(doc, ctx);
     expect(xml).toContain("<w:drawing>");
+    expect(xml).not.toContain("mc:AlternateContent");
     expect(ctx.media).toHaveLength(1);
+  });
+
+  it("exports annotated figures as a Word drawing group with a picture Fallback", () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const ctx = createDocxExportContext();
+    const xml = narrativeToDocxXml(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "imageInline",
+                attrs: {
+                  src: tinyPng,
+                  width: 10,
+                  drawing: {
+                    version: 1,
+                    shapes: [
+                      {
+                        id: "a1",
+                        type: "arrow",
+                        x1: 0.1,
+                        y1: 0.2,
+                        x2: 0.8,
+                        y2: 0.7,
+                        color: "#c62828",
+                      },
+                      {
+                        id: "l1",
+                        type: "label",
+                        x: 0.02,
+                        y: 0.1,
+                        w: 0.2,
+                        h: 0.08,
+                        text: "Cursor logo",
+                        color: "#c62828",
+                      },
+                    ],
+                  },
+                  flattenedSrc: tinyPng,
+                },
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    );
+    expect(xml).toContain("mc:AlternateContent");
+    expect(xml).toContain('Requires="wpg"');
+    expect(xml).toContain("wpg:wgp");
+    expect(xml).toContain("straightConnector1");
+    expect(xml).toContain("Cursor logo");
+    expect(xml).toContain("mc:Fallback");
+    expect(ctx.media.length).toBeGreaterThanOrEqual(1);
   });
 
   it("exports tableRef as the live Table N label", () => {

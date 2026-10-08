@@ -55,9 +55,9 @@ function parseDataUrl(dataUrl: string): { mimeType: string; bytes: Buffer } | nu
 }
 
 /**
- * Composite overlay shapes onto the source raster so Word export is a
- * single picture. Returns the original data URL when there is nothing to
- * paint or the canvas library cannot load.
+ * Composite overlay shapes onto the source raster for Google Docs and the
+ * Word AlternateContent Fallback. Returns the original data URL when there
+ * is nothing to paint or the canvas library cannot load.
  */
 export async function flattenDrawingDataUrl(
   dataUrl: string,
@@ -100,8 +100,10 @@ export async function flattenDrawingDataUrl(
 }
 
 /**
- * Walk section JSON (or a TipTap doc) and bake overlays into image rasters
- * so Word export is a single picture. Empty overlays are left as-is.
+ * Walk section JSON (or a TipTap doc) and bake overlays into a raster for
+ * Google Docs / older Word (AlternateContent Fallback). Keep the original
+ * src + drawing so Microsoft Word can emit native editable arrows/labels.
+ * Empty overlays are left as-is.
  */
 export async function flattenDrawingsInValue(value: unknown): Promise<unknown> {
   if (Array.isArray(value)) {
@@ -121,8 +123,9 @@ export async function flattenDrawingsInValue(value: unknown): Promise<unknown> {
         ...record,
         attrs: {
           ...attrs,
-          src: await flattenDrawingDataUrl(src, drawing),
-          drawing: null,
+          src,
+          drawing,
+          flattenedSrc: await flattenDrawingDataUrl(src, drawing),
         },
       };
     }

@@ -7,7 +7,7 @@ const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 describe("flattenDrawingsInValue", () => {
-  it("bakes overlay shapes into the image src and clears the drawing attr", async () => {
+  it("keeps the original src and drawing and adds a baked flattenedSrc", async () => {
     const drawing = layoutCalloutsLeft([{ text: "S-1", tipX: 0.8, tipY: 0.4 }]);
     const next = (await flattenDrawingsInValue({
       type: "doc",
@@ -24,13 +24,16 @@ describe("flattenDrawingsInValue", () => {
       ],
     })) as {
       content: Array<{
-        content: Array<{ attrs: { src: string; drawing: unknown } }>;
+        content: Array<{
+          attrs: { src: string; drawing: unknown; flattenedSrc?: string };
+        }>;
       }>;
     };
     const attrs = next.content[0]!.content[0]!.attrs;
-    expect(attrs.drawing).toBeNull();
-    expect(attrs.src.startsWith("data:image/png;base64,")).toBe(true);
-    expect(attrs.src).not.toBe(PNG);
+    expect(attrs.src).toBe(PNG);
+    expect(attrs.drawing).toEqual(drawing);
+    expect(attrs.flattenedSrc?.startsWith("data:image/png;base64,")).toBe(true);
+    expect(attrs.flattenedSrc).not.toBe(PNG);
   });
 
   it("leaves figures without overlays unchanged", async () => {
@@ -48,8 +51,9 @@ describe("flattenDrawingsInValue", () => {
     const next = (await flattenDrawingsInValue({
       type: "imageInline",
       attrs: { src: PNG, drawing },
-    })) as { attrs: { src: string } };
-    const size = pngSize(next.attrs.src);
+    })) as { attrs: { src: string; flattenedSrc?: string } };
+    expect(next.attrs.src).toBe(PNG);
+    const size = pngSize(next.attrs.flattenedSrc ?? "");
     expect(size.width).toBeGreaterThan(1);
   });
 });

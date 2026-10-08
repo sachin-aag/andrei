@@ -64,4 +64,24 @@ describe("applyGoogleDocsImageCompat", () => {
     );
     expect(picCy).toBe(aspectCy);
   });
+
+  it("does not rewrite extents inside a Word annotation group", async () => {
+    const zip = new PizZip(fs.readFileSync(TEMPLATE_PATH));
+    const xml = zip.file("word/document.xml")!.asText();
+    const group =
+      `<w:p><w:r><w:drawing>` +
+      `<wp:inline><wp:extent cx="5000000" cy="4000000"/>` +
+      `<a:graphic><a:graphicData>` +
+      `<wpg:wgp><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="5000000" cy="4000000"/>` +
+      `</a:xfrm></wpg:grpSpPr>` +
+      `<pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="100" y="100"/><a:ext cx="1000" cy="800"/></a:xfrm></pic:spPr>` +
+      `</pic:pic></wpg:wgp></a:graphicData></a:graphic></wp:inline>` +
+      `</w:drawing></w:r></w:p>`;
+    zip.file("word/document.xml", xml.replace("</w:body>", `${group}</w:body>`));
+    await applyGoogleDocsImageCompat(zip);
+    const after = zip.file("word/document.xml")!.asText();
+    expect(after).toContain('<a:ext cx="1000" cy="800"/>');
+    expect(after).toContain('<wp:extent cx="5000000" cy="4000000"/>');
+  });
 });
