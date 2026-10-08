@@ -8,9 +8,13 @@ import {
   CVP_EXTRANEOUS_RESULTS_HEADERS,
   CVP_MANUFACTURING_AREA_HEADERS,
   CVP_NITROSAMINE_HEADERS,
+  CVP_NITROSAMINE_INTRO_SEED,
+  CVP_NITROSAMINE_LIMIT,
   CVP_OVERALL_CRITERIA_HEADERS,
   CVP_OVERALL_RESULTS_HEADERS,
   CVP_PGI_HEADERS,
+  CVP_PGI_INTRO_SEED,
+  CVP_PGI_LIMIT,
   CVP_PREVIOUS_CLEANING_OPERATION_HEADERS,
   CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS,
   CVP_PREVIOUS_MANUFACTURING_AREA_HEADERS,
@@ -59,6 +63,14 @@ const SEED_SWAPS: ReadonlyArray<readonly [string, string]> = [
   [
     "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table. Result and observation fields stay blank until the cleaning verification report is written.",
     "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area validation, and the overall results table. Result and observation fields stay blank until the cleaning validation report is written. Record three consecutive cleaning batches in the batch execution summary and in the Batch columns of the result tables.",
+  ],
+  [
+    "The rinse samples collected from the equipment after completion of the cleaning procedure shall be analyzed for nitrosamine impurities to verify the effectiveness of the cleaning process and to ensure that nitrosamine residues, if any, are controlled within the predefined acceptance criteria. The rinse samples shall be evaluated for NDMA, NMBA, NDEA, NEIPA, NDIPA, NMPA, and NDBA. The acceptance criterion for each nitrosamine impurity is Not More Than (NMT) [limit] in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in controlling nitrosamine contamination and minimizing the risk of cross-contamination.",
+    CVP_NITROSAMINE_INTRO_SEED,
+  ],
+  [
+    "The rinse samples collected from the equipment following completion of the cleaning procedure shall be analyzed for potential genotoxic impurities (PGIs) to verify the effectiveness of the cleaning process and to ensure that any residual PGIs are controlled within the established acceptance criteria. The rinse samples shall be evaluated for O-Nitro Toluene, P-Nitro Toluene, and Mesityl Oxide. The acceptance criterion for each PGI is Not More Than (NMT) [limit] in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in reducing potential genotoxic impurities to acceptable levels and minimizing the risk of cross-contamination in subsequent product manufacture.",
+    CVP_PGI_INTRO_SEED,
   ],
   [
     "The following table summarizes the sampling locations and results for [analyte] residue analysis during the cleaning verification study. Results from the verification run shall be compared against the established acceptance criterion of NMT [limit].",
@@ -536,7 +548,48 @@ function upgradeTable(table: JSONContent): JSONContent {
     }
   }
   if (!widened) next = appendNumberOfBatchesRow(table);
-  return placeCvpAnalyticalFooter(next);
+  return applyCvpTemplateImpurityLimits(placeCvpAnalyticalFooter(next));
+}
+
+/**
+ * Nitrosamine Limit NMT cells are 0.1 ppm and PGI Limit NMT cells are
+ * 0.2 ppm, the same value in every impurity column. This pass overwrites
+ * those cells, including a previously filled number.
+ */
+function applyCvpTemplateImpurityLimits(table: JSONContent): JSONContent {
+  const rows = table.content ?? [];
+  const labels = headerLabels(rows[0]);
+  const limit = headersMatch(labels, CVP_NITROSAMINE_HEADERS)
+    ? CVP_NITROSAMINE_LIMIT
+    : headersMatch(labels, CVP_PREVIOUS_NITROSAMINE_HEADERS)
+      ? CVP_NITROSAMINE_LIMIT
+      : headersMatch(labels, CVP_PGI_HEADERS)
+        ? CVP_PGI_LIMIT
+        : headersMatch(labels, CVP_PREVIOUS_PGI_HEADERS)
+          ? CVP_PGI_LIMIT
+          : null;
+  if (!limit) return table;
+  const batch = labels.findIndex((label) => /^batch$/i.test(label));
+  const impurityStart = batch >= 0 ? batch + 1 : 2;
+  let changed = false;
+  const content = rows.map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    if (!/^limit\b/i.test(cellPlain(cells[0]))) return row;
+    let rowChanged = false;
+    const nextCells = cells.map((cell, i) => {
+      if (i < impurityStart) return cell;
+      if (cellPlain(cell) === limit) return cell;
+      rowChanged = true;
+      return cloneCellWithText(cell, limit);
+    });
+    if (!rowChanged) return row;
+    changed = true;
+    return { ...row, content: nextCells };
+  });
+  return changed ? { ...table, content } : table;
 }
 
 /**

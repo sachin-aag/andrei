@@ -785,12 +785,30 @@ export const CVP_EQUIPMENT_RESIDUE_INTRO_SEED =
 export const CVP_EQUIPMENT_EXTRANEOUS_INTRO_SEED =
   "As part of the cleaning validation study, final rinse samples from each of the three consecutive batches shall be evaluated for extraneous matter to confirm that the cleaning process effectively removes visible foreign contaminants from product-contact surfaces. The examination shall include assessment for black particles, fibers, and other extraneous matter. The results shall be evaluated against the acceptance criterion that no black or fiber particles are observed in the rinse samples.";
 
-/** ISM Stage-4 protocol intros — keep in the seed; fill [limit] from a cited page. */
+/** Template limits. Every impurity column on the Limit NMT row uses the same value. */
+export const CVP_NITROSAMINE_LIMIT = "0.1 ppm";
+export const CVP_PGI_LIMIT = "0.2 ppm";
+
+/** ISM Stage-4 protocol intros. The NMT figure is the template limit, not a slot. */
 export const CVP_NITROSAMINE_INTRO_SEED =
-  "The rinse samples collected from the equipment after completion of the cleaning procedure shall be analyzed for nitrosamine impurities to verify the effectiveness of the cleaning process and to ensure that nitrosamine residues, if any, are controlled within the predefined acceptance criteria. The rinse samples shall be evaluated for NDMA, NMBA, NDEA, NEIPA, NDIPA, NMPA, and NDBA. The acceptance criterion for each nitrosamine impurity is Not More Than (NMT) [limit] in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in controlling nitrosamine contamination and minimizing the risk of cross-contamination.";
+  "The rinse samples collected from the equipment after completion of the cleaning procedure shall be analyzed for nitrosamine impurities to verify the effectiveness of the cleaning process and to ensure that nitrosamine residues, if any, are controlled within the predefined acceptance criteria. The rinse samples shall be evaluated for NDMA, NMBA, NDEA, NEIPA, NDIPA, NMPA, and NDBA. The acceptance criterion for each nitrosamine impurity is Not More Than (NMT) 0.1 ppm in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in controlling nitrosamine contamination and minimizing the risk of cross-contamination.";
 
 export const CVP_PGI_INTRO_SEED =
-  "The rinse samples collected from the equipment following completion of the cleaning procedure shall be analyzed for potential genotoxic impurities (PGIs) to verify the effectiveness of the cleaning process and to ensure that any residual PGIs are controlled within the established acceptance criteria. The rinse samples shall be evaluated for O-Nitro Toluene, P-Nitro Toluene, and Mesityl Oxide. The acceptance criterion for each PGI is Not More Than (NMT) [limit] in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in reducing potential genotoxic impurities to acceptable levels and minimizing the risk of cross-contamination in subsequent product manufacture.";
+  "The rinse samples collected from the equipment following completion of the cleaning procedure shall be analyzed for potential genotoxic impurities (PGIs) to verify the effectiveness of the cleaning process and to ensure that any residual PGIs are controlled within the established acceptance criteria. The rinse samples shall be evaluated for O-Nitro Toluene, P-Nitro Toluene, and Mesityl Oxide. The acceptance criterion for each PGI is Not More Than (NMT) 0.2 ppm in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in reducing potential genotoxic impurities to acceptable levels and minimizing the risk of cross-contamination in subsequent product manufacture.";
+
+/** Limit NMT row: label, blank identity/batch cells, then the same limit in every impurity column. */
+export function cvpImpurityLimitRow(
+  headers: readonly string[],
+  limit: string
+): string[] {
+  const batch = headers.findIndex((header) => /^batch$/i.test(header));
+  const impurityStart = batch >= 0 ? batch + 1 : 2;
+  return headers.map((_, index) => {
+    if (index === 0) return "Limit NMT (ppm)";
+    if (index >= impurityStart) return limit;
+    return "";
+  });
+}
 
 export const CVP_PROCESS_LINE_INTRO_SEED =
   "Following completion of equipment cleaning, all associated product-contact process lines, transfer pipelines, flexible hoses, valves, and fittings shall be cleaned as per the approved cleaning procedure. The cleanliness of the process lines shall be verified through visual inspection and, where accessible, white wipe cloth assessment. The verification shall ensure the absence of visible product residues, stains, foreign matter, fibers, black particles, and other extraneous contaminants.";
@@ -1127,13 +1145,13 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
     case "cvp_nitrosamine":
       return {
         table: tableWithBoilerplate(key, CVP_NITROSAMINE_HEADERS, [
-          ["Limit NMT (ppm)", "", "", "", "", "", "", "", "", ""],
+          cvpImpurityLimitRow(CVP_NITROSAMINE_HEADERS, CVP_NITROSAMINE_LIMIT),
         ]),
       };
     case "cvp_pgi":
       return {
         table: tableWithBoilerplate(key, CVP_PGI_HEADERS, [
-          ["Limit NMT (ppm)", "", "", "", "", ""],
+          cvpImpurityLimitRow(CVP_PGI_HEADERS, CVP_PGI_LIMIT),
         ]),
       };
     case "cvp_process_line":

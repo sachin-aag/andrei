@@ -481,8 +481,9 @@ describe("cleaning verification protocol sections", () => {
       "As a primary verification of equipment cleanliness"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "keep the seeded intro; fill [limit]"
+      "NMT 0.1 ppm for every nitrosamine"
     );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("NMT 0.2 ppm for every PGI");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "keep the seeded four paragraphs"
     );
@@ -803,6 +804,75 @@ describe("cleaning verification protocol sections", () => {
       .filter((cell) => cell.col === 2 && cell.row > 0)
       .map((c) => c.text);
     expect(batchCol).toEqual(["(empty)", "Batch 1", "Batch 2", "Batch 3"]);
+    const limitRow = tables[0]?.cells.filter((cell) => cell.row === 1) ?? [];
+    expect(limitRow.map((cell) => cell.text)).toEqual([
+      "Limit NMT (ppm)",
+      "(empty)",
+      "(empty)",
+      ...CVP_NITROSAMINE_HEADERS.slice(3).map(() => "0.1 ppm"),
+    ]);
+  });
+
+  it("overwrites stored nitrosamine and PGI Limit NMT cells with the template limits", () => {
+    const def = getDocumentType("cleaning_verification_protocol");
+    const nitro = def.mergeSection("cvp_nitrosamine", {
+      table: {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [...CVP_NITROSAMINE_HEADERS].map((text) => ({
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })),
+              },
+              {
+                type: "tableRow",
+                content: [
+                  "Limit NMT (ppm)",
+                  "",
+                  "",
+                  "0.01",
+                  "TBU",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                ].map((text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })),
+              },
+            ],
+          },
+        ],
+      },
+    }) as { table: JSONContent };
+    const nitroLimit = summarizeTablesInDoc(nitro.table)[0]?.cells.filter(
+      (cell) => cell.row === 1
+    );
+    expect(nitroLimit?.slice(3).map((cell) => cell.text)).toEqual(
+      CVP_NITROSAMINE_HEADERS.slice(3).map(() => "0.1 ppm")
+    );
+    expect(JSON.stringify(nitro.table)).toContain("(NMT) 0.1 ppm");
+    expect(JSON.stringify(nitro.table)).not.toContain("[limit]");
+
+    const pgi = def.mergeSection("cvp_pgi", EMPTY_CVP_CONTENT.cvp_pgi) as {
+      table: JSONContent;
+    };
+    const pgiLimit = summarizeTablesInDoc(pgi.table)[0]?.cells.filter(
+      (cell) => cell.row === 1
+    );
+    expect(pgiLimit?.slice(3).map((cell) => cell.text)).toEqual([
+      "0.2 ppm",
+      "0.2 ppm",
+      "0.2 ppm",
+    ]);
+    expect(JSON.stringify(pgi.table)).toContain("(NMT) 0.2 ppm");
   });
 
   it("swaps untouched seed wording and leaves custom verification prose", () => {
