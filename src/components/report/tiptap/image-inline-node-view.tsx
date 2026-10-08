@@ -7,6 +7,7 @@ import { DrawingEditorDialog } from "@/components/report/drawing-editor-dialog";
 import { DrawingComposedFigure } from "@/components/report/tiptap/drawing-overlay";
 import {
   drawingExtent,
+  drawingHasOverflow,
   parseImageDrawing,
   type ImageDrawing,
 } from "@/lib/drawings/overlay";
@@ -67,7 +68,7 @@ export function ImageInlineNodeView({
           extent={drawingExtent(drawing)}
           imgWidth={width}
           imgClassName="tiptap-image-inline"
-          surface="white"
+          surface={drawingHasOverflow(drawing) ? "white" : "none"}
         />
         {editable ? (
           <button
