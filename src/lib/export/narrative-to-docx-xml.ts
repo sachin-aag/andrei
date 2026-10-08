@@ -460,6 +460,8 @@ function paragraphProperties(
   const ilvl = extras?.ilvl ?? 0;
   const jc = paragraphJustification(align, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
+  const widow =
+    !inTable && ctx?.widowControl === true ? "<w:widowControl/>" : "";
   let style = "";
   if (numId && inTable && ctx?.inTableListParagraphStyle) {
     style = `<w:pStyle w:val="${ctx.inTableListParagraphStyle}"/>`;
@@ -484,7 +486,7 @@ function paragraphProperties(
   const num = numId
     ? `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr>`
     : "";
-  return `<w:pPr>${style}${keep}${spacing}${indent}${jc}${num}</w:pPr>`;
+  return `<w:pPr>${style}${keep}${widow}${spacing}${indent}${jc}${num}</w:pPr>`;
 }
 
 function wrapParagraph(text: string, ctx?: DocxExportContext): string {
@@ -987,6 +989,26 @@ function buildInnerTableXml(
   const tblLayout = storedWidths
     ? `<w:tblLayout w:type="fixed"/>`
     : "";
+  const tblBorders = ctx?.tableUseStyleBorders
+    ? ""
+    : `<w:tblBorders>
+<w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:left w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:bottom w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:right w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:insideH w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:insideV w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+</w:tblBorders>
+`;
+  const tblCellMar = ctx?.tableCellMar
+    ? `<w:tblCellMar>
+<w:top w:w="0" w:type="dxa"/>
+<w:left w:w="108" w:type="dxa"/>
+<w:bottom w:w="0" w:type="dxa"/>
+<w:right w:w="108" w:type="dxa"/>
+</w:tblCellMar>
+`
+    : "";
 
   // Nested inside the keep-together wrapper: explicit dxa width prevents Word
   // from honoring an oversized imported tblGrid sum and clipping the right edge.
@@ -995,15 +1017,7 @@ function buildInnerTableXml(
 ${tblW}
 ${tblLayout}
 ${tblJc}
-<w:tblBorders>
-<w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:left w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:bottom w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:right w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:insideH w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:insideV w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-</w:tblBorders>
-<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
+${tblCellMar}${tblBorders}<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
 </w:tblPr>`;
 
   const activeMerges: (ActiveRowMerge | null)[] = [];
@@ -1038,9 +1052,11 @@ function tableRowToXml(
   ctx?: DocxExportContext
 ): string {
   const cells = row.content ?? [];
-  // Always set cantSplit so a single row never breaks mid-content across pages.
-  // Header rows additionally repeat at the top of each page if the table spills.
-  let trPr = "<w:trPr><w:cantSplit/>";
+  // Default: a single row never breaks mid-content. 3xper turns this off so
+  // wrapped cells can continue on the next page the way the source protocols do.
+  // Header rows still repeat at the top of each page if the table spills.
+  let trPr = "<w:trPr>";
+  if (ctx?.tableRowCantSplit !== false) trPr += "<w:cantSplit/>";
   if (isHeader) trPr += "<w:tblHeader/>";
   if (ctx?.tableJustify) trPr += `<w:jc w:val="${ctx.tableJustify}"/>`;
   trPr += "</w:trPr>";

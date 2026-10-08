@@ -541,6 +541,10 @@ describe("threeXperCitationsAppendixXml", () => {
     expect(xml).toContain("Design Qualification");
     expect(xml).toContain('w:fill="FFD966"');
     expect(xml).not.toContain("1. [User Requirement Specification.PDF, p. 1]");
+    const tblPr = xml.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+    expect(tblPr).toContain("<w:tblBorders>");
+    expect(tblPr).not.toContain('<w:jc w:val="center"/>');
+    expect(tblPr).not.toContain("<w:tblCellMar>");
   });
 
   it("uses grey header fill on vendor qualification", () => {
