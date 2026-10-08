@@ -2396,11 +2396,11 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(cellText(result.doc, 1, 1)).toBe("NA");
     expect(cellText(result.doc, 2, 1)).toBe("");
+    expect(cellText(result.doc, 2, 2)).toBe("NMT 10 ppm");
+    expect(cellText(result.doc, 2, 3)).toBe("NMT 10 ppm");
     expect(cellText(result.doc, 2, 4)).toBe("NMT 10 ppm");
-    expect(cellText(result.doc, 3, 1)).toBe("");
-    expect(cellText(result.doc, 3, 4)).toBe("5 ppm [3]");
-    expect(cellText(result.doc, 4, 1)).toBe("");
-    expect(cellText(result.doc, 4, 4)).toBe("2 ppm");
+    expect(cellText(result.doc, 3, 2)).toBe("5 ppm [3]");
+    expect(cellText(result.doc, 4, 2)).toBe("2 ppm");
   });
 
   it("inserts a 15.2.3.2 table before the later 15.2.8 extraneous grid", () => {

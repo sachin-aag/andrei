@@ -904,7 +904,13 @@ export function cvpEquipmentSamplingSeed(ordinal = 1): JSONContent {
       textParagraph(CVP_EQUIPMENT_EXTRANEOUS_INTRO_SEED),
       table(CVP_EXTRANEOUS_RESULTS_HEADERS, [
         ["Rinse Sample", "NA", "", "", ""],
-        ["Limit", "", "", "", "Black and fiber particles should be absent"],
+        [
+          "Limit",
+          "",
+          "Black and fiber particles should be absent",
+          "Black and fiber particles should be absent",
+          "Black and fiber particles should be absent",
+        ],
       ]),
       textParagraph("Inference:", true),
       textParagraph("It shall be written in the cleaning validation report."),

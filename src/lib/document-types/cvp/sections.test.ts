@@ -448,7 +448,9 @@ describe("cleaning verification protocol sections", () => {
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain("No-swab item");
     expect(CVP_DRAFTING_GUIDANCE).toContain("**Batch 1 / Batch 2 / Batch 3 stay empty.**");
-    expect(CVP_DRAFTING_GUIDANCE).toContain("**last column only**");
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "same text in Batch 1, Batch 2, and Batch 3"
+    );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "It shall be written in the cleaning validation report."
     );
@@ -695,24 +697,66 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("Limit")).toEqual([
       "Limit",
       "(empty)",
-      "(empty)",
-      "(empty)",
+      "NMT 10 ppm",
+      "NMT 10 ppm",
       "NMT 10 ppm",
     ]);
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "(empty)",
-      "(empty)",
-      "(empty)",
+      "5 ppm [3]",
+      "5 ppm [3]",
       "5 ppm [3]",
     ]);
     expect(byLabel("LOD")).toEqual([
       "LOD",
       "(empty)",
-      "(empty)",
-      "(empty)",
+      "2 ppm",
+      "2 ppm",
       "2 ppm",
     ]);
+  });
+
+  it("drops the bold mark on a Batch 1 header so it matches Sample ID", () => {
+    const headerCell = (text: string, bold = false): JSONContent => ({
+      type: "tableHeader",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            bold
+              ? { type: "text", text, marks: [{ type: "bold" }] }
+              : { type: "text", text },
+          ],
+        },
+      ],
+    });
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                headerCell("Sample description / location"),
+                headerCell("Sample ID"),
+                headerCell("Batch 1", true),
+                headerCell("Batch 2"),
+                headerCell("Batch 3"),
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const upgraded = upgradeCvpValidationDoc(doc);
+    const header = upgraded.content?.[0]?.content?.[0];
+    const batch1 = header?.content?.[2];
+    const text = batch1?.content?.[0]?.content?.[0];
+    expect(text?.text).toBe("Batch 1");
+    expect(text?.marks ?? []).toEqual([]);
   });
 
   it("triples filled nitrosamine equipment rows and leaves Limit NMT once", () => {
