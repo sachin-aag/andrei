@@ -21,19 +21,20 @@ function ArrowShape({
   selected?: boolean;
 }) {
   const markerId = `arrowhead-${shape.id}`;
+  const stroke = selected ? 0.014 : 0.01;
   return (
     <g>
       <defs>
         <marker
           id={markerId}
-          markerWidth="8"
-          markerHeight="8"
-          refX="7"
-          refY="4"
+          markerWidth="4"
+          markerHeight="4"
+          refX="3.2"
+          refY="2"
           orient="auto"
           markerUnits="strokeWidth"
         >
-          <path d="M0 0 L8 4 L0 8 z" fill={shape.color} />
+          <path d="M0 0 L4 2 L0 4 z" fill={shape.color} />
         </marker>
       </defs>
       <line
@@ -42,8 +43,8 @@ function ArrowShape({
         x2={shape.x2}
         y2={shape.y2}
         stroke={shape.color}
-        strokeWidth={selected ? 0.012 : 0.008}
-        vectorEffect="non-scaling-stroke"
+        strokeWidth={stroke}
+        strokeLinecap="round"
         markerEnd={`url(#${markerId})`}
       />
       {selected ? (
@@ -51,18 +52,18 @@ function ArrowShape({
           <circle
             cx={shape.x1}
             cy={shape.y1}
-            r="0.012"
+            r="0.02"
             fill="#ffffff"
             stroke={shape.color}
-            strokeWidth="0.004"
+            strokeWidth="0.006"
           />
           <circle
             cx={shape.x2}
             cy={shape.y2}
-            r="0.012"
+            r="0.02"
             fill="#ffffff"
             stroke={shape.color}
-            strokeWidth="0.004"
+            strokeWidth="0.006"
           />
         </>
       ) : null}
@@ -88,7 +89,7 @@ export function DrawingOverlay({
   const height = extentHeight(extent);
   return (
     <svg
-      className={cn("pointer-events-none absolute inset-0 h-full w-full", className)}
+      className={cn("pointer-events-none absolute inset-0 h-full w-full overflow-visible", className)}
       viewBox={`${extent.minX} ${extent.minY} ${width} ${height}`}
       preserveAspectRatio="none"
       aria-hidden="true"

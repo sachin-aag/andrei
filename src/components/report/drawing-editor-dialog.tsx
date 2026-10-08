@@ -61,7 +61,7 @@ function hitTest(
     const px = shape.x1 + t * dx;
     const py = shape.y1 + t * dy;
     const dist = Math.hypot(x - px, y - py);
-    if (dist < 0.02) return shape;
+    if (dist < 0.035) return shape;
   }
   return null;
 }
@@ -71,8 +71,8 @@ function arrowHandle(
   x: number,
   y: number
 ): "start" | "end" | null {
-  if (Math.hypot(x - shape.x1, y - shape.y1) < 0.025) return "start";
-  if (Math.hypot(x - shape.x2, y - shape.y2) < 0.025) return "end";
+  if (Math.hypot(x - shape.x1, y - shape.y1) < 0.03) return "start";
+  if (Math.hypot(x - shape.x2, y - shape.y2) < 0.03) return "end";
   return null;
 }
 
@@ -103,6 +103,7 @@ export function DrawingEditorDialog({
     ox: number;
     oy: number;
   } | null>(null);
+  const draftArrowIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -114,6 +115,8 @@ export function DrawingEditorDialog({
     setSelectedId(null);
     setTool("select");
     setDraftText("");
+    draftArrowIdRef.current = null;
+    dragRef.current = null;
   }, [open, initialDrawing]);
 
   const selected = useMemo(
@@ -150,12 +153,43 @@ export function DrawingEditorDialog({
     }));
   }, []);
 
+  const discardIncompleteArrow = useCallback(() => {
+    const id = draftArrowIdRef.current;
+    draftArrowIdRef.current = null;
+    dragRef.current = null;
+    if (!id) return;
+    setDrawing((current) => {
+      const shape = current.shapes.find((item) => item.id === id);
+      if (shape?.type !== "arrow") return current;
+      const length = Math.hypot(shape.x2 - shape.x1, shape.y2 - shape.y1);
+      if (length >= 0.03) return current;
+      return {
+        ...current,
+        shapes: current.shapes.filter((item) => item.id !== id),
+      };
+    });
+    setSelectedId((current) => (current === id ? null : current));
+  }, []);
+
+  const chooseTool = (next: Tool) => {
+    discardIncompleteArrow();
+    setTool(next);
+  };
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const point = pointFromEvent(event);
     if (!point) return;
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
 
     if (tool === "arrow") {
+      const draftId = draftArrowIdRef.current;
+      if (draftId) {
+        updateShape(draftId, { x2: point.x, y2: point.y });
+        draftArrowIdRef.current = null;
+        dragRef.current = null;
+        return;
+      }
       const id = newDrawingShapeId("arrow");
       const arrow: DrawingShape = {
         id,
@@ -168,9 +202,12 @@ export function DrawingEditorDialog({
       };
       setDrawing((current) => ({ ...current, shapes: [...current.shapes, arrow] }));
       setSelectedId(id);
+      draftArrowIdRef.current = id;
       dragRef.current = { id, kind: "create-arrow", ox: point.x, oy: point.y };
       return;
     }
+
+    discardIncompleteArrow();
 
     if (tool === "label") {
       const id = newDrawingShapeId("label");
@@ -260,7 +297,17 @@ export function DrawingEditorDialog({
   };
 
   const handlePointerUp = () => {
+    const drag = dragRef.current;
     dragRef.current = null;
+    if (drag?.kind !== "create-arrow") return;
+    setDrawing((current) => {
+      const shape = current.shapes.find((item) => item.id === drag.id);
+      if (shape?.type === "arrow") {
+        const length = Math.hypot(shape.x2 - shape.x1, shape.y2 - shape.y1);
+        if (length >= 0.03) draftArrowIdRef.current = null;
+      }
+      return current;
+    });
   };
 
   const deleteSelected = () => {
@@ -275,12 +322,18 @@ export function DrawingEditorDialog({
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
         return;
       }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        discardIncompleteArrow();
+        return;
+      }
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
       event.preventDefault();
+      draftArrowIdRef.current = null;
       setDrawing((current) => ({
         ...current,
         shapes: current.shapes.filter((shape) => shape.id !== selectedId),
@@ -289,7 +342,7 @@ export function DrawingEditorDialog({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, selectedId]);
+  }, [open, selectedId, discardIncompleteArrow]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -300,15 +353,16 @@ export function DrawingEditorDialog({
         <DialogHeader>
           <DialogTitle>Annotate figure</DialogTitle>
           <DialogDescription>
-            Add arrows and labels on or around the picture. The checkerboard
-            around the photo is drawable. Save scales the figure so outside
-            annotations stay visible.
+            Add arrows and labels on or around the picture. For an arrow, drag
+            from the label to the spot on the photo — or click the start, then
+            click the tip. Save scales the figure so outside annotations stay
+            visible.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-center gap-1">
           <ToolButton
             active={tool === "select"}
-            onClick={() => setTool("select")}
+            onClick={() => chooseTool("select")}
             label="Select"
           >
             <MousePointer2 className="size-3.5" />
@@ -316,7 +370,7 @@ export function DrawingEditorDialog({
           </ToolButton>
           <ToolButton
             active={tool === "arrow"}
-            onClick={() => setTool("arrow")}
+            onClick={() => chooseTool("arrow")}
             label="Arrow"
           >
             <ArrowUpRight className="size-3.5" />
@@ -324,7 +378,7 @@ export function DrawingEditorDialog({
           </ToolButton>
           <ToolButton
             active={tool === "label"}
-            onClick={() => setTool("label")}
+            onClick={() => chooseTool("label")}
             label="Label"
           >
             <Type className="size-3.5" />
@@ -367,7 +421,7 @@ export function DrawingEditorDialog({
             frameRef={frameRef}
             testId="drawing-canvas"
             className={cn(
-              "max-h-[min(62vh,720px)]",
+              "max-h-[min(62vh,720px)] touch-none",
               tool === "arrow" && "cursor-crosshair",
               tool === "label" && "cursor-cell"
             )}
@@ -385,7 +439,21 @@ export function DrawingEditorDialog({
           <Button
             type="button"
             onClick={() => {
-              onSave(drawing);
+              const draftId = draftArrowIdRef.current;
+              const draft = draftId
+                ? drawing.shapes.find((shape) => shape.id === draftId)
+                : null;
+              const incomplete =
+                draft?.type === "arrow" &&
+                Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1) < 0.03;
+              onSave(
+                incomplete
+                  ? {
+                      ...drawing,
+                      shapes: drawing.shapes.filter((shape) => shape.id !== draftId),
+                    }
+                  : drawing
+              );
               onOpenChange(false);
             }}
           >
