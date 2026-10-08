@@ -551,4 +551,14 @@ describe("threeXperCitationsAppendixXml", () => {
     expect(xml).toContain('w:fill="D9D9D9"');
     expect(xml).not.toContain('w:fill="FFD966"');
   });
+
+  it("keeps CITATIONS out of Heading1 on the cleaning verification protocol", () => {
+    const xml = threeXperCitationsAppendixXml(
+      [{ number: 1, source: "[protocol.pdf, p. 3]" }],
+      { variant: "cvp" }
+    );
+    expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="Heading1"/>');
+    expect(xml).toContain('w:fill="D9D9D9"');
+  });
 });

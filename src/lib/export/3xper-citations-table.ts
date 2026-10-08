@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { citationDisplayFilename } from "@/lib/citations/citation-filename";
 import {
+  CVP_DOCX_RUN_STYLE,
   QSR_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxRunStyle,
@@ -586,20 +587,42 @@ function citationsTableDoc(rows: readonly ThreeXperCitationRow[]): JSONContent {
   };
 }
 
+function citationsBodyHeadingXml(text: string): string {
+  return (
+    `<w:p>` +
+    `<w:pPr>` +
+    `<w:pStyle w:val="BodyText"/>` +
+    `<w:outlineLvl w:val="9"/>` +
+    `<w:spacing w:before="200" w:line="360" w:lineRule="auto"/>` +
+    `</w:pPr>` +
+    `<w:r><w:rPr><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
+    `<w:t xml:space="preserve">${text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")}</w:t></w:r>` +
+    `</w:p>`
+  );
+}
+
 export function threeXperCitationsAppendixXml(
   bibliography: readonly ElrBibliographyEntry[],
   options: {
     sections?: readonly ReportSectionRecord[];
-    variant?: "qsr" | "vq";
+    variant?: "qsr" | "vq" | "cvp";
   } = {}
 ): string {
   if (bibliography.length === 0) return "";
   const rows = threeXperCitationRows(bibliography, options.sections ?? []);
   const runStyle =
-    options.variant === "vq" ? VQ_CITATIONS_RUN_STYLE : QSR_CITATIONS_RUN_STYLE;
+    options.variant === "vq"
+      ? VQ_CITATIONS_RUN_STYLE
+      : options.variant === "cvp"
+        ? CVP_DOCX_RUN_STYLE
+        : QSR_CITATIONS_RUN_STYLE;
   const ctx = createDocxExportContext(undefined, runStyle);
-  return (
-    citationsHeadingParagraphXml(THREE_XPER_CITATIONS_HEADING) +
-    narrativeToDocxXml(citationsTableDoc(rows), ctx)
-  );
+  const heading =
+    options.variant === "cvp"
+      ? citationsBodyHeadingXml(THREE_XPER_CITATIONS_HEADING)
+      : citationsHeadingParagraphXml(THREE_XPER_CITATIONS_HEADING);
+  return heading + narrativeToDocxXml(citationsTableDoc(rows), ctx);
 }
