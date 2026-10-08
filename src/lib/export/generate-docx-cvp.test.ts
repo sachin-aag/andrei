@@ -72,6 +72,17 @@ function paragraphContaining(xml: string, text: string): string {
   );
 }
 
+function listItem(text: string): JSONContent {
+  return {
+    type: "listItem",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
+}
+
+function paragraphNumId(xml: string, text: string): string | undefined {
+  return paragraphContaining(xml, text).match(/<w:numId w:val="([^"]+)"\/>/)?.[1];
+}
+
 async function exportZip(sections: ReportSectionRecord[]) {
   return new PizZip(await generateReportDocx({ report: cvpReport(), sections }));
 }
@@ -471,5 +482,89 @@ describe("cleaning verification protocol DOCX export", () => {
         "This protocol applies to the cleaning validation"
       )
     ).toContain("<w:widowControl/>");
+  });
+
+  it("continues procedure numbering after nested bullets in methodology and rinse volume", async () => {
+    const zip = await exportZip(
+      sectionsWith({
+        cvp_methodology: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "orderedList",
+                content: [
+                  listItem("Execution of Cleaning: clean the train."),
+                  listItem("Drying and Visual Inspection: dry then inspect."),
+                ],
+              },
+              {
+                type: "bulletList",
+                content: [
+                  listItem("Dry the equipment by applying vacuum."),
+                  listItem("Visually inspect the interior."),
+                ],
+              },
+              {
+                type: "orderedList",
+                content: [
+                  listItem("Swabable Sampling: collect swab samples."),
+                  listItem("Final Rinse Sampling: collect the rinse."),
+                ],
+              },
+            ],
+          },
+        },
+        cvp_rinse_volume: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Calculation Methodology:" }],
+              },
+              {
+                type: "orderedList",
+                content: [listItem("Calculation based on Rinse Factor (RF):")],
+              },
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "The Rinse Factor typically ranges between 1–10 L/m².",
+                  },
+                ],
+              },
+              {
+                type: "bulletList",
+                content: [listItem("1–3 L/m² for easily soluble residues")],
+              },
+              {
+                type: "orderedList",
+                content: [
+                  listItem(
+                    "Calculation based on Solvent Adherence Factor (SAF):"
+                  ),
+                ],
+              },
+            ],
+          },
+        },
+      })
+    );
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const drying = paragraphNumId(document, "Drying and Visual Inspection");
+    const swab = paragraphNumId(document, "Swabable Sampling");
+    const rf = paragraphNumId(document, "Calculation based on Rinse Factor (RF):");
+    const saf = paragraphNumId(
+      document,
+      "Calculation based on Solvent Adherence Factor (SAF):"
+    );
+    expect(drying).toBeTruthy();
+    expect(swab).toBe(drying);
+    expect(rf).toBeTruthy();
+    expect(saf).toBe(rf);
+    expect(swab).not.toBe(rf);
   });
 });
