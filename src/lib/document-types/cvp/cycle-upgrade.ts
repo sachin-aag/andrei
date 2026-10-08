@@ -155,7 +155,7 @@ function nodePlain(node: JSONContent | undefined): string {
   return (node.content ?? []).map(nodePlain).join("");
 }
 
-function cellPlain(cell: JSONContent): string {
+function cellPlain(cell: JSONContent | undefined): string {
   return nodePlain(cell).replace(/\s+/g, " ").trim();
 }
 
