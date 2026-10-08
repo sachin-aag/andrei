@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type MouseEvent } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { Pencil } from "lucide-react";
 import { DrawingEditorDialog } from "@/components/report/drawing-editor-dialog";
@@ -52,7 +52,7 @@ export function ImageInlineNodeView({
         contentEditable={false}
         data-eval-id={suggestionId ?? undefined}
         data-suggestion-author={suggestionId ? "ai" : undefined}
-        onDoubleClick={(event) => {
+        onDoubleClick={(event: MouseEvent<HTMLSpanElement>) => {
           if (!editable) return;
           event.preventDefault();
           event.stopPropagation();
