@@ -348,7 +348,7 @@ export function InsertTableRefButton({ editor }: { editor: Editor }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-72 overflow-y-auto"
+        className="max-h-[min(18rem,var(--radix-dropdown-menu-content-available-height,calc(100vh-2rem)))] overflow-x-hidden overflow-y-auto"
         data-testid="insert-table-ref-menu"
       >
         {insertable.length === 0 ? (
