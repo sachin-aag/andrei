@@ -193,6 +193,7 @@ export function narrativeToDocxXmlWithContext(
   }
   let landscapeOpen = false;
   let continuedOrderedNumId: number | null = null;
+  let lastEmittedWasTable = false;
 
   const closeLandscape = () => {
     if (!landscapeOpen) return;
@@ -213,11 +214,21 @@ export function narrativeToDocxXmlWithContext(
     if (node.type === "table") {
       if (landscapeWithTable.has(i)) {
         openLandscape();
-        parts.push(tableToXml(node, ctx, landscapeMax, true));
       } else {
         closeLandscape();
-        parts.push(tableToXml(node, ctx, portraitMax));
       }
+      if (lastEmittedWasTable) {
+        parts.push(tableSeparatorParagraphXml(ctx));
+      }
+      parts.push(
+        tableToXml(
+          node,
+          ctx,
+          landscapeWithTable.has(i) ? landscapeMax : portraitMax,
+          landscapeWithTable.has(i)
+        )
+      );
+      lastEmittedWasTable = true;
       continue;
     }
     // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
@@ -230,6 +241,7 @@ export function narrativeToDocxXmlWithContext(
     } else if (!(forceLandscape && landscapeOpen)) {
       closeLandscape();
     }
+    lastEmittedWasTable = false;
     const keepNext = keepWithTable.has(i);
     if (node.type === "paragraph") {
       parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
@@ -915,6 +927,11 @@ function listToXml(
     }
   }
   return parts.join("");
+}
+
+/** Word joins adjacent `<w:tbl>` into one grid. A paragraph keeps them apart. */
+function tableSeparatorParagraphXml(ctx: DocxExportContext): string {
+  return paragraphToXml({ type: "paragraph" }, false, null, null, false, ctx);
 }
 
 function portraitTableGridMax(ctx: DocxExportContext): number {

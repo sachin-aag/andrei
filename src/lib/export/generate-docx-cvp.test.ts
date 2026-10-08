@@ -484,6 +484,18 @@ describe("cleaning verification protocol DOCX export", () => {
     ).toContain("<w:widowControl/>");
   });
 
+  it("keeps the swab-limit table and the per-equipment rinse table as separate grids", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const swabAt = document.indexOf("Acceptance Limit per Equipment");
+    const rinseAt = document.indexOf("Final rinse acceptance criteria");
+    expect(swabAt).toBeGreaterThan(-1);
+    expect(rinseAt).toBeGreaterThan(swabAt);
+    const between = document.slice(swabAt, rinseAt);
+    expect(between).toContain("</w:tbl>");
+    expect(between).toMatch(/<\/w:tbl><w:p[\s>][\s\S]*?<\/w:p><w:tbl>/);
+  });
+
   it("continues procedure numbering after nested bullets in methodology and rinse volume", async () => {
     const zip = await exportZip(
       sectionsWith({

@@ -896,6 +896,19 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("C9");
   });
 
+  it("inserts a paragraph between consecutive tables so Word does not join them", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE);
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [nColTable(3), nColTable(6)],
+      },
+      ctx
+    ).xml;
+    expect(xml).toMatch(/<\/w:tbl><w:p>[\s\S]*?<\/w:p><w:tbl>/);
+    expect(xml.match(/<w:tbl>/g)).toHaveLength(2);
+  });
+
   it("returns to portrait after a wide table so following paragraphs stay upright", () => {
     const xml = narrativeToDocxXml({
       type: "doc",
