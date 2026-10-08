@@ -125,10 +125,8 @@ export function looksLikeTableEdit(
     return true;
   }
   if (/\|.+\|/.test(anchorText) || /\|.+\|/.test(insertText ?? "")) return true;
-  if (!fieldDoc) return false;
-  const walk = (node: JSONContent): boolean =>
-    node.type === "table" || Boolean(node.content?.some(walk));
-  return walk(fieldDoc);
+  void fieldDoc;
+  return false;
 }
 
 export function proposedEditHint(

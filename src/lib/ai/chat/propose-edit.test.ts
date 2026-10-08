@@ -236,6 +236,29 @@ describe("proposedEditHint", () => {
     expect(hint).not.toMatch(/draft_field for that field/i);
   });
 
+  it("does not treat a missed prose span as a table edit just because the field has tables", () => {
+    const hint = proposedEditHint(
+      { status: "not_found" },
+      {
+        anchorText: "The equipment details, including Material of Construction",
+        insertText:
+          "The equipment details, including Material of Construction (MOC) and product contact surface area, were obtained from CPDR Annexure-2.",
+        fieldDoc: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "The equipment details." }],
+            },
+            { type: "table", content: [] },
+          ],
+        },
+      }
+    );
+    expect(hint).toMatch(/read_section/);
+    expect(hint).not.toMatch(/edit_table/);
+  });
+
   it("routes table-as-list rewrites to edit_table", () => {
     expect(proposedEditHint({ status: "table_as_list" })).toMatch(/edit_table/);
     expect(proposedEditHint({ status: "table_as_list" })).toMatch(/bulleted list/);
