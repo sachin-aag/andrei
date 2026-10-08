@@ -21,6 +21,8 @@ describe("isCitationShapedBracket", () => {
       true
     );
     expect(isCitationShapedBracket("[protocol.docx]")).toBe(true);
+    expect(isCitationShapedBracket("[results.csv]")).toBe(true);
+    expect(isCitationShapedBracket("[batch.xlsx, p. 1]")).toBe(true);
     expect(isCitationShapedBracket("[batch-coa.pdf, p. 1-3]")).toBe(true);
     expect(isCitationShapedBracket("[batch-coa.pdf, p. 1–3]")).toBe(true);
   });
@@ -489,6 +491,13 @@ describe("splitSourceCitationParts", () => {
     expect(splitSourceCitationParts("fileA.pdf, fileB.pdf")).toEqual([
       "fileA.pdf",
       "fileB.pdf",
+    ]);
+  });
+
+  it("splits CSV and Excel filenames the same way as PDF and Word", () => {
+    expect(splitSourceCitationParts("results.csv, book.xlsx")).toEqual([
+      "results.csv",
+      "book.xlsx",
     ]);
   });
 

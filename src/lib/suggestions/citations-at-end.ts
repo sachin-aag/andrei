@@ -1118,6 +1118,28 @@ export function normalizeTrailingCitationBlockInText(text: string): string {
   return bodyOut ? `${bodyOut}\n\n${block}` : block;
 }
 
+/** Append a numbered Citations list to a body that has none. */
+export function appendCitationListToDoc(
+  body: JSONContent,
+  entries: ReadonlyArray<{ number: number; source: string }>
+): JSONContent {
+  if (entries.length === 0) return body;
+  const content = body.content ?? [];
+  const last = content[content.length - 1];
+  const withSpacer =
+    last && !isEmptyParagraphBlock(last) ? [...content, { type: "paragraph" }] : content;
+  return {
+    ...body,
+    content: [
+      ...withSpacer,
+      paragraphWithText(CITATIONS_HEADING),
+      ...[...entries]
+        .sort((a, b) => a.number - b.number)
+        .map(({ number, source }) => paragraphWithText(numberedCitationLine(number, source))),
+    ],
+  };
+}
+
 /** Rewrite a TipTap field's citation list into numbered lines at the end. */
 export function normalizeTrailingCitationBlockInDoc(doc: JSONContent): JSONContent {
   if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {

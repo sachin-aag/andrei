@@ -19,7 +19,7 @@ function basename(path: string): string {
 
 /**
  * Finder/Explorer metadata that shows up in almost every folder pick.
- * These are not user documents — they must not block a PDF/Word folder.
+ * These are not user documents — they must not block a supported folder.
  */
 export function isIgnorableLibraryUploadName(filename: string): boolean {
   const name = basename(filename);
@@ -84,7 +84,7 @@ export function libraryUploadBatchError(
 ): string | null {
   if (scan.accepted.length === 0) {
     if (scan.rejectedNames.length > 0) return null;
-    return "No PDF or Word documents found in that folder";
+    return "No PDF, Word, CSV, or Excel files found in that folder";
   }
   for (const item of scan.accepted) {
     const nested = directorySegmentsFromRelativePath(

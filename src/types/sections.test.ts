@@ -13,12 +13,19 @@ describe("displaySectionLabel", () => {
     expect(displaySectionLabel("testers_dates")).toBe("Testers/Dates");
     expect(displaySectionLabel("executed_protocol")).toBe("Executed Protocol");
     expect(displaySectionLabel("documents_reviewed")).toBe("Documents Reviewed");
+    expect(displaySectionLabel("cvp_maco")).toBe(
+      "10.0 Maximum Allowable Carryover (MACO)"
+    );
+    expect(displaySectionLabel("cvp_equipment_sampling")).toBe(
+      "Equipment sampling"
+    );
   });
 
   it("title-cases unknown keys instead of showing underscores", () => {
     expect(humanizeSectionKey("some_new_section")).toBe("Some New Section");
     expect(displaySectionLabel("some_new_section")).toBe("Some New Section");
     expect(displaySectionLabel("qra_brand_new_block")).toBe("Brand New Block");
+    expect(humanizeSectionKey("cvp_brand_new_block")).toBe("Brand New Block");
   });
 
   it("never returns an underscore for mapped section keys", () => {

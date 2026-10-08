@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CSV_MIME_TYPE, XLSX_MIME_TYPE } from "./file-types";
 import {
   formatVaultByteSize,
   vaultItemKindLabel,
@@ -13,10 +14,16 @@ describe("formatVaultByteSize", () => {
 });
 
 describe("vaultItemKindLabel", () => {
-  it("labels folders and PDF/Word files", () => {
+  it("labels folders and PDF/Word/CSV/Excel files", () => {
     expect(vaultItemKindLabel({ isFolder: true })).toBe("Folder");
     expect(
       vaultItemKindLabel({ isFolder: false, mimeType: "application/pdf" })
     ).toBe("PDF document");
+    expect(
+      vaultItemKindLabel({ isFolder: false, mimeType: CSV_MIME_TYPE })
+    ).toBe("CSV spreadsheet");
+    expect(
+      vaultItemKindLabel({ isFolder: false, mimeType: XLSX_MIME_TYPE })
+    ).toBe("Excel spreadsheet");
   });
 });

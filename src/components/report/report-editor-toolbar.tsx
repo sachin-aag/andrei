@@ -17,7 +17,10 @@ import {
   TextFormatToolbar,
   useEditorToolbarState,
 } from "@/components/report/editor-toolbars";
-import { editorProfileFor, getDocumentType } from "@/lib/document-types";
+import {
+  editorHeadingLevels,
+  getDocumentType,
+} from "@/lib/document-types";
 
 const FIELD_LABELS: Record<string, string> = {
   "define:narrative": "Details of Investigation (Narrative)",
@@ -51,6 +54,9 @@ export function ReportEditorToolbar() {
   const { activeFieldKey, activeFieldKind, getActiveEditor } = useReportEditors();
   const editor = getActiveEditor();
   useEditorToolbarState(editor);
+  const headingLevels = report
+    ? editorHeadingLevels(getDocumentType(report.documentType))
+    : false;
 
   const fieldLabel = useMemo(
     () => activeFieldLabel(activeFieldKey),
@@ -93,11 +99,10 @@ export function ReportEditorToolbar() {
         <>
           <Separator orientation="vertical" className="h-5 hidden sm:block" />
           <TextFormatToolbar editor={editor} />
-          {editorProfileFor(getDocumentType(report.documentType)) ===
-          "generic_document" ? (
+          {headingLevels ? (
             <>
               <Separator orientation="vertical" className="h-5" />
-              <HeadingToolbar editor={editor} />
+              <HeadingToolbar editor={editor} levels={headingLevels} />
             </>
           ) : null}
           <Separator orientation="vertical" className="h-5" />

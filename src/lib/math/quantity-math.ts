@@ -18,6 +18,23 @@ const SUBSCRIPT_CHARS: Record<string, string> = {
   "7": "₇",
   "8": "₈",
   "9": "₉",
+  a: "ₐ",
+  e: "ₑ",
+  h: "ₕ",
+  i: "ᵢ",
+  j: "ⱼ",
+  k: "ₖ",
+  l: "ₗ",
+  m: "ₘ",
+  n: "ₙ",
+  o: "ₒ",
+  p: "ₚ",
+  r: "ᵣ",
+  s: "ₛ",
+  t: "ₜ",
+  u: "ᵤ",
+  v: "ᵥ",
+  x: "ₓ",
 };
 
 const SUPERSCRIPT_CHARS: Record<string, string> = {
@@ -33,6 +50,7 @@ const SUPERSCRIPT_CHARS: Record<string, string> = {
   "9": "⁹",
   "+": "⁺",
   "-": "⁻",
+  n: "ⁿ",
 };
 
 /** Real equations — do not flatten these into prose. */
@@ -44,7 +62,10 @@ const KEEP_AS_EQUATION_RE =
  * numbers / comparison signs — not another backslash command.
  */
 const QUANTITY_PLAIN_RE =
-  /^[0-9A-Za-z.,+\-±∓≤≥≠×·°µμ∞≈<>%/()[\]\s²³⁴₀-₉⁺⁻–—'’]+$/;
+  /^[0-9A-Za-z.,+\-±∓≤≥≠×·°µμ∞≈<>%/()[\]\s²³⁴ⁿ₀-₉ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁺⁻–—'’=√]+$/;
+
+const BRACED_TEX_COMMAND_RE =
+  /\\(?:text(?:rm|it|bf|sf)?|operatorname|mathrm|mathbf|textit)\{([^{}]*)\}/g;
 
 function mapChars(text: string, table: Record<string, string>): string {
   let out = "";
@@ -57,11 +78,23 @@ function applyScripts(text: string): string {
     .replace(/\^\{([^}]+)\}/g, (_m, inner: string) =>
       mapChars(inner, SUPERSCRIPT_CHARS)
     )
-    .replace(/\^([0-9+\-])/g, (_m, ch: string) => mapChars(ch, SUPERSCRIPT_CHARS))
+    .replace(/\^([0-9+\-n])/g, (_m, ch: string) => mapChars(ch, SUPERSCRIPT_CHARS))
     .replace(/_\{([^}]+)\}/g, (_m, inner: string) =>
       mapChars(inner, SUBSCRIPT_CHARS)
     )
-    .replace(/_([0-9])/g, (_m, ch: string) => mapChars(ch, SUBSCRIPT_CHARS));
+    .replace(/_([0-9A-Za-z])/g, (_m, ch: string) => mapChars(ch, SUBSCRIPT_CHARS));
+}
+
+/** Innermost `\text{…}` / `\mathrm{…}` first so nested empty `\text{}` peels. */
+function unwrapBracedTexCommands(text: string): string {
+  let s = text;
+  for (let pass = 0; pass < 8; pass++) {
+    BRACED_TEX_COMMAND_RE.lastIndex = 0;
+    const next = s.replace(BRACED_TEX_COMMAND_RE, "$1");
+    if (next === s) break;
+    s = next;
+  }
+  return s;
 }
 
 function unwrapSimpleGroups(text: string): string {
@@ -111,12 +144,8 @@ export function quantityLatexToPlainText(latex: string): string | null {
       .replace(/\\ /g, " ")
       .replace(/~/g, " ")
       .replace(/\\left\b/g, "")
-      .replace(/\\right\b/g, "")
-      .replace(/\\text(?:rm|it|bf|sf)?\{([^{}]*)\}/g, "$1")
-      .replace(/\\operatorname\{([^{}]*)\}/g, "$1")
-      .replace(/\\mathrm\{([^{}]*)\}/g, "$1")
-      .replace(/\\mathbf\{([^{}]*)\}/g, "$1")
-      .replace(/\\textit\{([^{}]*)\}/g, "$1");
+      .replace(/\\right\b/g, "");
+    s = unwrapBracedTexCommands(s);
     s = unwrapSimpleGroups(s);
     s = applyScripts(s);
     if (s === before) break;
@@ -148,16 +177,18 @@ export function quantityLatexToTextNodes(
 }
 
 /**
- * `$...$` spans that should become prose: TeX quantity commands, or a leading
- * `<` / `>` / `≤` / `±` comparison. Bare `$100-$200$` currency stays literal.
+ * `$...$` spans that should become prose: TeX quantity commands, a leading
+ * `<` / `>` / `≤` / `±` comparison, an identifier (`$A$`, `$SF$`), or a
+ * quantity equation (`A = B × C`). Bare `$100-$200$` currency stays literal.
  */
 export function shouldFlattenDollarLatex(inner: string): boolean {
   const trimmed = inner.trim();
   if (!trimmed) return false;
-  if (quantityLatexToTextNodes(trimmed)) {
-    if (/[\\_^{}]/.test(trimmed)) return true;
-    if (/^[<>≤≥±]/.test(trimmed)) return true;
-  }
+  if (!quantityLatexToTextNodes(trimmed)) return false;
+  if (/[\\_^{}]/.test(trimmed)) return true;
+  if (/^[<>≤≥±]/.test(trimmed)) return true;
+  if (/[=×·±≤≥≠√]/.test(trimmed)) return true;
+  if (/^[A-Za-z]{1,8}$/.test(trimmed)) return true;
   return false;
 }
 

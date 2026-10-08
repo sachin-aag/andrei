@@ -151,7 +151,10 @@ const ELR_LANDSCAPE_TABLE_KEYS = new Set([
 function stringifyDvTemplateValue(
   value: unknown,
   ctx: DocxExportContext,
-  options?: NarrativeToDocxOptions & { resultsColWidths?: boolean }
+  options?: NarrativeToDocxOptions & {
+    resultsColWidths?: boolean;
+    preserveHeadings?: boolean;
+  }
 ): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -159,8 +162,10 @@ function stringifyDvTemplateValue(
     return String(value);
   }
   if (isTiptapDoc(value)) {
-    const { resultsColWidths, ...docxOptions } = options ?? {};
-    const normalized = normalizeRichField(value);
+    const { resultsColWidths, preserveHeadings, ...docxOptions } = options ?? {};
+    const normalized = normalizeRichField(value, {
+      preserveHeadings: preserveHeadings === true,
+    });
     const doc = resultsColWidths
       ? applyMechanicalResultsColWidths(
           normalized,
@@ -586,7 +591,11 @@ export async function generateReportDocx({
     citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
       sections: exportSections,
       variant:
-        report.documentType === "vendor_qualification" ? "vq" : "qsr",
+        report.documentType === "vendor_qualification"
+          ? "vq"
+          : report.documentType === "cleaning_verification_protocol"
+            ? "cvp"
+            : "qsr",
     });
   }
   exportSections = await Promise.all(
@@ -775,7 +784,7 @@ async function generateDesignVerificationDocx({
           : pack.id === "convergent"
             ? CONVERGENT_DOCX_RUN_STYLE
             : undefined,
-    { pageSetup }
+    { pageSetup, useHeadingStyles: documentType === "cleaning_verification_protocol" }
   );
   const def = getDocumentType(documentType);
   const mergedSections = sections.map((row) => ({
@@ -818,7 +827,9 @@ async function generateDesignVerificationDocx({
           }
         : isElrLandscapeTable
           ? { forceLandscapeTables: true }
-          : undefined
+          : documentType === "cleaning_verification_protocol"
+            ? { preserveHeadings: true }
+            : undefined
     );
   }
 

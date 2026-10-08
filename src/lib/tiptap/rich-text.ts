@@ -297,6 +297,27 @@ export function normalizeRichField(
 }
 
 /**
+ * Merge a stored rich field. An explicit empty doc (cleared editor) stays
+ * empty — only a *missing* key falls back to the section seed. `value ?? seed`
+ * treated `null` the same as missing and put instructional template text back.
+ */
+export function mergeStoredRichField(
+  raw: unknown,
+  field: string,
+  seed: unknown,
+  options?: NormalizeRichFieldOptions
+): JSONContent {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return normalizeRichField(seed, options);
+  }
+  const rec = raw as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(rec, field)) {
+    return normalizeRichField(seed, options);
+  }
+  return normalizeRichField(rec[field], options);
+}
+
+/**
  * How tables are serialized when converting a Tiptap doc to text.
  * - `pipe`: legacy "cell | cell" rows, used by export round-trip + diffing.
  * - `markdown`: GitHub-flavored markdown table with header separator and

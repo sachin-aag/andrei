@@ -990,7 +990,7 @@ export function protocolBodyQuote(quote: string): string {
 function protocolTopicTokens(context: string): string[] {
   const withoutMeta = context
     .replace(/\[[^\]]*\]/g, " ")
-    .replace(/\b[\w.-]+\.(?:pdf|docx?|xlsx?)\b/gi, " ")
+    .replace(/\b[\w.-]+\.(?:pdf|docx?|xlsx?|csv)\b/gi, " ")
     .replace(new RegExp(`\\b${URS_ID_TOKEN_SOURCE}\\b`, "gi"), " ")
     .replace(/\b(?:DQ|IQ|OQ|PQ)\b/g, " ")
     .replace(STOCK_COMPLIES_RE, " ")
@@ -1005,7 +1005,7 @@ function protocolTopicTokens(context: string): string[] {
         !DESCRIPTION_STOPWORDS.has(token) &&
         !/^\d+$/.test(token) &&
         !/^urs\d+$/.test(token) &&
-        !/^(?:pdf|docx?|xlsx?)$/.test(token)
+        !/^(?:pdf|docx?|xlsx?|csv)$/.test(token)
     );
 }
 

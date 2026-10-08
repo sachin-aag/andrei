@@ -21,7 +21,7 @@ export type MarkdownInsert =
   | { kind: "blocks"; content: JSONContent[] }
   | { kind: "table" };
 
-const ATX_HEADING_RE = /^(#{1,3})\s+/;
+const ATX_HEADING_RE = /^(#{1,4})\s+/;
 
 function nodeContains(hay: JSONContent, needle: JSONContent): boolean {
   if (hay === needle) return true;

@@ -3,9 +3,16 @@ import { documentTypeEnum, type DocumentType, type SectionType } from "@/db/sche
 import { displaySectionLabel } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
+  expandIndexedFieldPaths,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
 import { getDocumentType, resolveSection } from "@/lib/document-types";
+import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
+import {
+  cvpEquipmentItemIndex,
+  cvpEquipmentItemIndexFromMentionId,
+  cvpEquipmentItemMentionId,
+} from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -50,17 +57,27 @@ export function isChatMentionableSection(
   value: string,
   documentType: DocumentType = "investigation_report"
 ): boolean {
+  if (cvpEquipmentItemIndexFromMentionId(value) != null) {
+    return documentType === "cleaning_verification_protocol";
+  }
   return (
     isChatEditableSection(value, documentType) ||
     (isChatIdentitySection(value) && hasChatIdentity(documentType))
   );
 }
 
+export type ChatMentionableSectionCandidate = {
+  id: string;
+  label: string;
+  keywords?: string;
+};
+
 /** Composer @ menu: identity first when the type has a cover/header form. */
 export function chatMentionableSectionCandidates(
-  documentType: DocumentType = "investigation_report"
-): Array<{ id: string; label: string }> {
-  const items: Array<{ id: string; label: string }> = [];
+  documentType: DocumentType = "investigation_report",
+  opts?: { equipmentItems?: ReadonlyArray<{ label: string }> }
+): ChatMentionableSectionCandidate[] {
+  const items: ChatMentionableSectionCandidate[] = [];
   if (hasChatIdentity(documentType)) {
     items.push({
       id: CHAT_IDENTITY_SECTION,
@@ -68,6 +85,21 @@ export function chatMentionableSectionCandidates(
     });
   }
   for (const section of chatEditableSections(documentType)) {
+    if (section === "cvp_equipment_sampling") {
+      const live = opts?.equipmentItems;
+      const boxes =
+        live && live.length > 0
+          ? live
+          : [{ label: "15.1 Equipment name (Equipment No.)" }];
+      for (const [index, child] of boxes.entries()) {
+        items.push({
+          id: cvpEquipmentItemMentionId(index),
+          label: child.label,
+          keywords: "equipment sampling",
+        });
+      }
+      continue;
+    }
     items.push({ id: section, label: sectionLabel(section) });
   }
   return items;
@@ -92,14 +124,15 @@ export type ChatTargetField = {
 };
 
 /** Editable target fields for a section (the authoritative suggestion field set). */
-export function chatTargetFields(section: SectionType): ChatTargetField[] {
+export function chatTargetFields(
+  section: SectionType,
+  content?: unknown
+): ChatTargetField[] {
   const patterns = SUGGEST_TARGET_FIELD_PATTERNS[section] ?? [];
-  return patterns
-    .filter((p) => !p.includes("[]"))
-    .map((targetField) => ({
-      targetField,
-      kind: isRichTargetField(section, targetField) ? "rich" : "plain",
-    }));
+  return expandIndexedFieldPaths(patterns, content).map((targetField) => ({
+    targetField,
+    kind: isRichTargetField(section, targetField) ? "rich" : "plain",
+  }));
 }
 
 /** Primary draftable field per section — used for summaries + stub drafting. */
@@ -123,6 +156,8 @@ export function primaryFieldForSection(section: SectionType): string {
       return "testers";
     case "results_and_discussions":
       return "table";
+    case "cvp_equipment_sampling":
+      return "items.0";
     default:
       if (
         section === "vq_section_g" ||
@@ -160,7 +195,7 @@ export function countSectionInlineImages(
   section: SectionType
 ): number {
   let total = 0;
-  for (const field of chatTargetFields(section)) {
+  for (const field of chatTargetFields(section, sectionContent)) {
     if (field.kind !== "rich") continue;
     total += countImagesInDoc(getRichFieldValue(sectionContent, field.targetField));
   }
@@ -203,7 +238,7 @@ export function sectionHasTable(
   content: Record<string, unknown> | undefined,
   section: SectionType
 ): boolean {
-  return chatTargetFields(section).some(
+  return chatTargetFields(section, content).some(
     (field) => listFieldTables(content, section, field.targetField).length > 0
   );
 }
@@ -285,6 +320,10 @@ export function seedFieldDoc(
   targetField: string
 ): JSONContent | undefined {
   if (!isRichTargetField(section, targetField)) return undefined;
+  if (section === "cvp_equipment_sampling") {
+    const index = cvpEquipmentItemIndex(targetField);
+    if (index != null) return cvpEquipmentSamplingSeed(index + 1);
+  }
   const empty = emptyContentForSection(section);
   if (!empty) return undefined;
   return getRichFieldValue(empty, targetField);
@@ -426,13 +465,19 @@ export function sectionFillState(
   content: Record<string, unknown> | undefined,
   section: SectionType
 ): SectionFillState {
-  const fields = chatTargetFields(section);
+  const fields = chatTargetFields(section, content);
   if (fields.length === 0) {
     return fieldFillState(content, section, primaryFieldForSection(section));
   }
   const states = fields.map((field) =>
     fieldFillState(content, section, field.targetField)
   );
+  if (section === "cvp_equipment_sampling") {
+    if (states.length === 0) return "empty";
+    if (states.every((state) => state === "empty")) return "empty";
+    if (states.every((state) => state === "filled")) return "filled";
+    return "partial";
+  }
   const aggregated: SectionFillState = states.every((state) => state === "empty")
     ? "empty"
     : states.some((state) => state === "filled")

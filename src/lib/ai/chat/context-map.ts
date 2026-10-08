@@ -138,7 +138,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     }
     if (def.chat.identityFields && def.chat.identityFields.length > 0) {
       const unitHint = def.chat.identityFields.some((field) => field.keepUnits)
-        ? " Capacity / Size keeps the printed unit (8000 L, 3.0 KL)."
+        ? " Capacity / Size keeps the printed unit (8k L not 8000 L; 3.0 KL as printed)."
         : "";
       lines.push(
         `- Fill unset identity with draft_identity from attachments (one suggestion card for the whole header; Apply / Dismiss). Duplicate document numbers fail at propose. Remaining-section treats a complete proposal as done. Plain scalars only — never citations.${unitHint}`
@@ -189,7 +189,7 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           ? ` · ${suggestionBits.join(" / ")} suggestion(s)`
           : "")
     );
-    for (const field of chatTargetFields(section)) {
+    for (const field of chatTargetFields(section, content)) {
       const fieldState = fieldFillState(content, section, field.targetField);
       const fieldText = sectionFieldPlainText(content, section, field.targetField);
       if (fieldState === "empty") {

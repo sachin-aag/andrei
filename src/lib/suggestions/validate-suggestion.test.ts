@@ -879,6 +879,43 @@ describe("validateSuggestionLocate table operations", () => {
     expect(v.canPreview).toBe(true);
     expect(v.documentChanged).toBe(false);
   });
+
+  it("keeps create_table applyable when afterAnchor is not yet in the live field", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "Create a 2-column table with 1 row",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "visual inspection table",
+        tableOperation: {
+          kind: "create_table",
+          headers: ["Sample description / location", "Results"],
+          rows: [["Production Chemist verification", ""]],
+          afterAnchor: "15.3.6 Visual inspection",
+        },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "15.3 Equipment sampling." }],
+          },
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Citations:" }],
+          },
+        ],
+      },
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
+  });
 });
 
 describe("validateSuggestionLocate drawing operations", () => {

@@ -20,8 +20,8 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
-import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
+import { applyTableOperationForPersist } from "@/lib/suggestions/table-operation";
 import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
 import { narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 
@@ -269,7 +269,7 @@ export function validateSuggestionLocate(
         mergeStatus: "legacy",
       };
     }
-    const result = applyTableOperation(doc, payload.tableOperation, {
+    const result = applyTableOperationForPersist(doc, payload.tableOperation, {
       section,
       targetField: path,
     });

@@ -89,7 +89,7 @@ function applyPendingToSection(
     if (!isRichTargetField(section, field)) continue;
     const previous = docs.get(field);
     const current = previous
-      ? normalizeRichField(previous)
+      ? normalizeRichField(previous, { preserveHeadings: true })
       : structuredClone(getRichFieldValue(content, field));
     const applied = applyTableOperation(current, operation, {
       section,

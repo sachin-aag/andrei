@@ -2,8 +2,13 @@ import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
+  CVP_EXTRANEOUS_RESULTS_HEADERS,
+  CVP_SHELL_CALC_HEADERS,
+} from "@/lib/document-types/cvp/sections";
+import {
   buildTableOperationPreviewDoc,
   cellTextDiff,
+  createdTableIndex,
   prefixSuffixDiff,
 } from "@/lib/suggestions/table-preview";
 import {
@@ -55,6 +60,37 @@ const PREVIEW_ATTRS = {
   createdAt: "2026-08-22T00:00:00.000Z",
   kind: "fix" as const,
 };
+
+it("previews a cell list as list items, not one paragraph", () => {
+  const doc = tableDoc(["Department", "Responsibility"], [["Quality Assurance", ""]]);
+  const result = buildTableOperationPreviewDoc(
+    doc,
+    {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          expectedText: "",
+          insertText:
+            "- Preparation and review of the protocol.\n- Collection of swab samples.",
+        },
+      ],
+    },
+    PREVIEW_ATTRS
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const table = (result.doc.content ?? []).find((node) => node.type === "table")!;
+  const rows = (table.content ?? []).filter((node) => node.type === "tableRow");
+  const cell = (rows[1]!.content ?? []).filter(
+    (node) => node.type === "tableCell"
+  )[1]!;
+  expect(cell.content?.some((node) => node.type === "bulletList")).toBe(true);
+  expect(JSON.stringify(cell)).toContain(suggestionInsertMarkName);
+  expect(JSON.stringify(cell)).toContain("Collection of swab samples.");
+});
 
 function rowHasInsertMark(doc: JSONContent, row: number): boolean {
   const table = (doc.content ?? []).find((n) => n.type === "table");
@@ -428,6 +464,98 @@ describe("buildTableOperationPreviewDoc", () => {
     expect(rowHasInsertMark(preview.doc, 1)).toBe(true);
     expect(cellText(preview.doc, 0, 0)).toBe("Req");
     expect(cellText(preview.doc, 1, 1)).toBe("Pass");
+  });
+
+  it("marks the afterAnchor table, not a later existing 15.N.8 grid", () => {
+    const heading = "15.2.3.2 Calculation for shell wall swab locations";
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.2 MIXED VESSEL (MV-1304)" }],
+        },
+        tableDoc(["Parameter", "Details", "Source"], [["Capacity", "10k L", "IQ"]])
+          .content![0]!,
+        {
+          type: "heading",
+          attrs: { level: 4 },
+          content: [{ type: "text", text: heading }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The number of shell wall swab sampling locations shall be determined from the vessel.",
+            },
+          ],
+        },
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [
+            {
+              type: "text",
+              text: "15.2.8 Rinse samples analysis results summary (Extraneous matter)",
+            },
+          ],
+        },
+        tableDoc(
+          [...CVP_EXTRANEOUS_RESULTS_HEADERS],
+          [
+            ["Rinse Sample", "NA", ""],
+            ["Limit", "Black and fiber particles should be absent", ""],
+          ]
+        ).content![0]!,
+      ],
+    };
+    const operation = {
+      kind: "create_table" as const,
+      headers: [...CVP_SHELL_CALC_HEADERS],
+      rows: [["H", "NA", "3.9 m", "Shell height"]],
+      afterAnchor: heading,
+      title: "Shell wall swab sampling locations",
+    };
+    const preview = buildTableOperationPreviewDoc(
+      before,
+      operation,
+      PREVIEW_ATTRS
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const types = preview.doc.content?.map((n) => n.type) ?? [];
+    expect(types).toEqual([
+      "heading",
+      "table",
+      "heading",
+      "paragraph",
+      "table",
+      "paragraph",
+      "heading",
+      "table",
+    ]);
+    expect(createdTableIndex(before, preview.doc)).toBe(1);
+
+    const tables = (preview.doc.content ?? []).filter((n) => n.type === "table");
+    expect(flattenForAnchor(tables[0]!).text).toContain("Capacity");
+    expect(JSON.stringify(tables[0])).not.toContain(suggestionInsertMarkName);
+
+    expect(flattenForAnchor(tables[1]!).text).toContain("Parameter");
+    expect(flattenForAnchor(tables[1]!).text).toContain("3.9 m");
+    expect(JSON.stringify(tables[1])).toContain(suggestionInsertMarkName);
+
+    expect(flattenForAnchor(tables[2]!).text).toContain("Rinse Sample");
+    expect(JSON.stringify(tables[2])).not.toContain(suggestionInsertMarkName);
+
+    const caption = preview.doc.content?.[3];
+    expect(caption?.type).toBe("paragraph");
+    expect(flattenForAnchor(caption!).text).toMatch(
+      /^Table \d+\. Shell wall swab sampling locations/
+    );
+    expect(JSON.stringify(caption)).toContain(suggestionInsertMarkName);
   });
 
   it("marks every row of a deleted table without removing it from preview", () => {

@@ -182,6 +182,146 @@ describe("threeXperCitationRows", () => {
     expect(row?.description).toBe("User Requirement Specification");
   });
 
+  it("puts equipment ids only in Document reference #", () => {
+    expect(
+      threeXperCitationRows([
+        { number: 18, source: "[ANFD-1302, p. 3]" },
+        { number: 19, source: "[SSR-1303.pdf, p. 4]" },
+        { number: 20, source: "[ANFD-1302, p. 3, 4]" },
+      ])
+    ).toEqual([
+      {
+        citationNumber: "18",
+        documentReference: "ANFD-1302",
+        description: "",
+        referencePage: "Page # 3",
+      },
+      {
+        citationNumber: "19",
+        documentReference: "SSR-1303",
+        description: "",
+        referencePage: "Page # 4",
+      },
+      {
+        citationNumber: "20",
+        documentReference: "ANFD-1302",
+        description: "",
+        referencePage: "Page # 3, 4",
+      },
+    ]);
+  });
+
+  it("splits a protocol number out of a titled filename", () => {
+    const rows = threeXperCitationRows([
+      {
+        number: 22,
+        source:
+          "[1 CVPR-ISM4-26-001-00 ISM Stage-4 Cleaning Verification Protocol, p. 22]",
+      },
+      {
+        number: 25,
+        source: "[Isosorbide Mononitrate (Oral and Injection) PDE, p. 1]",
+      },
+    ]);
+    expect(rows).toEqual([
+      {
+        citationNumber: "22",
+        documentReference: "CVPR-ISM4-26-001-00",
+        description: "ISM Stage-4 Cleaning Verification Protocol",
+        referencePage: "Page # 22",
+      },
+      {
+        citationNumber: "25",
+        documentReference: "",
+        description: "Isosorbide Mononitrate (Oral and Injection) PDE",
+        referencePage: "Page # 1",
+      },
+    ]);
+  });
+
+  it("fills Description from CVP abbreviations when the cite is only an equipment id", () => {
+    const sections = [
+      section("cvp_abbreviations", {
+        table: tableDoc(
+          ["Abbreviation", "Description"],
+          [
+            ["ANFD", "Agitated Nutsche Filter cum Drier"],
+            ["SSR", "Stainless Steel Reactor"],
+          ]
+        ),
+      }),
+    ];
+    const [row] = threeXperCitationRows(
+      [{ number: 1, source: "[ANFD-1302, p. 3]" }],
+      sections
+    );
+    expect(row?.documentReference).toBe("ANFD-1302");
+    expect(row?.description).toBe("Agitated Nutsche Filter cum Drier");
+  });
+
+  it("uses CVP equipment-table names, not the S. No. column", () => {
+    const sections = [
+      section("cvp_scope", {
+        table: tableDoc(
+          [
+            "S. No.",
+            "Name of the Equipment",
+            "Equipment No.",
+            "Capacity",
+            "MOC",
+            "Purpose",
+            "Product contact / Non-product contact",
+          ],
+          [["1", "Agitated Nutsche Filter Dryer", "ANFD-1302", "2 KL", "", "", ""]]
+        ),
+      }),
+    ];
+    const [row] = threeXperCitationRows(
+      [{ number: 1, source: "[ANFD-1302, p. 3]" }],
+      sections
+    );
+    expect(row?.documentReference).toBe("ANFD-1302");
+    expect(row?.description).toBe("Agitated Nutsche Filter Dryer");
+  });
+
+  it("reads CVP annexure Document Number, not the list serial", () => {
+    const sections = [
+      section("cvp_annexures", {
+        table: tableDoc(
+          ["S. No.", "Document Title", "Document Number"],
+          [
+            [
+              "1",
+              "ISM Stage-4 Cleaning Verification Protocol",
+              "CVPR-ISM4-26-001-00",
+            ],
+            ["2", "PDE report", "PDE-ISM-26-001"],
+          ]
+        ),
+      }),
+    ];
+    const catalog = qsrDocumentReferenceCatalog(sections);
+    expect(catalog).toEqual([
+      {
+        name: "ISM Stage-4 Cleaning Verification Protocol",
+        number: "CVPR-ISM4-26-001-00",
+      },
+      { name: "PDE report", number: "PDE-ISM-26-001" },
+    ]);
+    const [row] = threeXperCitationRows(
+      [
+        {
+          number: 1,
+          source:
+            "[1 CVPR-ISM4-26-001-00 ISM Stage-4 Cleaning Verification Protocol, p. 21]",
+        },
+      ],
+      sections
+    );
+    expect(row?.documentReference).toBe("CVPR-ISM4-26-001-00");
+    expect(row?.description).toBe("ISM Stage-4 Cleaning Verification Protocol");
+  });
+
   it("reads SOP numbers from section 4", () => {
     const sections = [
       section("qsr_sops", {
@@ -410,5 +550,15 @@ describe("threeXperCitationsAppendixXml", () => {
     );
     expect(xml).toContain('w:fill="D9D9D9"');
     expect(xml).not.toContain('w:fill="FFD966"');
+  });
+
+  it("keeps CITATIONS out of Heading1 on the cleaning verification protocol", () => {
+    const xml = threeXperCitationsAppendixXml(
+      [{ number: 1, source: "[protocol.pdf, p. 3]" }],
+      { variant: "cvp" }
+    );
+    expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="Heading1"/>');
+    expect(xml).toContain('w:fill="D9D9D9"');
   });
 });

@@ -222,4 +222,6 @@ export {
   evaluationCapabilityFor,
   suggestionApplyModeFor,
   editorProfileFor,
+  preservesHeadingNodes,
+  editorHeadingLevels,
 } from "./types";

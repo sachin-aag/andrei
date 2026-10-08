@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
+import {
+  CVP_EQUIPMENT_DETAILS_SEED,
+  CVP_SHELL_CALC_HEADERS,
+  cvpEquipmentSamplingSeed,
+  EMPTY_CVP_CONTENT,
+} from "@/lib/document-types/cvp/sections";
 import { comments } from "@/db/schema";
 import {
   buildChatTools,
@@ -402,7 +408,10 @@ describe("buildChatTools list_attachments", () => {
     ).toBe(false);
     expect(
       accepts(tools, "list_attachments", { fileType: "xlsx" })
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      accepts(tools, "list_attachments", { fileType: "csv" })
+    ).toBe(true);
     expect(tools.list_attachments?.description).toContain("Attachments tree");
     expect(tools.list_attachments?.description).toContain(
       "wrong tool for a file inventory"
@@ -1336,6 +1345,56 @@ describe("buildChatTools document review", () => {
     });
   });
 
+  it("resolves a review filename onto the matching ready attachment id", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_sheet",
+        filename: "LF-1301 data sheet.xlsx",
+        description: null,
+        pageCount: 3,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_other",
+        filename: "other.pdf",
+        description: null,
+        pageCount: 9,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_sheet",
+        filename: "LF-1301 data sheet.xlsx",
+        pageNumber: 1,
+        transcript: "LOQ 0.05 ppm",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+    });
+    const result = await tools.start_document_review!.execute!(
+      {
+        objective: "Extract LOQ/LOD for 15.3 LF-1301",
+        attachmentIds: ["data sheet.xlsx"],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_sheet"],
+    });
+    expect(result).toMatchObject({
+      status: "started",
+      attachmentIds: ["att_sheet"],
+    });
+  });
+
   it("walks every QSR lifecycle file for Table 3 without asking which attachment", async () => {
     listReadyDocumentsForReportMock.mockResolvedValueOnce([
       {
@@ -1544,6 +1603,50 @@ describe("buildChatTools document review", () => {
       TEST_TOOL_OPTIONS
     );
     expect(refused).toMatchObject({ status: "use_edit_table" });
+  });
+
+  it("refuses draft_field of CVP MACO because the seed has three tables", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-maco",
+                  reportId: "report-1",
+                  section: "cvp_maco",
+                  content: EMPTY_CVP_CONTENT.cvp_maco,
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "adaptive",
+      documentType: "cleaning_verification_protocol",
+      sectionScope: "cvp_maco",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "cvp_maco",
+        targetField: "narrative",
+        markdown: [
+          "| S. No. | Name of the Equipment | Equipment No. | Capacity | MOC |",
+          "| --- | --- | --- | --- | --- |",
+          "| 1 | Reactor | LF-1301 | 2000 L | SS |",
+          "| Attribute | Description of Attribute | Value / Calculation |",
+          "| --- | --- | --- |",
+          "| PDE | PDE value | 0.1 |",
+        ].join("\n"),
+        reasoning: "Fill MACO.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "use_edit_table" });
+    expect((refused as { message: string }).message).toMatch(/tableIndex 0/);
   });
 
   it("coerces ELR overallGrade and recommendation labels onto stored enums", async () => {
@@ -3248,6 +3351,222 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
+  it("allows draft_field of a filled multi-table 15.N box with replaceFilledField", async () => {
+    const filledItem = {
+      ...cvpEquipmentSamplingSeed(6),
+      content: [
+        ...(cvpEquipmentSamplingSeed(6).content ?? []),
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The previous mixed-vessel identity, documents, residue, and extraneous tables were filled from the cited protocol for this equipment box.",
+            },
+          ],
+        },
+      ],
+    };
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: {
+                    items: [
+                      cvpEquipmentSamplingSeed(1),
+                      cvpEquipmentSamplingSeed(2),
+                      cvpEquipmentSamplingSeed(3),
+                      cvpEquipmentSamplingSeed(4),
+                      cvpEquipmentSamplingSeed(5),
+                      filledItem,
+                    ],
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const replacement = [
+      "## 15.6 ML TANK",
+      "The subject equipment collects mother liquor in the production block.",
+      "### 15.6.1 Equipment Details",
+      "| Parameter | Details | Reference |",
+      "| --- | --- | --- |",
+      "| Capacity | large | drawing |",
+      "### 15.6.2 Supporting Documents",
+      "| Documents | Document # | Effective / Approval date |",
+      "| --- | --- | --- |",
+      "| BCR | pending | NA |",
+      "### 15.6.7 Residue",
+      "| Sample description / location | Sample ID | Results |",
+      "| --- | --- | --- |",
+      "| Final rinse | NA | |",
+      "### 15.6.8 Extraneous",
+      "| Sample description / location | Sample ID | Results |",
+      "| --- | --- | --- |",
+      "| Rinse sample | NA | |",
+    ].join("\n\n");
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      sectionScope: "cvp_equipment_sampling",
+      unsupportedFactPolicy: "flag",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "15.6",
+        markdown: replacement,
+        reasoning: "Rewrite 15.6 as the ML tank.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "use_edit_table" });
+
+    const replaced = await tools.draft_field!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "15.6",
+        markdown: replacement,
+        reasoning: "Rewrite 15.6 as the ML tank.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(replaced).toMatchObject({
+      status: "drafted",
+      section: "cvp_equipment_sampling",
+      targetField: "items.5",
+    });
+  });
+
+  it("treats a redraft user turn as replaceFilledField on a filled 15.N box", async () => {
+    const filledItem = {
+      ...cvpEquipmentSamplingSeed(6),
+      content: [
+        ...(cvpEquipmentSamplingSeed(6).content ?? []),
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The previous mixed-vessel identity, documents, residue, and extraneous tables were filled from the cited protocol for this equipment box.",
+            },
+          ],
+        },
+      ],
+    };
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: { items: [filledItem] },
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      mentionedTargetField: "items.0",
+      unsupportedFactPolicy: "flag",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "make 15.6 as mlt 1303. redraft accordingly",
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "15.6",
+        markdown: [
+          "## 15.6 ML TANK",
+          "The subject equipment collects mother liquor.",
+          "| Parameter | Details | Reference |",
+          "| --- | --- | --- |",
+          "| Capacity | large | drawing |",
+        ].join("\n"),
+        reasoning: "Rewrite as the ML tank.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({
+      status: "drafted",
+      targetField: "items.0",
+    });
+  });
+
+  it("lands insert-it after a 15.N redraft even when coverage looks targeted", async () => {
+    const filled =
+      "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation. The batch was quarantined pending review.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "flag",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "make 15.6 as mlt 1303. redraft accordingly",
+            },
+          ],
+        },
+        {
+          id: "u2",
+          role: "user",
+          parts: [{ type: "text", text: "insert it" }],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: filled.replace(" at 68 percent", ""),
+        reasoning: "Land the rewrite already in chat.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({
+      status: "drafted",
+      section: "define",
+      targetField: "narrative",
+    });
+  });
+
   it("refuses a GFM table in propose_edit insertText", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
@@ -3268,6 +3587,69 @@ describe("buildChatTools propose edits", () => {
     expect(result).toMatchObject({ status: "not_found" });
     expect(String((result as { hint?: string }).hint)).toMatch(/create_table/);
     expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("lands leftover 15.6.1 prose even when the dump includes Table 42", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: { items: [cvpEquipmentSamplingSeed(6)] },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      mentionedTargetField: "items.0",
+      unsupportedFactPolicy: "flag",
+    });
+    const details =
+      "The equipment details, including Material of Construction (MOC) and product contact surface area, were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.";
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.0",
+        anchorText: "",
+        deleteText: "",
+        insertText: [
+          "### 15.6.1 Equipment details",
+          details,
+          "Table 42. Equipment Details",
+          "| Parameter | Details | Reference |",
+          "| --- | --- | --- |",
+          "| Capacity | 1k L | drawing |",
+        ].join("\n"),
+        reasoning: "Update 15.6.1 equipment details.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "cvp_equipment_sampling",
+      targetField: "items.0",
+    });
+    const payload = JSON.stringify(inserted);
+    expect(payload).toContain(details);
+    expect(payload).not.toContain("| Capacity |");
+    expect(payload).toContain(CVP_EQUIPMENT_DETAILS_SEED);
   });
 
   it("refuses propose_edit that restates a table as bullets", async () => {
@@ -4170,6 +4552,160 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
+  it("does not treat flatten-identical TipTap JSON as section_changed", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    );
+    mockDefineSectionSelect({
+      type: "doc",
+      attrs: { normalized: true },
+      content: [
+        {
+          type: "paragraph",
+          attrs: { textAlign: "left" },
+          content: [
+            {
+              type: "text",
+              text: "The assay failed due to temperature drift.",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("does not bounce CVP create_table after read when bind only compact/collapses", async () => {
+    const shellHeading = "15.2.3.2 Calculation for shell wall swab locations";
+    const item = {
+      type: "doc" as const,
+      content: [
+        {
+          type: "heading" as const,
+          attrs: { level: 2 },
+          content: [{ type: "text" as const, text: "15.2 MIXED VESSEL (MV-1304)" }],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 2 },
+          content: [
+            { type: "text" as const, text: "15.2 Equipment name (Equipment No.)" },
+          ],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 4 },
+          content: [{ type: "text" as const, text: shellHeading }],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 4 },
+          content: [{ type: "text" as const, text: shellHeading }],
+        },
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The number of shell wall swab sampling locations shall be determined from the vessel. Capacity 10000 L.",
+            },
+          ],
+        },
+      ],
+    };
+    const mockItems = (items: unknown[]) => {
+      dbSelectMock.mockImplementation(() => ({
+        from: (table: unknown) => ({
+          where: vi.fn().mockResolvedValue(
+            table === comments
+              ? []
+              : [
+                  {
+                    id: "sec-eq",
+                    reportId: "report-1",
+                    section: "cvp_equipment_sampling",
+                    content: { items },
+                  },
+                ]
+          ),
+        }),
+      }));
+    };
+    mockItems([cvpEquipmentSamplingSeed(1), item]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      sectionScope: "cvp_equipment_sampling",
+      unsupportedFactPolicy: "flag",
+    });
+    const read = (await tools.read_section!.execute!(
+      { section: "cvp_equipment_sampling", fields: ["items.1"] },
+      TEST_TOOL_OPTIONS
+    )) as { fields: Array<{ targetField: string; text: string }> };
+    expect(read.fields[0]?.targetField).toBe("items.1");
+    expect(read.fields[0]?.text).toContain("10k L");
+    expect(read.fields[0]?.text).not.toContain("10000 L");
+
+    const proposed = await tools.edit_table!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.1",
+        reasoning: "Add the shell-wall calculation table.",
+        operation: {
+          kind: "create_table",
+          headers: [...CVP_SHELL_CALC_HEADERS],
+          rows: [["H", "NA", "3.9 m", "Shell height"]],
+          afterAnchor: shellHeading,
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(proposed).toMatchObject({
+      status: "proposed",
+      section: "cvp_equipment_sampling",
+      targetField: "items.1",
+    });
+
+    mockItems([
+      cvpEquipmentSamplingSeed(1),
+      {
+        ...item,
+        content: [
+          ...(item.content ?? []),
+          {
+            type: "paragraph" as const,
+            content: [{ type: "text" as const, text: "A concurrent apply landed." }],
+          },
+        ],
+      },
+    ]);
+    const bounced = await tools.edit_table!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.1",
+        reasoning: "Retry after a real edit.",
+        operation: {
+          kind: "create_table",
+          headers: [...CVP_SHELL_CALC_HEADERS],
+          rows: [["D", "NA", "1.2 m", "Shell diameter"]],
+          afterAnchor: shellHeading,
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(bounced).toMatchObject({ status: "section_changed" });
+  });
+
   it("proposes insert_image from a saved Analytics plot", async () => {
     const tinyPng =
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -4282,6 +4818,60 @@ describe("buildChatTools propose edits", () => {
       })
     );
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("appends insert_image when the caption anchor is not in the field", async () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const dataUrl = `data:image/png;base64,${tinyPng}`;
+    loadDocumentFigureMock.mockResolvedValue({
+      ok: true,
+      image: {
+        src: dataUrl,
+        alt: "Cross-hatch swab sampling technique",
+        width: 640,
+        mediaId: null,
+      },
+      filename: "SSR-1302.docx",
+      page: 5,
+      attachmentId: "att_ssr",
+    });
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Insert the cross-hatch swab sampling motion diagram.",
+        image: {
+          source: "document",
+          filename: "SSR-1302.docx",
+          page: 5,
+          figure: 4,
+        },
+        anchorText:
+          "Figure: Cross-Hatch Swabbing Technique Diagram\nThe diagram illustrates the standardized bidirectional cross-hatch swabbing motion:",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]!.anchorText).toBe("");
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.insertImage?.src).toBe(dataUrl);
   });
 
   it("lists insertable figures when a Word page has more than one raster", async () => {
@@ -5024,6 +5614,64 @@ describe("buildChatTools propose edits", () => {
     const patchedLead = parseAiFixCommentContent(String(updates[0]!.content));
     expect(patchedLead.pairedBlockSuggestionId).toBe(tableId);
     expect(patchedLead.placeBeforePairedBlock).toBe("table");
+  });
+
+  it("pairs create_table afterAnchor with a same-turn heading that is not in the saved field", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    dbUpdateMock.mockImplementation(() => ({
+      set: (value: Record<string, unknown>) => {
+        updates.push(value);
+        return { where: vi.fn().mockResolvedValue([]) };
+      },
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+    });
+    await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "## 15.3.6 Visual inspection\nAs a primary verification of equipment cleanliness.",
+        reasoning: "Add the visual heading.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add the visual table.",
+        operation: {
+          kind: "create_table",
+          headers: ["Sample description / location", "Results"],
+          rows: [["Production Chemist verification", ""]],
+          afterAnchor: "15.3.6 Visual inspection",
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(2);
+    const leadId = String(inserted[0]!.id);
+    const tablePayload = parseAiFixCommentContent(String(inserted[1]!.content));
+    expect(tablePayload.placeAfterSuggestionId).toBe(leadId);
+    expect(tablePayload.tableOperation).toMatchObject({
+      kind: "create_table",
+    });
+    expect(
+      (tablePayload.tableOperation as { afterAnchor?: string } | undefined)
+        ?.afterAnchor
+    ).toBeFalsy();
   });
 
   it("pairs create_table then the empty-anchor lead-in in reverse order", async () => {
@@ -6369,7 +7017,7 @@ describe("buildChatTools draft_identity", () => {
       expect.arrayContaining([
         { key: "equipmentName", value: "Glass Lined Reactor" },
         { key: "equipmentCode", value: "GLR-1301" },
-        { key: "capacity", value: "8000 L" },
+        { key: "capacity", value: "8k L" },
         { key: "plantSection", value: "Production Block-2" },
       ])
     );

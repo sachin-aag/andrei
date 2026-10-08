@@ -1,4 +1,4 @@
-import { kindFromMime } from "@/lib/attachments/file-types";
+import { attachmentKindLabel, kindFromMime } from "@/lib/attachments/file-types";
 import { formatDateTime } from "@/lib/utils";
 
 /** Short upload stamp for duplicate filenames in library lists. */
@@ -32,16 +32,6 @@ export function vaultItemKindLabel(input: {
 }): string {
   if (input.isFolder) return "Folder";
   const kind = kindFromMime(input.mimeType);
-  switch (kind) {
-    case "pdf":
-      return "PDF document";
-    case "docx":
-      return "Word document";
-    case null:
-      return "Document";
-    default: {
-      const exhaustive: never = kind;
-      return exhaustive;
-    }
-  }
+  if (!kind) return "Document";
+  return attachmentKindLabel(kind);
 }

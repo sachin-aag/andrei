@@ -209,6 +209,37 @@ export const SECTION_LABELS: Record<string, string> = {
   vq_section_m: "M. Quality Agreement",
   vq_section_n: "N. Audit Checklist",
   vq_scoring: "Approval of Vendor Qualification",
+  cvp_approvals: "1.0 Approval Signatures",
+  cvp_objective: "2.0 Objective",
+  cvp_scope: "3.0 Scope",
+  cvp_responsibilities: "4.0 Responsibilities",
+  cvp_background: "5.0 Background and Cleaning Procedure",
+  cvp_prerequisites: "6.0 Pre-requisites",
+  cvp_qualification_status: "7.0 Equipment Qualification Status",
+  cvp_surface_area: "8.0 Surface Area of the Equipment",
+  cvp_rinse_volume: "9.0 Rinse Volume Calculation",
+  cvp_maco: "10.0 Maximum Allowable Carryover (MACO)",
+  cvp_acceptance_limits: "11.0 Acceptance Limit Calculation (Swab and Rinse)",
+  cvp_methodology: "12.0 Cleaning Verification Methodology",
+  cvp_sampling_procedure: "13.0 Sampling Procedure",
+  cvp_swab_locations: "14.0 Determination of Swab Sample Locations",
+  cvp_sampling_plan:
+    "15.0 Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary",
+  cvp_equipment_sampling: "Equipment sampling",
+  cvp_nitrosamine: "Nitrosamine Limits in the Rinse Samples",
+  cvp_pgi: "Potential Genotoxic Impurities Limits in the Rinse Samples",
+  cvp_process_line: "Process Line Cleaning Verification Summary",
+  cvp_manufacturing_area: "Manufacturing Area Cleaning Verification",
+  cvp_overall_results: "Overall Cleaning Results Summary",
+  cvp_testing_procedure: "16.0 Testing Procedure",
+  cvp_method_validation: "17.0 Status of Cleaning Analytical Method Validation",
+  cvp_evaluation: "18.0 Evaluation of Results and Reporting",
+  cvp_deviations: "19.0 Deviations",
+  cvp_revalidation: "20.0 Revalidation",
+  cvp_abbreviations: "21.0 Abbreviations",
+  cvp_related_documents: "22.0 Related Documents",
+  cvp_annexures: "23.0 List of Annexures",
+  cvp_history: "24.0 History of the Document",
 };
 
 /** Title-case a section key so Criteria and comments never show `revision_history`. */
@@ -217,6 +248,9 @@ export function humanizeSectionKey(section: string): string {
     .replace(/^qra_/, "")
     .replace(/^elr_/, "")
     .replace(/^vq_/, "")
+    .replace(/^cvp_/, "")
+    .replace(/^qsr_/, "")
+    .replace(/^fir_/, "")
     .split("_")
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

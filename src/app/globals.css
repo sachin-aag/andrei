@@ -946,11 +946,29 @@ body:has([data-suggestion-preview-held]) {
 /* redraft (future) — handled by section banner, not inline marks. No styles. */
 
 /* Long unspaced tokens (filenames, requirement IDs) wrap inside the editor. */
-.ProseMirror {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+/* Report-section headings (CVP 15.N / 15.N.M / 15.N.M.P). */
+.ProseMirror h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 1.15em 0 0.4em;
+  color: var(--foreground);
+}
+
+.ProseMirror h3 {
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.4;
+  margin: 0.95em 0 0.3em;
+  color: var(--foreground);
+}
+
+.ProseMirror h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.75em 0 0.25em;
+  color: var(--brand-800);
 }
 
 /* ProseMirror / Tiptap — table editing.

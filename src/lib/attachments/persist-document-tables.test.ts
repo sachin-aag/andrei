@@ -53,6 +53,14 @@ describe("planTablesForPersistence", () => {
     expect(planned).toHaveLength(MAX_TABLES_PER_RUN);
   });
 
+  it("honors a higher maxTables cap for native spreadsheet sheets", () => {
+    const tables = Array.from({ length: MAX_TABLES_PER_RUN + 5 }, (_, i) =>
+      table(4, `s${i}`)
+    );
+    expect(planTablesForPersistence(tables)).toHaveLength(MAX_TABLES_PER_RUN);
+    expect(planTablesForPersistence(tables, 50)).toHaveLength(tables.length);
+  });
+
   it("stops at the per-run row budget rather than writing millions of rows", () => {
     const each = 18_000;
     const planned = planTablesForPersistence([

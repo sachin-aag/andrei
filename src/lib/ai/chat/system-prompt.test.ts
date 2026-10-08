@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v205-figure-annotate");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v206-figure-annotate");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -190,7 +190,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Cover identity");
     expect(prompt).toContain("equipmentName");
     expect(prompt).toContain("draft_identity values never include citations");
-    expect(prompt).toContain("8000 L, 3.0 KL");
+    expect(prompt).toContain("8k L not 8000 L; 3.0 KL as printed");
     expect(prompt).toContain("keep printed unit");
     expect(prompt).toContain(
       "never put source brackets, numbered markers, or a Citations: list in those values"
@@ -359,6 +359,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("create_table");
     expect(prompt).toContain("delete_table");
     expect(prompt).toContain("Do not use draft_field to create or delete a table");
+    expect(prompt).toContain(
+      "Do not draft_field a field that already has more than one table unless they asked to redraft"
+    );
+    expect(prompt).toContain("insert that rewrite already in chat");
+    expect(prompt).toContain("seeded boilerplate stays");
+    expect(prompt).toContain("insert suggestions for 15.N.1");
+    expect(prompt).toContain("quote the heading and the paragraph after it only");
+    expect(prompt).toContain(
+      "Adding a table under an existing 15.N.x heading already in the saved box"
+    );
+    expect(prompt).toContain("tableIndex 0 equipment list");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {
@@ -454,6 +465,7 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Retrieval mode: ADAPTIVE");
     expect(agent).toContain("Search the attachments first");
     expect(agent).toContain("list_attachments");
+    expect(agent).toContain("PDF vs Word vs CSV vs Excel");
     expect(agent).toContain("Do not start a document review");
   });
 
@@ -676,5 +688,56 @@ describe("claim strength", () => {
       });
       expect(prompt).toContain("## Claim strength (required)");
     }
+  });
+});
+
+describe("CVP equipment sampling targets", () => {
+  it("tells Agent to write 15.2 into items.1 rather than a filled 15.1", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "cleaning_verification_protocol",
+    });
+    expect(prompt).toContain("Write the next empty items.N");
+    expect(prompt).toContain("An @-tagged 15.N box is that items.N only");
+    expect(prompt).toContain("Never create_table into a filled items.0");
+    expect(prompt).toContain("with empty afterAnchor / anchorText");
+  });
+
+  it("tells a remaining-section turn to finish one 15.N box and reuse the walk", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "cleaning_verification_protocol",
+      retrievalPolicy: "comprehensive",
+      pendingPlan: {
+        kind: "section_queue",
+        objective: "Draft the remaining sections",
+        createdAt: "2026-09-14T00:00:00.000Z",
+        promptVersion: "chat-v199-cvp-equipment-loop",
+        items: [
+          {
+            sectionKey: "cvp_equipment_sampling:items.2",
+            label: "15.3 LEAF FILTER (LF-1301)",
+            state: "in_progress",
+          },
+          {
+            sectionKey: "cvp_equipment_sampling:items.3",
+            label: "15.4 ANF (ANF-1301)",
+            state: "queued",
+          },
+        ],
+      },
+    });
+    expect(prompt).toContain(
+      "a finished walk covers the next equipment box; do not restart per 15.N"
+    );
+    expect(prompt).toContain("Draft only this 15.N box");
+    expect(prompt).toContain("create_table with empty afterAnchor");
+    expect(prompt).toContain(
+      "Do not restart document review when equipment-sampling coverage already finished"
+    );
   });
 });

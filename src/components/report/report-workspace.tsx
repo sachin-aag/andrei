@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useSyncExternalStore,
 } from "react";
 import dynamic from "next/dynamic";
@@ -18,6 +19,7 @@ import {
   useReportEditors,
   useReportEvaluations,
   useReportPlaceholders,
+  useReportSections,
 } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import {
@@ -222,6 +224,14 @@ export function ReportWorkspace({
     currentUserRole,
     flushPendingSectionSaves,
   } = useReportData();
+  const { sections } = useReportSections();
+  const liveSectionContent = useMemo(
+    () =>
+      report.documentType === "cleaning_verification_protocol"
+        ? { cvp_equipment_sampling: sections.cvp_equipment_sampling }
+        : undefined,
+    [report.documentType, sections.cvp_equipment_sampling]
+  );
   const sectionEditors = useDocumentSectionEditors(report.documentType);
   const { pendingPlaceholders } = useReportPlaceholders();
 
@@ -616,7 +626,7 @@ export function ReportWorkspace({
 
   const jumpEpochRef = useRef(0);
   const pendingJumpRef = useRef<SectionType | null>(null);
-  const jumpToSection = useCallback((s: SectionType) => {
+  const jumpToSection = useCallback((s: SectionType, jumpId?: string) => {
     setWorkProductView("report");
     setActiveTabId("report");
     const epoch = ++jumpEpochRef.current;
@@ -627,7 +637,10 @@ export function ReportWorkspace({
     }
     return requestWorkspaceSectionMount(s).then(() => {
       if (jumpEpochRef.current !== epoch) return;
-      const el = mainRef.current?.querySelector(`#${s}`);
+      const root = mainRef.current;
+      const el = jumpId
+        ? root?.querySelector(`[id="${CSS.escape(jumpId)}"]`)
+        : root?.querySelector(`#${CSS.escape(s)}`);
       if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
     });
   }, [editorsAllowed]);
@@ -1018,6 +1031,7 @@ export function ReportWorkspace({
             onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
             documentType={report.documentType}
             onJumpToSection={jumpToSection}
+            liveSectionContent={liveSectionContent}
           />
           {documentsCollapsed ? null : (
             <WorkspaceResizeHandle

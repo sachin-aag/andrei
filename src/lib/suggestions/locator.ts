@@ -792,7 +792,7 @@ export function topLevelIndexAfterAnchor(
 ): { status: "ok"; index: number } | { status: "not_found" | "ambiguous" } {
   const index = flattenForAnchor(doc);
   const located = locateEdit(index.text, {
-    anchorText: afterAnchor,
+    anchorText: afterAnchor.replace(/^#+\s*/, "").trim() || afterAnchor,
     deleteText: "",
     insertText: "x",
   });
@@ -1228,6 +1228,31 @@ function findLastDeleteMarked(
   return found;
 }
 
+function nodeIsInsideHeading(root: JSONContent, target: JSONContent): boolean {
+  const walk = (node: JSONContent, inside: boolean): boolean => {
+    if (node === target) return inside;
+    const next = inside || node.type === "heading";
+    return (node.content ?? []).some((child) => walk(child, next));
+  };
+  return walk(root, false);
+}
+
+/** `## Title` inside an H2 is a title rewrite, not a sibling heading block. */
+function classifySuggestionInsert(
+  insertText: string,
+  doc: JSONContent,
+  insertAfterNode: JSONContent | null
+) {
+  if (insertAfterNode && nodeIsInsideHeading(doc, insertAfterNode)) {
+    const trimmed = insertText.trim();
+    const match = /^(#{1,4})\s+(.+)$/.exec(trimmed);
+    if (match && !trimmed.includes("\n")) {
+      return { kind: "inline" as const, text: match[2]!.trim() };
+    }
+  }
+  return classifyMarkdownInsert(insertText);
+}
+
 function applySingleEditToRichDoc(
   doc: JSONContent,
   edit: SuggestionEdit,
@@ -1304,7 +1329,7 @@ function applySingleEditToRichDoc(
         return { status: "empty_edit", doc: cloned };
       }
     } else {
-      const classified = classifyMarkdownInsert(raw);
+      const classified = classifySuggestionInsert(raw, cloned, null);
       if (classified.kind === "table") {
         return { status: "not_found", doc };
       }
@@ -1440,7 +1465,11 @@ function applySingleEditToRichDoc(
   }
 
   if (insertText) {
-    const classified = classifyMarkdownInsert(insertText);
+    const classified = classifySuggestionInsert(
+      insertText,
+      cloned,
+      insertAfter?.node ?? null
+    );
     if (classified.kind === "table") {
       return { status: "not_found", doc };
     }

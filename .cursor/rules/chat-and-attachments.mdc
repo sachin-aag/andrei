@@ -47,9 +47,24 @@ table filled", "I don't see the change", "suggestions are not landing",
 "refusing to make an edit", "only summarising") are write on Agent
 (`reason: missing_work`) so Lite is skipped. An explicit "insert the
 suggestion" / "edit the document" turn reads the section first, then the
-next step must call `draft_rtm_table` when a QSR RTM table is in `@`
-scope, `edit_table` for any other table, or `propose_edit`. Do not
-claim Agent mode is read-only or paste a markdown table. ELR section numbers
+next step must call `draft_field` (`replaceFilledField: true`) when they
+asked to redraft / replace / make 15.N as a different equipment ID (or
+"insert it" after that rewrite was dumped in chat), `draft_rtm_table`
+when a QSR RTM table is in `@` scope, `propose_edit` for leftover 15.N
+heading / 15.N.1 / 15.N.3 / 15.N.5 prose ("go for 15.N.1", "make these",
+"insert suggestions for 15.N.1" — create the cards if none are open;
+quote heading + following paragraph only, never Table N / GFM — the
+server strips those and still lands the paragraph; after two `edit_table`
+fails on that turn, recover with `propose_edit` instead of emptying
+tools). "Add a table to 15.N.x" under a heading already in the saved box
+is `edit_table` `create_table` with `afterAnchor` — not leftover-prose
+`propose_edit` (do not strip the table and rewrite the paragraph). Preview
+marks the inserted table, not the last table in the box (15.N.8 extraneous).
+Then `edit_table` for any other table, or `propose_edit`. A filled
+CVP equipment identity rewrite is a whole-field `draft_field`, not
+cell-by-cell `edit_table`. Leftover prose after those tables landed is
+`propose_edit`. Do not claim Agent mode is read-only or
+paste a markdown table. ELR section numbers
 in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
 Maintenance, 3.15 Access Control). A printed Table N is only the number on
 the context map. Agent read keeps write tools
@@ -58,7 +73,11 @@ registered on the ToolSet; `advertisedTools` hides them. A remapped
 (Document `prepareReportChatStep` and Analytics `prepareAnalyticsChatStep`).
 `list_suggestions` lists open / approved / dismissed AI cards (section + preview, no comment ids). Wrap-up
 must not claim a fill unless a tool this turn returned proposed, drafted,
-or applied.
+or applied. Persist rewrites wrap-up that claimed a table or fill when no
+write tool returned those statuses (`rewriteUnlandedWriteParts`). CVP
+equipment `read_section` snapshots the same bound/normalized clone that
+writes stale-check, so compact (`10000 L` → `10k L`) or collapsed
+duplicate headings cannot bounce every `edit_table` as `section_changed`.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design
@@ -367,7 +386,9 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   (`filename` + `page`, optional `figure` = visualInterpretation Figure N).
   PDFs rasterize that page; Word copies an embedded PNG/JPEG (header/letterhead
   skipped). Word drawings that are not rasters cannot be copied — attach a
-  PDF of the same file. Search first; do not invent a figure. `available_figures`
+  PDF of the same file. CSV/XLSX ingest as markdown pages + `document_tables`
+  (no figures); `insert_image` stays PDF/DOCX only. Search first; do not invent
+  a figure. `available_figures`
   is not a proposal. Stay off the Plan allowlist.
 - `annotate_image` proposes arrows and labels (S-n callouts) on a figure
   already in the field (`image.id` from `read_section`). Optional `tipX`/`tipY`
@@ -409,7 +430,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   of a Page N of M split; ELR Attachments is filled at Word export from the
   live file list (do not draft `elr_attachments`);
   investigation and DV queues still advance on the table or narrative they
-  already draft. Working… hides
+  already draft. Cleaning Verification Protocol equipment sampling queues
+  each empty 15.N box (`cvp_equipment_sampling:items.N`) as its own remaining-section
+  item (one turn per box; `|obj:cvp_equipment_sampling` reuses a finished walk).
+  Working… hides
   when the stream is idle even if the optimistic send still has a stale
   pending id after hydrate. The agent-done notice is `Assistant is done
   with {section}`. Do not toast a false “hit an error” between successful
@@ -481,7 +505,7 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   template are empty, not partial, including seed prose that belongs
   to the template (QSR 6.1 “Auxiliary Equipment:”, 6.3 “Agitator Type:”)
   — `sectionHasTable` still sees them. Extra engineer sentences are not
-  empty. Canned default paragraphs (QSR 1.2 Scope) stay filled. Empty ELR inventory fills
+  empty. Canned default paragraphs (QSR 1.2 Scope) stay filled. CVP overall-results seed (“Result fields are intentionally left blank…”) is protocol copy, not a filled results grid — execution cells staying blank is correct. Empty ELR inventory fills
   (`chat.inventorySections` table fields) require a finished review
   whose coverage key matches that section (`coverageKeySatisfiesObjective`
   on `|obj:`). `isFinished()` after a qualification walk does not unlock
@@ -498,7 +522,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   returns `already_complete` for the same `|obj:` instead of resetting.
   Gate empty tables only — filling missing
   cells on a partial table is not another full walk. `draft_field` of
-  those `table` fields returns `use_edit_table`. Search hits include `citation`
+  those `table` fields returns `use_edit_table`. A narrative field that
+  already has more than one table (CVP MACO: equipment list + two formula
+  grids) also returns `use_edit_table` — do not rewrite it with
+  `draft_field`. Search hits include `citation`
   (`[filename, p. N]` when the page is known; `[filename]` only if
   missing or ambiguous). The saved field converts those to numbered `[n]`
   markers plus a trailing Citations: list on every pack — there is no
