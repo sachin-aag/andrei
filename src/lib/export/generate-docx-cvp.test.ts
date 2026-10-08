@@ -226,6 +226,73 @@ describe("cleaning verification protocol DOCX export", () => {
     );
   });
 
+  it("collapses the same protocol and data sheet onto one CITATIONS row each", async () => {
+    function cited(body: string, sources: readonly string[]): JSONContent {
+      return {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: body }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "Citations:" }] },
+          ...sources.map((source, i) => ({
+            type: "paragraph" as const,
+            content: [{ type: "text" as const, text: `${i + 1}. ${source}` }],
+          })),
+        ],
+      };
+    }
+    const zip = await exportZip(
+      sectionsWith({
+        cvp_objective: {
+          narrative: cited("Objective cites the protocol [1].", [
+            "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 1]",
+          ]),
+        },
+        cvp_scope: {
+          narrative: cited("Scope cites later protocol pages and the sheet [1][2].", [
+            "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 3]",
+            "[ISM3 CV data sheet, p. 1]",
+          ]),
+        },
+        cvp_background: {
+          narrative: cited("Background repeats a short data-sheet name [1].", [
+            "[data sheet, p. 2]",
+          ]),
+        },
+      })
+    );
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const headingAt = document.indexOf("CITATIONS");
+    const citationsTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        document.indexOf(tbl) > headingAt &&
+        visibleText(tbl).includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const rows = [...(citationsTable!.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g) ?? [])].map(
+      (row) =>
+        [...row[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)].map((cell) =>
+          [...cell[0].matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
+            .map((m) => m[1])
+            .join("")
+        )
+    );
+    expect(rows).toContainEqual([
+      "1",
+      "CVRP-ISM4-26-001-00",
+      "ISM Stage-4 Cleaning Verification Protocol",
+      "Page # 1, 3",
+    ]);
+    expect(rows).toContainEqual([
+      "2",
+      "",
+      "ISM3 CV data sheet",
+      "Page # 1-2",
+    ]);
+    expect(rows.filter((row) => row[2]?.includes("data sheet"))).toHaveLength(1);
+    expect(visibleText(citationsTable!)).not.toContain("Verification_Protocol");
+  });
+
   it("uses Heading1 numbering for 15.N titles and merges empty Function cells", async () => {
     const zip = await exportZip(
       sectionsWith({

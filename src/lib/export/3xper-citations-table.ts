@@ -10,9 +10,14 @@ import {
   citationSourceIdentityKey,
   citationsHeadingParagraphXml,
   type ElrBibliographyEntry,
+  type ReportBibliographyIdentity,
 } from "@/lib/export/elr-unified-citations";
 import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
-import { parseSourceCitation } from "@/lib/placeholders/citation-bracket";
+import {
+  canonicalizeSourceCitationBracket,
+  parseSourceCitation,
+} from "@/lib/placeholders/citation-bracket";
+import { orderedCitationSourcesFromContent } from "@/lib/suggestions/citations-at-end";
 import type { ReportSectionRecord } from "@/types/report";
 
 export const THREE_XPER_CITATIONS_HEADING = "CITATIONS";
@@ -96,7 +101,7 @@ const DOCUMENT_FAMILY: ReadonlyArray<{
 
 /** Whole-filename exhibit ids (`URS/PB2/001`, `DQ-PB2-14`, `ANFD-1302`). */
 const DOCUMENT_ID_STEM =
-  /^(?:[A-Z]{1,8}(?:[/_-][A-Z0-9]+)+|\d{3,}-\d{4,}[A-Z0-9._-]*)$/i;
+  /^(?:[A-Z]{1,8}(?:[/_-][A-Z0-9]+)+|\d{3,}-\d{4,}[A-Za-z0-9._-]*)$/i;
 
 /**
  * QMS / protocol numbers inside a title (`CVPR-ISM4-26-001-00`). Needs two
@@ -111,6 +116,9 @@ const EQUIPMENT_DOCUMENT_ID = /\b[A-Za-z]{2,8}-\d{3,}\b/g;
 /** Digit-led QMS ids (`790-00134R`). */
 const DIGIT_DOCUMENT_ID = /\b\d{3,}-\d{4,}[A-Za-z0-9._-]*\b/g;
 
+const PLACEHOLDER_DOCUMENT_NUMBER =
+  /^(?:n\.?\/?a\.?|nil|none|tbd|n\.a)$/i;
+
 export type ThreeXperCitationRow = {
   citationNumber: string;
   documentReference: string;
@@ -121,6 +129,12 @@ export type ThreeXperCitationRow = {
 export type QsrDocumentCatalogEntry = {
   name: string;
   number: string;
+};
+
+type ResolvedCite = {
+  source: string;
+  documentReference: string;
+  description: string;
 };
 
 function nodeText(node: JSONContent | undefined): string {
@@ -148,6 +162,8 @@ function isUsableDocumentNumber(value: string): boolean {
   if (/^<[^>]+>$/.test(trimmed)) return false;
   if (/^x+$/i.test(trimmed)) return false;
   if (/to be filled/i.test(trimmed)) return false;
+  if (/to be assigned/i.test(trimmed)) return false;
+  if (PLACEHOLDER_DOCUMENT_NUMBER.test(trimmed)) return false;
   return true;
 }
 
@@ -162,7 +178,11 @@ function familyKeys(label: string): Set<string> {
       normalized.startsWith(`${abbr}/`) ||
       normalized.startsWith(`${abbr}-`) ||
       names.some(
-        (name) => normalized === name || normalized.startsWith(`${name} `)
+        (name) =>
+          normalized === name ||
+          normalized.startsWith(`${name} `) ||
+          normalized.endsWith(` ${name}`) ||
+          normalized.includes(` ${name} `)
       );
     if (!inFamily) continue;
     keys.add(abbr);
@@ -186,6 +206,21 @@ function labelsMatch(left: string, right: string): boolean {
     }
   }
   return false;
+}
+
+/** Same paper document: exact title, or a short title that is the tail of a longer one. */
+function descriptionsAlias(left: string, right: string): boolean {
+  const a = normalizeLabel(left);
+  const b = normalizeLabel(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  if (shorter.length < 8) return false;
+  return (
+    longer.endsWith(` ${shorter}`) ||
+    longer.startsWith(`${shorter} `) ||
+    longer.includes(` ${shorter} `)
+  );
 }
 
 function findTableNodes(value: unknown): JSONContent[] {
@@ -362,6 +397,14 @@ function descriptionFromFilename(filename: string): string {
   return withoutExt.replace(/^\[/, "").replace(/\]$/, "").trim();
 }
 
+function tidyDescription(value: string): string {
+  return value
+    .replace(/[_]+/g, " ")
+    .replace(LEADING_SERIAL, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function embeddedDocumentIdSpan(
   text: string
 ): { id: string; start: number; end: number } | null {
@@ -395,18 +438,21 @@ function splitCiteFilename(filename: string): {
     return { reference: stem, description: "" };
   }
   const span = embeddedDocumentIdSpan(stem);
-  if (!span) return { reference: "", description: stem };
-  const remainder = `${stem.slice(0, span.start)} ${stem.slice(span.end)}`
-    .replace(LEADING_SERIAL, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (!span) return { reference: "", description: tidyDescription(stem) };
+  const remainder = tidyDescription(
+    `${stem.slice(0, span.start)} ${stem.slice(span.end)}`
+  );
   return { reference: span.id, description: remainder };
 }
 
 function expandedFamilyDescription(stem: string): string | null {
   const normalized = normalizeLabel(stem);
   for (const { abbr, names } of DOCUMENT_FAMILY) {
-    if (normalized === abbr || normalized.startsWith(`${abbr} `) || compactId(stem).startsWith(abbr)) {
+    if (
+      normalized === abbr ||
+      normalized.startsWith(`${abbr} `) ||
+      compactId(stem).startsWith(abbr)
+    ) {
       const phrase = names[0];
       if (!phrase) return null;
       return phrase.replace(/\b\w/g, (ch) => ch.toUpperCase());
@@ -429,6 +475,32 @@ function expandedAbbreviationDescription(
   return abbreviations.get(compactId(prefix)) ?? null;
 }
 
+function catalogMatchScore(query: string, entry: QsrDocumentCatalogEntry): number {
+  const q = normalizeLabel(query);
+  const n = normalizeLabel(entry.name);
+  if (!q || !n) return 0;
+  if (q === n) return 400;
+  if (compactId(query) && compactId(query) === compactId(entry.number)) {
+    return 350;
+  }
+  if (
+    n.endsWith(` ${q}`) ||
+    n.startsWith(`${q} `) ||
+    n.includes(` ${q} `)
+  ) {
+    return 200 + Math.min(q.length, 50);
+  }
+  if (
+    q.endsWith(` ${n}`) ||
+    q.startsWith(`${n} `) ||
+    q.includes(` ${n} `)
+  ) {
+    return 180 + Math.min(n.length, 50);
+  }
+  if (labelsMatch(query, entry.name)) return 50;
+  return 0;
+}
+
 function lookupDocumentNumber(
   filename: string,
   description: string,
@@ -444,16 +516,20 @@ function lookupDocumentNumber(
       if (stemId && compactId(entry.number) === stemId) return entry.number;
     }
   }
-  for (const entry of catalog) {
-    if (
-      labelsMatch(description, entry.name) ||
-      labelsMatch(split.description, entry.name) ||
-      labelsMatch(descriptionFromFilename(filename), entry.name)
-    ) {
-      return entry.number;
+  const queries = [
+    description,
+    split.description,
+    descriptionFromFilename(filename),
+  ].filter((value, index, all) => value && all.indexOf(value) === index);
+  let best: { number: string; score: number } | null = null;
+  for (const query of queries) {
+    for (const entry of catalog) {
+      const score = catalogMatchScore(query, entry);
+      if (score === 0) continue;
+      if (!best || score > best.score) best = { number: entry.number, score };
     }
   }
-  return split.reference;
+  return best?.number ?? split.reference;
 }
 
 function resolveCitationColumns(
@@ -468,54 +544,273 @@ function resolveCitationColumns(
     description,
     catalog
   );
-  const catalogName = documentReference
+  const usableReference = isUsableDocumentNumber(documentReference)
+    ? documentReference
+    : "";
+  const catalogEntry = usableReference
     ? catalog.find(
-        (entry) => compactId(entry.number) === compactId(documentReference)
-      )?.name
+        (entry) => compactId(entry.number) === compactId(usableReference)
+      )
     : undefined;
+  const catalogName = catalogEntry?.name;
   const descriptionIsReference =
     !description ||
-    (documentReference.length > 0 &&
-      normalizeLabel(description) === normalizeLabel(documentReference));
+    (usableReference.length > 0 &&
+      normalizeLabel(description) === normalizeLabel(usableReference));
   if (descriptionIsReference) {
     description =
       catalogName ??
-      expandedFamilyDescription(documentReference || description) ??
-      expandedAbbreviationDescription(documentReference, abbreviations) ??
+      expandedFamilyDescription(usableReference || description) ??
+      expandedAbbreviationDescription(usableReference, abbreviations) ??
+      "";
+  } else if (
+    catalogName &&
+    descriptionsAlias(description, catalogName) &&
+    catalogName.length > description.length
+  ) {
+    description = catalogName;
+  }
+  if (!description) {
+    description =
+      catalogName ??
+      expandedFamilyDescription(usableReference) ??
+      expandedAbbreviationDescription(usableReference, abbreviations) ??
       "";
   }
-  return { documentReference, description };
+  return {
+    documentReference: usableReference,
+    description: tidyDescription(description),
+  };
+}
+
+function pagesFromSource(source: string): number[] {
+  const parsed = parseSourceCitation(source);
+  if (!parsed || parsed.pages.length === 0) return [];
+  const inner = source.trim().replace(/^\[/, "").replace(/\]$/, "");
+  const suffix = /,\s*p\.\s*(.+)$/i.exec(inner);
+  if (!suffix) {
+    return [...new Set(parsed.pages)].toSorted((a, b) => a - b);
+  }
+  const tokens = suffix[1]
+    .replace(/\s*,\s*p\.\s*/gi, ", ")
+    .split(/\s*,\s*/);
+  const pages: number[] = [];
+  const seen = new Set<number>();
+  const add = (n: number) => {
+    if (!Number.isInteger(n) || n < 1 || seen.has(n)) return;
+    seen.add(n);
+    pages.push(n);
+  };
+  for (const token of tokens) {
+    const range = /^(\d+)\s*[-–]\s*(\d+)$/.exec(token.trim());
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
+      const lo = Math.min(start, end);
+      const hi = Math.max(start, end);
+      if (hi - lo > 50) {
+        add(lo);
+        add(hi);
+        continue;
+      }
+      for (let n = lo; n <= hi; n++) add(n);
+      continue;
+    }
+    add(Number(token.trim()));
+  }
+  return pages.toSorted((a, b) => a - b);
+}
+
+function compactPageList(pages: readonly number[]): string {
+  if (pages.length === 0) return "";
+  const sorted = [...pages].toSorted((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0]!;
+  let end = start;
+  const flush = () => {
+    parts.push(start === end ? String(start) : `${start}-${end}`);
+  };
+  for (let i = 1; i < sorted.length; i++) {
+    const n = sorted[i]!;
+    if (n === end + 1) {
+      end = n;
+      continue;
+    }
+    flush();
+    start = end = n;
+  }
+  flush();
+  return parts.join(", ");
 }
 
 function pageLabelFromSource(source: string): string {
+  const pages = compactPageList(pagesFromSource(source));
+  return pages ? `Page # ${pages}` : "";
+}
+
+function sourceFilename(source: string): string {
   const parsed = parseSourceCitation(source);
-  if (!parsed || parsed.pages.length === 0) return "";
-  const inner = source.trim().replace(/^\[/, "").replace(/\]$/, "");
-  const suffix = /,\s*p\.\s*(.+)$/i.exec(inner);
-  if (!suffix) return `Page # ${parsed.pages[0]}`;
-  const pages = suffix[1]
-    .replace(/\s*,\s*p\.\s*/gi, ", ")
-    .replace(/\s+/g, " ")
+  if (parsed?.filename.trim()) return parsed.filename.trim();
+  return source
+    .trim()
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .replace(/,\s*p\.\s*.+$/i, "")
     .trim();
-  return pages ? `Page # ${pages}` : `Page # ${parsed.pages[0]}`;
+}
+
+function filenameSpecificity(filename: string): number {
+  const split = splitCiteFilename(filename);
+  return (split.reference ? 1000 : 0) + tidyDescription(split.description || filename).length;
+}
+
+function rewriteSourcePages(filename: string, pages: readonly number[]): string {
+  const stem = filename.trim();
+  if (!stem) return "";
+  const list = compactPageList(pages);
+  return list ? `[${stem}, p. ${list}]` : `[${stem}]`;
 }
 
 /**
- * Collapse equivalent 3xper cites: same catalog document number + page, or
- * the same description + page when there is no number. Falls back to file +
- * page so VQ rows without a catalog still dedupe.
+ * Keep the more specific filename and union page lists so one bibliography
+ * row can carry `Page # 1-5`.
+ */
+export function mergeThreeXperCitationSources(
+  kept: string,
+  incoming: string
+): string {
+  const keptFile = sourceFilename(kept);
+  const incomingFile = sourceFilename(incoming);
+  const filename =
+    filenameSpecificity(incomingFile) > filenameSpecificity(keptFile)
+      ? incomingFile
+      : keptFile;
+  const pages = [
+    ...new Set([...pagesFromSource(kept), ...pagesFromSource(incoming)]),
+  ].toSorted((a, b) => a - b);
+  return rewriteSourcePages(filename || keptFile || incomingFile, pages);
+}
+
+function resolvedCiteFromSource(
+  source: string,
+  catalog: readonly QsrDocumentCatalogEntry[],
+  abbreviations: ReadonlyMap<string, string>
+): ResolvedCite {
+  const parsed = parseSourceCitation(source);
+  const filename = parsed?.filename?.trim() || source;
+  const columns = resolveCitationColumns(filename, catalog, abbreviations);
+  return { source, ...columns };
+}
+
+function citationRowsAlias(left: ResolvedCite, right: ResolvedCite): boolean {
+  const leftRef = compactId(left.documentReference);
+  const rightRef = compactId(right.documentReference);
+  if (leftRef && rightRef) return leftRef === rightRef;
+  if (leftRef || rightRef) {
+    return descriptionsAlias(left.description, right.description);
+  }
+  return descriptionsAlias(left.description, right.description);
+}
+
+function groupKeyForCite(cite: ResolvedCite): string {
+  if (cite.documentReference && isUsableDocumentNumber(cite.documentReference)) {
+    return `ref:${compactId(cite.documentReference)}`;
+  }
+  const description = normalizeLabel(cite.description);
+  if (description) return `desc:${description}`;
+  return citationSourceIdentityKey(cite.source).replace(/\0.*$/, "");
+}
+
+function uniqueSectionSources(
+  sections: readonly ReportSectionRecord[]
+): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const row of sections) {
+    for (const source of orderedCitationSourcesFromContent(row.content)) {
+      const canonical = canonicalizeSourceCitationBracket(source);
+      const key = canonical || source;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      ordered.push(source);
+    }
+  }
+  return ordered;
+}
+
+/**
+ * Same catalog document (or aliased title) is one bibliography row, even
+ * when cited on different pages. Page lists are merged separately.
+ */
+export function threeXperBibliographyIdentity(
+  sections: readonly ReportSectionRecord[] = []
+): ReportBibliographyIdentity {
+  const catalog = qsrDocumentReferenceCatalog(sections);
+  const abbreviations = abbreviationCatalog(sections);
+  const sources = uniqueSectionSources(sections);
+  const resolved = sources.map((source) =>
+    resolvedCiteFromSource(source, catalog, abbreviations)
+  );
+  const parent = resolved.map((_, i) => i);
+  const find = (i: number): number => {
+    let cursor = i;
+    while (parent[cursor] !== cursor) {
+      parent[cursor] = parent[parent[cursor]!]!;
+      cursor = parent[cursor]!;
+    }
+    return cursor;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+  for (let i = 0; i < resolved.length; i++) {
+    for (let j = i + 1; j < resolved.length; j++) {
+      if (citationRowsAlias(resolved[i]!, resolved[j]!)) union(i, j);
+    }
+  }
+  const keyByRoot = new Map<number, string>();
+  for (let i = 0; i < resolved.length; i++) {
+    const root = find(i);
+    if (keyByRoot.has(root)) continue;
+    const members = resolved.filter((_, index) => find(index) === root);
+    const withRef = members.find((member) =>
+      isUsableDocumentNumber(member.documentReference)
+    );
+    const longest = members.toSorted(
+      (a, b) => b.description.length - a.description.length
+    )[0]!;
+    keyByRoot.set(root, groupKeyForCite(withRef ?? longest));
+  }
+  const bySource = new Map<string, string>();
+  for (let i = 0; i < sources.length; i++) {
+    const key = keyByRoot.get(find(i)) ?? groupKeyForCite(resolved[i]!);
+    bySource.set(sources[i]!, key);
+    bySource.set(canonicalizeSourceCitationBracket(sources[i]!), key);
+  }
+  return (source: string) => {
+    const mapped =
+      bySource.get(source) ??
+      bySource.get(canonicalizeSourceCitationBracket(source));
+    if (mapped) return mapped;
+    return groupKeyForCite(
+      resolvedCiteFromSource(source, catalog, abbreviations)
+    );
+  };
+}
+
+/**
+ * Collapse equivalent 3xper cites onto one document (catalog number, or
+ * aliased description). Different pages of that document share the key so
+ * Word CITATIONS can list them once with a combined Reference page#.
  */
 export function threeXperCitationIdentityKey(
   source: string,
   sections: readonly ReportSectionRecord[] = []
 ): string {
-  const [row] = threeXperCitationRows([{ number: 1, source }], sections);
-  const page = (row?.referencePage ?? "").trim().toLowerCase();
-  const ref = row?.documentReference.trim() ?? "";
-  if (ref) return `ref:${compactId(ref)}\0${page}`;
-  const description = normalizeLabel(row?.description ?? "");
-  if (description) return `desc:${description}\0${page}`;
-  return citationSourceIdentityKey(source);
+  return threeXperBibliographyIdentity(sections)(source);
 }
 
 export function threeXperCitationRows(
@@ -567,7 +862,7 @@ function citationsTableDoc(rows: readonly ThreeXperCitationRow[]): JSONContent {
     content: [
       {
         type: "table",
-        attrs: { colWidths: [1400, 2800, 3800, 2000] },
+        attrs: { colWidths: [1200, 2600, 4200, 2000] },
         content: [
           tableRow(THREE_XPER_CITATION_HEADERS, true),
           ...rows.map((row) =>
