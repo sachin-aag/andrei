@@ -3,6 +3,8 @@ import {
   CVP_BATCH_EXECUTION_HEADERS,
   CVP_BATCH_LABELS,
   CVP_CLEANING_OPERATION_HEADERS,
+  CVP_DEVIATIONS_SEED,
+  CVP_EVALUATION_SEEDS,
   CVP_EXTRANEOUS_RESULTS_HEADERS,
   CVP_MANUFACTURING_AREA_HEADERS,
   CVP_NITROSAMINE_HEADERS,
@@ -20,7 +22,10 @@ import {
   CVP_PREVIOUS_VISUAL_INSPECTION_HEADERS,
   CVP_PROCESS_LINE_HEADERS,
   CVP_RESIDUE_RESULTS_HEADERS,
+  CVP_REVALIDATION_SEED,
+  CVP_TABLE_SECTION_BOILERPLATE,
   CVP_VISUAL_INSPECTION_HEADERS,
+  type CvpSectionKey,
 } from "./sections";
 
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
@@ -69,11 +74,27 @@ const SEED_SWAPS: ReadonlyArray<readonly [string, string]> = [
   ],
   [
     "The cleaning procedure shall be considered verified when all cleaning results comply with the visual inspection, swab, rinse, extraneous matter, pH (wherever applicable), nitrosamine, and potential genotoxic impurities acceptance criteria defined in this protocol.",
+    CVP_EVALUATION_SEEDS[0],
+  ],
+  [
     "The cleaning procedure shall be considered validated when three consecutive cleaning batches each comply with the visual inspection, swab, rinse, extraneous matter, pH (wherever applicable), nitrosamine, and potential genotoxic impurities acceptance criteria defined in this protocol. A failed batch shall be investigated, and the count of consecutive batches restarts unless the investigation justifies otherwise.",
+    CVP_EVALUATION_SEEDS[0],
   ],
   [
     "Any result exceeding the acceptance criteria shall be investigated as per the OOS / deviation SOP. The equipment shall be re-cleaned and re-sampled, and the run shall not be counted as a successful run unless the investigation justifies it.",
+    CVP_EVALUATION_SEEDS[2],
+  ],
+  [
     "Any result exceeding the acceptance criteria shall be investigated as per the OOS / deviation SOP. The equipment shall be re-cleaned and re-sampled, and the batch shall not be counted as a successful batch unless the investigation justifies it.",
+    CVP_EVALUATION_SEEDS[2],
+  ],
+  [
+    "Any deviation observed during execution of this protocol shall be recorded, investigated and closed as per the deviation management SOP, with an impact assessment on the effectiveness of the cleaning procedure and appropriate CAPA where required.",
+    CVP_DEVIATIONS_SEED,
+  ],
+  [
+    "Revalidation of the cleaning procedure shall be performed whenever changes occur that may impact the effectiveness of the validated cleaning process. Such changes include, but are not limited to, modifications to cleaning procedures, equipment, product mix, batch size, cleaning agents, or sampling / analytical methods. Copy the site SOP number for revalidation from a cited page when it is named.",
+    CVP_REVALIDATION_SEED,
   ],
   [
     "A cleaning verification report shall be prepared including the cleaning records, sampling details, analytical results with chromatograms, deviations, conclusion and recommendations, and shall be approved by QA.",
@@ -364,6 +385,7 @@ function appendNumberOfBatchesRow(table: JSONContent): JSONContent {
     const first = (row.content ?? []).find(
       (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
     );
+    if (!first) return false;
     return /^number of batches$/i.test(cellPlain(first));
   });
   if (already) return table;
@@ -473,6 +495,39 @@ function hasBatchExecutionTable(doc: JSONContent): boolean {
       node.type === "table" &&
       headersMatch(headerLabels(node.content?.[0]), CVP_BATCH_EXECUTION_HEADERS)
   );
+}
+
+const BOILERPLATE_FINGERPRINT = 80;
+
+/**
+ * Table-only 15.N continuations / 16.0 / 17.0: prepend the ISM Stage-4
+ * intros when the stored doc still has a table but no matching paragraph.
+ * Empty (cleared) fields stay empty.
+ */
+export function ensureCvpTableSectionBoilerplate(
+  key: string,
+  doc: JSONContent
+): JSONContent {
+  const intros = CVP_TABLE_SECTION_BOILERPLATE[key as CvpSectionKey];
+  if (!intros?.length) return doc;
+  const nodes = doc.content ?? [];
+  if (!nodes.some((node) => node.type === "table")) return doc;
+  const fingerprint = intros[0]!.text.slice(0, BOILERPLATE_FINGERPRINT);
+  const already = nodes.some((node) => {
+    if (node.type !== "paragraph") return false;
+    return nodePlain(node)
+      .replace(/\s+/g, " ")
+      .trim()
+      .startsWith(fingerprint);
+  });
+  if (already) return doc;
+  return {
+    ...doc,
+    content: [
+      ...intros.map((item) => textParagraph(item.text, item.bold === true)),
+      ...nodes,
+    ],
+  };
 }
 
 /** Sampling plan (15.0): add the three-row Batch 1/2/3 execution table if missing. */

@@ -200,7 +200,7 @@ export function narrativeToDocxXmlWithContext(
     if (node.type === "table") {
       if (landscapeWithTable.has(i)) {
         openLandscape();
-        parts.push(tableToXml(node, ctx, landscapeMax));
+        parts.push(tableToXml(node, ctx, landscapeMax, true));
       } else {
         closeLandscape();
         parts.push(tableToXml(node, ctx, portraitMax));
@@ -308,9 +308,14 @@ const TABLE_GRID_TOTAL_MAX_DXA = 10469;
 /** Minimum per-column width in dxa so cells stay readable after scaling. */
 const TABLE_GRID_MIN_COL_DXA = 180;
 
-function normalizeGridColWidths(widths: number[], maxTotalDxa: number): number[] {
+function normalizeGridColWidths(
+  widths: number[],
+  maxTotalDxa: number,
+  fillToMax = false
+): number[] {
   const sum = widths.reduce((a, b) => a + b, 0);
-  if (sum <= maxTotalDxa) return widths;
+  if (sum <= 0) return widths;
+  if (!fillToMax && sum <= maxTotalDxa) return widths;
 
   const scale = maxTotalDxa / sum;
   const scaled = widths.map((w) =>
@@ -890,14 +895,15 @@ function portraitTableGridMax(ctx: DocxExportContext): number {
 function tableToXml(
   node: JSONContent,
   ctx?: DocxExportContext,
-  maxGridDxa?: number
+  maxGridDxa?: number,
+  fillToMax = false
 ): string {
   const gridMax =
     maxGridDxa ??
     ctx?.tableGridMaxDxa ??
     ctx?.pageSetup.portraitContentWidthDxa ??
     TABLE_GRID_TOTAL_MAX_DXA;
-  const inner = buildInnerTableXml(node, ctx, gridMax);
+  const inner = buildInnerTableXml(node, ctx, gridMax, fillToMax);
   if (!inner) return "";
   if (ctx && ctx.tableKeepTogetherWrapper === false) {
     return inner;
@@ -949,7 +955,8 @@ function tableToXml(
 function buildInnerTableXml(
   node: JSONContent,
   ctx: DocxExportContext | undefined,
-  maxGridDxa: number
+  maxGridDxa: number,
+  fillToMax = false
 ): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return "";
@@ -972,7 +979,7 @@ function buildInnerTableXml(
   const rawWidths = storedWidths
     ? storedWidths
     : Array.from({ length: colCount }, () => perColFallback);
-  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa);
+  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa, fillToMax);
   const gridTotalDxa = colWidths.reduce((a, b) => a + b, 0);
   const gridColXmlParts = colWidths.map(
     (w) => `<w:gridCol w:w="${Math.round(w)}"/>`

@@ -4,6 +4,7 @@ import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
 import {
   cvpEquipmentItemIndexFromTarget,
   insertBlankCvpEquipmentItem,
+  normalizeCvpEquipmentSamplingContent,
 } from "@/lib/document-types/cvp/equipment-sampling";
 import {
   bindCvpEquipmentWrite,
@@ -163,6 +164,19 @@ describe("cvp_equipment_sampling sectionFillState", () => {
 
   it("treats a lone unused seed as empty", () => {
     const content = { items: [cvpEquipmentSamplingSeed(1)] };
+    expect(fieldFillState(content, "cvp_equipment_sampling", "items.0")).toBe(
+      "empty"
+    );
+    expect(sectionFillState(content, "cvp_equipment_sampling")).toBe("empty");
+  });
+
+  it("keeps residue and extraneous seed tables empty after normalize", () => {
+    const content = normalizeCvpEquipmentSamplingContent({
+      items: [cvpEquipmentSamplingSeed(1)],
+    });
+    expect(
+      (content.items[0]?.content ?? []).filter((node) => node.type === "table")
+    ).toHaveLength(4);
     expect(fieldFillState(content, "cvp_equipment_sampling", "items.0")).toBe(
       "empty"
     );
