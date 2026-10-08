@@ -74,7 +74,7 @@ const AFFIRMATION_PREFIX_RE =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|alright|absolutely|definitely|go ahead|do it|please do|sounds good|yes please|go for it|do that)\b[\s,.!:;–—-]*/i;
 
 const WRITE_RE =
-  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|redraft|put|place|paste|enter|load|import|save|start over|from scratch)\b/i;
+  /\b(?:draft|write(?:\s+(?:up|out|the))?|prepare|populate|fill(?:\s+(?:in|out|the))?|complete|do this section|edit|change|update|add|insert|remove|delete|rewrite|replace|fix|tighten|move|drop|append|propose|apply|re-?draft|put|place|paste|enter|load|import|save|start over|from scratch)\b|\bmake\s+\d+(?:\.\d+)+\s+as\b/i;
 
 const START_REPORT_RE =
   /\b(?:start|begin|kick ?off)\b.{0,48}\b(?:report|draft|document|writing|this)\b|\b(?:let'?s|please)\s+(?:start|begin|go)\b/i;
@@ -88,7 +88,7 @@ const CONTINUE_RE =
  * mapped those turns to read so write tools never loaded.
  */
 const MISSING_WORK_RE =
-  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank|(?:suggestion|card)s? (?:are |is )?(?:not landing|did(?:n't| not) land|aren'?t landing)|refus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)|(?:no|without|did(?:n't| not) have) write (?:capability|capabilities|tools|access)|only summar(?:ising|izing|ised|ized)|read-only mode|still in ask mode|you (?:said|claimed) .{0,40}ask mode)\b/i;
+  /\b(?:nothing (?:(?:was|is|got) )?(?:filled|written|drafted|there|showing|showed up|in (?:the |this )?(?:table|section|document|grid|worksheet|report))|(?:still|remains?) (?:empty|blank)|(?:did(?:n'?t| not)|has(?:n'?t| not)|have(?:n'?t| not)|never) (?:fill|write|draft|show|appear|land|update)|i (?:don'?t|do not|can'?t|cannot) see|(?:is(?:n'?t| not)|not) (?:in the (?:document|table|section)|showing|the (?:table|section|document|grid|worksheet|report) (?:filled|written|there|showing))|you (?:said|claimed|told me) you (?:filled|wrote|drafted|added|updated|fill|write|draft|add|update)|where (?:is|did) (?:the|it)|didn'?t (?:land|show)|nothing happened|still blank|(?:suggestion|card)s? (?:are |is )?(?:not landing|did(?:n't| not) land|aren'?t landing)|insertions? (?:are |is )?(?:really )?(?:failing|failed|not landing)|refus(?:e|ing|ed) to (?:make |do |apply )?(?:an |the )?(?:edit|change|write)|(?:no|without|did(?:n't| not) have) write (?:capability|capabilities|tools|access)|only summar(?:ising|izing|ised|ized)|read-only mode|still in ask mode|you (?:said|claimed) .{0,40}ask mode)\b/i;
 
 const POLITE_WRITE_RE =
   /\b(?:can you|could you|would you|please)\s+(?:draft|write|fill|prepare|populate|edit|add|insert|remove|delete|rewrite|replace|complete|plot|extract|run)\b/i;

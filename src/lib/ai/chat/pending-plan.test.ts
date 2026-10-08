@@ -850,6 +850,7 @@ describe("plan prompt and metadata", () => {
     expect(block).toContain("Do not start 15.4 ANF (ANF-1301)");
     expect(block).toContain("Draft only this 15.N box");
     expect(block).toContain("create_table with empty afterAnchor");
+    expect(block).toContain("replaceFilledField: true");
     expect(block).toContain(
       "Do not restart document review when equipment-sampling coverage already finished"
     );

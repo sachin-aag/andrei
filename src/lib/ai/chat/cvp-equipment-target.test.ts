@@ -7,6 +7,7 @@ import {
 } from "@/lib/document-types/cvp/equipment-sampling";
 import {
   bindCvpEquipmentWrite,
+  cvpEquipmentItemFieldFromUserTexts,
   routeCvpEquipmentWriteField,
 } from "@/lib/ai/chat/cvp-equipment-target";
 import { fieldFillState, sectionFillState } from "@/lib/ai/chat/fields";
@@ -28,6 +29,21 @@ function withFilledNote(doc: JSONContent): JSONContent {
     ],
   };
 }
+
+describe("cvpEquipmentItemFieldFromUserTexts", () => {
+  it("pins the newest 15.N in chat onto items.N-1", () => {
+    expect(
+      cvpEquipmentItemFieldFromUserTexts([
+        "make 15.6 as mlt 1303. redraft accordingly",
+        "insert it",
+      ])
+    ).toBe("items.5");
+    expect(cvpEquipmentItemFieldFromUserTexts(["insert it"])).toBeUndefined();
+    expect(
+      cvpEquipmentItemFieldFromUserTexts(["insert suggestions for 15.6.1"])
+    ).toBe("items.5");
+  });
+});
 
 describe("cvpEquipmentItemIndexFromTarget", () => {
   it("maps items.N and 15.N onto the same 0-based index", () => {

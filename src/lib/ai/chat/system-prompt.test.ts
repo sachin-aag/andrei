@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v199-cvp-equipment-loop");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v201-cvp-equipment-redraft");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -358,8 +358,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("delete_table");
     expect(prompt).toContain("Do not use draft_field to create or delete a table");
     expect(prompt).toContain(
-      "Do not draft_field a field that already has more than one table"
+      "Do not draft_field a field that already has more than one table unless they asked to redraft"
     );
+    expect(prompt).toContain("insert that rewrite already in chat");
+    expect(prompt).toContain("seeded boilerplate stays");
     expect(prompt).toContain("tableIndex 0 equipment list");
   });
 

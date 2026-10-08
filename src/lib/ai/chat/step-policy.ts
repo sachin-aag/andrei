@@ -82,6 +82,12 @@ export type PrepareReportChatStepInput = {
    */
   explicitDocumentEdit?: boolean;
   /**
+   * Whole-field rewrite ("redraft 15.6 as MLT-1303", or "insert it" after
+   * that). After read_section, force draft_field instead of piecemeal
+   * edit_table — a filled multi-table 15.N box cannot be rebuilt cell by cell.
+   */
+  explicitSectionRewrite?: boolean;
+  /**
    * Focused section is one QSR RTM table (Tables 5–10). Force
    * `draft_rtm_table` on the first write instead of `edit_table`.
    */
@@ -107,10 +113,26 @@ function toolIsAvailable(
   );
 }
 
+function explicitDocumentEditWriteTool(
+  input: PrepareReportChatStepInput
+): string {
+  if (input.inScopeRtmSection && toolIsAvailable(input, "draft_rtm_table")) {
+    return "draft_rtm_table";
+  }
+  if (input.explicitSectionRewrite && toolIsAvailable(input, "draft_field")) {
+    return "draft_field";
+  }
+  if (input.inScopeHasTable && toolIsAvailable(input, "edit_table")) {
+    return "edit_table";
+  }
+  return "propose_edit";
+}
+
 /**
  * An explicit "put it in the document" turn must not end as a chat summary.
- * Step 0 reads the section. The following step calls edit_table when a table
- * is in scope, otherwise propose_edit.
+ * Step 0 reads the section. The following step calls draft_field on a
+ * whole-field rewrite, draft_rtm_table when a QSR RTM table is in scope,
+ * edit_table when any other table is in scope, otherwise propose_edit.
  */
 function explicitDocumentEditStep(
   input: PrepareReportChatStepInput
@@ -129,11 +151,7 @@ function explicitDocumentEditStep(
       toolChoice: { type: "tool", toolName: "read_section" },
     };
   }
-  const writeTool = input.inScopeRtmSection
-    ? "draft_rtm_table"
-    : input.inScopeHasTable
-      ? "edit_table"
-      : "propose_edit";
+  const writeTool = explicitDocumentEditWriteTool(input);
   if (
     stepsIncludeTool(input.steps, writeTool) ||
     !toolIsAvailable(input, writeTool)

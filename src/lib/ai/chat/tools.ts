@@ -399,7 +399,11 @@ import {
   type RecommendedResultsInventory,
 } from "@/lib/ai/chat/results-inventory";
 import { parseResultsMatrix } from "@/lib/document-types/convergent/matrix-parser";
-import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
+import {
+  recentUserMessageTexts,
+  type RetrievalPolicy,
+} from "@/lib/ai/chat/retrieval-policy";
+import { isWholeFieldReplaceTurn } from "@/lib/ai/chat/already-drafted";
 
 type AgentCommitOutcome =
   | { status: "not_editable"; message: string }
@@ -4873,12 +4877,16 @@ export function buildChatTools(opts: {
         if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const rewriteTurn = isWholeFieldReplaceTurn(
+          latestUserMessageText(messages) ?? "",
+          recentUserMessageTexts(messages)
+        );
         const { resolvedField, loaded } = bindLoadedWriteField(
           section,
           targetField,
           requestedResolved,
           loadedRaw,
-          true,
+          replaceFilledField !== true && !rewriteTurn,
           mentionedTargetField
         );
         const field = {
@@ -4935,57 +4943,65 @@ export function buildChatTools(opts: {
           resolvedField
         );
         const fill = fieldFillState(loaded.content, section, resolvedField);
-        if (liveTables.length > 1) {
+        const replacingFilledField =
+          fill === "filled" && (replaceFilledField === true || rewriteTurn);
+        if (liveTables.length > 1 && !replacingFilledField) {
           return {
             status: "use_edit_table",
             message: multiTableDraftFieldMessage(liveTables.length),
           };
         }
-        const headerMismatch = liveTableHeadersMismatch({
-          content: loaded.content,
-          section,
-          targetField: resolvedField,
-          markdown,
-        });
-        if (headerMismatch) {
-          return {
-            status: "header_mismatch",
-            message: headerMismatch,
-          };
+        if (!replacingFilledField) {
+          const headerMismatch = liveTableHeadersMismatch({
+            content: loaded.content,
+            section,
+            targetField: resolvedField,
+            markdown,
+          });
+          if (headerMismatch) {
+            return {
+              status: "header_mismatch",
+              message: headerMismatch,
+            };
+          }
         }
         const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
         if (staleDraft) return staleDraft;
         if (fill === "filled") {
-          if (replaceFilledField !== true) {
+          if (!replacingFilledField) {
             return { status: "field_filled", message: FIELD_FILLED_MESSAGE };
           }
-          // A replacement that leaves most of the field intact is a targeted
-          // edit; draft_field would strike the whole field in review.
-          const scope = classifyRedraftScope({
-            currentText: sectionFieldPlainText(
-              loaded.content,
-              section,
-              resolvedField
-            ),
-            nextText: markdownToPlainText(markdown),
-            currentHasTable: isRichTargetField(section, resolvedField)
-              ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
-              : false,
-            nextHasTable: markdownHasTable(markdown),
-          });
-          if (scope.kind === "targeted_edit") {
-            return {
-              status: NOT_A_REWRITE_STATUS,
-              hint: redraftTooSmallHint(scope.coverage),
-              coverage: scope.coverage,
-            };
-          }
-          if (scope.kind === "table_structure") {
-            return {
-              status: NOT_A_REWRITE_STATUS,
-              hint: redraftTableStructureHint(scope.adding),
-              coverage: 0,
-            };
+          // Ordinary filled edits that keep most of the field belong on
+          // propose_edit / edit_table. An explicit rewrite turn ("redraft",
+          // "make 15.N as", "insert it" after that dump) is a whole-field
+          // replace even when boilerplate coverage looks targeted.
+          if (!rewriteTurn) {
+            const scope = classifyRedraftScope({
+              currentText: sectionFieldPlainText(
+                loaded.content,
+                section,
+                resolvedField
+              ),
+              nextText: markdownToPlainText(markdown),
+              currentHasTable: isRichTargetField(section, resolvedField)
+                ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
+                : false,
+              nextHasTable: markdownHasTable(markdown),
+            });
+            if (scope.kind === "targeted_edit") {
+              return {
+                status: NOT_A_REWRITE_STATUS,
+                hint: redraftTooSmallHint(scope.coverage),
+                coverage: scope.coverage,
+              };
+            }
+            if (scope.kind === "table_structure") {
+              return {
+                status: NOT_A_REWRITE_STATUS,
+                hint: redraftTableStructureHint(scope.adding),
+                coverage: 0,
+              };
+            }
           }
         }
 

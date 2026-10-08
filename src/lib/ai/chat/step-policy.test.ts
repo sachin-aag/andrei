@@ -98,6 +98,23 @@ describe("prepareReportChatStep (characterization)", () => {
     });
   });
 
+  it("forces draft_field after read when they asked to redraft a filled box", () => {
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          explicitSectionRewrite: true,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+          steps: [{ toolCalls: [{ toolName: "read_section" }] }],
+        })
+      )
+    ).toEqual({
+      activeTools: ["draft_field"],
+      toolChoice: { type: "tool", toolName: "draft_field" },
+    });
+  });
+
   it("forces propose_edit after read when the landed edit is prose", () => {
     expect(
       prepareReportChatStep(

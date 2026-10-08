@@ -8,6 +8,8 @@ import {
   detectAlreadyDraftedSection,
   isExplicitDocumentEdit,
   isExplicitSectionRewrite,
+  isLandWholeDraftRequest,
+  isWholeFieldReplaceTurn,
   withoutDraftFieldTools,
 } from "./already-drafted";
 import { fieldFillState, sectionFillState } from "./fields";
@@ -40,12 +42,50 @@ describe("isExplicitSectionRewrite", () => {
     );
     expect(isExplicitSectionRewrite("replace the testers section")).toBe(true);
     expect(isExplicitSectionRewrite("start over on testers")).toBe(true);
+    expect(
+      isExplicitSectionRewrite("make 15.6 as mlt 1303. redraft accordingly")
+    ).toBe(true);
+    expect(isExplicitSectionRewrite("make 15.6 as MLT-1303")).toBe(true);
+    expect(isExplicitSectionRewrite("re-draft section 15.6")).toBe(true);
   });
 
   it("does not treat ordinary draft or edit phrasing as a full rewrite", () => {
     expect(isExplicitSectionRewrite("draft testers section")).toBe(false);
     expect(isExplicitSectionRewrite("remove VCS from Purpose")).toBe(false);
+    expect(isExplicitSectionRewrite("insert suggestions for 15.6.1")).toBe(
+      false
+    );
     expect(isExplicitSectionRewrite("")).toBe(false);
+  });
+});
+
+describe("isLandWholeDraftRequest", () => {
+  it("matches insert-it confirmations, not named suggestion cards", () => {
+    expect(isLandWholeDraftRequest("insert it")).toBe(true);
+    expect(isLandWholeDraftRequest("go ahead and insert it")).toBe(true);
+    expect(isLandWholeDraftRequest("go ahead and insert that")).toBe(true);
+    expect(isLandWholeDraftRequest("insert the suggestion")).toBe(false);
+    expect(isLandWholeDraftRequest("insert suggestions for 15.6.1")).toBe(
+      false
+    );
+    expect(isLandWholeDraftRequest("go ahead")).toBe(false);
+  });
+});
+
+describe("isWholeFieldReplaceTurn", () => {
+  it("treats insert-it after a 15.N redraft as a whole-field replace", () => {
+    expect(
+      isWholeFieldReplaceTurn("insert it", [
+        "make 15.6 as mlt 1303. redraft accordingly",
+        "insert it",
+      ])
+    ).toBe(true);
+    expect(isWholeFieldReplaceTurn("insert it")).toBe(false);
+    expect(
+      isWholeFieldReplaceTurn("insert suggestions for 15.6.1", [
+        "make 15.6 as mlt 1303. redraft accordingly",
+      ])
+    ).toBe(false);
   });
 });
 
@@ -58,10 +98,19 @@ describe("isExplicitDocumentEdit", () => {
     expect(isExplicitDocumentEdit("it is only summarising the change")).toBe(
       true
     );
+    expect(isExplicitDocumentEdit("insert it")).toBe(true);
+    expect(isExplicitDocumentEdit("go ahead and insert it")).toBe(true);
+    expect(
+      isExplicitDocumentEdit("make 15.6 as mlt 1303. redraft accordingly")
+    ).toBe(true);
+    expect(
+      isExplicitDocumentEdit("insertions are really failing for 15.6")
+    ).toBe(true);
   });
 
   it("does not treat a lookup as a document edit", () => {
     expect(isExplicitDocumentEdit("what is in section 3.12?")).toBe(false);
+    expect(isExplicitDocumentEdit("go ahead")).toBe(false);
   });
 });
 
@@ -181,6 +230,21 @@ describe("detectAlreadyDraftedSection", () => {
           purpose: purposeDoc(
             "This verification confirms the Solea handpiece meets design inputs under protocol EXE-100."
           ),
+        },
+      })
+    ).toBeNull();
+  });
+
+  it("does not gate insert-it after a 15.N redraft", () => {
+    expect(
+      detectAlreadyDraftedSection({
+        userText: "insert it",
+        userIntentKind: "write",
+        documentType: "cleaning_verification_protocol",
+        sectionScope: "cvp_equipment_sampling",
+        recentUserTexts: ["make 15.6 as mlt 1303. redraft accordingly"],
+        sections: {
+          testers_dates: testersDoc(FILLED_TESTERS),
         },
       })
     ).toBeNull();

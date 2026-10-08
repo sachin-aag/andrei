@@ -7,6 +7,21 @@ import {
   normalizeCvpEquipmentSamplingContent,
 } from "@/lib/document-types/cvp/equipment-sampling";
 
+/** Newest-first `15.N` in chat → `items.{N-1}` when they did not @-tag a box. */
+export function cvpEquipmentItemFieldFromUserTexts(
+  texts: readonly string[]
+): string | undefined {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const text = texts[i];
+    if (!text) continue;
+    const mentioned = /\b15\.\d+\b/.exec(text);
+    if (!mentioned) continue;
+    const fromOrdinal = cvpEquipmentItemIndexFromTarget(mentioned[0]);
+    if (fromOrdinal != null) return `items.${fromOrdinal}`;
+  }
+  return undefined;
+}
+
 function isCvpEquipmentGenericTarget(requested: string): boolean {
   return (
     requested === "narrative" ||

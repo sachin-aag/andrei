@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
-import { EMPTY_CVP_CONTENT } from "@/lib/document-types/cvp/sections";
+import {
+  cvpEquipmentSamplingSeed,
+  EMPTY_CVP_CONTENT,
+} from "@/lib/document-types/cvp/sections";
 import { comments } from "@/db/schema";
 import {
   buildChatTools,
@@ -3187,6 +3190,222 @@ describe("buildChatTools propose edits", () => {
     expect(refused).toMatchObject({ status: "not_a_rewrite" });
     expect(String((refused as { hint?: string }).hint)).toMatch(/create_table/);
     expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("allows draft_field of a filled multi-table 15.N box with replaceFilledField", async () => {
+    const filledItem = {
+      ...cvpEquipmentSamplingSeed(6),
+      content: [
+        ...(cvpEquipmentSamplingSeed(6).content ?? []),
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The previous mixed-vessel identity, documents, residue, and extraneous tables were filled from the cited protocol for this equipment box.",
+            },
+          ],
+        },
+      ],
+    };
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: {
+                    items: [
+                      cvpEquipmentSamplingSeed(1),
+                      cvpEquipmentSamplingSeed(2),
+                      cvpEquipmentSamplingSeed(3),
+                      cvpEquipmentSamplingSeed(4),
+                      cvpEquipmentSamplingSeed(5),
+                      filledItem,
+                    ],
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const replacement = [
+      "## 15.6 ML TANK",
+      "The subject equipment collects mother liquor in the production block.",
+      "### 15.6.1 Equipment Details",
+      "| Parameter | Details | Reference |",
+      "| --- | --- | --- |",
+      "| Capacity | large | drawing |",
+      "### 15.6.2 Supporting Documents",
+      "| Documents | Document # | Effective / Approval date |",
+      "| --- | --- | --- |",
+      "| BCR | pending | NA |",
+      "### 15.6.7 Residue",
+      "| Sample description / location | Sample ID | Results |",
+      "| --- | --- | --- |",
+      "| Final rinse | NA | |",
+      "### 15.6.8 Extraneous",
+      "| Sample description / location | Sample ID | Results |",
+      "| --- | --- | --- |",
+      "| Rinse sample | NA | |",
+    ].join("\n\n");
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      sectionScope: "cvp_equipment_sampling",
+      unsupportedFactPolicy: "flag",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "15.6",
+        markdown: replacement,
+        reasoning: "Rewrite 15.6 as the ML tank.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "use_edit_table" });
+
+    const replaced = await tools.draft_field!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "15.6",
+        markdown: replacement,
+        reasoning: "Rewrite 15.6 as the ML tank.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(replaced).toMatchObject({
+      status: "drafted",
+      section: "cvp_equipment_sampling",
+      targetField: "items.5",
+    });
+  });
+
+  it("treats a redraft user turn as replaceFilledField on a filled 15.N box", async () => {
+    const filledItem = {
+      ...cvpEquipmentSamplingSeed(6),
+      content: [
+        ...(cvpEquipmentSamplingSeed(6).content ?? []),
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The previous mixed-vessel identity, documents, residue, and extraneous tables were filled from the cited protocol for this equipment box.",
+            },
+          ],
+        },
+      ],
+    };
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: { items: [filledItem] },
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      mentionedTargetField: "items.0",
+      unsupportedFactPolicy: "flag",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "make 15.6 as mlt 1303. redraft accordingly",
+            },
+          ],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "15.6",
+        markdown: [
+          "## 15.6 ML TANK",
+          "The subject equipment collects mother liquor.",
+          "| Parameter | Details | Reference |",
+          "| --- | --- | --- |",
+          "| Capacity | large | drawing |",
+        ].join("\n"),
+        reasoning: "Rewrite as the ML tank.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({
+      status: "drafted",
+      targetField: "items.0",
+    });
+  });
+
+  it("lands insert-it after a 15.N redraft even when coverage looks targeted", async () => {
+    const filled =
+      "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation. The batch was quarantined pending review.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      unsupportedFactPolicy: "flag",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "make 15.6 as mlt 1303. redraft accordingly",
+            },
+          ],
+        },
+        {
+          id: "u2",
+          role: "user",
+          parts: [{ type: "text", text: "insert it" }],
+        },
+      ],
+    });
+    const drafted = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: filled.replace(" at 68 percent", ""),
+        reasoning: "Land the rewrite already in chat.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(drafted).toMatchObject({
+      status: "drafted",
+      section: "define",
+      targetField: "narrative",
+    });
   });
 
   it("refuses a GFM table in propose_edit insertText", async () => {

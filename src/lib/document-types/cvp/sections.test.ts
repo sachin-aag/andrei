@@ -423,6 +423,8 @@ describe("cleaning verification protocol sections", () => {
       "already has the **shared** 15.N boilerplate"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain("**Do not draft_field**");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("replaceFilledField: true");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("**ML tank / receiver**");
     expect(CVP_DRAFTING_GUIDANCE).toContain("create_table: omit title");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "Do not replay these ISM4 source mismatches"

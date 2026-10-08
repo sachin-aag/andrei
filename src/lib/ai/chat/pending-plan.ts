@@ -608,7 +608,7 @@ The remaining-section queue is paused${plan.pauseReason ? ` (${plan.pauseReason}
   const cvpEquipmentLine = turn.some((item) =>
     isCvpEquipmentPlanItem(item.sectionKey)
   )
-    ? " Draft only this 15.N box (the items.N field). One burst: fill seeded 15.N.1 / .2 / .5 / .7 / .8 slots, then add missing 15.N.3 / .6 (and .4 only when a cited protocol prints it). After propose_edit of a new heading, create_table with empty afterAnchor so the table pairs with that heading — do not afterAnchor a heading that is still an open card. Do not restart document review when equipment-sampling coverage already finished."
+    ? " Draft only this 15.N box (the items.N field). One burst: fill seeded 15.N.1 / .2 / .5 / .7 / .8 slots, then add missing 15.N.3 / .6 (and .4 only when a cited protocol prints it). After propose_edit of a new heading, create_table with empty afterAnchor so the table pairs with that heading — do not afterAnchor a heading that is still an open card. When they asked to redraft / make 15.N as a different equipment ID, call draft_field on items.N with replaceFilledField: true — do not dump the box in chat. Do not restart document review when equipment-sampling coverage already finished."
     : "";
   const elrSiblingLine =
     documentType === "equipment_lifecycle_report"
