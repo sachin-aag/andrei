@@ -190,4 +190,13 @@ describe("instrument quantities", () => {
     );
     expect(extractHardFacts("Capacity 8000 L").map((fact) => fact.text)).toContain("8000 L");
   });
+
+  it("extracts 3xper 10k L as one litre quantity", () => {
+    expect(extractHardFacts("Capacity 10k L").map((fact) => fact.text)).toContain(
+      "10k L"
+    );
+    expect(extractHardFacts("Capacity 10k L").map((fact) => fact.normalized)).toContain(
+      "10kl"
+    );
+  });
 });

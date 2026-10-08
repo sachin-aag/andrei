@@ -10,6 +10,7 @@ import {
   protocolNoFromCompactHeader,
   splitCvpNarrativeIntoSections,
   docxBufferToImportedCvp,
+  promoteCvpEquipmentOutline,
 } from "@/lib/import/docx-to-cvp";
 
 vi.mock("@/lib/import/extract-math-from-image", () => ({
@@ -150,6 +151,8 @@ describe("CVP Word import split", () => {
     expect(isEquipmentHeading("15.4 GLASS LINED REACTOR (GLR-1304):")).toBe(
       true
     );
+    expect(isEquipmentHeading("15.1.1 Equipment details")).toBe(false);
+    expect(isEquipmentHeading("Equipment details")).toBe(false);
     expect(
       isEquipmentHeading("NITROSAMINE LIMITS IN THE RINSE SAMPLES:")
     ).toBe(false);
@@ -179,6 +182,12 @@ describe("CVP Word import split", () => {
         p("Conduct cleaning verification of the manufacturing equipment."),
         h("MIXED VESSEL (MV-1304):"),
         p("Capacity 20 KL"),
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Equipment details", marks: [{ type: "bold" }] },
+          ],
+        },
         h("NITROSAMINE LIMITS IN THE RINSE SAMPLES:"),
         table([["Limit NMT (ppm)", "NDMA"]]),
       ],
@@ -196,8 +205,30 @@ describe("CVP Word import split", () => {
     expect(JSON.stringify(sections.cvp_approvals)).toContain("Function");
     expect(JSON.stringify(sections.cvp_equipment_sampling)).toContain("MV-1304");
     expect(JSON.stringify(sections.cvp_equipment_sampling)).toContain("20 KL");
+    expect(JSON.stringify(sections.cvp_equipment_sampling)).toContain(
+      "15.1.1 Equipment details"
+    );
     expect(JSON.stringify(sections.cvp_nitrosamine)).toContain("NDMA");
     expect(sections.cvp_scope).toBeUndefined();
+  });
+
+  it("promotes Word BodyText 15.N.M titles to H3/H4", () => {
+    const promoted = promoteCvpEquipmentOutline([
+      h("MIXED VESSEL (MV-1304):"),
+      p("Equipment details"),
+      p("Worst-case locations"),
+    ]);
+    expect(promoted[0]).toMatchObject({
+      type: "heading",
+      attrs: { level: 2 },
+    });
+    expect(promoted[0]?.content?.[0]?.text).toBe("15.1 MIXED VESSEL (MV-1304)");
+    expect(promoted[1]).toMatchObject({
+      type: "heading",
+      attrs: { level: 3 },
+    });
+    expect(promoted[1]?.content?.[0]?.text).toBe("15.1.1 Equipment details");
+    expect(promoted[2]?.content?.[0]?.text).toBe("15.1.3.1 Worst-case locations");
   });
 
   it("reads cover identity from flattened label/value paragraphs", () => {

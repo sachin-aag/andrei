@@ -42,6 +42,9 @@ export type PersistDocumentTablesInput = {
   assetId: string | null;
   reportId: string;
   pages: ReadonlyArray<{ pageNumber: number; transcript: string }>;
+  /** When set, skip transcript detection and store these tables as-is. */
+  tables?: readonly DetectedTable[];
+  maxTables?: number;
 };
 
 export type PersistDocumentTablesResult = {
@@ -145,7 +148,8 @@ export function pagesToRechunkAfterIdentifierRule(input: {
  * they should not need a database to check.
  */
 export function planTablesForPersistence(
-  tables: readonly DetectedTable[]
+  tables: readonly DetectedTable[],
+  maxTables: number = MAX_TABLES_PER_RUN
 ): Array<{ table: DetectedTable; rowLimit: number; truncated: boolean }> {
   const planned: Array<{
     table: DetectedTable;
@@ -154,7 +158,7 @@ export function planTablesForPersistence(
   }> = [];
   let budget = MAX_ROWS_PERSISTED_PER_RUN;
 
-  for (const table of tables.slice(0, MAX_TABLES_PER_RUN)) {
+  for (const table of tables.slice(0, maxTables)) {
     if (budget <= 0) break;
     const rowLimit = Math.min(table.rows.length, MAX_TABLE_ROWS_PERSISTED, budget);
     if (rowLimit <= 0) break;
@@ -172,12 +176,14 @@ export function planTablesForPersistence(
 export async function persistDocumentTablesForRun(
   input: PersistDocumentTablesInput
 ): Promise<PersistDocumentTablesResult> {
-  const detected = detectTables(
-    input.pages.map((page) => ({
-      pageNumber: page.pageNumber,
-      text: page.transcript,
-    }))
-  );
+  const detected =
+    input.tables ??
+    detectTables(
+      input.pages.map((page) => ({
+        pageNumber: page.pageNumber,
+        text: page.transcript,
+      }))
+    );
 
   // Re-running ingest replaces this run's tables rather than appending.
   await db
@@ -192,7 +198,10 @@ export async function persistDocumentTablesForRun(
       .set({ tablesParsedAt: new Date() })
       .where(eq(attachmentIngestRuns.id, input.runId));
 
-  const planned = planTablesForPersistence(detected);
+  const planned = planTablesForPersistence(
+    detected,
+    input.maxTables ?? MAX_TABLES_PER_RUN
+  );
   if (planned.length === 0) {
     await markParsed();
     return { tableCount: 0, rowCount: 0, spans: [] };

@@ -7,6 +7,7 @@ import { CONVERGENT_PROMPT_VERSION } from "@/lib/customers/packs";
 import { CONVERGENT_RECIPE_DRAFTING_GUIDANCE } from "@/lib/document-types/convergent/drafting-guidance";
 import {
   appendParagraphsToDoc,
+  mergeStoredRichField,
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
@@ -279,14 +280,14 @@ function mergeNarrative(raw: unknown): { narrative: ReturnType<typeof normalizeR
   const base = { narrative: EMPTY_CONVERGENT_DV_CONTENT.purpose.narrative };
   if (!raw || typeof raw !== "object") return base;
   const o = raw as { narrative?: unknown };
-  return { narrative: normalizeRichField(o.narrative ?? base.narrative) };
+  return { narrative: mergeStoredRichField(o, "narrative", base.narrative) };
 }
 
 function mergeEquipment(raw: unknown): { table: ReturnType<typeof normalizeRichField> } {
   const base = EMPTY_CONVERGENT_DV_CONTENT.test_equipment;
   if (!raw || typeof raw !== "object") return { table: base.table };
   const o = raw as { table?: unknown };
-  return { table: normalizeRichField(o.table ?? base.table) };
+  return { table: mergeStoredRichField(o, "table", base.table) };
 }
 
 function leftoverTestersDateLine(
@@ -327,7 +328,7 @@ function mergeTestersDates(raw: unknown) {
   const o = raw as { testers?: unknown; startDate?: unknown; endDate?: unknown };
   return {
     testers: foldLeftoverTestersDates(
-      normalizeRichField(o.testers ?? base.testers),
+      mergeStoredRichField(o, "testers", base.testers),
       o.startDate,
       o.endDate
     ),
@@ -339,8 +340,8 @@ function mergeResults(raw: unknown) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown; table?: unknown };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
   };
 }
 

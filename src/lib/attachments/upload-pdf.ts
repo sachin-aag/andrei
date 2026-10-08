@@ -17,7 +17,7 @@ export function isPdfFile(file: File): boolean {
   );
 }
 
-/** Accepts the supported evidence-attachment types: PDF and Word `.docx`. */
+/** Accepts the supported evidence-attachment types: PDF, Word, CSV, Excel. */
 export function isSupportedAttachmentFile(file: File): boolean {
   return isSupportedAttachment({ filename: file.name, mimeType: file.type });
 }

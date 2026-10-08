@@ -315,6 +315,25 @@ describe("groundDraftText QSR row windows", () => {
     expect(result.unsupported).toEqual([]);
   });
 
+  it("writes CVP 10000 L as 10k L after the cited page verifies it", () => {
+    const result = groundDraftText({
+      text: "10000 L [CPDR.pdf, p. 2]",
+      ledger: ledgerFromPages([
+        {
+          filename: "CPDR.pdf",
+          pageNumber: 2,
+          attachmentId: "cpdr",
+          quote: "GLR-1302 Capacity 10000 L MSGL",
+        },
+      ]),
+      policy: "block",
+      grounding: { section: "cvp_equipment_sampling" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("10k L");
+    expect(result.text).not.toContain("10000 L");
+  });
+
   it("accepts 0 to 760 mmHg for URS-35 when the URS page states it outside a neighbour window", () => {
     const result = groundDraftText({
       text: "0 to 760 mmHg",

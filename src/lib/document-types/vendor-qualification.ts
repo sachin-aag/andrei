@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { DocxExportContext } from "@/lib/export/docx-export-context";
 import { narrativeToDocxXmlWithContext } from "@/lib/export/narrative-to-docx-xml";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField, normalizeRichField } from "@/lib/tiptap/rich-text";
 import { VQ_PROMPT_VERSION } from "@/lib/customers/packs";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { VQ_DRAFTING_GUIDANCE } from "./vq/drafting-guidance";
@@ -88,10 +88,10 @@ function mergeVqSection(key: string, raw: unknown): unknown {
     answers: mergeAnswers(o.answers, base.answers),
   };
   if (base.narrative || o.narrative) {
-    merged.narrative = normalizeRichField(o.narrative ?? base.narrative);
+    merged.narrative = mergeStoredRichField(o, "narrative", base.narrative);
   }
   if (base.table || o.table) {
-    merged.table = normalizeRichField(o.table ?? base.table);
+    merged.table = mergeStoredRichField(o, "table", base.table);
   }
   if (base.pageSignatures) {
     merged.pageSignatures = parseVqPageSignatures(o.pageSignatures);

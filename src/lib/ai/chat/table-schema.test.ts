@@ -8,6 +8,7 @@ import {
   liveTableHeadersMismatch,
   tableSchemaReadStep,
 } from "@/lib/ai/chat/table-schema";
+import { EMPTY_CVP_CONTENT } from "@/lib/document-types/cvp/sections";
 
 describe("tableSchemaReadStep", () => {
   it("forces read_section on the first write step when a scoped section has a table", () => {
@@ -82,5 +83,20 @@ describe("liveTableHeadersMismatch", () => {
         ].join("\n"),
       })
     ).toBeNull();
+  });
+
+  it("rejects a one-table MACO draft against the three seeded grids", () => {
+    const hint = liveTableHeadersMismatch({
+      content: EMPTY_CVP_CONTENT.cvp_maco as Record<string, unknown>,
+      section: "cvp_maco",
+      targetField: "narrative",
+      markdown: [
+        "| S. No. | Name of the Equipment | Equipment No. | Capacity | MOC |",
+        "| --- | --- | --- | --- | --- |",
+        "| 1 | Reactor | LF-1301 | 2000 L | SS |",
+      ].join("\n"),
+    });
+    expect(hint).toMatch(/3 tables/);
+    expect(hint).toMatch(/draft has 1/);
   });
 });

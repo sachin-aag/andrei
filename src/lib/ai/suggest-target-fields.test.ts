@@ -69,6 +69,22 @@ describe("resolveTargetField", () => {
     expect(resolveTargetField("purpose", "purpose")).toBe("narrative");
   });
 
+  it("remaps legacy CVP equipment narrative onto items.0", () => {
+    expect(resolveTargetField("cvp_equipment_sampling", "narrative")).toBe(
+      "items.0"
+    );
+    expect(resolveTargetField("cvp_equipment_sampling", "items.0")).toBe(
+      "items.0"
+    );
+    expect(resolveTargetField("cvp_equipment_sampling", "items.2")).toBe(
+      "items.2"
+    );
+    expect(resolveTargetField("cvp_equipment_sampling", "15.2")).toBe("items.1");
+    expect(
+      resolveTargetField("cvp_equipment_sampling", "15.2 MIXED VESSEL (MV-1305)")
+    ).toBe("items.1");
+  });
+
   it("keeps a correct field path unchanged", () => {
     expect(resolveTargetField("purpose_scope", "narrative")).toBe("narrative");
     expect(resolveTargetField("improve", "correctiveActions")).toBe(

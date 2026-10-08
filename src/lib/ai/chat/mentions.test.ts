@@ -4,12 +4,14 @@ import {
   buildMentionBlock,
   mentionedAttachmentIds,
   mentionedAnalysisIds,
+  mentionedCvpEquipmentTargetField,
   mentionedSections,
   parseChatMentions,
   recoverDocumentMentionIds,
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
+import { cvpEquipmentItemMentionId } from "@/lib/document-types/cvp/equipment-item-path";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 
@@ -105,6 +107,21 @@ describe("parseChatMentions", () => {
         "design_verification"
       )
     ).toEqual([{ type: "section", id: "traceability" }]);
+  });
+
+  it("keeps a CVP 15.2 equipment-box mention", () => {
+    expect(
+      parseChatMentions(
+        [{ type: "section", id: cvpEquipmentItemMentionId(1) }],
+        "cleaning_verification_protocol"
+      )
+    ).toEqual([{ type: "section", id: cvpEquipmentItemMentionId(1) }]);
+    expect(
+      parseChatMentions(
+        [{ type: "section", id: cvpEquipmentItemMentionId(1) }],
+        "investigation_report"
+      )
+    ).toEqual([]);
   });
 
   it("dedupes repeated mentions", () => {
@@ -203,6 +220,24 @@ describe("sectionScopeFromMentions", () => {
         "qualification_summary_report"
       )
     ).toBe("all");
+  });
+
+  it("focuses equipment sampling when a 15.N box is tagged", () => {
+    expect(
+      sectionScopeFromMentions(
+        [{ type: "section", id: cvpEquipmentItemMentionId(1) }],
+        "cleaning_verification_protocol"
+      )
+    ).toBe("cvp_equipment_sampling");
+    expect(
+      sectionScopeFromMentions(
+        [
+          { type: "section", id: cvpEquipmentItemMentionId(0) },
+          { type: "section", id: cvpEquipmentItemMentionId(1) },
+        ],
+        "cleaning_verification_protocol"
+      )
+    ).toBe("cvp_equipment_sampling");
   });
 });
 
@@ -344,6 +379,18 @@ describe("buildMentionBlock", () => {
 
     expect(block).toContain("read_section");
     expect(block).toContain("Measure [measure]");
+  });
+
+  it("pins a tagged 15.2 box to items.1", () => {
+    const resolved = resolveChatMentions(
+      [{ type: "section", id: cvpEquipmentItemMentionId(1) }],
+      []
+    );
+    expect(mentionedSections(resolved)).toEqual(["cvp_equipment_sampling"]);
+    expect(mentionedCvpEquipmentTargetField(resolved)).toBe("items.1");
+    const block = buildMentionBlock(resolved);
+    expect(block).toContain("15.2 Equipment sampling");
+    expect(block).toContain("targetField items.1");
   });
 
   it("lists tagged Analytics plots with analysisId", () => {

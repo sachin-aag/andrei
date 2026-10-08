@@ -1,6 +1,8 @@
 import path from "node:path";
 import { CVP_PROMPT_VERSION } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { compact3xperLitreVolumesInDoc } from "@/lib/document-types/3xper-volume-style";
+import { stripCaptionsOnUnfilledTables } from "@/lib/suggestions/table-operation";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   CVP_IDENTITY_FIELDS,
@@ -10,11 +12,17 @@ import {
 import { CVP_DRAFTING_GUIDANCE } from "./cvp/drafting-guidance";
 import { checkNarrativePresent, tableValuesCheck } from "./qsr/deterministic-checks";
 import {
+  concatCvpEquipmentItems,
+  CVP_EQUIPMENT_FIELD_PATTERN,
+  normalizeCvpEquipmentSamplingContent,
+} from "./cvp/equipment-sampling";
+import {
   CVP_DEFAULT_METADATA,
   CVP_FORM_NO,
   CVP_SECTION_KEYS,
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
+  alignCvpMacoEquipmentHeaders,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpSectionKey,
@@ -124,14 +132,14 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
     llm(
       "equipment_sampling.blocks",
       "Each product-contact equipment has a sampling block",
-      "Is there a sampling block (identity, locations, rationale) for each product-contact equipment listed in Scope?"
+      "Is there a sampling block (identity, locations, rationale) for each product-contact equipment listed in Scope? Blank Results / Batch No. / observation cells are correct — this is a protocol, not the executed report."
     ),
   ],
   cvp_nitrosamine: [tableFilled("nitrosamine", "Nitrosamine limits", 7)],
   cvp_pgi: [tableFilled("pgi", "PGI limits", 3)],
-  cvp_process_line: [tableFilled("process_line", "Process line", 1)],
+  cvp_process_line: [tableFilled("process_line", "Process line", 3)],
   cvp_manufacturing_area: [
-    tableFilled("manufacturing_area", "Manufacturing area", 2),
+    tableFilled("manufacturing_area", "Manufacturing area", 9),
   ],
   cvp_overall_results: [narrativePresent("overall_results", "Overall results")],
   cvp_testing_procedure: [tableFilled("testing_procedure", "Testing procedure", 3)],
@@ -147,17 +155,39 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
   cvp_history: [],
 };
 
-function fieldFor(key: CvpSectionKey): "narrative" | "table" {
+function fieldFor(key: CvpSectionKey): "narrative" | "table" | "items.[]" {
+  if (key === "cvp_equipment_sampling") return CVP_EQUIPMENT_FIELD_PATTERN;
   return isCvpTableSectionKey(key) ? "table" : "narrative";
 }
 
 function mergeCvpSection(key: string, raw: unknown): unknown {
   if (!isCvpSectionKey(key)) return raw ?? {};
+  if (key === "cvp_equipment_sampling") {
+    const { items } = normalizeCvpEquipmentSamplingContent(raw);
+    return {
+      items: items.map((doc, index) =>
+        stripCaptionsOnUnfilledTables(doc, {
+          section: key,
+          targetField: `items.${index}`,
+        })
+      ),
+    };
+  }
   const field = fieldFor(key);
   const base = (EMPTY_CVP_CONTENT[key] as Record<string, unknown>)[field];
-  const value =
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
-  return { [field]: normalizeRichField(value ?? base) };
+  const compacted = compact3xperLitreVolumesInDoc(
+    mergeStoredRichField(raw, field, base, {
+      preserveHeadings: true,
+    })
+  );
+  const normalized =
+    key === "cvp_maco" ? alignCvpMacoEquipmentHeaders(compacted) : compacted;
+  return {
+    [field]: stripCaptionsOnUnfilledTables(normalized, {
+      section: key,
+      targetField: field,
+    }),
+  };
 }
 
 export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
@@ -167,6 +197,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   documentNoLabel: "Protocol No.",
   documentNoPlaceholder: "e.g. CVRP-ISM4-26-001",
   wordImport: { kind: "cleaning_verification_protocol" },
+  editorProfile: "report_headings",
   evaluation: { kind: "criteria" },
   citationsAtEndOfSection: true,
   sections: CVP_SECTION_KEYS.map((key, index) => ({
@@ -179,7 +210,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   })),
   criteriaBySection: CRITERIA,
   prompts: {
-    base: `You are a senior QA reviewer evaluating 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). The protocol defines how the manufacturing equipment train for one product / stage will be cleaned and sampled (visual, swab, rinse, nitrosamine, PGI). You evaluate reports using a traffic light system:
+    base: `You are a senior QA reviewer evaluating 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). This is a protocol, not an executed cleaning verification report. The protocol defines how the manufacturing equipment train for one product / stage will be cleaned and sampled (visual, swab, rinse, nitrosamine, PGI). Blank execution cells (results, observations, signatures, batch numbers, chromatograms, pass/fail) are correct — do not mark them not_met. Judge the sampling plan, limits, methods, and identity. You evaluate using a traffic light system:
 
 - met: the criterion is fully satisfied
 - partially_met: some of the required content is present but incomplete
@@ -190,12 +221,24 @@ Do not invent equipment numbers, surface areas, PDE, MACO, or analytical method 
       cvp_maco:
         "Evaluate whether both the health-based and general-limit MACO routes are shown from cited values and the lower value is selected.",
       cvp_equipment_sampling:
-        "Evaluate whether each product-contact equipment from Scope has a sampling block with locations and rationale, not only an identity table.",
+        "Evaluate whether each product-contact equipment from Scope has a sampling block with locations and rationale, not only an identity table. Blank Results / Batch No. / observation cells are correct for a protocol.",
+      cvp_nitrosamine:
+        "Limit NMT and equipment Name/ID rows should be present. LOD, LOQ, and per-equipment result cells staying blank is correct.",
+      cvp_pgi:
+        "Limit NMT and equipment Name/ID rows should be present. LOD, LOQ, and per-equipment result cells staying blank is correct.",
+      cvp_process_line:
+        "Process-line descriptions should be listed. Production and QA observation columns staying blank is correct.",
+      cvp_manufacturing_area:
+        "Each equipment should have Production and QA verifier rows. Observation, Overall Result, and Sign & date staying blank is correct.",
+      cvp_overall_results:
+        "Equipment IDs should be listed, with NA only where a test does not apply. Execution result / status / remarks cells staying blank is correct. The acceptance-criteria table should be filled.",
     },
     promptVersion: CVP_PROMPT_VERSION,
   },
   chat: {
-    persona: `You are the drafting assistant for 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). You help engineering and QA staff draft the protocol for one product / stage equipment train from CPDR, PDR, BCR, qualification reports, PDE annexures and cleaning SOPs.
+    persona: `You are the drafting assistant for 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). This is a **protocol** (how the train will be cleaned and sampled), not the cleaning verification **report**. Leave execution fields blank — results, observations, signatures, batch numbers, chromatograms, and pass/fail verdicts belong in the report.
+
+You help engineering and QA staff draft the protocol for one product / stage equipment train from CPDR, PDR, BCR, qualification reports, PDE annexures and cleaning SOPs.
 
 You never write to the document directly — every change is a PROPOSAL the engineer accepts or rejects.`,
     draftingGuidance: CVP_DRAFTING_GUIDANCE,
@@ -209,7 +252,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
       agent: [
         "Fill cover identity and 2.0 Objective, 3.0 Scope, and 4.0 Responsibilities from the attachments.",
         "Build the surface-area, rinse-volume, and MACO tables from the CPDR and PDE annexure.",
-        "Draft 15.1 Equipment Sampling Plans for each product-contact item in Scope.",
+        "Draft Equipment sampling (15.1, then Add equipment for each Scope product-contact item).",
       ],
     },
     contextIdentity: cvpChatContextIdentity,
@@ -247,9 +290,9 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["cvp_sampling_procedure", [/\bsampling procedure\b/i, /\b13\.0\b/]],
       ["cvp_swab_locations", [/\bswab sample locations?\b/i, /\b14\.0\b/]],
       ["cvp_sampling_plan", [/\bsampling plan\b/i, /\b15\.0\b/]],
-      ["cvp_equipment_sampling", [/\bequipment sampling\b/i, /\b15\.1\b/]],
-      ["cvp_nitrosamine", [/\bnitrosamine\b/i, /\bndma\b/i, /\b15\.11\b/]],
-      ["cvp_pgi", [/\bgenotoxic\b/i, /\bpgi\b/i, /\b15\.12\b/]],
+      ["cvp_equipment_sampling", [/\bequipment sampling\b/i, /\b15\.(?:10|[1-9])\b/]],
+      ["cvp_nitrosamine", [/\bnitrosamine\b/i, /\bndma\b/i]],
+      ["cvp_pgi", [/\bgenotoxic\b/i, /\bpgi\b/i]],
       ["cvp_process_line", [/\bprocess line\b/i]],
       ["cvp_manufacturing_area", [/\bmanufacturing area\b/i]],
       ["cvp_overall_results", [/\boverall (cleaning )?results\b/i]],
@@ -281,9 +324,13 @@ You never write to the document directly — every change is a PROPOSAL the engi
       const meta = cvpMetadataFrom(report.metadata);
       const byKey = Object.fromEntries(sections.map((s) => [s.section, s.content]));
       const field = (key: CvpSectionKey) => {
-        const content = byKey[key] as Record<string, unknown> | undefined;
+        const content = byKey[key];
+        if (key === "cvp_equipment_sampling") {
+          return concatCvpEquipmentItems(content);
+        }
         const name = fieldFor(key);
-        return content?.[name] ?? null;
+        const record = content as Record<string, unknown> | undefined;
+        return record?.[name] ?? null;
       };
       const xml: Record<string, unknown> = {};
       for (const key of CVP_SECTION_KEYS) {

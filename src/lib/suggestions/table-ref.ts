@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import type { DocumentType } from "@/db/schema";
-import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
+import { expandIndexedFieldPaths, RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -232,7 +232,7 @@ export function richFieldDocsForTableRefs(
   if (!content || typeof content !== "object") return [];
   const paths = RICH_FIELD_PATHS[section];
   if (paths && paths.length > 0 && !isTipTapDoc(content)) {
-    return paths.map((field) => ({
+    return expandIndexedFieldPaths(paths, content).map((field) => ({
       field,
       doc: getRichFieldValue(content as Record<string, unknown>, field),
     }));

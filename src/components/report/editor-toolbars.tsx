@@ -89,10 +89,16 @@ export function TextFormatToolbar({ editor }: { editor: Editor }) {
   );
 }
 
-export function HeadingToolbar({ editor }: { editor: Editor }) {
+export function HeadingToolbar({
+  editor,
+  levels = [1, 2, 3],
+}: {
+  editor: Editor;
+  levels?: readonly (1 | 2 | 3 | 4)[];
+}) {
   return (
     <div className="flex items-center gap-0.5">
-      {([1, 2, 3] as const).map((level) => (
+      {levels.map((level) => (
         <Button
           key={level}
           type="button"

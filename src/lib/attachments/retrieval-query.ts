@@ -1,7 +1,7 @@
 import { requirementIds } from "@/lib/attachments/ocr-quality";
 
 const PAGE_LOCATOR_RE = /\b(?:page|p\.?)\s*\d+\b/i;
-const FILE_LOCATOR_RE = /\.(pdf|docx)\b/i;
+const FILE_LOCATOR_RE = /\.(pdf|docx|csv|xlsx)\b/i;
 const LEXICAL_TOKEN_RE = /[A-Za-z0-9]/;
 
 export type RetrievalQueryKind = "identifier" | "locator" | "semantic";
@@ -40,7 +40,7 @@ export function requestedPageNumbers(query: string): number[] {
 }
 
 export function requestedFilenames(query: string): string[] {
-  return [...query.matchAll(/\b[\w.-]+\.(?:pdf|docx)\b/gi)].map(
+  return [...query.matchAll(/\b[\w.-]+\.(?:pdf|docx|csv|xlsx)\b/gi)].map(
     (match) => match[0]
   );
 }
@@ -278,7 +278,7 @@ function chunkTextForScoring(row: ChunkTextRow): string {
 /** Drop filename / page-N tokens so locator queries can still excerpt page body. */
 export function contentQueryForSnippet(query: string): string {
   return query
-    .replace(/\b[\w.-]+\.(?:pdf|docx)\b/gi, " ")
+    .replace(/\b[\w.-]+\.(?:pdf|docx|csv|xlsx)\b/gi, " ")
     .replace(/\b(?:page|p\.?)\s*\d+\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();

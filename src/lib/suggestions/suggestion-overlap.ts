@@ -14,6 +14,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
 import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
+import { findOpenBlockPair } from "@/lib/suggestions/same-turn-block-pair";
 
 export type FlatRange = { start: number; end: number };
 
@@ -209,6 +210,20 @@ export function partitionBulkApplies(args: {
       ) {
         union(a, b);
       }
+    }
+  }
+
+  const locatablePos = new Map<string, number>();
+  for (let a = 0; a < locatableIdx.length; a++) {
+    locatablePos.set(comments[locatableIdx[a]!]!.id, a);
+  }
+  for (const comment of comments) {
+    const pair = findOpenBlockPair(comment, comments);
+    if (!pair) continue;
+    const leadPos = locatablePos.get(pair.leadIn.id);
+    const blockPos = locatablePos.get(pair.block.id);
+    if (leadPos !== undefined && blockPos !== undefined) {
+      union(leadPos, blockPos);
     }
   }
 

@@ -118,6 +118,10 @@ const NUMBER_WITH_UNIT_RE = new RegExp(
   "gi"
 );
 
+/** 3xper house style `10k L` is 10000 L — extract before a bare `10`. */
+const K_LITRE_RE =
+  /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?k\s+L\b/gi;
+
 const BARE_THOUSANDS_RE = /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/g;
 /** Standalone 0, not the trailing digit of 25.0 or the leading digit of 0.5. */
 const BARE_ZERO_RE = /(?<![\d.])0\b(?!\.\d)/g;
@@ -299,6 +303,7 @@ export function extractHardFacts(text: string): HardFact[] {
     "number",
     sentenceCited
   );
+  collectKind(facts, taken, citeSpans, text, K_LITRE_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, NUMBER_WITH_UNIT_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_THOUSANDS_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_ZERO_RE, "number", sentenceCited);

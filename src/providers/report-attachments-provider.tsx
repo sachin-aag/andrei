@@ -241,7 +241,7 @@ export function ReportAttachmentsProvider({
   const uploadOneFile = useCallback(
     async (file: File, folderId: FolderId) => {
       if (!isSupportedAttachmentFile(file)) {
-        toast.error(`${file.name} is not a PDF or Word (.docx) file.`);
+        toast.error(`${file.name} is not a PDF, Word, CSV, or Excel file.`);
         return;
       }
 
@@ -393,7 +393,7 @@ export function ReportAttachmentsProvider({
       const supportedFiles = selected.filter(isSupportedAttachmentFile);
       for (const file of selected) {
         if (!isSupportedAttachmentFile(file)) {
-          toast.error(`${file.name} is not a PDF or Word (.docx) file.`);
+          toast.error(`${file.name} is not a PDF, Word, CSV, or Excel file.`);
         }
       }
       if (supportedFiles.length === 0) return;

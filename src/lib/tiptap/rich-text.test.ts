@@ -4,6 +4,7 @@ import {
   appendParagraphsToDoc,
   legacyStringToDoc,
   MAMMOTH_SOFT_BREAK,
+  mergeStoredRichField,
   normalizeRichField,
   richJsonToPlainText,
   stripSuggestionMarksFromDoc,
@@ -14,6 +15,28 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 
 describe("rich text helpers", () => {
+  it("keeps an explicit empty doc instead of restoring seed template text", () => {
+    const seed = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Duplicate this box for each equipment." }],
+        },
+      ],
+    };
+    const cleared = mergeStoredRichField(
+      { narrative: { type: "doc", content: [{ type: "paragraph" }] } },
+      "narrative",
+      seed
+    );
+    expect(richJsonToPlainText(cleared).trim()).toBe("");
+    const missing = mergeStoredRichField({}, "narrative", seed);
+    expect(richJsonToPlainText(missing)).toContain("Duplicate this box");
+    const clearedNull = mergeStoredRichField({ narrative: null }, "narrative", seed);
+    expect(richJsonToPlainText(clearedNull).trim()).toBe("");
+  });
+
   it("turns leftover phrase-level *italic* wrappers into italic marks", () => {
     const doc = normalizeRichField({
       type: "doc",
@@ -52,6 +75,38 @@ describe("rich text helpers", () => {
     expect(doc.content![0]!.content).toEqual([
       { type: "text", text: "Limit is 2*3*4 CFU." },
     ]);
+  });
+
+  it("flattens persisted $$ quantity TeX on editor load", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`$$\text{Rinse Volume (L)} = \text{Surface Area (m)^2\text{}} \times \text{Rinse Factor (L/m)^2\text{}}$$`,
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: String.raw`where $A$ is the internal surface area (m²).`,
+            },
+          ],
+        },
+      ],
+    });
+    expect(richJsonToPlainText(doc)).toContain(
+      "Rinse Volume (L) = Surface Area (m)² × Rinse Factor (L/m)²"
+    );
+    expect(richJsonToPlainText(doc)).toContain("where A is the internal");
+    expect(richJsonToPlainText(doc)).not.toContain("$$");
+    expect(richJsonToPlainText(doc)).not.toContain("$A$");
   });
 
   it("turns leftover *italic* in a legacy string into italic marks", () => {

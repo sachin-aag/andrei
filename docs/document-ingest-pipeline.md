@@ -1,6 +1,6 @@
 # Document ingest pipeline
 
-How PDF/DOCX attachments become searchable evidence for report chat. Extract and embed are **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). A Vercel AI Gateway key is not enough. Local/E2E stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
+How PDF/DOCX/CSV/XLSX attachments become searchable evidence for report chat. PDF/DOCX extract and all embeddings are **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). CSV/XLSX parse locally. A Vercel AI Gateway key is not enough. Local/E2E stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
 
 Entry points: `startDocumentIngest` → `runDocumentIngest`. Chat later reads `document_pages` / `document_chunks` via hybrid retrieval.
 
@@ -15,7 +15,7 @@ flowchart TD
 
   subgraph Finalize["2. Validate and promote"]
     E --> F["Claim status: validating"]
-    F --> G{"Size, MIME, PDF/DOCX<br/>structure, malware scan"}
+    F --> G{"Size, MIME, PDF/DOCX/CSV/XLSX<br/>structure, malware scan"}
     G -->|fail| H["status: failed"]
     G -->|ok| I["Promote staging → permanent<br/>sha256 + generation"]
     I --> J["status: queued"]
@@ -39,8 +39,10 @@ flowchart TD
     S --> T{"MIME kind"}
     T -->|pdf| U["PDF path"]
     T -->|docx| V["DOCX path"]
+    T -->|csv / xlsx| V2["Spreadsheet path"]
     U --> W["chunkAndEmbedRun"]
     V --> W
+    V2 --> W
     W --> X["Vertex embeddings<br/>gemini-embedding-001<br/>768-d, batches of 32"]
     X --> Y["document_chunks + FTS index"]
     Y --> Z["Supersede prior ready run<br/>activeIngestRunId<br/>status: ready"]
@@ -146,9 +148,29 @@ flowchart TD
   K --> L["chunkAndEmbedRun"]
 ```
 
+## Spreadsheet path (CSV / XLSX)
+
+No Vertex extract. CSV is RFC 4180 (comma / semicolon / tab, UTF-8 or UTF-16 LE BOM). XLSX is ExcelJS after ZIP-bomb checks (`xl/workbook.xml`). Sheets become markdown tables in 80-row pseudo-pages. Structured rows go to `document_tables` so Analytics `load_table` can use them. Interior pages stay chunked (unlike long PDF instrument prints). Legacy `.xls` is rejected.
+
+```mermaid
+flowchart TD
+  A["Read permanent CSV/XLSX"] --> B{"Kind"}
+  B -->|csv| C["parseCsvBuffer"]
+  B -->|xlsx| D["validateXlsx ZIP limits<br/>then parseXlsxBuffer"]
+  C --> E["buildSpreadsheetPages<br/>80-row windows"]
+  D --> E
+  E --> F["document_pages<br/>transcript = markdown table<br/>hasTable true"]
+  E --> G["spreadsheetTables"]
+  G --> H["persistDocumentTablesForRun<br/>known tables, skipInteriorPages false"]
+  F --> I["documentSummary = sheet previews"]
+  I --> J["persistOutlineSpansForRun"]
+  H --> K["chunkAndEmbedRun"]
+  J --> K
+```
+
 ## Chunk and embed
 
-Shared by both kinds. Transcript and visual interpretation are chunked separately (`quote` vs `visual_interpretation`).
+Shared by PDF, Word, and spreadsheet kinds. Transcript and visual interpretation are chunked separately (`quote` vs `visual_interpretation`).
 
 ```mermaid
 flowchart LR

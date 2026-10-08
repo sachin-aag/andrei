@@ -1,6 +1,7 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
+import { cvpEquipmentTocChildren } from "@/lib/document-types/cvp/equipment-sampling";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
 import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
 import { VQ_SECTION_LABELS } from "@/lib/document-types/vq/sections";
@@ -10,6 +11,8 @@ export type TableOfContentsEntry = {
   label: string;
   sectionKey?: SectionType;
   children?: TableOfContentsEntry[];
+  /** Scroll target inside the section (CVP 15.1, 15.2, … cards). */
+  jumpId?: string;
 };
 
 /**
@@ -427,33 +430,46 @@ const QSR_TOC: TableOfContentsEntry[] = [
   { label: "Conclusion", sectionKey: "qsr_conclusion" },
 ];
 
-/** QAD-SOP-PS-003-F08-00 Cleaning Verification Protocol. */
+/** QAD-SOP-PS-003-F08-00 Cleaning Verification Protocol. Form numbers stay as printed. */
 const CVP_TOC: TableOfContentsEntry[] = [
-  { label: "Approval Signatures", sectionKey: "cvp_approvals" },
-  { label: "Objective", sectionKey: "cvp_objective" },
-  { label: "Scope", sectionKey: "cvp_scope" },
-  { label: "Responsibilities", sectionKey: "cvp_responsibilities" },
-  { label: "Background and Cleaning Procedure", sectionKey: "cvp_background" },
-  { label: "Pre-requisites", sectionKey: "cvp_prerequisites" },
-  { label: "Equipment Qualification Status", sectionKey: "cvp_qualification_status" },
-  { label: "Surface Area of the Equipment", sectionKey: "cvp_surface_area" },
-  { label: "Rinse Volume Calculation", sectionKey: "cvp_rinse_volume" },
-  { label: "Maximum Allowable Carryover (MACO)", sectionKey: "cvp_maco" },
+  { label: "1.0 Approval Signatures", sectionKey: "cvp_approvals" },
+  { label: "2.0 Objective", sectionKey: "cvp_objective" },
+  { label: "3.0 Scope", sectionKey: "cvp_scope" },
+  { label: "4.0 Responsibilities", sectionKey: "cvp_responsibilities" },
+  { label: "5.0 Background and Cleaning Procedure", sectionKey: "cvp_background" },
+  { label: "6.0 Pre-requisites", sectionKey: "cvp_prerequisites" },
   {
-    label: "Acceptance Limit Calculation (Swab and Rinse)",
+    label: "7.0 Equipment Qualification Status",
+    sectionKey: "cvp_qualification_status",
+  },
+  { label: "8.0 Surface Area of the Equipment", sectionKey: "cvp_surface_area" },
+  { label: "9.0 Rinse Volume Calculation", sectionKey: "cvp_rinse_volume" },
+  {
+    label: "10.0 Maximum Allowable Carryover (MACO)",
+    sectionKey: "cvp_maco",
+  },
+  {
+    label: "11.0 Acceptance Limit Calculation (Swab and Rinse)",
     sectionKey: "cvp_acceptance_limits",
   },
-  { label: "Cleaning Verification Methodology", sectionKey: "cvp_methodology" },
-  { label: "Sampling Procedure", sectionKey: "cvp_sampling_procedure" },
   {
-    label: "Determination of Swab Sample Locations",
+    label: "12.0 Cleaning Verification Methodology",
+    sectionKey: "cvp_methodology",
+  },
+  { label: "13.0 Sampling Procedure", sectionKey: "cvp_sampling_procedure" },
+  {
+    label: "14.0 Determination of Swab Sample Locations",
     sectionKey: "cvp_swab_locations",
   },
   {
-    label: "Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary",
+    label:
+      "15.0 Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary",
     sectionKey: "cvp_sampling_plan",
     children: [
-      { label: "Equipment Sampling Plans", sectionKey: "cvp_equipment_sampling" },
+      {
+        label: "15.1 Equipment name (Equipment No.)",
+        sectionKey: "cvp_equipment_sampling",
+      },
       {
         label: "Nitrosamine Limits in the Rinse Samples",
         sectionKey: "cvp_nitrosamine",
@@ -476,18 +492,21 @@ const CVP_TOC: TableOfContentsEntry[] = [
       },
     ],
   },
-  { label: "Testing Procedure", sectionKey: "cvp_testing_procedure" },
+  { label: "16.0 Testing Procedure", sectionKey: "cvp_testing_procedure" },
   {
-    label: "Status of Cleaning Analytical Method Validation",
+    label: "17.0 Status of Cleaning Analytical Method Validation",
     sectionKey: "cvp_method_validation",
   },
-  { label: "Evaluation of Results and Reporting", sectionKey: "cvp_evaluation" },
-  { label: "Deviations", sectionKey: "cvp_deviations" },
-  { label: "Revalidation", sectionKey: "cvp_revalidation" },
-  { label: "Abbreviations", sectionKey: "cvp_abbreviations" },
-  { label: "Related Documents", sectionKey: "cvp_related_documents" },
-  { label: "List of Annexures", sectionKey: "cvp_annexures" },
-  { label: "History of the Document", sectionKey: "cvp_history" },
+  {
+    label: "18.0 Evaluation of Results and Reporting",
+    sectionKey: "cvp_evaluation",
+  },
+  { label: "19.0 Deviations", sectionKey: "cvp_deviations" },
+  { label: "20.0 Revalidation", sectionKey: "cvp_revalidation" },
+  { label: "21.0 Abbreviations", sectionKey: "cvp_abbreviations" },
+  { label: "22.0 Related Documents", sectionKey: "cvp_related_documents" },
+  { label: "23.0 List of Annexures", sectionKey: "cvp_annexures" },
+  { label: "24.0 History of the Document", sectionKey: "cvp_history" },
 ];
 
 export function getConvergentTableOfContents(
@@ -567,6 +586,7 @@ export function numberTableOfContents(
       : undefined;
     const numbered: TableOfContentsEntry = { label };
     if (entry.sectionKey != null) numbered.sectionKey = entry.sectionKey;
+    if (entry.jumpId != null) numbered.jumpId = entry.jumpId;
     if (children?.length) numbered.children = children;
     return numbered;
   });
@@ -612,13 +632,36 @@ function reportTableOfContentsRecipe(
  * when the type has one, otherwise the editor section list, then numbers
  * sections `1. 2. 3.` and subsections `1.1`.
  */
+function withLiveCvpEquipmentSampling(
+  recipe: TableOfContentsEntry[],
+  equipmentContent: unknown
+): TableOfContentsEntry[] {
+  const live = cvpEquipmentTocChildren(equipmentContent);
+  if (live.length === 0) return recipe;
+  return recipe.map((entry) => {
+    if (entry.sectionKey !== "cvp_sampling_plan" || !entry.children?.length) {
+      return entry;
+    }
+    const rest = entry.children.filter(
+      (child) => child.sectionKey !== "cvp_equipment_sampling"
+    );
+    return { ...entry, children: [...live, ...rest] };
+  });
+}
+
 export function getReportTableOfContents(
   documentType: DocumentType,
-  customerId = resolveCustomerId()
+  customerId = resolveCustomerId(),
+  liveSectionContent?: Record<string, unknown>
 ): TableOfContentsEntry[] {
-  return numberTableOfContents(
-    reportTableOfContentsRecipe(documentType, customerId)
-  );
+  const recipe = reportTableOfContentsRecipe(documentType, customerId);
+  if (documentType === "cleaning_verification_protocol") {
+    const equipment = liveSectionContent?.cvp_equipment_sampling;
+    return equipment === undefined
+      ? recipe
+      : withLiveCvpEquipmentSampling(recipe, equipment);
+  }
+  return numberTableOfContents(recipe);
 }
 
 /**

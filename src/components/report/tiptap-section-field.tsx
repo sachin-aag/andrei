@@ -100,7 +100,7 @@ import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
-  editorProfileFor,
+  editorHeadingLevels,
   getDocumentType,
   suggestionApplyModeFor,
 } from "@/lib/document-types";
@@ -578,8 +578,10 @@ export function TiptapSectionField({
   const [commentDraft, setCommentDraft] = useState("");
   const [pendingSel, setPendingSel] = useState<{ from: number; to: number } | null>(null);
   const [posting, setPosting] = useState(false);
-  const headingEnabled =
-    editorProfileFor(getDocumentType(report.documentType)) === "generic_document";
+  const headingLevels = editorHeadingLevels(
+    getDocumentType(report.documentType)
+  );
+  const headingEnabled = headingLevels !== false;
   const suggestionPersistMode = suggestionApplyModeFor(
     getDocumentType(report.documentType)
   );
@@ -596,7 +598,7 @@ export function TiptapSectionField({
       autofocus: false,
       extensions: [
         StarterKit.configure({
-          heading: headingEnabled ? { levels: [1, 2, 3] } : false,
+          heading: headingEnabled ? { levels: [...headingLevels] } : false,
           bulletList: false,
         }),
         BulletListWithStyle,

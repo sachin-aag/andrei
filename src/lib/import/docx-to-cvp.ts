@@ -3,12 +3,15 @@ import PizZip from "pizzip";
 import { plainTextFromTiptapJson } from "@/lib/section-content-normalize";
 import {
   CVP_DEFAULT_METADATA,
+  CVP_EQUIPMENT_H3_OUTLINE,
+  CVP_EQUIPMENT_H4_OUTLINE,
   CVP_SECTION_KEYS,
   isCvpTableSectionKey,
   type CvpMetadata,
   type CvpSectionContent,
   type CvpSectionKey,
 } from "@/lib/document-types/cvp/sections";
+import { normalizeCvpEquipmentSamplingContent } from "@/lib/document-types/cvp/equipment-sampling";
 import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
 
 const FIXED_HEADINGS: Record<string, CvpSectionKey> = {
@@ -163,12 +166,21 @@ function contentForSection(
   key: CvpSectionKey,
   nodes: JSONContent[]
 ): CvpSectionContent | null {
-  const meaningful = nodes.filter((node) => !isEmptyNode(node));
+  const promoted =
+    key === "cvp_equipment_sampling"
+      ? promoteCvpEquipmentOutline(nodes)
+      : nodes;
+  const meaningful = promoted.filter((node) => !isEmptyNode(node));
   if (meaningful.length === 0) return null;
   if (isCvpTableSectionKey(key)) {
     const tables = meaningful.filter((node) => node.type === "table");
     if (tables.length === 0) return null;
     return { table: { type: "doc", content: tables } };
+  }
+  if (key === "cvp_equipment_sampling") {
+    return normalizeCvpEquipmentSamplingContent({
+      narrative: { type: "doc", content: meaningful },
+    });
   }
   return { narrative: { type: "doc", content: meaningful } };
 }
@@ -199,6 +211,87 @@ function looksLikeHeading(node: JSONContent, text: string): boolean {
   );
 }
 
+const EQUIPMENT_INNER_HEADINGS: ReadonlyArray<{
+  compact: string;
+  level: 3 | 4;
+  numbered: string;
+}> = [
+  ...CVP_EQUIPMENT_H3_OUTLINE.map((item) => ({
+    compact: compactOutlineTitle(item.title),
+    level: 3 as const,
+    numbered: `${item.number} ${item.title}`,
+  })),
+  ...CVP_EQUIPMENT_H4_OUTLINE.map((item) => ({
+    compact: compactOutlineTitle(item.title),
+    numbered: `${item.number} ${item.title}`,
+    level: 4 as const,
+  })),
+];
+
+function compactOutlineTitle(text: string): string {
+  return text
+    .replace(/^(?:\d+|N)+(?:\.(?:\d+|N))*\.?\s+/i, "")
+    .replace(/:$/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function matchEquipmentInnerHeading(text: string) {
+  const compact = compactOutlineTitle(text);
+  return EQUIPMENT_INNER_HEADINGS.find((item) => item.compact === compact) ?? null;
+}
+
+function paragraphIsBoldHeading(node: JSONContent): boolean {
+  if (node.type === "heading") return true;
+  if (node.type !== "paragraph") return false;
+  const runs = node.content ?? [];
+  if (runs.length === 0) return false;
+  return runs.every(
+    (child) =>
+      child.type !== "text" ||
+      (child.marks ?? []).some((mark) => mark.type === "bold")
+  );
+}
+
+function headingNode(level: 2 | 3 | 4, text: string): JSONContent {
+  return {
+    type: "heading",
+    attrs: { level },
+    content: [{ type: "text", text }],
+  };
+}
+
+function numberedEquipmentTitle(text: string, ordinal: number): string {
+  const trimmed = text.replace(/:$/, "").trim();
+  if (/^15\.(?:[1-9]|10)\b/.test(trimmed)) return trimmed;
+  return `15.${ordinal} ${trimmed}`;
+}
+
+function applyOutlineNumber(template: string, ordinal: number): string {
+  return template.replaceAll("15.N", `15.${ordinal}`);
+}
+
+/** Promote Word BodyText 15.N.M / 15.N.M.P lines to H2–H4 with form numbers. */
+export function promoteCvpEquipmentOutline(nodes: JSONContent[]): JSONContent[] {
+  let equipmentIndex = 0;
+  return nodes.map((node) => {
+    const text = nodeText(node);
+    if (!text) return node;
+    if (isEquipmentHeading(text)) {
+      equipmentIndex += 1;
+      return headingNode(2, numberedEquipmentTitle(text, equipmentIndex));
+    }
+    const inner = matchEquipmentInnerHeading(text);
+    if (!inner) return node;
+    if (node.type !== "heading" && !paragraphIsBoldHeading(node) && node.type !== "paragraph") {
+      return node;
+    }
+    const ordinal = Math.min(Math.max(equipmentIndex, 1), 10);
+    return headingNode(inner.level, applyOutlineNumber(inner.numbered, ordinal));
+  });
+}
+
 export function isCvpTocLine(text: string): boolean {
   return TOC_GLUE_RE.test(text.replace(/\s+/g, ""));
 }
@@ -206,7 +299,11 @@ export function isCvpTocLine(text: string): boolean {
 export function isEquipmentHeading(text: string): boolean {
   const normalized = normalizeHeading(text);
   if (NITROSAMINE_OR_PGI_RE.test(normalized)) return false;
-  if (NUMBERED_EQUIPMENT_RE.test(normalized)) return true;
+  if (matchEquipmentInnerHeading(text)) return false;
+  if (/^15\.(?:[1-9]|10)\.\d/.test(text.trim())) return false;
+  if (NUMBERED_EQUIPMENT_RE.test(normalized) || NUMBERED_EQUIPMENT_RE.test(text.trim())) {
+    return true;
+  }
   return EQUIPMENT_ID_RE.test(normalized) && normalized.length < 120;
 }
 

@@ -7,6 +7,7 @@ import { reports } from "@/db/schema";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
+  CVP_DOCX_RUN_STYLE,
   createDocxExportContext,
 } from "@/lib/export/docx-export-context";
 import { generateReportDocx } from "@/lib/export/generate-docx";
@@ -653,6 +654,7 @@ describe("narrativeToDocxXml tables", () => {
 
     const xml = narrativeToDocxXml(doc);
     expect(xml).toContain('<w:tblW w:w="2000" w:type="dxa"/>');
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
     expect(xml).toContain('<w:gridCol w:w="800"/>');
     expect(xml).toContain('<w:gridCol w:w="1200"/>');
   });
@@ -996,6 +998,100 @@ describe("narrativeToDocxXml tables", () => {
     expect(narrativeToDocxXml(doc)).toContain('<w:gridSpan w:val="2"/>');
   });
 
+  it("exports bullet and ordered lists inside a table cell", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Department"),
+                textCell("tableHeader", "Responsibility"),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableCell", "Quality Assurance"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      attrs: { listStyle: "dash" },
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                {
+                                  type: "text",
+                                  text: "Preparation and review of the protocol.",
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Collection of swab samples." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      type: "orderedList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Submit the samples to QC." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const bulletNumId = ctx.allocatedNumIds[0];
+    const orderedNumId = ctx.allocatedNumIds[1];
+    const cellStart = xml.indexOf("Preparation and review of the protocol.");
+    const cellXml = xml.slice(
+      xml.lastIndexOf("<w:tc>", cellStart),
+      xml.indexOf("</w:tc>", cellStart)
+    );
+
+    expect(cellXml).toContain("Preparation and review of the protocol.");
+    expect(cellXml).toContain("Collection of swab samples.");
+    expect(cellXml).toContain("Submit the samples to QC.");
+    expect(cellXml.match(new RegExp(`<w:numId w:val="${bulletNumId}"/>`, "g"))).toHaveLength(2);
+    expect(cellXml).toContain(`<w:numId w:val="${orderedNumId}"/>`);
+  });
+
   it("emits Word numbering for dash and ordered lists", () => {
     const ctx = exportCtx();
     const doc: JSONContent = {
@@ -1086,6 +1182,181 @@ describe("narrativeToDocxXml tables", () => {
     expect(defineNumId).not.toBe(measureNumId);
     expect(xml).toContain(`<w:numId w:val="${defineNumId}"/>`);
     expect(xml).toContain(`<w:numId w:val="${measureNumId}"/>`);
+  });
+
+  it("nests a same-type ordered list at the next numbering level", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Parent" }],
+                },
+                {
+                  type: "orderedList",
+                  content: [
+                    {
+                      type: "listItem",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "Child" }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    expect(ctx.allocatedNumIds).toHaveLength(1);
+    const numId = ctx.allocatedNumIds[0]!;
+    expect(xml).toContain(
+      `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>`
+    );
+    expect(xml).toContain(
+      `<w:numPr><w:ilvl w:val="1"/><w:numId w:val="${numId}"/></w:numPr>`
+    );
+  });
+
+  it("uses TableParagraph bullets and drops Table N. captions for CVP", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 2. Responsibilities" }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 Mixed Vessel (MV-1304)" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Sampling follows the cited pages [1]." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Department"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Prepare the protocol." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    expect(xml).not.toContain("Table 2. Responsibilities");
+    expect(xml).toContain("MIXED VESSEL (MV-1304)");
+    expect(xml).toContain('<w:pStyle w:val="Heading1"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(xml).toContain('<w:pStyle w:val="TableParagraph"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="ListParagraph"/>');
+    expect(xml).toContain("Sampling follows the cited pages.");
+    expect(xml).not.toContain("[1]");
+    expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
+    expect(xml).toContain('w:line="360"');
+  });
+
+  it("uses source protocol column widths and dxa table width for CVP", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "Function"),
+                  textCell("tableHeader", "Department"),
+                  textCell("tableHeader", "Name"),
+                  textCell("tableHeader", "Designation"),
+                  textCell("tableHeader", "Sign & date"),
+                ],
+              },
+            ],
+          },
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "S. No"),
+                  textCell("tableHeader", "Surface Type"),
+                  textCell("tableHeader", "WAF (L/m²)"),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
+    expect(xml).toContain('<w:gridCol w:w="1524"/>');
+    expect(xml).toContain('<w:gridCol w:w="2340"/>');
+    expect(xml).toContain('<w:gridCol w:w="2225"/>');
+    expect(xml).toContain('<w:gridCol w:w="2020"/>');
+    expect(xml).toContain('<w:gridCol w:w="1773"/>');
+    expect(xml).toContain('<w:tblW w:w="9882" w:type="dxa"/>');
+    expect(xml).toContain('<w:gridCol w:w="838"/>');
+    expect(xml).toContain('<w:gridCol w:w="3251"/>');
+    expect(xml).toContain('<w:gridCol w:w="1996"/>');
+    expect(xml).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
   });
 
   it("parses plain text dash lists into numbered Word XML", () => {
