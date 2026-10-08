@@ -212,7 +212,7 @@ describe("cleaning verification protocol DOCX export", () => {
     ]);
     expect(rows).toContainEqual([
       "3",
-      "",
+      "Isosorbide Mononitrate (Oral and Injection) PDE",
       "Isosorbide Mononitrate (Oral and Injection) PDE",
       "Page # 1",
     ]);
@@ -226,7 +226,7 @@ describe("cleaning verification protocol DOCX export", () => {
     );
   });
 
-  it("collapses the same protocol and data sheet onto one CITATIONS row each", async () => {
+  it("keeps each cited page as its own CITATIONS row and fills Document reference #", async () => {
     function cited(body: string, sources: readonly string[]): JSONContent {
       return {
         type: "doc",
@@ -281,15 +281,29 @@ describe("cleaning verification protocol DOCX export", () => {
       "1",
       "CVRP-ISM4-26-001-00",
       "ISM Stage-4 Cleaning Verification Protocol",
-      "Page # 1, 3",
+      "Page # 1",
     ]);
     expect(rows).toContainEqual([
       "2",
-      "",
-      "ISM3 CV data sheet",
-      "Page # 1-2",
+      "CVRP-ISM4-26-001-00",
+      "ISM Stage-4 Cleaning Verification Protocol",
+      "Page # 3",
     ]);
-    expect(rows.filter((row) => row[2]?.includes("data sheet"))).toHaveLength(1);
+    expect(rows).toContainEqual([
+      "3",
+      "ISM3 CV data sheet",
+      "ISM3 CV data sheet",
+      "Page # 1",
+    ]);
+    expect(rows).toContainEqual([
+      "4",
+      "data sheet",
+      "data sheet",
+      "Page # 2",
+    ]);
+    expect(
+      rows.filter((row) => (row[1] ?? "").trim().length === 0)
+    ).toEqual([]);
     expect(visibleText(citationsTable!)).not.toContain("Verification_Protocol");
   });
 

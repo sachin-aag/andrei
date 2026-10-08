@@ -75,33 +75,19 @@ export function citationSourceIdentityKey(source: string): string {
 
 export type ReportBibliographyIdentity = (source: string) => string;
 
-export type ReportBibliographyMergeSources = (
-  kept: string,
-  incoming: string
-) => string;
-
 /** First-appearance sources across sections, then one global number each. */
 export function collectReportBibliography(
   sections: readonly ReportSectionRecord[],
   sectionKeys: readonly string[],
-  sourceIdentity: ReportBibliographyIdentity = citationSourceIdentityKey,
-  mergeSources?: ReportBibliographyMergeSources
+  sourceIdentity: ReportBibliographyIdentity = citationSourceIdentityKey
 ): ElrBibliographyEntry[] {
   const bibliography: ElrBibliographyEntry[] = [];
-  const indexByKey = new Map<string, number>();
+  const seen = new Set<string>();
   for (const row of sectionsInDocumentOrder(sections, sectionKeys)) {
     for (const source of orderedCitationSourcesFromContent(row.content)) {
       const key = sourceIdentity(source);
-      if (!key) continue;
-      const existing = indexByKey.get(key);
-      if (existing != null) {
-        if (mergeSources) {
-          const entry = bibliography[existing]!;
-          entry.source = mergeSources(entry.source, source);
-        }
-        continue;
-      }
-      indexByKey.set(key, bibliography.length);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
       bibliography.push({ number: bibliography.length + 1, source });
     }
   }
@@ -161,17 +147,13 @@ function reportSourceToGlobalMap(
 export function unifyReportCitationsForExport(
   sections: ReportSectionRecord[],
   sectionKeys: readonly string[],
-  options?: {
-    sourceIdentity?: ReportBibliographyIdentity;
-    mergeSources?: ReportBibliographyMergeSources;
-  }
+  options?: { sourceIdentity?: ReportBibliographyIdentity }
 ): { sections: ReportSectionRecord[]; bibliography: ElrBibliographyEntry[] } {
   const sourceIdentity = options?.sourceIdentity ?? citationSourceIdentityKey;
   const bibliography = collectReportBibliography(
     sections,
     sectionKeys,
-    sourceIdentity,
-    options?.mergeSources
+    sourceIdentity
   );
   if (bibliography.length === 0) {
     return { sections, bibliography };

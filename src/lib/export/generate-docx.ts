@@ -88,8 +88,7 @@ import {
 } from "@/lib/export/docx-toc-headings";
 import { applyElrLiveAttachmentsTable } from "@/lib/export/elr-attachments-table";
 import {
-  mergeThreeXperCitationSources,
-  threeXperBibliographyIdentity,
+  threeXperCitationIdentityKey,
   threeXperCitationsAppendixXml,
 } from "@/lib/export/3xper-citations-table";
 import {
@@ -584,8 +583,8 @@ export async function generateReportDocx({
           ? CVP_SECTION_KEYS
           : QSR_SECTION_KEYS;
     const unified = unifyReportCitationsForExport(exportSections, sectionKeys, {
-      sourceIdentity: threeXperBibliographyIdentity(exportSections),
-      mergeSources: mergeThreeXperCitationSources,
+      sourceIdentity: (source) =>
+        threeXperCitationIdentityKey(source, exportSections),
     });
     exportSections = unified.sections;
     citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
