@@ -206,7 +206,7 @@ export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v20";
 export const VQ_PROMPT_VERSION = "3xper-vq-f04-v1";
 export const QSR_PROMPT_VERSION = "3xper-qsr-f06-v3";
-export const CVP_PROMPT_VERSION = "3xper-cvp-f08-v1";
+export const CVP_PROMPT_VERSION = "3xper-cvp-f08-v2";
 export const FIR_PROMPT_VERSION = "mj-fir-sop-017-f01-r01-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {

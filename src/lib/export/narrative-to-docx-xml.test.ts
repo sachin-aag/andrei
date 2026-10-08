@@ -7,6 +7,7 @@ import { reports } from "@/db/schema";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
+  CVP_DOCX_RUN_STYLE,
   createDocxExportContext,
 } from "@/lib/export/docx-export-context";
 import { generateReportDocx } from "@/lib/export/generate-docx";
@@ -1180,6 +1181,127 @@ describe("narrativeToDocxXml tables", () => {
     expect(defineNumId).not.toBe(measureNumId);
     expect(xml).toContain(`<w:numId w:val="${defineNumId}"/>`);
     expect(xml).toContain(`<w:numId w:val="${measureNumId}"/>`);
+  });
+
+  it("nests a same-type ordered list at the next numbering level", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Parent" }],
+                },
+                {
+                  type: "orderedList",
+                  content: [
+                    {
+                      type: "listItem",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "Child" }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    expect(ctx.allocatedNumIds).toHaveLength(1);
+    const numId = ctx.allocatedNumIds[0]!;
+    expect(xml).toContain(
+      `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>`
+    );
+    expect(xml).toContain(
+      `<w:numPr><w:ilvl w:val="1"/><w:numId w:val="${numId}"/></w:numPr>`
+    );
+  });
+
+  it("uses TableParagraph bullets and drops Table N. captions for CVP", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 2. Responsibilities" }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 Mixed Vessel (MV-1304)" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Sampling follows the cited pages [1]." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Department"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Prepare the protocol." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    expect(xml).not.toContain("Table 2. Responsibilities");
+    expect(xml).toContain("MIXED VESSEL (MV-1304)");
+    expect(xml).toContain('<w:pStyle w:val="Heading1"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(xml).toContain('<w:pStyle w:val="TableParagraph"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="ListParagraph"/>');
+    expect(xml).toContain("Sampling follows the cited pages.");
+    expect(xml).not.toContain("[1]");
+    expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
+    expect(xml).toContain('w:line="360"');
   });
 
   it("parses plain text dash lists into numbered Word XML", () => {

@@ -64,6 +64,14 @@ function visibleText(xml: string): string {
   return [...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join("");
 }
 
+function paragraphContaining(xml: string, text: string): string {
+  return (
+    [...xml.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
+      .map((m) => m[0])
+      .find((para) => visibleText(para).includes(text)) ?? ""
+  );
+}
+
 async function exportZip(sections: ReportSectionRecord[]) {
   return new PizZip(await generateReportDocx({ report: cvpReport(), sections }));
 }
@@ -97,6 +105,18 @@ describe("cleaning verification protocol DOCX export", () => {
     const document = zip.file("word/document.xml")?.asText() ?? "";
     expect(document).toContain("w:w=\"11910\"");
     expect(document).toContain("w:h=\"16840\"");
+    expect(document).toContain(' TOC \\o "1-1" ');
+    expect(document).toContain('<w:pStyle w:val="TOCHeading"/>');
+    expect(document).toContain("TABLE OF CONTENTS");
+    expect(paragraphContaining(document, "APPROVAL SIGNATURES")).toContain(
+      '<w:numId w:val="3"/>'
+    );
+    expect(paragraphContaining(document, "APPROVAL SIGNATURES")).toContain(
+      '<w:ilvl w:val="0"/>'
+    );
+    expect(paragraphContaining(document, "NITROSAMINE LIMITS")).toContain(
+      '<w:ilvl w:val="1"/>'
+    );
     for (const key of CVP_SECTION_KEYS) {
       expect(document).toContain(`{@${key}Xml}`);
     }
@@ -112,15 +132,17 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).not.toMatch(/\{[a-zA-Z]+\}/);
     expect(body).toContain("Isosorbide Mononitrate (ISM Stage-4)");
     expect(body).toContain("Production Block-2");
-    expect(body).toContain("1.0 Approval Signatures");
-    expect(body).toContain("15.0 Sampling Plan");
-    expect(body).toContain("15.1 Equipment name (Equipment No.)");
+    expect(body).toContain("APPROVAL SIGNATURES");
+    expect(body).toContain("SAMPLING PLAN, ACCEPTANCE CRITERIA");
+    expect(body).toContain("EQUIPMENT NAME (EQUIPMENT NO.)");
     expect(body).toContain("15.1.1 Equipment details");
     expect(body).toContain("15.1.2 Supporting Documents");
     expect(body).not.toContain("15.1.3.1 Worst-case locations");
-    expect(body).toContain("Nitrosamine Limits");
+    expect(body).toContain("NITROSAMINE LIMITS");
     expect(body).not.toContain("15.11 Nitrosamine");
     expect(body).not.toContain("15.1–15.10 Equipment Sampling Plans");
+    expect(body).not.toContain("1.0 Approval Signatures");
+    expect(body).not.toContain("15.1 Equipment name (Equipment No.)");
     expect(header).toContain("CVRP-ISM4-26-001");
     expect(header).toContain("Production");
     expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
@@ -194,5 +216,64 @@ describe("cleaning verification protocol DOCX export", () => {
       "Isosorbide Mononitrate (Oral and Injection) PDE",
       "Page # 1",
     ]);
+    expect(visibleText(document)).toContain("Sampling follows the cited pages.");
+    expect(visibleText(document)).not.toContain("[1][2][3]");
+    expect(paragraphContaining(document, "CITATIONS")).toContain(
+      '<w:pStyle w:val="BodyText"/>'
+    );
+    expect(paragraphContaining(document, "CITATIONS")).not.toContain(
+      '<w:pStyle w:val="Heading1"/>'
+    );
+  });
+
+  it("uses Heading1 numbering for 15.N titles and merges empty Function cells", async () => {
+    const zip = await exportZip(
+      sectionsWith({
+        cvp_objective: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Table 1. Scope equipment" }],
+              },
+              {
+                type: "table",
+                content: [
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableHeader",
+                        attrs: { colspan: 1, rowspan: 1 },
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Equipment" }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      })
+    );
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const equipment = paragraphContaining(document, "EQUIPMENT NAME (EQUIPMENT NO.)");
+    expect(equipment).toContain('<w:pStyle w:val="Heading1"/>');
+    expect(equipment).toContain('<w:ilvl w:val="1"/>');
+    expect(equipment).toContain('<w:numId w:val="3"/>');
+    expect(document).toContain('<w:br w:type="page"/>');
+    expect(document).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(document).toContain('<w:vMerge w:val="restart"/>');
+    expect(document).toContain('<w:vMerge w:val="continue"/>');
+    expect(document).toContain('<w:vAlign w:val="center"/>');
+    expect(document).toContain('<w:pStyle w:val="BodyText"/>');
+    expect(document).toContain('w:line="360"');
+    expect(visibleText(document)).not.toContain("Table 1. Scope equipment");
   });
 });

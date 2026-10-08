@@ -590,7 +590,11 @@ export async function generateReportDocx({
     citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
       sections: exportSections,
       variant:
-        report.documentType === "vendor_qualification" ? "vq" : "qsr",
+        report.documentType === "vendor_qualification"
+          ? "vq"
+          : report.documentType === "cleaning_verification_protocol"
+            ? "cvp"
+            : "qsr",
     });
   }
   if (report.documentType === "generic_document") {

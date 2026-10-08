@@ -18,10 +18,12 @@ import {
   splitTopLevelElements,
   withChildren,
 } from "../src/lib/export/qsr/ooxml";
+import { CVP_SECTION_KEYS } from "../src/lib/document-types/cvp/sections";
 import {
-  CVP_SECTION_KEYS,
-  CVP_SECTION_LABELS,
-} from "../src/lib/document-types/cvp/sections";
+  cvpTemplateHeadingSpec,
+  cvpHeadingParagraphXml,
+  cvpWordTocXml,
+} from "../src/lib/export/cvp-docx-format";
 
 const SOURCE = path.join(
   process.cwd(),
@@ -158,67 +160,19 @@ function tagHeaderPart(xml: string, withEffectiveDate: boolean): string {
 
 const PAGE_BREAK = `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;
 
-/** Paper TOC omits vessel 15.1–15.10 blocks and the unnumbered 15.x extras. */
-const CVP_PAPER_TOC_SKIP = new Set([
-  "cvp_equipment_sampling",
-  "cvp_process_line",
-  "cvp_manufacturing_area",
-  "cvp_overall_results",
-]);
-
 /** 15.N headings live in `{@cvp_equipment_samplingXml}`, not a wrapper H1. */
 const CVP_SKIP_BODY_HEADING = new Set(["cvp_equipment_sampling"]);
-
-function headingPara(text: string): string {
-  return (
-    `<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:keepNext/>` +
-    `<w:spacing w:before="200" w:after="80" w:line="360" w:lineRule="auto"/>` +
-    `<w:jc w:val="both"/></w:pPr>` +
-    `<w:r><w:rPr><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
-    `<w:t xml:space="preserve">${text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")}</w:t></w:r></w:p>`
-  );
-}
 
 function rawXmlPara(tag: string): string {
   return `<w:p><w:r><w:t>{@${tag}}</w:t></w:r></w:p>`;
 }
 
-function tocTable(): string {
-  const rows = CVP_SECTION_KEYS.filter((key) => !CVP_PAPER_TOC_SKIP.has(key))
-    .map((key) => {
-      const label = CVP_SECTION_LABELS[key];
-      return (
-        `<w:tr><w:tc><w:tcPr><w:tcW w:w="10000" w:type="dxa"/></w:tcPr>` +
-        `<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr>` +
-        `<w:r><w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
-        `<w:t xml:space="preserve">${label
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")}</w:t></w:r></w:p></w:tc></w:tr>`
-      );
-    })
-    .join("");
-  return (
-    `<w:tbl><w:tblPr><w:tblW w:w="10000" w:type="dxa"/>` +
-    `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/>` +
-    `<w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>` +
-    `</w:tblPr><w:tblGrid><w:gridCol w:w="10000"/></w:tblGrid>${rows}</w:tbl>`
-  );
-}
-
 function sectionBody(): string[] {
-  const out: string[] = [
-    PAGE_BREAK,
-    headingPara("TABLE OF CONTENTS"),
-    tocTable(),
-    PAGE_BREAK,
-  ];
+  const out: string[] = [PAGE_BREAK, cvpWordTocXml(), PAGE_BREAK];
   for (const key of CVP_SECTION_KEYS) {
     if (!CVP_SKIP_BODY_HEADING.has(key)) {
-      out.push(headingPara(CVP_SECTION_LABELS[key]));
+      const spec = cvpTemplateHeadingSpec(key);
+      out.push(cvpHeadingParagraphXml(spec.text, spec.ilvl));
     }
     out.push(rawXmlPara(`${key}Xml`));
   }
@@ -233,47 +187,54 @@ function stripBodyImageRels(xml: string): string {
 }
 
 function main() {
-  const zip = new PizZip(fs.readFileSync(SOURCE));
+  const fromSource = fs.existsSync(SOURCE);
+  const zip = new PizZip(fs.readFileSync(fromSource ? SOURCE : OUTPUT));
   const documentXml = zip.file("word/document.xml")?.asText() ?? fail("no document.xml");
   const bodyStart = documentXml.indexOf("<w:body>") + "<w:body>".length;
   const bodyEnd = documentXml.lastIndexOf("</w:body>");
   const els = splitTopLevelElements(cleanXml(documentXml.slice(bodyStart, bodyEnd)));
-  if (!els[9] || !elementText(els[9]).includes("CLEANING VERIFICATION PROTOCOL")) {
-    fail("cover title moved");
-  }
-  if (!els[11]?.startsWith("<w:tbl")) fail("cover identity table moved");
+  const coverTableIdx = els.findIndex(
+    (el) => el.startsWith("<w:tbl") && elementText(el).includes("Name of the product")
+  );
+  if (coverTableIdx < 0) fail("cover identity table moved");
   const sectPr = els.at(-1);
   if (!sectPr?.startsWith("<w:sectPr")) fail("final sectPr moved");
 
-  const cover = [...els.slice(0, 11), tagCoverTable(els[11]!)];
+  const cover = fromSource
+    ? [...els.slice(0, coverTableIdx), tagCoverTable(els[coverTableIdx]!)]
+    : els.slice(0, coverTableIdx + 1);
   const body = [...cover, ...sectionBody(), sectPr];
   zip.file(
     "word/document.xml",
     `${documentXml.slice(0, bodyStart)}${body.join("")}${documentXml.slice(bodyEnd)}`
   );
 
-  zip.file(
-    "word/header1.xml",
-    tagHeaderPart(cleanXml(zip.file("word/header1.xml")?.asText() ?? fail("no header1")), false)
-  );
-  zip.file(
-    "word/header2.xml",
-    tagHeaderPart(cleanXml(zip.file("word/header2.xml")?.asText() ?? fail("no header2")), true)
-  );
-  for (const name of ["word/footer1.xml", "word/footer2.xml"]) {
-    const file = zip.file(name);
-    if (file) zip.file(name, cleanXml(file.asText()));
-  }
+  if (fromSource) {
+    zip.file(
+      "word/header1.xml",
+      tagHeaderPart(cleanXml(zip.file("word/header1.xml")?.asText() ?? fail("no header1")), false)
+    );
+    zip.file(
+      "word/header2.xml",
+      tagHeaderPart(cleanXml(zip.file("word/header2.xml")?.asText() ?? fail("no header2")), true)
+    );
+    for (const name of ["word/footer1.xml", "word/footer2.xml"]) {
+      const file = zip.file(name);
+      if (file) zip.file(name, cleanXml(file.asText()));
+    }
 
-  const rels = zip.file("word/_rels/document.xml.rels")?.asText() ?? fail("no rels");
-  zip.file("word/_rels/document.xml.rels", stripBodyImageRels(rels));
-  for (let i = 1; i <= 8; i += 1) {
-    zip.remove(`word/media/image${i}.png`);
+    const rels = zip.file("word/_rels/document.xml.rels")?.asText() ?? fail("no rels");
+    zip.file("word/_rels/document.xml.rels", stripBodyImageRels(rels));
+    for (let i = 1; i <= 8; i += 1) {
+      zip.remove(`word/media/image${i}.png`);
+    }
   }
 
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
   fs.writeFileSync(OUTPUT, zip.generate({ type: "nodebuffer", compression: "DEFLATE" }));
-  console.log(`Wrote ${path.relative(process.cwd(), OUTPUT)}`);
+  console.log(
+    `Wrote ${path.relative(process.cwd(), OUTPUT)}${fromSource ? "" : " (body headings + TOC)"}`
+  );
 }
 
 main();

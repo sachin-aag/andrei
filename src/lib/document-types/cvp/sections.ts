@@ -912,7 +912,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
     case "cvp_sampling_plan":
       return {
         narrative: narrativeDoc([
-          "This section summarises the sampling plan, acceptance criteria, and results for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table.",
+          "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table. Result and observation fields stay blank until the cleaning verification report is written.",
         ]),
       };
     case "cvp_equipment_sampling":
@@ -937,7 +937,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
       return {
         narrative: narrativeDoc(
           [
-            "Summarise visual, swab, rinse, extraneous matter, nitrosamine, PGI, and manufacturing-area status for each equipment. A second table holds the protocol’s overall acceptance criteria.",
+            "Result fields are intentionally left blank for recording during report finalization. List each equipment ID. Write NA only where a test does not apply to that item. A second table holds the protocol’s overall acceptance criteria.",
           ],
           [
             table(CVP_OVERALL_RESULTS_HEADERS),

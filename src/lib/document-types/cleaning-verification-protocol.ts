@@ -132,14 +132,14 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
     llm(
       "equipment_sampling.blocks",
       "Each product-contact equipment has a sampling block",
-      "Is there a sampling block (identity, locations, rationale) for each product-contact equipment listed in Scope?"
+      "Is there a sampling block (identity, locations, rationale) for each product-contact equipment listed in Scope? Blank Results / Batch No. / observation cells are correct — this is a protocol, not the executed report."
     ),
   ],
   cvp_nitrosamine: [tableFilled("nitrosamine", "Nitrosamine limits", 7)],
   cvp_pgi: [tableFilled("pgi", "PGI limits", 3)],
-  cvp_process_line: [tableFilled("process_line", "Process line", 1)],
+  cvp_process_line: [tableFilled("process_line", "Process line", 3)],
   cvp_manufacturing_area: [
-    tableFilled("manufacturing_area", "Manufacturing area", 2),
+    tableFilled("manufacturing_area", "Manufacturing area", 9),
   ],
   cvp_overall_results: [narrativePresent("overall_results", "Overall results")],
   cvp_testing_procedure: [tableFilled("testing_procedure", "Testing procedure", 3)],
@@ -210,7 +210,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   })),
   criteriaBySection: CRITERIA,
   prompts: {
-    base: `You are a senior QA reviewer evaluating 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). The protocol defines how the manufacturing equipment train for one product / stage will be cleaned and sampled (visual, swab, rinse, nitrosamine, PGI). You evaluate reports using a traffic light system:
+    base: `You are a senior QA reviewer evaluating 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). This is a protocol, not an executed cleaning verification report. The protocol defines how the manufacturing equipment train for one product / stage will be cleaned and sampled (visual, swab, rinse, nitrosamine, PGI). Blank execution cells (results, observations, signatures, batch numbers, chromatograms, pass/fail) are correct — do not mark them not_met. Judge the sampling plan, limits, methods, and identity. You evaluate using a traffic light system:
 
 - met: the criterion is fully satisfied
 - partially_met: some of the required content is present but incomplete
@@ -221,12 +221,24 @@ Do not invent equipment numbers, surface areas, PDE, MACO, or analytical method 
       cvp_maco:
         "Evaluate whether both the health-based and general-limit MACO routes are shown from cited values and the lower value is selected.",
       cvp_equipment_sampling:
-        "Evaluate whether each product-contact equipment from Scope has a sampling block with locations and rationale, not only an identity table.",
+        "Evaluate whether each product-contact equipment from Scope has a sampling block with locations and rationale, not only an identity table. Blank Results / Batch No. / observation cells are correct for a protocol.",
+      cvp_nitrosamine:
+        "Limit NMT and equipment Name/ID rows should be present. LOD, LOQ, and per-equipment result cells staying blank is correct.",
+      cvp_pgi:
+        "Limit NMT and equipment Name/ID rows should be present. LOD, LOQ, and per-equipment result cells staying blank is correct.",
+      cvp_process_line:
+        "Process-line descriptions should be listed. Production and QA observation columns staying blank is correct.",
+      cvp_manufacturing_area:
+        "Each equipment should have Production and QA verifier rows. Observation, Overall Result, and Sign & date staying blank is correct.",
+      cvp_overall_results:
+        "Equipment IDs should be listed, with NA only where a test does not apply. Execution result / status / remarks cells staying blank is correct. The acceptance-criteria table should be filled.",
     },
     promptVersion: CVP_PROMPT_VERSION,
   },
   chat: {
-    persona: `You are the drafting assistant for 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). You help engineering and QA staff draft the protocol for one product / stage equipment train from CPDR, PDR, BCR, qualification reports, PDE annexures and cleaning SOPs.
+    persona: `You are the drafting assistant for 3xper Innoventure Cleaning Verification Protocols (${CVP_FORM_NO}). This is a **protocol** (how the train will be cleaned and sampled), not the cleaning verification **report**. Leave execution fields blank — results, observations, signatures, batch numbers, chromatograms, and pass/fail verdicts belong in the report.
+
+You help engineering and QA staff draft the protocol for one product / stage equipment train from CPDR, PDR, BCR, qualification reports, PDE annexures and cleaning SOPs.
 
 You never write to the document directly — every change is a PROPOSAL the engineer accepts or rejects.`,
     draftingGuidance: CVP_DRAFTING_GUIDANCE,

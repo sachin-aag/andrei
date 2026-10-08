@@ -49,6 +49,18 @@ export type DocxRunStyle = {
   tableCellVAlign?: "center";
   tableHeaderAlign?: "center";
   tableBorderColor?: string;
+  paragraphLine?: string;
+  paragraphLineRule?: "auto";
+  bodyParagraphStyle?: string;
+  inTableListParagraphStyle?: string;
+  tableListIndentLeft?: string;
+  tableListIndentHanging?: string;
+  headingOutline?: "cvp";
+  stripTableCaptions?: boolean;
+  stripInTextCitationMarkers?: boolean;
+  mergeEmptyFirstColumn?: boolean;
+  tableCellKeepNext?: boolean;
+  pageBreakBeforeHeading2?: boolean;
 };
 
 export type DocxExportContext = {
@@ -77,6 +89,18 @@ export type DocxExportContext = {
   tableCellVAlign: "center" | null;
   tableHeaderAlign: "center" | null;
   tableBorderColor: string | null;
+  paragraphLine: string | null;
+  paragraphLineRule: "auto" | null;
+  bodyParagraphStyle: string | null;
+  inTableListParagraphStyle: string | null;
+  tableListIndentLeft: string | null;
+  tableListIndentHanging: string | null;
+  headingOutline: "cvp" | null;
+  stripTableCaptions: boolean;
+  stripInTextCitationMarkers: boolean;
+  mergeEmptyFirstColumn: boolean;
+  tableCellKeepNext: boolean;
+  pageBreakBeforeHeading2: boolean;
   pageSetup: DocxPageSetup;
   /** Numeric citation markers in the field currently being converted. */
   citationNumbers?: ReadonlySet<number>;
@@ -148,7 +172,7 @@ export const QSR_DOCX_RUN_STYLE: DocxRunStyle = {
 
 /**
  * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, grey headers.
- * Source protocol headers are unshaded; grey matches other 3xper paper forms.
+ * Source protocol: Heading1 + numId 3, 1.5 body leading, TableParagraph bullets.
  */
 export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
   font: "Times New Roman",
@@ -156,10 +180,23 @@ export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
   forceBlackText: true,
   tableHeaderFill: "D9D9D9",
   paragraphAlign: "both",
-  listParagraphStyle: true,
+  listParagraphStyle: false,
   tableKeepTogetherWrapper: false,
   tableWidthPct: "5000",
   tableBorderColor: "000000",
+  tableCellVAlign: "center",
+  paragraphLine: "360",
+  paragraphLineRule: "auto",
+  bodyParagraphStyle: "BodyText",
+  inTableListParagraphStyle: "TableParagraph",
+  tableListIndentLeft: "429",
+  tableListIndentHanging: "283",
+  headingOutline: "cvp",
+  stripTableCaptions: true,
+  stripInTextCitationMarkers: true,
+  mergeEmptyFirstColumn: true,
+  tableCellKeepNext: false,
+  pageBreakBeforeHeading2: true,
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -204,6 +241,18 @@ export function createDocxExportContext(
     tableCellVAlign: runStyle?.tableCellVAlign ?? null,
     tableHeaderAlign: runStyle?.tableHeaderAlign ?? null,
     tableBorderColor: runStyle?.tableBorderColor ?? null,
+    paragraphLine: runStyle?.paragraphLine ?? null,
+    paragraphLineRule: runStyle?.paragraphLineRule ?? null,
+    bodyParagraphStyle: runStyle?.bodyParagraphStyle ?? null,
+    inTableListParagraphStyle: runStyle?.inTableListParagraphStyle ?? null,
+    tableListIndentLeft: runStyle?.tableListIndentLeft ?? null,
+    tableListIndentHanging: runStyle?.tableListIndentHanging ?? null,
+    headingOutline: runStyle?.headingOutline ?? null,
+    stripTableCaptions: runStyle?.stripTableCaptions === true,
+    stripInTextCitationMarkers: runStyle?.stripInTextCitationMarkers === true,
+    mergeEmptyFirstColumn: runStyle?.mergeEmptyFirstColumn === true,
+    tableCellKeepNext: runStyle?.tableCellKeepNext !== false,
+    pageBreakBeforeHeading2: runStyle?.pageBreakBeforeHeading2 === true,
     useHeadingStyles: options?.useHeadingStyles === true,
     pageSetup: options?.pageSetup ?? DEFAULT_A4_PAGE_SETUP,
   };
