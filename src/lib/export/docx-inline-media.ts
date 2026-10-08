@@ -19,7 +19,13 @@ export function applyInlineMediaToDocxZip(
   if (ctx.media.length === 0) return;
 
   for (const asset of ctx.media) {
-    zip.file(`word/media/${asset.fileName}`, asset.bytes);
+    const path = `word/media/${asset.fileName}`;
+    if (zip.file(path)) {
+      throw new Error(
+        `DOCX export would overwrite template media ${asset.fileName}`
+      );
+    }
+    zip.file(path, asset.bytes);
   }
 
   const relsFile = zip.file(RELS_PATH);
