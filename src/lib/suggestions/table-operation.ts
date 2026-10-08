@@ -1753,6 +1753,32 @@ export function applyTableOperation(
   }
 }
 
+/**
+ * Accept / locate path for create_table. If afterAnchor is missing from the
+ * live field (still an open heading card), append before Citations instead of
+ * failing the card.
+ */
+export function applyTableOperationForPersist(
+  doc: JSONContent,
+  operation: TableOperation,
+  context?: TableOperationContext
+): TableOperationResult {
+  let result = applyTableOperation(doc, operation, context);
+  if (
+    !result.ok &&
+    result.status === "bad_scope" &&
+    operation.kind === "create_table" &&
+    operation.afterAnchor?.trim()
+  ) {
+    result = applyTableOperation(
+      doc,
+      { ...operation, afterAnchor: undefined },
+      context
+    );
+  }
+  return result;
+}
+
 function applyEditCells(
   doc: JSONContent,
   table: JSONContent,

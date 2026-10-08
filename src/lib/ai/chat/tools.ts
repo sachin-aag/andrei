@@ -30,6 +30,7 @@ import {
 import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
+import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
 import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
 import {
   listInlineImagesInDoc,
@@ -188,7 +189,9 @@ import {
   recordBlock,
   recordLeadIn,
   takeUnusedBlock,
+  hasUnusedLeadInMatchingAnchor,
   takeUnusedLeadIn,
+  takeUnusedLeadInMatchingAnchor,
   withPairedBlock,
   withPlaceAfterLeadIn,
 } from "@/lib/suggestions/same-turn-block-pair";
@@ -396,7 +399,11 @@ import {
   type RecommendedResultsInventory,
 } from "@/lib/ai/chat/results-inventory";
 import { parseResultsMatrix } from "@/lib/document-types/convergent/matrix-parser";
-import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
+import {
+  recentUserMessageTexts,
+  type RetrievalPolicy,
+} from "@/lib/ai/chat/retrieval-policy";
+import { isWholeFieldReplaceTurn } from "@/lib/ai/chat/already-drafted";
 
 type AgentCommitOutcome =
   | { status: "not_editable"; message: string }
@@ -1296,6 +1303,42 @@ async function documentContentsForReport(
   return loadDocumentContentsForTableNumber({ reportId, documentType });
 }
 
+/** Map model-supplied filenames onto ready attachment IDs. Unmatched names drop. */
+function resolveRequestedReviewAttachmentIds(
+  requested: readonly string[],
+  ready: readonly { attachmentId: string; filename: string | null }[]
+): string[] {
+  const allowed = new Set(ready.map((doc) => doc.attachmentId));
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string) => {
+    if (!id || seen.has(id) || !allowed.has(id)) return;
+    seen.add(id);
+    resolved.push(id);
+  };
+  for (const raw of requested) {
+    if (allowed.has(raw)) {
+      add(raw);
+      continue;
+    }
+    const needle = raw.toLowerCase();
+    if (!needle) continue;
+    const exact = ready.filter(
+      (doc) => (doc.filename ?? "").toLowerCase() === needle
+    );
+    if (exact.length === 1) {
+      add(exact[0]!.attachmentId);
+      continue;
+    }
+    const partial = ready.filter((doc) => {
+      const name = (doc.filename ?? "").toLowerCase();
+      return Boolean(name) && (name.includes(needle) || needle.includes(name));
+    });
+    if (partial.length === 1) add(partial[0]!.attachmentId);
+  }
+  return resolved;
+}
+
 function fieldSnapshotKey(section: SectionType, targetField: string): string {
   return `${section}\0${targetField}`;
 }
@@ -1311,7 +1354,23 @@ function cloneFieldValue(
   return getPlainTextFieldValue(content, targetField);
 }
 
+function canonicalFieldSnapshotText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "doc"
+  ) {
+    return flattenForAnchor(value as JSONContent).text;
+  }
+  return null;
+}
+
 function fieldValuesEqual(a: unknown, b: unknown): boolean {
+  const aText = canonicalFieldSnapshotText(a);
+  const bText = canonicalFieldSnapshotText(b);
+  if (aText != null && bText != null) return aText === bText;
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -2605,7 +2664,10 @@ export function buildChatTools(opts: {
       execute: async ({ objective, attachmentIds }) => {
         const ready = await listReadyDocumentsForReport(reportId);
         const allowed = new Set(ready.map((doc) => doc.attachmentId));
-        const requested = (attachmentIds ?? []).map((id) => id.trim()).filter(Boolean);
+        const requested = resolveRequestedReviewAttachmentIds(
+          (attachmentIds ?? []).map((id) => id.trim()).filter(Boolean),
+          ready
+        );
         const pinnedReady = pinnedAttachmentIds.filter((id) => allowed.has(id));
         const requestedInScope =
           pinnedReady.length > 0
@@ -4145,7 +4207,7 @@ export function buildChatTools(opts: {
           };
         }
 
-        const parsedOp = parseTableOperation(operation);
+        let parsedOp = parseTableOperation(operation);
         if (!parsedOp) {
           return { status: "invalid", hint: tableOperationInvalidHint(operation) };
         }
@@ -4184,6 +4246,25 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
+        let pairCreateTableAfterPendingHeading = false;
+        let pendingCreateTableAnchor = "";
+        if (parsedOp.kind === "create_table") {
+          const afterAnchor = parsedOp.afterAnchor?.trim() ?? "";
+          if (
+            afterAnchor &&
+            topLevelIndexAfterAnchor(fieldDoc, afterAnchor).status !== "ok" &&
+            hasUnusedLeadInMatchingAnchor(
+              blockPairing,
+              section,
+              resolvedField,
+              afterAnchor
+            )
+          ) {
+            parsedOp = { ...parsedOp, afterAnchor: undefined };
+            pairCreateTableAfterPendingHeading = true;
+            pendingCreateTableAnchor = afterAnchor;
+          }
+        }
         let foldTarget: OpenTableRowCard | null = null;
         let captureDoc = fieldDoc;
         if (isFoldableTableRowOperation(parsedOp, fieldDoc)) {
@@ -4557,7 +4638,14 @@ export function buildChatTools(opts: {
               : undefined,
         };
         if (appendTable) {
-          const leadIn = takeUnusedLeadIn(blockPairing, section, resolvedField);
+          const leadIn = pairCreateTableAfterPendingHeading
+            ? takeUnusedLeadInMatchingAnchor(
+                blockPairing,
+                section,
+                resolvedField,
+                pendingCreateTableAnchor
+              )
+            : takeUnusedLeadIn(blockPairing, section, resolvedField);
           if (leadIn) {
             payload = withPlaceAfterLeadIn(payload, leadIn.suggestionId);
             await patchFixPayload(
@@ -4789,12 +4877,16 @@ export function buildChatTools(opts: {
         if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const rewriteTurn = isWholeFieldReplaceTurn(
+          latestUserMessageText(messages) ?? "",
+          recentUserMessageTexts(messages)
+        );
         const { resolvedField, loaded } = bindLoadedWriteField(
           section,
           targetField,
           requestedResolved,
           loadedRaw,
-          true,
+          replaceFilledField !== true && !rewriteTurn,
           mentionedTargetField
         );
         const field = {
@@ -4851,57 +4943,65 @@ export function buildChatTools(opts: {
           resolvedField
         );
         const fill = fieldFillState(loaded.content, section, resolvedField);
-        if (liveTables.length > 1) {
+        const replacingFilledField =
+          fill === "filled" && (replaceFilledField === true || rewriteTurn);
+        if (liveTables.length > 1 && !replacingFilledField) {
           return {
             status: "use_edit_table",
             message: multiTableDraftFieldMessage(liveTables.length),
           };
         }
-        const headerMismatch = liveTableHeadersMismatch({
-          content: loaded.content,
-          section,
-          targetField: resolvedField,
-          markdown,
-        });
-        if (headerMismatch) {
-          return {
-            status: "header_mismatch",
-            message: headerMismatch,
-          };
+        if (!replacingFilledField) {
+          const headerMismatch = liveTableHeadersMismatch({
+            content: loaded.content,
+            section,
+            targetField: resolvedField,
+            markdown,
+          });
+          if (headerMismatch) {
+            return {
+              status: "header_mismatch",
+              message: headerMismatch,
+            };
+          }
         }
         const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
         if (staleDraft) return staleDraft;
         if (fill === "filled") {
-          if (replaceFilledField !== true) {
+          if (!replacingFilledField) {
             return { status: "field_filled", message: FIELD_FILLED_MESSAGE };
           }
-          // A replacement that leaves most of the field intact is a targeted
-          // edit; draft_field would strike the whole field in review.
-          const scope = classifyRedraftScope({
-            currentText: sectionFieldPlainText(
-              loaded.content,
-              section,
-              resolvedField
-            ),
-            nextText: markdownToPlainText(markdown),
-            currentHasTable: isRichTargetField(section, resolvedField)
-              ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
-              : false,
-            nextHasTable: markdownHasTable(markdown),
-          });
-          if (scope.kind === "targeted_edit") {
-            return {
-              status: NOT_A_REWRITE_STATUS,
-              hint: redraftTooSmallHint(scope.coverage),
-              coverage: scope.coverage,
-            };
-          }
-          if (scope.kind === "table_structure") {
-            return {
-              status: NOT_A_REWRITE_STATUS,
-              hint: redraftTableStructureHint(scope.adding),
-              coverage: 0,
-            };
+          // Ordinary filled edits that keep most of the field belong on
+          // propose_edit / edit_table. An explicit rewrite turn ("redraft",
+          // "make 15.N as", "insert it" after that dump) is a whole-field
+          // replace even when boilerplate coverage looks targeted.
+          if (!rewriteTurn) {
+            const scope = classifyRedraftScope({
+              currentText: sectionFieldPlainText(
+                loaded.content,
+                section,
+                resolvedField
+              ),
+              nextText: markdownToPlainText(markdown),
+              currentHasTable: isRichTargetField(section, resolvedField)
+                ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
+                : false,
+              nextHasTable: markdownHasTable(markdown),
+            });
+            if (scope.kind === "targeted_edit") {
+              return {
+                status: NOT_A_REWRITE_STATUS,
+                hint: redraftTooSmallHint(scope.coverage),
+                coverage: scope.coverage,
+              };
+            }
+            if (scope.kind === "table_structure") {
+              return {
+                status: NOT_A_REWRITE_STATUS,
+                hint: redraftTableStructureHint(scope.adding),
+                coverage: 0,
+              };
+            }
           }
         }
 

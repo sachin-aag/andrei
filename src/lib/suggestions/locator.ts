@@ -792,7 +792,7 @@ export function topLevelIndexAfterAnchor(
 ): { status: "ok"; index: number } | { status: "not_found" | "ambiguous" } {
   const index = flattenForAnchor(doc);
   const located = locateEdit(index.text, {
-    anchorText: afterAnchor,
+    anchorText: afterAnchor.replace(/^#+\s*/, "").trim() || afterAnchor,
     deleteText: "",
     insertText: "x",
   });

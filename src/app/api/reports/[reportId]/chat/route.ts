@@ -66,6 +66,8 @@ import {
 import {
   alreadyDraftedGapHints,
   isExplicitDocumentEdit,
+  isRemainingProseEdit,
+  isWholeFieldReplaceTurn,
 } from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
@@ -175,6 +177,7 @@ import {
   resolveChatMentions,
   sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
+import { cvpEquipmentItemFieldFromUserTexts } from "@/lib/ai/chat/cvp-equipment-target";
 
 /** Must stay in sync with `CHAT_FUNCTION_MAX_DURATION_SEC`. */
 export const maxDuration = 300;
@@ -591,7 +594,9 @@ async function handleChatPost(
     actor: auditActorFromUser(user),
     pinnedAttachmentIds,
     mentionedSections: mentionedSections(mentions),
-    mentionedTargetField: mentionedCvpEquipmentTargetField(mentions),
+    mentionedTargetField:
+      mentionedCvpEquipmentTargetField(mentions) ??
+      cvpEquipmentItemFieldFromUserTexts(recentUserMessageTexts(messages)),
     retrievalPolicy: retrieval.policy,
     documentReview,
     messages,
@@ -758,6 +763,11 @@ async function handleChatPost(
             reviewContinueBudgetMs(remainingChatAbortMs(turnStartedAtMs)) === 0,
           registeredWriteTools,
           explicitDocumentEdit: isExplicitDocumentEdit(userText),
+          explicitSectionRewrite: isWholeFieldReplaceTurn(
+            userText,
+            recentUserMessageTexts(messages)
+          ),
+          preferProposeEdit: isRemainingProseEdit(userText),
           inScopeRtmSection: isQsrRtmSection(sectionScope),
         });
         return {

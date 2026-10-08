@@ -7,6 +7,7 @@ import {
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
+  applyTableOperationForPersist,
   captureTableOperationSnapshots,
   summarizeTablesInDoc,
   existingTableCountFromContents,
@@ -2330,6 +2331,35 @@ describe("applyTableOperation", () => {
         afterAnchor: "The assay failed",
       }).status
     ).toBe("bad_scope");
+  });
+
+  it("still persists create_table when afterAnchor is missing", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "15.3 Equipment sampling." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+      ],
+    };
+    const result = applyTableOperationForPersist(before, {
+      kind: "create_table",
+      headers: ["A"],
+      rows: [["1"]],
+      afterAnchor: "15.3.6 Visual inspection",
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "paragraph",
+      "table",
+      "paragraph",
+    ]);
   });
 
   it("refuses create_table on a seeded DV matrix field", () => {

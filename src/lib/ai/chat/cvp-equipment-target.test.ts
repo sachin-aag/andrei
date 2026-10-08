@@ -7,6 +7,7 @@ import {
 } from "@/lib/document-types/cvp/equipment-sampling";
 import {
   bindCvpEquipmentWrite,
+  cvpEquipmentItemFieldFromUserTexts,
   routeCvpEquipmentWriteField,
 } from "@/lib/ai/chat/cvp-equipment-target";
 import { fieldFillState, sectionFillState } from "@/lib/ai/chat/fields";
@@ -28,6 +29,21 @@ function withFilledNote(doc: JSONContent): JSONContent {
     ],
   };
 }
+
+describe("cvpEquipmentItemFieldFromUserTexts", () => {
+  it("pins the newest 15.N in chat onto items.N-1", () => {
+    expect(
+      cvpEquipmentItemFieldFromUserTexts([
+        "make 15.6 as mlt 1303. redraft accordingly",
+        "insert it",
+      ])
+    ).toBe("items.5");
+    expect(cvpEquipmentItemFieldFromUserTexts(["insert it"])).toBeUndefined();
+    expect(
+      cvpEquipmentItemFieldFromUserTexts(["insert suggestions for 15.6.1"])
+    ).toBe("items.5");
+  });
+});
 
 describe("cvpEquipmentItemIndexFromTarget", () => {
   it("maps items.N and 15.N onto the same 0-based index", () => {
@@ -112,6 +128,28 @@ describe("routeCvpEquipmentWriteField", () => {
     });
     expect(routed.targetField).toBe("items.1");
     expect(routed.content.items).toHaveLength(2);
+  });
+
+  it("does not retitle a sibling 15.N box when binding a write", () => {
+    const sibling: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 MIXED VESSEL (MV-1304)" }],
+        },
+      ],
+    };
+    const bound = bindCvpEquipmentWrite(
+      "cvp_equipment_sampling",
+      "items.0",
+      "items.0",
+      { items: [withFilledNote(cvpEquipmentSamplingSeed(1)), sibling] }
+    );
+    const text = JSON.stringify((bound.content.items as JSONContent[])[1]);
+    expect(text).toContain("15.1 MIXED VESSEL (MV-1304)");
+    expect(text).not.toContain("15.2 MIXED VESSEL");
   });
 });
 

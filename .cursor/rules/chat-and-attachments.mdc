@@ -47,9 +47,18 @@ table filled", "I don't see the change", "suggestions are not landing",
 "refusing to make an edit", "only summarising") are write on Agent
 (`reason: missing_work`) so Lite is skipped. An explicit "insert the
 suggestion" / "edit the document" turn reads the section first, then the
-next step must call `draft_rtm_table` when a QSR RTM table is in `@`
-scope, `edit_table` for any other table, or `propose_edit`. Do not
-claim Agent mode is read-only or paste a markdown table. ELR section numbers
+next step must call `draft_field` (`replaceFilledField: true`) when they
+asked to redraft / replace / make 15.N as a different equipment ID (or
+"insert it" after that rewrite was dumped in chat), `draft_rtm_table`
+when a QSR RTM table is in `@` scope, `propose_edit` for leftover 15.N
+heading / 15.N.1 / 15.N.3 / 15.N.5 prose ("go for 15.N.1", "make these",
+"insert suggestions for 15.N.1" — create the cards if none are open;
+after two `edit_table` fails on that turn, recover with `propose_edit`
+instead of emptying tools), `edit_table` for any other table, or
+`propose_edit`. A filled CVP equipment identity rewrite is a whole-field
+`draft_field`, not cell-by-cell `edit_table`. Leftover prose after those
+tables landed is `propose_edit`. Do not claim Agent mode is read-only or
+paste a markdown table. ELR section numbers
 in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
 Maintenance, 3.15 Access Control). A printed Table N is only the number on
 the context map. Agent read keeps write tools
@@ -405,7 +414,10 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   of a Page N of M split; ELR Attachments is filled at Word export from the
   live file list (do not draft `elr_attachments`);
   investigation and DV queues still advance on the table or narrative they
-  already draft. Working… hides
+  already draft. Cleaning Verification Protocol equipment sampling queues
+  each empty 15.N box (`cvp_equipment_sampling:items.N`) as its own remaining-section
+  item (one turn per box; `|obj:cvp_equipment_sampling` reuses a finished walk).
+  Working… hides
   when the stream is idle even if the optimistic send still has a stale
   pending id after hydrate. The agent-done notice is `Assistant is done
   with {section}`. Do not toast a false “hit an error” between successful

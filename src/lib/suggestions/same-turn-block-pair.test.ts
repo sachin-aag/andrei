@@ -10,6 +10,7 @@ import {
   sortCommentsForPairedApply,
   takeUnusedBlock,
   takeUnusedLeadIn,
+  takeUnusedLeadInMatchingAnchor,
 } from "@/lib/suggestions/same-turn-block-pair";
 
 function comment(
@@ -105,6 +106,38 @@ describe("same-turn registry", () => {
     expect(takeUnusedBlock(pairing, "define", "narrative")).toBeUndefined();
     expect(takeUnusedBlock(pairing, "purpose", "narrative")?.kind).toBe("table");
   });
+
+  it("pairs afterAnchor with the heading insert that contains it", () => {
+    const pairing = createSameTurnBlockPairing();
+    recordLeadIn(pairing, {
+      suggestionId: "lead-worst",
+      section: "cvp_equipment_sampling",
+      targetField: "items.2",
+      payload: {
+        deleteText: "",
+        insertText: "## 15.3.3 Pictorial representation",
+        reasoning: "",
+      },
+    });
+    recordLeadIn(pairing, {
+      suggestionId: "lead-visual",
+      section: "cvp_equipment_sampling",
+      targetField: "items.2",
+      payload: {
+        deleteText: "",
+        insertText: "## 15.3.6 Visual inspection\nAs a primary verification.",
+        reasoning: "",
+      },
+    });
+    expect(
+      takeUnusedLeadInMatchingAnchor(
+        pairing,
+        "cvp_equipment_sampling",
+        "items.2",
+        "15.3.6 Visual inspection"
+      )?.suggestionId
+    ).toBe("lead-visual");
+  });
 });
 
 describe("findOpenBlockPair / sortCommentsForPairedApply", () => {
@@ -141,5 +174,35 @@ describe("findOpenBlockPair / sortCommentsForPairedApply", () => {
   it("orders lead-in before its table even if the table is first in the list", () => {
     const ordered = sortCommentsForPairedApply([block, leadIn]);
     expect(ordered.map((item) => item.id)).toEqual(["lead", "tbl"]);
+  });
+
+  it("pairs create_table afterAnchor with an open heading that has no pairing ids", () => {
+    const heading = comment("lead-visual", {
+      deleteText: "",
+      insertText: "## 15.3.6 Visual inspection\nAs a primary verification.",
+      reasoning: "heading",
+    });
+    const table = comment("tbl-visual", {
+      deleteText: "",
+      insertText: "",
+      reasoning: "table",
+      tableOperation: {
+        kind: "create_table",
+        headers: ["Sample description / location", "Results"],
+        afterAnchor: "15.3.6 Visual inspection",
+      },
+    });
+    const open = [heading, table];
+    expect(findOpenBlockPair(table, open)).toEqual({
+      leadIn: heading,
+      block: table,
+    });
+    expect(findOpenBlockPair(heading, open)).toEqual({
+      leadIn: heading,
+      block: table,
+    });
+    expect(sortCommentsForPairedApply([table, heading]).map((item) => item.id)).toEqual(
+      ["lead-visual", "tbl-visual"]
+    );
   });
 });
