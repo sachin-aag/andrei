@@ -10,8 +10,10 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import {
   callToolName,
   collectToolCalls,
+  collectToolResults,
   documentAskUserDirective,
   searchLoopDirective,
+  toolPayload,
   type SearchGate,
   type SearchLoopStep,
   withoutAskUserTool,
@@ -214,49 +216,30 @@ function asTableEditSteps(
   steps: readonly SearchLoopStep[]
 ): ChatStepWithTools[] {
   return steps.map((step) => ({
-    toolCalls: (step.toolCalls ?? []).flatMap((call) => {
-      const toolName =
-        typeof call.toolName === "string"
-          ? call.toolName
-          : typeof call.tool === "string"
-            ? call.tool
-            : "";
+    toolCalls: collectToolCalls(step).flatMap((call) => {
+      const toolName = callToolName(call);
       if (!toolName) return [];
-      const record = call as ToolCallLikeWithId;
       return [
         {
-          toolCallId:
-            typeof record.toolCallId === "string" ? record.toolCallId : "",
+          toolCallId: typeof call.toolCallId === "string" ? call.toolCallId : "",
           toolName,
         },
       ];
     }),
-    toolResults: (step.toolResults ?? []).flatMap((result) => {
-      const toolName =
-        typeof result.toolName === "string"
-          ? result.toolName
-          : typeof result.tool === "string"
-            ? result.tool
-            : "";
+    toolResults: collectToolResults(step).flatMap((result) => {
+      const toolName = callToolName(result);
       if (!toolName) return [];
-      const record = result as ToolCallLikeWithId;
       return [
         {
           toolCallId:
-            typeof record.toolCallId === "string" ? record.toolCallId : "",
+            typeof result.toolCallId === "string" ? result.toolCallId : "",
           toolName,
-          output: result.output ?? result.result,
+          output: toolPayload(result),
         },
       ];
     }),
   }));
 }
-
-type ToolCallLikeWithId = {
-  toolCallId?: unknown;
-  toolName?: unknown;
-  tool?: unknown;
-};
 
 function payloadStatus(output: unknown): string | undefined {
   if (!output || typeof output !== "object" || Array.isArray(output)) {

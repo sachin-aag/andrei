@@ -1618,6 +1618,16 @@ export function buildChatTools(opts: {
     if (fieldValuesEqual(snap, live)) return null;
     return { status: "section_changed", message: SECTION_CHANGED_MESSAGE };
   };
+  const rememberLiveSnapshot = (
+    section: SectionType,
+    targetField: string,
+    liveContent: Record<string, unknown>
+  ): { status: "section_changed"; message: string } | null => {
+    const stale = unchangedOrStale(section, targetField, liveContent);
+    if (stale) return stale;
+    captureFieldSnapshot(section, targetField, liveContent);
+    return null;
+  };
   const dismissCovered = async (args: {
     section: SectionType;
     sectionContent: Record<string, unknown>;
@@ -2044,20 +2054,29 @@ export function buildChatTools(opts: {
 
         const collected: SectionInlineImage[] = [];
         const fieldResults = requested.map((f) => {
-          const chat = sectionFieldForChat(
-            loaded.content,
+          const bound = bindLoadedWriteField(
             section,
             f.targetField,
+            f.targetField,
+            loaded,
+            false
+          );
+          const content = bound.loaded.content;
+          const targetField = bound.resolvedField;
+          const chat = sectionFieldForChat(
+            content,
+            section,
+            targetField,
             collected
           );
           const trimmed = chat.text.replace(/\s+/g, " ").trim();
-          captureFieldSnapshot(section, f.targetField, loaded.content);
+          captureFieldSnapshot(section, targetField, content);
           return {
-            targetField: f.targetField,
+            targetField,
             kind: f.kind,
             charCount: trimmed.length,
             isEmpty: trimmed.length === 0 && chat.imageCount === 0,
-            fillState: fieldFillState(loaded.content, section, f.targetField),
+            fillState: fieldFillState(content, section, targetField),
             /** Anchor-compatible text — quote from this for propose_edit. */
             text: chat.text,
             /** Same content with [image:N] markers for describing visuals. */
@@ -2983,7 +3002,7 @@ export function buildChatTools(opts: {
             message: REVIEW_INCOMPLETE_MESSAGE,
           };
         }
-        const stale = unchangedOrStale(section, resolvedField, loaded.content);
+        const stale = rememberLiveSnapshot(section, resolvedField, loaded.content);
         if (stale) return stale;
 
         const parsedScope = parseEditScope(scope);
@@ -3506,7 +3525,11 @@ export function buildChatTools(opts: {
           }
         }
 
-        const staleInsert = unchangedOrStale(section, resolvedField, loaded.content);
+        const staleInsert = rememberLiveSnapshot(
+          section,
+          resolvedField,
+          loaded.content
+        );
         if (staleInsert) return staleInsert;
 
         const fieldDoc = getRichFieldValue(
@@ -4003,7 +4026,11 @@ export function buildChatTools(opts: {
             };
           }
 
-          const staleRemove = unchangedOrStale(section, resolvedField, loaded.content);
+          const staleRemove = rememberLiveSnapshot(
+            section,
+            resolvedField,
+            loaded.content
+          );
           if (staleRemove) return staleRemove;
 
           const fieldDoc = getRichFieldValue(
@@ -4261,7 +4288,11 @@ export function buildChatTools(opts: {
             message: REVIEW_INCOMPLETE_MESSAGE,
           };
         }
-        const staleTable = unchangedOrStale(section, resolvedField, loaded.content);
+        const staleTable = rememberLiveSnapshot(
+          section,
+          resolvedField,
+          loaded.content
+        );
         if (staleTable) return staleTable;
 
         const fieldDoc = getRichFieldValue(
@@ -4987,7 +5018,11 @@ export function buildChatTools(opts: {
             };
           }
         }
-        const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
+        const staleDraft = rememberLiveSnapshot(
+          section,
+          resolvedField,
+          loaded.content
+        );
         if (staleDraft) return staleDraft;
         if (fill === "filled") {
           if (!replacingFilledField) {

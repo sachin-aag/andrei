@@ -142,6 +142,63 @@ describe("prepareReportChatStep (characterization)", () => {
     });
   });
 
+  it("finishes after two SDK-named edit_table failures instead of looping", () => {
+    const failed = (id: string): SearchLoopStep => ({
+      toolCalls: [{ type: "tool-edit_table", toolCallId: id }],
+      toolResults: [
+        {
+          type: "tool-edit_table",
+          toolCallId: id,
+          output: {
+            type: "json",
+            value: { status: "section_changed" },
+          },
+        },
+      ],
+    });
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          preferProposeEdit: false,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+          steps: [failed("a"), failed("b")],
+        })
+      )
+    ).toEqual({ activeTools: [] });
+  });
+
+  it("still recovers leftover 15.N prose after two SDK-named edit_table failures", () => {
+    const failed = (id: string): SearchLoopStep => ({
+      toolCalls: [{ type: "tool-edit_table", toolCallId: id }],
+      toolResults: [
+        {
+          type: "tool-edit_table",
+          toolCallId: id,
+          output: {
+            type: "json",
+            value: { status: "section_changed" },
+          },
+        },
+      ],
+    });
+    expect(
+      prepareReportChatStep(
+        baseInput({
+          explicitDocumentEdit: true,
+          preferProposeEdit: true,
+          inScopeHasTable: true,
+          userIntentKind: "write",
+          steps: [failed("a"), failed("b")],
+        })
+      )
+    ).toEqual({
+      activeTools: ["propose_edit"],
+      toolChoice: { type: "tool", toolName: "propose_edit" },
+    });
+  });
+
   it("forces draft_field after read when they asked to redraft a filled box", () => {
     expect(
       prepareReportChatStep(
