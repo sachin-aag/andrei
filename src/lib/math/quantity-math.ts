@@ -104,11 +104,26 @@ function unwrapSimpleGroups(text: string): string {
 }
 
 /**
+ * Map `90^\circ`, `90^{\circ}`, and LLM-broken `90^circ` to `90°` so they flatten
+ * to Unicode instead of a math atom or mistaken superscript "circ".
+ */
+export function normalizeDegreeLatex(latex: string): string {
+  return latex.replace(
+    /(\d+)\s*\^\s*(?:\{?\s*(?:\\circ|circ|°)\s*\}?)/gi,
+    "$1°"
+  );
+}
+
+function collapseNumericDegreeCaret(text: string): string {
+  return text.replace(/(\d+)\s*\^+\s*°/g, "$1°");
+}
+
+/**
  * Expand TeX used for limits / tolerances / counts into Unicode prose.
  * Returns null when the latex is a real equation (`\frac`, …).
  */
 export function quantityLatexToPlainText(latex: string): string | null {
-  const trimmed = latex.trim();
+  const trimmed = normalizeDegreeLatex(latex.trim());
   if (!trimmed) return null;
   if (KEEP_AS_EQUATION_RE.test(trimmed)) return null;
 
@@ -151,6 +166,7 @@ export function quantityLatexToPlainText(latex: string): string | null {
     if (s === before) break;
   }
 
+  s = collapseNumericDegreeCaret(s);
   s = s.replace(/\s+/g, " ").trim();
   if (!s || /\\/.test(s)) return null;
   if (!QUANTITY_PLAIN_RE.test(s)) return null;
@@ -169,9 +185,10 @@ export function quantityLatexToTextNodes(
   latex: string,
   extraMarks?: JSONContent["marks"]
 ): JSONContent[] | null {
-  const simple = simpleLatexToTextNodes(latex, extraMarks);
+  const normalized = normalizeDegreeLatex(latex.trim());
+  const simple = simpleLatexToTextNodes(normalized, extraMarks);
   if (simple) return simple;
-  const plain = quantityLatexToPlainText(latex);
+  const plain = quantityLatexToPlainText(normalized);
   if (plain == null) return null;
   return [textNode(plain, extraMarks)];
 }
