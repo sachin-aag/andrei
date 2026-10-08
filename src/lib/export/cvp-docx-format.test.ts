@@ -129,6 +129,15 @@ describe("cvp-docx-format", () => {
       ])
     ).toEqual([4494, 1214, 4097]);
     expect(
+      cvpSourceColWidthsForHeaders([
+        "Sample description / location",
+        "Sample ID",
+        "Batch 1",
+        "Batch 2",
+        "Batch 3",
+      ])
+    ).toEqual([5079, 1038, 1255, 1255, 1255]);
+    expect(
       cvpSourceColWidthsForHeaders(["Unknown", "Headers"])
     ).toBeNull();
   });

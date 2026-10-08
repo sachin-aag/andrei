@@ -78,7 +78,7 @@ export function CreateReportDialog({
         ? selectedType.key === "generic_document"
           ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
           : selectedType.key === "cleaning_verification_protocol"
-            ? "Starts a new cleaning verification protocol as a draft. Optionally upload an existing Word file to fill cover identity and sections 1.0–24.0. Word drawings, SmartArt, and headers are dropped on import."
+            ? "Starts a new cleaning validation protocol as a draft. Optionally upload an existing Word file to fill cover identity and sections 1.0–24.0. Word drawings, SmartArt, and headers are dropped on import."
           : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
         : `Starts a new ${selectedType.label.toLowerCase()} as a draft.`;
 

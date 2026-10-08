@@ -1,11 +1,16 @@
 import type { JSONContent } from "@tiptap/core";
 import { compact3xperLitreVolumesInDoc } from "@/lib/document-types/3xper-volume-style";
 import { emptyDoc, normalizeRichField } from "@/lib/tiptap/rich-text";
+import { upgradeCvpValidationDoc } from "@/lib/document-types/cvp/cycle-upgrade";
 import {
   CVP_CLEANING_OPERATION_HEADERS,
   CVP_EQUIPMENT_DOCUMENTS_HEADERS,
   CVP_EQUIPMENT_IDENTITY_HEADERS,
   CVP_EXTRANEOUS_RESULTS_HEADERS,
+  CVP_PREVIOUS_CLEANING_OPERATION_HEADERS,
+  CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS,
+  CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
+  CVP_PREVIOUS_VISUAL_INSPECTION_HEADERS,
   CVP_RESIDUE_RESULTS_HEADERS,
   CVP_SHELL_CALC_HEADERS,
   CVP_SWAB_LOCATION_HEADERS,
@@ -44,9 +49,13 @@ const EQUIPMENT_TABLE_HEADERS: readonly (readonly string[])[] = [
   CVP_SWAB_LOCATION_HEADERS,
   CVP_SHELL_CALC_HEADERS,
   CVP_SWAB_RATIONALE_HEADERS,
+  CVP_PREVIOUS_CLEANING_OPERATION_HEADERS,
   CVP_CLEANING_OPERATION_HEADERS,
+  CVP_PREVIOUS_VISUAL_INSPECTION_HEADERS,
   CVP_VISUAL_INSPECTION_HEADERS,
+  CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
   CVP_RESIDUE_RESULTS_HEADERS,
+  CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS,
   CVP_EXTRANEOUS_RESULTS_HEADERS,
 ];
 
@@ -444,9 +453,11 @@ function normalizeItem(doc: JSONContent): JSONContent {
   // and empty outline headings back after the engineer deleted them (upgrade
   // still runs on legacy `narrative` in docsFromRaw).
   return compact3xperLitreVolumesInDoc(
-    collapseCvpEquipmentItem(
-      splitWarpedCvpEquipmentTables(
-        normalizeRichField(doc, { preserveHeadings: true })
+    upgradeCvpValidationDoc(
+      collapseCvpEquipmentItem(
+        splitWarpedCvpEquipmentTables(
+          normalizeRichField(doc, { preserveHeadings: true })
+        )
       )
     )
   );

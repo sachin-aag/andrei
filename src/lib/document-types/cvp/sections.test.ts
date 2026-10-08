@@ -8,10 +8,15 @@ import {
   normalizeCvpEquipmentSamplingContent,
 } from "./equipment-sampling";
 import {
+  CVP_BATCH_EXECUTION_HEADERS,
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
   CVP_FORM_NO,
   CVP_MACO_EQUIPMENT_HEADERS,
+  CVP_NITROSAMINE_HEADERS,
+  CVP_PREVIOUS_NITROSAMINE_HEADERS,
+  CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
+  CVP_RESIDUE_RESULTS_HEADERS,
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
   EMPTY_CVP_CONTENT,
@@ -22,6 +27,7 @@ import {
   isCvpTableSectionKey,
   upgradeCvpEquipmentSamplingNarrative,
 } from "./sections";
+import { upgradeCvpValidationDoc } from "./cycle-upgrade";
 import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 
 describe("cleaning verification protocol sections", () => {
@@ -310,7 +316,7 @@ describe("cleaning verification protocol sections", () => {
           content: [
             {
               type: "text",
-              text: "It shall be written in the cleaning verification report.",
+              text: "It shall be written in the cleaning validation report.",
             },
           ],
         },
@@ -326,7 +332,7 @@ describe("cleaning verification protocol sections", () => {
     expect(text).toContain("10k L [1]");
     expect(text).not.toContain("Duplicate this box");
     expect((text.match(/15\.1\.1 Equipment details/g) ?? []).length).toBe(1);
-    expect((text.match(/It shall be written in the cleaning verification report\./g) ?? []).length).toBe(2);
+    expect((text.match(/It shall be written in the cleaning validation report\./g) ?? []).length).toBe(2);
   });
 
   it("does not retitle sibling 15.N boxes when applying one equipment item", () => {
@@ -409,13 +415,13 @@ describe("cleaning verification protocol sections", () => {
 
   it("tells Agent the whole form is a protocol with explicit leave-blank execution fields", () => {
     const def = getDocumentType("cleaning_verification_protocol");
-    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v2");
+    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v3");
     expect(def.prompts.base).toContain(
-      "This is a protocol, not an executed cleaning verification report"
+      "This is a protocol, not an executed cleaning validation report"
     );
     expect(def.prompts.base).toContain("Blank execution cells");
     expect(def.chat.persona).toContain(
-      "not the cleaning verification **report**"
+      "not the cleaning validation **report**"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "PROTOCOL vs REPORT — fill the plan; leave execution blank"
@@ -433,9 +439,12 @@ describe("cleaning verification protocol sections", () => {
       "Subsections are **not identical for every item**"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain("No-swab item");
-    expect(CVP_DRAFTING_GUIDANCE).toContain("**Results stay empty.**");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("**Batch 1 / Batch 2 / Batch 3 stay empty.**");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "It shall be written in the cleaning verification report."
+      "It shall be written in the cleaning validation report."
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "The three Batch columns stay blank in the protocol"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "already has the **shared** 15.N boilerplate"
@@ -462,9 +471,167 @@ describe("cleaning verification protocol sections", () => {
     );
   });
 
+  it("seeds Batch 1/2/3 result columns and a 15.0 batch execution table", () => {
+    const residue = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1));
+    const residueHeaders = residue.find((table) =>
+      table.headers.includes("Sample ID")
+    )?.headers;
+    expect(residueHeaders).toEqual([...CVP_RESIDUE_RESULTS_HEADERS]);
+    const sampling = EMPTY_CVP_CONTENT.cvp_sampling_plan;
+    const tables = summarizeTablesInDoc(
+      "narrative" in sampling ? sampling.narrative : { type: "doc", content: [] }
+    );
+    expect(tables[0]?.headers).toEqual([...CVP_BATCH_EXECUTION_HEADERS]);
+    expect(
+      tables[0]?.cells.filter((cell) => cell.col === 0 && cell.row > 0).map((cell) => cell.text)
+    ).toEqual(["Batch 1", "Batch 2", "Batch 3"]);
+    expect(EMPTY_CVP_CONTENT.cvp_nitrosamine).toHaveProperty("table");
+    const nitro = summarizeTablesInDoc(
+      "table" in EMPTY_CVP_CONTENT.cvp_nitrosamine
+        ? EMPTY_CVP_CONTENT.cvp_nitrosamine.table
+        : { type: "doc", content: [] }
+    );
+    expect(nitro[0]?.headers).toEqual([...CVP_NITROSAMINE_HEADERS]);
+  });
+
+  it("widens old Results columns to Batch 1/2/3 and is idempotent", () => {
+    const oldResidue: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["Final rinse", "RS-1", "0.12"].map((text) => ({
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+          ],
+        },
+      ],
+    };
+    const upgraded = upgradeCvpValidationDoc(oldResidue);
+    const tables = summarizeTablesInDoc(upgraded);
+    expect(tables[0]?.headers).toEqual([...CVP_RESIDUE_RESULTS_HEADERS]);
+    expect(
+      tables[0]?.cells.filter((cell) => cell.row === 1).map((cell) => cell.text)
+    ).toEqual(["Final rinse", "RS-1", "0.12", "(empty)", "(empty)"]);
+    expect(summarizeTablesInDoc(upgradeCvpValidationDoc(upgraded))[0]?.headers).toEqual(
+      [...CVP_RESIDUE_RESULTS_HEADERS]
+    );
+  });
+
+  it("triples filled nitrosamine equipment rows and leaves Limit NMT once", () => {
+    const old: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_PREVIOUS_NITROSAMINE_HEADERS].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["Limit NMT (ppm)", "", "0.1", "", "", "", "", "", ""].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+            {
+              type: "tableRow",
+              content: ["GLR", "GLR-1302", "", "", "", "", "", "", ""].map((text) => ({
+                type: "tableCell",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+          ],
+        },
+      ],
+    };
+    const tables = summarizeTablesInDoc(upgradeCvpValidationDoc(old));
+    expect(tables[0]?.headers).toEqual([...CVP_NITROSAMINE_HEADERS]);
+    const firstCol = tables[0]?.cells
+      .filter((cell) => cell.col === 0 && cell.row > 0)
+      .map((c) => c.text);
+    expect(firstCol).toEqual(["Limit NMT (ppm)", "GLR", "GLR", "GLR"]);
+    const batchCol = tables[0]?.cells
+      .filter((cell) => cell.col === 2 && cell.row > 0)
+      .map((c) => c.text);
+    expect(batchCol).toEqual(["(empty)", "Batch 1", "Batch 2", "Batch 3"]);
+  });
+
+  it("swaps untouched seed wording and leaves custom verification prose", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "It shall be written in the cleaning verification report.",
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "This verification protocol was drafted for the ISM4 train.",
+            },
+          ],
+        },
+      ],
+    };
+    const swapped = upgradeCvpValidationDoc(doc);
+    const text = JSON.stringify(swapped);
+    expect(text).toContain("It shall be written in the cleaning validation report.");
+    expect(text).toContain("This verification protocol was drafted for the ISM4 train.");
+  });
+
+  it("adds the 15.0 batch execution table on merge of a legacy sampling-plan paragraph", () => {
+    const def = getDocumentType("cleaning_verification_protocol");
+    const merged = def.mergeSection("cvp_sampling_plan", {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table. Result and observation fields stay blank until the cleaning verification report is written.",
+              },
+            ],
+          },
+        ],
+      },
+    }) as { narrative: JSONContent };
+    const tables = summarizeTablesInDoc(merged.narrative);
+    expect(tables.some((table) => table.headers[0] === "Batch")).toBe(true);
+    expect(JSON.stringify(merged.narrative)).toContain("cleaning validation report");
+  });
+
   it("prints a product-specific title when the cover product is set", () => {
     expect(cvpPrintedDocumentTitle(cvpMetadataFrom({}))).toBe(
-      "Cleaning Verification Protocol for Equipment and Associated Auxiliary Systems"
+      "Cleaning Validation Protocol for Equipment and Associated Auxiliary Systems"
     );
     expect(
       cvpPrintedDocumentTitle(

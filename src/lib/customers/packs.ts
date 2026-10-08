@@ -206,7 +206,7 @@ export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 export const ELR_PROMPT_VERSION = "mj-elr-sop-014-r04-v20";
 export const VQ_PROMPT_VERSION = "3xper-vq-f04-v1";
 export const QSR_PROMPT_VERSION = "3xper-qsr-f06-v3";
-export const CVP_PROMPT_VERSION = "3xper-cvp-f08-v2";
+export const CVP_PROMPT_VERSION = "3xper-cvp-f08-v3";
 export const FIR_PROMPT_VERSION = "mj-fir-sop-017-f01-r01-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
@@ -259,7 +259,7 @@ const XPER_BRANDING: CustomerBranding = {
   productNameShort: "3xper",
   documentReviewTitle: "3xper — Quality Documents",
   documentReviewDescription:
-    "AI document review and drafting for 3xper Innoventure vendor qualification, equipment qualification summary, and cleaning verification protocols",
+    "AI document review and drafting for 3xper Innoventure vendor qualification, equipment qualification summary, and cleaning validation protocols",
   tagline: "Empowering Innovation",
   shellTagline: "Quality Documents",
   logoSrc: "/logo-3xper.png",
@@ -273,7 +273,7 @@ const XPER_BRANDING: CustomerBranding = {
   passwordResetSubject: "Reset your password — 3xper",
   loginHeadline: "Qualification,\naccelerated.",
   loginSubhead:
-    "Draft vendor qualifications, equipment qualification summaries, and cleaning verification protocols with AI-assisted review and one-click DOCX export matching the 3xper forms.",
+    "Draft vendor qualifications, equipment qualification summaries, and cleaning validation protocols with AI-assisted review and one-click DOCX export matching the 3xper forms.",
   loginFooter: "3xper Innoventure Limited",
   aiAttribution: "by Andrei",
 };

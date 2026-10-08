@@ -52,7 +52,7 @@ describe("3xper customer pack", () => {
       "Qualification Summary Report"
     );
     expect(getDocumentType("cleaning_verification_protocol").label).toBe(
-      "Cleaning Verification Protocol"
+      "Cleaning Validation Protocol"
     );
   });
 

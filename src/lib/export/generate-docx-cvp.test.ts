@@ -40,7 +40,7 @@ function cvpReport(): typeof reports.$inferSelect {
       version: "00",
       effectiveDate: "08-Apr-2026",
       documentTitle:
-        "Cleaning Verification Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)",
+        "Cleaning Validation Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)",
     },
     status: "draft",
     createdAt: new Date("2026-01-01"),
@@ -108,6 +108,16 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain(' TOC \\o "1-1" ');
     expect(document).toContain('<w:pStyle w:val="TOCHeading"/>');
     expect(document).toContain("TABLE OF CONTENTS");
+    expect(visibleText(document)).toContain("CLEANING VALIDATION PROTOCOL");
+    expect(visibleText(document)).not.toContain("CLEANING VERIFICATION PROTOCOL");
+    expect(document).toContain("CLEANING VALIDATION METHODOLOGY");
+    expect(document).not.toContain("CLEANING VERIFICATION METHODOLOGY");
+    expect(visibleText(zip.file("word/header1.xml")?.asText() ?? "")).toContain(
+      "CLEANING VALIDATION PROTOCOL"
+    );
+    expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
+      "CLEANING VALIDATION PROTOCOL"
+    );
     expect(paragraphContaining(document, "APPROVAL SIGNATURES")).toContain(
       '<w:numId w:val="3"/>'
     );
@@ -144,6 +154,8 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).not.toContain("1.0 Approval Signatures");
     expect(body).not.toContain("15.1 Equipment name (Equipment No.)");
     expect(header).toContain("CVRP-ISM4-26-001");
+    expect(header).toContain("Cleaning Validation Protocol");
+    expect(header).not.toContain("Cleaning Verification Protocol");
     expect(header).toContain("Production");
     expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
       "08-Apr-2026"
@@ -330,7 +342,7 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(
       paragraphContaining(
         document,
-        "This protocol applies to the cleaning verification"
+        "This protocol applies to the cleaning validation"
       )
     ).toContain("<w:widowControl/>");
   });
