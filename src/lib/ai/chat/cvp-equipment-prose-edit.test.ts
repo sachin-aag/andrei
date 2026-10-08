@@ -143,4 +143,22 @@ describe("repairCvpEquipmentProseEdit", () => {
     };
     expect(repairCvpEquipmentProseEdit({ fieldDoc, fieldText, edit })).toBeNull();
   });
+
+  it("does not insert a 15.1.6 heading into a 15.2 box", () => {
+    const fieldDoc = cvpEquipmentSamplingSeed(2);
+    const fieldText = flattenForAnchor(fieldDoc).text;
+    const repaired = repairCvpEquipmentProseEdit({
+      fieldDoc,
+      fieldText,
+      edit: {
+        anchorText:
+          "15.1.6 Visual inspection summary\nVisual inspection shall be performed independently by the Production Chemist, Production Shift In-charge, and QA Executive under qualified light intensity (NLT 500 Lux).",
+        deleteText: "under qualified light intensity (NLT 500 Lux)",
+        insertText: "under qualified illumination conditions",
+      },
+    });
+    expect(repaired).toBeNull();
+    expect(fieldText).toContain("15.2.1 Equipment details");
+    expect(fieldText).not.toContain("15.1.6");
+  });
 });

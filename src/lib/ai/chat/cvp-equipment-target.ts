@@ -83,13 +83,20 @@ export function routeCvpEquipmentWriteField(args: {
   };
 }
 
-/** A tagged 15.N box wins over generic `narrative` / `table` / a sibling items.N. */
+/**
+ * A tagged / inferred 15.N box wins over generic `narrative` / `table`.
+ * Explicit `items.N` / `15.N` keep that index — a prior 15.2.3.4 mention
+ * must not steal a 15.1 visual-inspection card onto the 15.2 box.
+ */
 export function preferTaggedCvpEquipmentField(
   section: SectionType,
   requestedField: string,
   taggedItemField: string | undefined
 ): string {
   if (section !== CVP_EQUIPMENT_SAMPLING_SECTION) return requestedField;
+  if (cvpEquipmentItemIndexFromTarget(requestedField) != null) {
+    return requestedField;
+  }
   return taggedItemField ?? requestedField;
 }
 
