@@ -909,6 +909,57 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml.match(/<w:tbl>/g)).toHaveLength(2);
   });
 
+  it("keeps an all-empty table row instead of vMerging it into the location above", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE);
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "Location"),
+                  textCell("tableHeader", "ID"),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", "Shell wall Level 3 (S-10d)"),
+                  textCell("tableCell", "S-10d"),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", ""),
+                  textCell("tableCell", ""),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", "Limit"),
+                  textCell("tableCell", ""),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    expect(xml).not.toContain("<w:vMerge");
+    const shellAt = xml.indexOf("Shell wall Level 3");
+    const limitAt = xml.indexOf("Limit");
+    expect(shellAt).toBeGreaterThan(-1);
+    expect(limitAt).toBeGreaterThan(shellAt);
+    expect(xml.slice(shellAt, limitAt)).toMatch(/<\/w:tr><w:tr>/);
+  });
+
   it("returns to portrait after a wide table so following paragraphs stay upright", () => {
     const xml = narrativeToDocxXml({
       type: "doc",

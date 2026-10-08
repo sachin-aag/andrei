@@ -113,6 +113,12 @@ function firstBodyCell(row: JSONContent): JSONContent | undefined {
   return (row.content ?? []).find(isTableCell);
 }
 
+/** Later columns have text — a Reviewed-by continuation, not a blank spacer. */
+function rowHasTextAfterFirstCell(row: JSONContent): boolean {
+  const cells = (row.content ?? []).filter(isTableCell);
+  return cells.slice(1).some((cell) => nodePlainText(cell).trim() !== "");
+}
+
 function withRowspan(cell: JSONContent, rowspan: number): JSONContent {
   return {
     ...cell,
@@ -149,7 +155,11 @@ function mergeEmptyFirstColumnOnTable(table: JSONContent): JSONContent {
       continue;
     }
     let j = i + 1;
-    while (j < next.length && nodePlainText(firstBodyCell(next[j]!)).trim() === "") {
+    while (
+      j < next.length &&
+      nodePlainText(firstBodyCell(next[j]!)).trim() === "" &&
+      rowHasTextAfterFirstCell(next[j]!)
+    ) {
       j += 1;
     }
     const run = j - i;
