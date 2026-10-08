@@ -72,6 +72,7 @@ const QSR_CATALOG_SECTIONS = [
 const CVP_DOCUMENT_CATALOG_SECTIONS = [
   "cvp_related_documents",
   "cvp_annexures",
+  "cvp_equipment_sampling",
 ] as const;
 
 const CVP_EQUIPMENT_CATALOG_SECTIONS = [
@@ -115,7 +116,7 @@ const DOCUMENT_FAMILY: ReadonlyArray<{
 
 /** Whole-filename exhibit ids (`URS/PB2/001`, `DQ-PB2-14`, `ANFD-1302`). */
 const DOCUMENT_ID_STEM =
-  /^(?:[A-Z]{1,8}(?:[/_-][A-Z0-9]+)+|\d{3,}-\d{4,}[A-Z0-9._-]*)$/i;
+  /^(?:[A-Z]{1,8}(?:[/_-][A-Z0-9]+)+|\d{3,}-\d{4,}[A-Za-z0-9._-]*)$/i;
 
 /**
  * QMS / protocol numbers inside a title (`CVPR-ISM4-26-001-00`). Needs two
@@ -129,6 +130,9 @@ const EQUIPMENT_DOCUMENT_ID = /\b[A-Za-z]{2,8}-\d{3,}\b/g;
 
 /** Digit-led QMS ids (`790-00134R`). */
 const DIGIT_DOCUMENT_ID = /\b\d{3,}-\d{4,}[A-Za-z0-9._-]*\b/g;
+
+const PLACEHOLDER_DOCUMENT_NUMBER =
+  /^(?:n\.?\/?a\.?|nil|none|tbd|n\.a)$/i;
 
 export type ThreeXperCitationRow = {
   citationNumber: string;
@@ -167,6 +171,8 @@ function isUsableDocumentNumber(value: string): boolean {
   if (/^<[^>]+>$/.test(trimmed)) return false;
   if (/^x+$/i.test(trimmed)) return false;
   if (/to be filled/i.test(trimmed)) return false;
+  if (/to be assigned/i.test(trimmed)) return false;
+  if (PLACEHOLDER_DOCUMENT_NUMBER.test(trimmed)) return false;
   return true;
 }
 
@@ -181,7 +187,11 @@ function familyKeys(label: string): Set<string> {
       normalized.startsWith(`${abbr}/`) ||
       normalized.startsWith(`${abbr}-`) ||
       names.some(
-        (name) => normalized === name || normalized.startsWith(`${name} `)
+        (name) =>
+          normalized === name ||
+          normalized.startsWith(`${name} `) ||
+          normalized.endsWith(` ${name}`) ||
+          normalized.includes(` ${name} `)
       );
     if (!inFamily) continue;
     keys.add(abbr);
@@ -205,6 +215,21 @@ function labelsMatch(left: string, right: string): boolean {
     }
   }
   return false;
+}
+
+/** Same paper document: exact title, or a short title that is the tail of a longer one. */
+function descriptionsAlias(left: string, right: string): boolean {
+  const a = normalizeLabel(left);
+  const b = normalizeLabel(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  if (shorter.length < 8) return false;
+  return (
+    longer.endsWith(` ${shorter}`) ||
+    longer.startsWith(`${shorter} `) ||
+    longer.includes(` ${shorter} `)
+  );
 }
 
 function findTableNodes(value: unknown): JSONContent[] {
@@ -242,6 +267,7 @@ function isNameHeader(label: string): boolean {
     label === "name of the document" ||
     label === "sop name" ||
     label === "document title" ||
+    label === "documents" ||
     label === "name of the equipment" ||
     label === "equipment name"
   );
@@ -254,6 +280,7 @@ function isNumberHeader(label: string): boolean {
     label === "sop number" ||
     label === "document no" ||
     label === "document no." ||
+    label === "document #" ||
     label === "equipment no" ||
     label === "equipment no." ||
     label === "equipment id"
@@ -381,6 +408,14 @@ function descriptionFromFilename(filename: string): string {
   return withoutExt.replace(/^\[/, "").replace(/\]$/, "").trim();
 }
 
+function tidyDescription(value: string): string {
+  return value
+    .replace(/[_]+/g, " ")
+    .replace(LEADING_SERIAL, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function embeddedDocumentIdSpan(
   text: string
 ): { id: string; start: number; end: number } | null {
@@ -414,18 +449,21 @@ function splitCiteFilename(filename: string): {
     return { reference: stem, description: "" };
   }
   const span = embeddedDocumentIdSpan(stem);
-  if (!span) return { reference: "", description: stem };
-  const remainder = `${stem.slice(0, span.start)} ${stem.slice(span.end)}`
-    .replace(LEADING_SERIAL, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (!span) return { reference: "", description: tidyDescription(stem) };
+  const remainder = tidyDescription(
+    `${stem.slice(0, span.start)} ${stem.slice(span.end)}`
+  );
   return { reference: span.id, description: remainder };
 }
 
 function expandedFamilyDescription(stem: string): string | null {
   const normalized = normalizeLabel(stem);
   for (const { abbr, names } of DOCUMENT_FAMILY) {
-    if (normalized === abbr || normalized.startsWith(`${abbr} `) || compactId(stem).startsWith(abbr)) {
+    if (
+      normalized === abbr ||
+      normalized.startsWith(`${abbr} `) ||
+      compactId(stem).startsWith(abbr)
+    ) {
       const phrase = names[0];
       if (!phrase) return null;
       return phrase.replace(/\b\w/g, (ch) => ch.toUpperCase());
@@ -448,6 +486,32 @@ function expandedAbbreviationDescription(
   return abbreviations.get(compactId(prefix)) ?? null;
 }
 
+function catalogMatchScore(query: string, entry: QsrDocumentCatalogEntry): number {
+  const q = normalizeLabel(query);
+  const n = normalizeLabel(entry.name);
+  if (!q || !n) return 0;
+  if (q === n) return 400;
+  if (compactId(query) && compactId(query) === compactId(entry.number)) {
+    return 350;
+  }
+  if (
+    n.endsWith(` ${q}`) ||
+    n.startsWith(`${q} `) ||
+    n.includes(` ${q} `)
+  ) {
+    return 200 + Math.min(q.length, 50);
+  }
+  if (
+    q.endsWith(` ${n}`) ||
+    q.startsWith(`${n} `) ||
+    q.includes(` ${n} `)
+  ) {
+    return 180 + Math.min(n.length, 50);
+  }
+  if (labelsMatch(query, entry.name)) return 50;
+  return 0;
+}
+
 function lookupDocumentNumber(
   filename: string,
   description: string,
@@ -463,16 +527,20 @@ function lookupDocumentNumber(
       if (stemId && compactId(entry.number) === stemId) return entry.number;
     }
   }
-  for (const entry of catalog) {
-    if (
-      labelsMatch(description, entry.name) ||
-      labelsMatch(split.description, entry.name) ||
-      labelsMatch(descriptionFromFilename(filename), entry.name)
-    ) {
-      return entry.number;
+  const queries = [
+    description,
+    split.description,
+    descriptionFromFilename(filename),
+  ].filter((value, index, all) => value && all.indexOf(value) === index);
+  let best: { number: string; score: number } | null = null;
+  for (const query of queries) {
+    for (const entry of catalog) {
+      const score = catalogMatchScore(query, entry);
+      if (score === 0) continue;
+      if (!best || score > best.score) best = { number: entry.number, score };
     }
   }
-  return split.reference;
+  return best?.number ?? split.reference;
 }
 
 function resolveCitationColumns(
@@ -487,23 +555,46 @@ function resolveCitationColumns(
     description,
     catalog
   );
-  const catalogName = documentReference
+  const usableReference = isUsableDocumentNumber(documentReference)
+    ? documentReference
+    : "";
+  const catalogEntry = usableReference
     ? catalog.find(
-        (entry) => compactId(entry.number) === compactId(documentReference)
-      )?.name
+        (entry) => compactId(entry.number) === compactId(usableReference)
+      )
     : undefined;
+  const catalogName = catalogEntry?.name;
   const descriptionIsReference =
     !description ||
-    (documentReference.length > 0 &&
-      normalizeLabel(description) === normalizeLabel(documentReference));
+    (usableReference.length > 0 &&
+      normalizeLabel(description) === normalizeLabel(usableReference));
   if (descriptionIsReference) {
     description =
       catalogName ??
-      expandedFamilyDescription(documentReference || description) ??
-      expandedAbbreviationDescription(documentReference, abbreviations) ??
+      expandedFamilyDescription(usableReference || description) ??
+      expandedAbbreviationDescription(usableReference, abbreviations) ??
+      "";
+  } else if (
+    catalogName &&
+    descriptionsAlias(description, catalogName) &&
+    catalogName.length > description.length
+  ) {
+    description = catalogName;
+  }
+  if (!description) {
+    description =
+      catalogName ??
+      expandedFamilyDescription(usableReference) ??
+      expandedAbbreviationDescription(usableReference, abbreviations) ??
       "";
   }
-  return { documentReference, description };
+  return {
+    documentReference:
+      usableReference ||
+      tidyDescription(descriptionFromFilename(filename)) ||
+      tidyDescription(description),
+    description: tidyDescription(description),
+  };
 }
 
 function pageLabelFromSource(source: string): string {
@@ -522,7 +613,8 @@ function pageLabelFromSource(source: string): string {
 /**
  * Collapse equivalent 3xper cites: same catalog document number + page, or
  * the same description + page when there is no number. Falls back to file +
- * page so VQ rows without a catalog still dedupe.
+ * page so VQ rows without a catalog still dedupe. Different pages stay
+ * distinct rows.
  */
 export function threeXperCitationIdentityKey(
   source: string,
@@ -586,7 +678,7 @@ function citationsTableDoc(rows: readonly ThreeXperCitationRow[]): JSONContent {
     content: [
       {
         type: "table",
-        attrs: { colWidths: [1400, 2800, 3800, 2000] },
+        attrs: { colWidths: [1200, 2600, 4200, 2000] },
         content: [
           tableRow(THREE_XPER_CITATION_HEADERS, true),
           ...rows.map((row) =>

@@ -209,68 +209,11 @@ export function scrollToSuggestionComment(comment: CommentRecord): boolean {
   return false;
 }
 
-/** First painted suggestion mark (inline insert/delete), if the preview is up. */
-export function querySuggestionStartElement(
-  comment: CommentRecord
-): HTMLElement | null {
-  const mark = document.querySelector<HTMLElement>(
-    `[data-eval-id="${CSS.escape(comment.id)}"]`
-  );
-  if (mark) return mark;
-  return querySuggestionFieldElement(comment);
-}
-
-export function querySuggestionGutterCard(
-  section: SectionType
-): HTMLElement | null {
-  return document.querySelector<HTMLElement>(
-    `[data-gutter-anchor-id="${CSS.escape(suggestionGutterAnchorId(section))}"]`
-  );
-}
-
-/**
- * After a card is generated, pin the viewport to the start of the suggestion
- * and keep its gutter card on screen. Tall fields / mark spans use `start`
- * so the first line is not scrolled off; compact fields stay centered.
- */
-export function scrollToGeneratedSuggestion(comment: CommentRecord): boolean {
-  const start = querySuggestionStartElement(comment);
-  const field = querySuggestionFieldElement(comment);
-  const pinToStart =
-    (start != null && start !== field) ||
-    (field != null &&
-      field.getBoundingClientRect().height > SUGGESTION_FIELD_CENTER_MAX_PX);
-
-  let scrolled = false;
-  if (start) {
-    start.scrollIntoView({
-      behavior: "smooth",
-      block: pinToStart ? "start" : "center",
-    });
-    scrolled = true;
-  } else if (comment.section) {
-    const heading = document.getElementById(comment.section);
-    if (heading) {
-      heading.scrollIntoView({ behavior: "smooth", block: "start" });
-      scrolled = true;
-    }
-  }
-
-  if (comment.section) {
-    const card = querySuggestionGutterCard(comment.section);
-    if (card) {
-      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      scrolled = true;
-    }
-  }
-  return scrolled;
-}
-
 /**
  * First newly generated open AI suggestion, in document order. A batch
  * that lands on several sections at once (chat drafts, or five sections
- * suggested together) should pin the viewport to that card — not the
- * first already-open suggestion, and not the last timestamp.
+ * suggested together) should focus that card — not the first already-open
+ * suggestion, and not the last timestamp.
  */
 export function firstGeneratedSuggestion(
   previousIds: ReadonlySet<string>,

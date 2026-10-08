@@ -76,13 +76,13 @@ describe("threeXperCitationRows", () => {
     ).toEqual([
       {
         citationNumber: "1",
-        documentReference: "",
+        documentReference: "User Requirement Specification",
         description: "User Requirement Specification",
         referencePage: "Page # 1",
       },
       {
         citationNumber: "2",
-        documentReference: "",
+        documentReference: "Design Qualification",
         description: "Design Qualification",
         referencePage: "Page # 5",
       },
@@ -222,6 +222,11 @@ describe("threeXperCitationRows", () => {
         number: 25,
         source: "[Isosorbide Mononitrate (Oral and Injection) PDE, p. 1]",
       },
+      {
+        number: 3,
+        source:
+          "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 1]",
+      },
     ]);
     expect(rows).toEqual([
       {
@@ -232,8 +237,14 @@ describe("threeXperCitationRows", () => {
       },
       {
         citationNumber: "25",
-        documentReference: "",
+        documentReference: "Isosorbide Mononitrate (Oral and Injection) PDE",
         description: "Isosorbide Mononitrate (Oral and Injection) PDE",
+        referencePage: "Page # 1",
+      },
+      {
+        citationNumber: "3",
+        documentReference: "CVRP-ISM4-26-001-00",
+        description: "ISM Stage-4 Cleaning Verification Protocol",
         referencePage: "Page # 1",
       },
     ]);
@@ -320,6 +331,84 @@ describe("threeXperCitationRows", () => {
     );
     expect(row?.documentReference).toBe("CVPR-ISM4-26-001-00");
     expect(row?.description).toBe("ISM Stage-4 Cleaning Verification Protocol");
+  });
+
+  it("does not treat NA equipment numbers as a document reference", () => {
+    const sections = [
+      section("cvp_scope", {
+        table: tableDoc(
+          [
+            "S. No.",
+            "Name of the Equipment",
+            "Equipment No.",
+            "Capacity",
+            "MOC",
+            "Purpose",
+            "Product contact / Non-product contact",
+          ],
+          [["8", "Process lines", "NA", "", "", "Transfer", ""]]
+        ),
+      }),
+    ];
+    const [row] = threeXperCitationRows(
+      [{ number: 1, source: "[Process lines surface area, p. 1]" }],
+      sections
+    );
+    expect(row?.documentReference).toBe("Process lines surface area");
+    expect(row?.description).toBe("Process lines surface area");
+  });
+
+  it("never leaves Document reference # blank", () => {
+    const rows = threeXperCitationRows([
+      { number: 1, source: "[data sheet, p. 2]" },
+      { number: 2, source: "[ISM3 CV data sheet, p. 1]" },
+      { number: 3, source: "[Isosorbide Mononitrate (Oral and Injection) PDE, p. 1]" },
+      { number: 4, source: "[Process lines surface area, p. 1]" },
+      { number: 5, source: "[audit.pdf]" },
+    ]);
+    expect(rows.map((row) => row.documentReference)).toEqual([
+      "data sheet",
+      "ISM3 CV data sheet",
+      "Isosorbide Mononitrate (Oral and Injection) PDE",
+      "Process lines surface area",
+      "audit",
+    ]);
+  });
+
+  it("reads Document # from CVP 15.N.2 supporting-documents tables", () => {
+    const sections = [
+      section("cvp_equipment_sampling", {
+        items: [
+          tableDoc(
+            ["Documents", "Document #", "Effective / Approval date"],
+            [["Specification", "SPEC-ISM3-26-001", "08-Apr-2026"]]
+          ),
+        ],
+      }),
+    ];
+    const [row] = threeXperCitationRows(
+      [{ number: 1, source: "[Specification, p. 1]" }],
+      sections
+    );
+    expect(row?.documentReference).toBe("SPEC-ISM3-26-001");
+    expect(row?.description).toBe("Specification");
+  });
+
+  it("fills a short data-sheet cite from the longer related-document title", () => {
+    const sections = [
+      section("cvp_related_documents", {
+        table: tableDoc(
+          ["S. No.", "Document Title", "Document Number"],
+          [["1", "ISM3 CV data sheet", "DS-ISM3-26-001"]]
+        ),
+      }),
+    ];
+    const [row] = threeXperCitationRows(
+      [{ number: 1, source: "[data sheet, p. 2]" }],
+      sections
+    );
+    expect(row?.documentReference).toBe("DS-ISM3-26-001");
+    expect(row?.description).toBe("ISM3 CV data sheet");
   });
 
   it("reads SOP numbers from section 4", () => {
@@ -513,6 +602,140 @@ describe("unifyReportCitationsForExport with 3xper identity", () => {
       textOf((byKey.qsr_scope?.content as { narrative: JSONContent }).narrative)
     ).toBe("Capacity matches the URS [1].");
   });
+
+  it("keeps each cited page of a protocol as its own bibliography row", () => {
+    const sections = [
+      section("cvp_related_documents", {
+        table: tableDoc(
+          ["S. No.", "Document Title", "Document Number"],
+          [["1", "ISM3 CV data sheet", "DS-ISM3-26-001"]]
+        ),
+      }),
+      section("cvp_objective", {
+        narrative: {
+          type: "doc",
+          content: [
+            paragraph("Sampling follows the cited protocol [1]."),
+            paragraph(),
+            paragraph("Citations:"),
+            paragraph(
+              "1. [CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 1]"
+            ),
+          ],
+        },
+      }),
+      section("cvp_scope", {
+        narrative: {
+          type: "doc",
+          content: [
+            paragraph("Equipment list matches the protocol [1]."),
+            paragraph(),
+            paragraph("Citations:"),
+            paragraph(
+              "1. [CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 3]"
+            ),
+          ],
+        },
+      }),
+      section("cvp_background", {
+        narrative: {
+          type: "doc",
+          content: [
+            paragraph("The data sheet confirms the train [1]."),
+            paragraph(),
+            paragraph("Citations:"),
+            paragraph("1. [ISM3 CV data sheet, p. 1]"),
+          ],
+        },
+      }),
+      section("cvp_prerequisites", {
+        narrative: {
+          type: "doc",
+          content: [
+            paragraph("Pre-requisites reuse the sheet [1]."),
+            paragraph(),
+            paragraph("Citations:"),
+            paragraph("1. [data sheet, p. 2]"),
+          ],
+        },
+      }),
+    ];
+    const { bibliography, sections: next } = unifyReportCitationsForExport(
+      sections,
+      [
+        "cvp_related_documents",
+        "cvp_objective",
+        "cvp_scope",
+        "cvp_background",
+        "cvp_prerequisites",
+      ],
+      {
+        sourceIdentity: (source) =>
+          threeXperCitationIdentityKey(source, sections),
+      }
+    );
+    expect(bibliography).toEqual([
+      {
+        number: 1,
+        source:
+          "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 1]",
+      },
+      {
+        number: 2,
+        source:
+          "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 3]",
+      },
+      { number: 3, source: "[ISM3 CV data sheet, p. 1]" },
+      { number: 4, source: "[data sheet, p. 2]" },
+    ]);
+    const rows = threeXperCitationRows(bibliography, sections);
+    expect(rows).toEqual([
+      {
+        citationNumber: "1",
+        documentReference: "CVRP-ISM4-26-001-00",
+        description: "ISM Stage-4 Cleaning Verification Protocol",
+        referencePage: "Page # 1",
+      },
+      {
+        citationNumber: "2",
+        documentReference: "CVRP-ISM4-26-001-00",
+        description: "ISM Stage-4 Cleaning Verification Protocol",
+        referencePage: "Page # 3",
+      },
+      {
+        citationNumber: "3",
+        documentReference: "DS-ISM3-26-001",
+        description: "ISM3 CV data sheet",
+        referencePage: "Page # 1",
+      },
+      {
+        citationNumber: "4",
+        documentReference: "DS-ISM3-26-001",
+        description: "ISM3 CV data sheet",
+        referencePage: "Page # 2",
+      },
+    ]);
+    const byKey = Object.fromEntries(next.map((row) => [row.section, row]));
+    const textOf = (doc: JSONContent) =>
+      (doc.content ?? [])
+        .map((node) =>
+          (node.content ?? [])
+            .map((child) => (child as { text?: string }).text ?? "")
+            .join("")
+        )
+        .join("\n");
+    expect(
+      textOf(
+        (byKey.cvp_background?.content as { narrative: JSONContent }).narrative
+      )
+    ).toBe("The data sheet confirms the train [3].");
+    expect(
+      textOf(
+        (byKey.cvp_prerequisites?.content as { narrative: JSONContent })
+          .narrative
+      )
+    ).toBe("Pre-requisites reuse the sheet [4].");
+  });
 });
 
 describe("threeXperCitationsAppendixXml", () => {
@@ -531,8 +754,8 @@ describe("threeXperCitationsAppendixXml", () => {
     expect(xml).toContain(THREE_XPER_CITATIONS_HEADING);
     expect(xml).toContain('<w:pStyle w:val="Heading1"/>');
     expect(xml).toContain("<w:tbl>");
-    expect(xml).toContain('<w:gridCol w:w="1400"/>');
-    expect(xml).toContain('<w:gridCol w:w="3800"/>');
+    expect(xml).toContain('<w:gridCol w:w="1200"/>');
+    expect(xml).toContain('<w:gridCol w:w="4200"/>');
     for (const header of THREE_XPER_CITATION_HEADERS) {
       expect(xml).toContain(header);
     }

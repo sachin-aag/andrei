@@ -3,6 +3,7 @@ import {
   checkProposedEdit,
   type ProposedEditInput,
 } from "@/lib/ai/chat/propose-edit";
+import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-item-path";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 
@@ -86,6 +87,18 @@ function cutAtNextSubsection(text: string, ordinal: string): string {
   const idx = match.index ?? 0;
   if (idx <= 0) return stripped.trim();
   return stripped.slice(0, idx).trim();
+}
+
+function equipmentIndexesInField(doc: JSONContent): Set<number> {
+  const indexes = new Set<number>();
+  for (const node of doc.content ?? []) {
+    if (node.type !== "heading") continue;
+    const ordinal = cvpEquipmentSubsectionOrdinal(headingPlain(node));
+    if (!ordinal) continue;
+    const index = cvpEquipmentItemIndexFromTarget(ordinal);
+    if (index != null) indexes.add(index);
+  }
+  return indexes;
 }
 
 function headingTitleFromInsert(insert: string, ordinal: string): string {
@@ -224,6 +237,15 @@ export function repairCvpEquipmentProseEdit(input: {
   const prose = cutAtNextSubsection(cleaned, ordinal);
   if (!prose) return null;
   const title = headingTitleFromInsert(cleaned, ordinal);
+  const ordinalIndex = cvpEquipmentItemIndexFromTarget(ordinal);
+  const fieldIndexes = equipmentIndexesInField(input.fieldDoc);
+  if (
+    ordinalIndex != null &&
+    fieldIndexes.size > 0 &&
+    !fieldIndexes.has(ordinalIndex)
+  ) {
+    return null;
+  }
   const nodes = input.fieldDoc.content ?? [];
   const headingIndex = nodes.findIndex(
     (node) => subsectionOrdinalOfHeading(node) === ordinal
