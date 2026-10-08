@@ -825,6 +825,61 @@ describe("validateSuggestionLocate table operations", () => {
     expect(v.documentChanged).toBe(false);
   });
 
+  it("still previews insert_rows after a painted filled-row modify", () => {
+    const modify = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          rowKey: "UUT-1",
+          expectedText: "Acme Corp",
+          insertText: "Acme Corp Rev",
+        },
+      ],
+    };
+    const preview = buildTableOperationPreviewDoc(
+      equipmentTable("Acme Corp"),
+      modify,
+      {
+        id: "modify-1",
+        authorId: "ai",
+        status: "pending",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        kind: "fix",
+      }
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    const comment = aiFixComment({
+      id: "insert-1",
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Add the next unit",
+        tableOperation: {
+          kind: "insert_rows",
+          tableIndex: 0,
+          afterRow: 1,
+          afterRowKey: "UUT-1",
+          rows: [["UUT-2", "Beta Corp"]],
+          expectedRowAtAfter: ["UUT-1", "Acme Corp"],
+        },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: preview.doc,
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
+    expect(v.documentChanged).toBe(false);
+  });
+
   it("keeps create_table applyable when afterAnchor is not yet in the live field", () => {
     const comment = aiFixComment({
       section: "define",

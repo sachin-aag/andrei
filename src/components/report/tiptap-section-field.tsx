@@ -629,6 +629,10 @@ export function TiptapSectionField({
       editable,
       onUpdate: ({ editor: ed }) => {
         if (skipHydrateUpdateRef.current) return;
+        // Structural table previews are editor-local. Persisting them makes
+        // a later insert_rows card validate against painted cells and look
+        // like it never landed (stale / canPreview false).
+        if (tablePreviewSuggestionIdRef.current) return;
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
