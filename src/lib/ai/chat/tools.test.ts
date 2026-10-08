@@ -3317,7 +3317,16 @@ describe("buildChatTools propose edits", () => {
                   id: "sec-eq",
                   reportId: "report-1",
                   section: "cvp_equipment_sampling",
-                  content: { items: [filledItem] },
+                  content: {
+                    items: [
+                      cvpEquipmentSamplingSeed(1),
+                      cvpEquipmentSamplingSeed(2),
+                      cvpEquipmentSamplingSeed(3),
+                      cvpEquipmentSamplingSeed(4),
+                      cvpEquipmentSamplingSeed(5),
+                      filledItem,
+                    ],
+                  },
                 },
               ]
         ),
@@ -3328,7 +3337,7 @@ describe("buildChatTools propose edits", () => {
       canEdit: true,
       actor,
       documentType: "cleaning_verification_protocol",
-      mentionedTargetField: "items.0",
+      mentionedTargetField: "items.1",
       unsupportedFactPolicy: "flag",
       messages: [
         {
@@ -3360,7 +3369,7 @@ describe("buildChatTools propose edits", () => {
     );
     expect(drafted).toMatchObject({
       status: "drafted",
-      targetField: "items.0",
+      targetField: "items.5",
     });
   });
 
@@ -3493,6 +3502,124 @@ describe("buildChatTools propose edits", () => {
     expect(payload).toContain(details);
     expect(payload).not.toContain("| Capacity |");
     expect(payload).toContain(CVP_EQUIPMENT_DETAILS_SEED);
+  });
+
+  it("keeps a 15.1 lux propose_edit on items.0 even when 15.2 is tagged", async () => {
+    const visualInspection = (ordinal: number) => ({
+      type: "doc" as const,
+      content: [
+        {
+          type: "heading" as const,
+          attrs: { level: 2 },
+          content: [{ type: "text" as const, text: `15.${ordinal} EQUIPMENT` }],
+        },
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The subject equipment is located in Production Block-2, a multipurpose manufacturing facility. This equipment is used in Isosorbide Mononitrate (ISM Stage-3) manufacturing for reaction operations.",
+            },
+          ],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 3 },
+          content: [
+            {
+              type: "text" as const,
+              text: `15.${ordinal}.1 Equipment details`,
+            },
+          ],
+        },
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The equipment details, including Material of Construction (MOC), were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.",
+            },
+          ],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 3 },
+          content: [
+            {
+              type: "text" as const,
+              text: `15.${ordinal}.6 Visual inspection summary`,
+            },
+          ],
+        },
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "Visual inspection shall be performed independently by the Production Chemist, Production Shift In-charge, and QA Executive under qualified light intensity (NLT 500 Lux). The inspection verifies that all internal product-contact surfaces are visibly clean, dry, and free from particulate matter.",
+            },
+          ],
+        },
+      ],
+    });
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: {
+                    items: [
+                      visualInspection(1),
+                      visualInspection(2),
+                      visualInspection(3),
+                    ],
+                  },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      mentionedTargetField: "items.1",
+      unsupportedFactPolicy: "flag",
+    });
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.0",
+        anchorText:
+          "15.1.6 Visual inspection summary\nVisual inspection shall be performed independently by the Production Chemist, Production Shift In-charge, and QA Executive under qualified light intensity (NLT 500 Lux).",
+        deleteText: "under qualified light intensity (NLT 500 Lux)",
+        insertText: "under qualified illumination conditions",
+        reasoning: "Remove 500 Lux from 15.1 visual inspection summary.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "cvp_equipment_sampling",
+      targetField: "items.0",
+    });
+    const payload = JSON.stringify(inserted);
+    expect(payload).toContain("under qualified light intensity (NLT 500 Lux)");
+    expect(payload).toContain("under qualified illumination conditions");
+    expect(payload).not.toContain("15.2.1 Equipment details");
   });
 
   it("refuses propose_edit that restates a table as bullets", async () => {
