@@ -142,7 +142,9 @@ export function parseImageDrawing(raw: unknown): ImageDrawing | null {
     const label = parseLabel(rec, i);
     if (label) shapes.push(label);
   }
-  if (shapes.length === 0 && record.version == null) return null;
+  if (shapes.length === 0 && record.version == null && !Array.isArray(record.shapes)) {
+    return null;
+  }
   return { version: DRAWING_OVERLAY_VERSION, shapes };
 }
 
