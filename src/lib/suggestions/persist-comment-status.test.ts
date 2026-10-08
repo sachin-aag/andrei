@@ -24,7 +24,7 @@ describe("patchCommentStatus", () => {
       "/api/reports/r1/comments/c1",
       expect.objectContaining({
         method: "PATCH",
-        keepalive: true,
+        keepalive: false,
         body: JSON.stringify({ status: "dismissed" }),
       })
     );
@@ -67,6 +67,21 @@ describe("patchCommentStatus", () => {
     );
   });
 
+  it("retries a transient Failed to fetch, then resolves", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockResolvedValue({ ok: true, status: 200 })
+    );
+
+    await expect(
+      patchCommentStatus("r1", "c1", "dismissed")
+    ).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it("throws CommentPersistError on network failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 
@@ -76,6 +91,7 @@ describe("patchCommentStatus", () => {
         message: "Could not update suggestion. Please try again.",
       })
     );
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });
 

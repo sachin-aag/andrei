@@ -142,7 +142,16 @@ export function PlainTextSuggestionField({
   className?: string;
   placeholder?: string;
 }) {
-  const { report, readOnly, currentUserId, refresh, trackChangesMode } = useReportData();
+  const {
+    report,
+    readOnly,
+    currentUserId,
+    refresh,
+    trackChangesMode,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
+  } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
     !readOnly &&
@@ -362,6 +371,7 @@ export function PlainTextSuggestionField({
     }
 
     setPending(true);
+    closeSuggestionComments([activeComment.id]);
     try {
       beginSuggestionApplyTransition(section, activeComment.id, "accept");
       const fieldPath = resolveSuggestionFieldPath(
@@ -421,6 +431,8 @@ export function PlainTextSuggestionField({
         if (trackChangesMode) setTcBaseline(nextValue);
       }
       replaceSection(section, nextSection);
+      markSectionPersisted(section, nextSection);
+      closeSuggestionComments(result.dismissed.map((row) => row.id));
       setComments((prev) =>
         prev.map((c) => {
           if (c.id === activeComment.id) {
@@ -440,6 +452,7 @@ export function PlainTextSuggestionField({
       toast.success("Suggestion applied");
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments([activeComment.id]);
       toast.error(
         err instanceof SectionPersistError
           ? err.message
@@ -469,6 +482,9 @@ export function PlainTextSuggestionField({
     setComments,
     refresh,
     comments,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
     trackChangesMode,
@@ -478,6 +494,7 @@ export function PlainTextSuggestionField({
     if (!activeComment || pending || !canResolve) return;
 
     setPending(true);
+    closeSuggestionComments([activeComment.id]);
     try {
       beginSuggestionApplyTransition(section, activeComment.id, "dismiss");
       // Let the diff finish fading before the preview is torn down, so the
@@ -514,6 +531,7 @@ export function PlainTextSuggestionField({
           section,
           result.nextSection as unknown
         );
+        markSectionPersisted(section, result.nextSection);
       }
       setComments((prev) => prev.filter((c) => c.id !== activeComment.id));
       setApplySettling(true);
@@ -522,6 +540,7 @@ export function PlainTextSuggestionField({
       toast.success("Suggestion dismissed");
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments([activeComment.id]);
       toast.error(
         err instanceof CommentPersistError || err instanceof SectionPersistError
           ? err.message
@@ -544,6 +563,9 @@ export function PlainTextSuggestionField({
     replaceSection,
     setComments,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);

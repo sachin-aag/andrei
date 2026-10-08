@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportBulkSuggestionActions } from "./report-bulk-suggestion-actions";
 import type { CommentRecord } from "@/types/report";
@@ -9,6 +9,10 @@ import { serializeAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 const mockState = vi.hoisted(() => ({
   comments: [] as CommentRecord[],
   documentType: "qualification_summary_report" as const,
+  closeSuggestionComments: vi.fn(),
+  releaseSuggestionComments: vi.fn(),
+  acceptAll: vi.fn(),
+  dismissAll: vi.fn(),
 }));
 
 function aiComment(
@@ -46,6 +50,18 @@ vi.mock("@/lib/analytics/events", () => ({
   captureEvent: vi.fn(),
 }));
 
+vi.mock("@/lib/suggestions/bulk-suggestions", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/suggestions/bulk-suggestions")>();
+  return {
+    ...actual,
+    acceptAllSuggestionsInReport: (...args: unknown[]) =>
+      mockState.acceptAll(...args),
+    dismissAllSuggestionsInReport: (...args: unknown[]) =>
+      mockState.dismissAll(...args),
+  };
+});
+
 vi.mock("@/providers/user-directory-provider", () => ({
   useUserDirectory: () => ({
     getUser: () => ({ id: "user-1", role: "engineer" }),
@@ -63,6 +79,9 @@ vi.mock("@/providers/report-provider", () => ({
     readOnly: false,
     currentUserId: "user-1",
     refresh: vi.fn(),
+    closeSuggestionComments: mockState.closeSuggestionComments,
+    releaseSuggestionComments: mockState.releaseSuggestionComments,
+    markSectionPersisted: vi.fn(),
   }),
   useReportComments: () => ({
     comments: mockState.comments,
@@ -86,6 +105,10 @@ describe("ReportBulkSuggestionActions leftover suggestions", () => {
   beforeEach(() => {
     mockState.comments = [];
     mockState.documentType = "qualification_summary_report";
+    mockState.closeSuggestionComments.mockReset();
+    mockState.releaseSuggestionComments.mockReset();
+    mockState.acceptAll.mockReset();
+    mockState.dismissAll.mockReset();
   });
 
   it("hides the row when nothing is open", () => {
@@ -127,5 +150,49 @@ describe("ReportBulkSuggestionActions leftover suggestions", () => {
     rerender(<ReportBulkSuggestionActions />);
     expect(screen.getByTestId("report-bulk-suggestion-actions")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^dismiss all$/i })).toBeInTheDocument();
+  });
+
+  it("closes open cards before Apply all so a stale refresh cannot resurrect them", async () => {
+    mockState.comments = [
+      aiComment({ id: "acro", section: "qsr_acronyms" }),
+    ];
+    mockState.acceptAll.mockResolvedValue({
+      appliedIds: ["acro"],
+      skippedIds: [],
+      failedIds: [],
+      dismissedIds: [],
+      changedSections: ["qsr_acronyms"],
+    });
+    render(<ReportBulkSuggestionActions />);
+    screen.getByRole("button", { name: /^apply all 1$/i }).click();
+    expect(mockState.closeSuggestionComments).toHaveBeenCalledWith(["acro"]);
+    await waitFor(() => {
+      expect(mockState.releaseSuggestionComments).toHaveBeenCalledWith([]);
+    });
+  });
+
+  it("releases leftovers Apply all skipped so they can reappear", async () => {
+    mockState.comments = [
+      aiComment({ id: "applied", section: "qsr_objective", contentPath: "narrative" }),
+      aiComment({ id: "skipped", section: "qsr_acronyms" }),
+    ];
+    mockState.acceptAll.mockResolvedValue({
+      appliedIds: ["applied"],
+      skippedIds: ["skipped"],
+      failedIds: [],
+      dismissedIds: [],
+      changedSections: ["qsr_objective"],
+    });
+    render(<ReportBulkSuggestionActions />);
+    screen.getByRole("button", { name: /^apply all 2$/i }).click();
+    expect(mockState.closeSuggestionComments).toHaveBeenCalledWith([
+      "applied",
+      "skipped",
+    ]);
+    await waitFor(() => {
+      expect(mockState.releaseSuggestionComments).toHaveBeenCalledWith([
+        "skipped",
+      ]);
+    });
   });
 });

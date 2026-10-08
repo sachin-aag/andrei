@@ -533,10 +533,18 @@ export function activeSuggestionForSection(
   return sorted[0] ?? null;
 }
 
+export function openAiSuggestionIds(
+  comments: readonly CommentRecord[]
+): string[] {
+  return comments
+    .filter(
+      (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
+    )
+    .map((c) => c.id);
+}
+
 export function countOpenAiSuggestions(comments: readonly CommentRecord[]): number {
-  return comments.filter(
-    (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
-  ).length;
+  return openAiSuggestionIds(comments).length;
 }
 
 /**
