@@ -32,6 +32,34 @@ function collectTables(doc: JSONContent): JSONContent[] {
   return tables;
 }
 
+function tableSignature(table: JSONContent): string {
+  return JSON.stringify(table);
+}
+
+function blockPlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map(blockPlainText).join("");
+}
+
+/**
+ * Index of the table `create_table` just inserted. A mid-field afterAnchor
+ * insert is not the last table — painting `.at(-1)` marked the existing
+ * 15.N.8 extraneous grid instead of the new 15.N.3.2 table.
+ */
+export function createdTableIndex(
+  beforeDoc: JSONContent,
+  afterDoc: JSONContent
+): number {
+  const before = collectTables(beforeDoc).map(tableSignature);
+  const after = collectTables(afterDoc);
+  for (let i = 0; i < after.length; i++) {
+    if (i >= before.length || tableSignature(after[i]!) !== before[i]) {
+      return i;
+    }
+  }
+  return Math.max(after.length - 1, 0);
+}
+
 function tableRows(table: JSONContent): JSONContent[] {
   return (table.content ?? []).filter((node) => node.type === "tableRow");
 }
@@ -65,6 +93,20 @@ function markAllText(
     return;
   }
   node.content?.forEach((child) => markAllText(child, markName, attrs));
+}
+
+function markCaptionBeforeTable(
+  doc: JSONContent,
+  table: JSONContent,
+  attrs: RedraftPreviewAttrs
+): void {
+  const content = doc.content ?? [];
+  const at = content.findIndex((node) => node === table);
+  if (at <= 0) return;
+  const prev = content[at - 1];
+  if (prev?.type !== "paragraph") return;
+  if (!/^Table\s+\d+\.\s+/i.test(blockPlainText(prev).trim())) return;
+  markAllText(prev, suggestionInsertMarkName, attrs);
 }
 
 function markRows(
@@ -327,7 +369,8 @@ export function buildTableOperationPreviewDoc(
   if (!applied.ok) return applied;
 
   if (operation.kind === "create_table") {
-    const created = collectTables(applied.doc).at(-1);
+    const created =
+      collectTables(applied.doc)[createdTableIndex(doc, applied.doc)];
     if (!created) return applied;
     const createdRows = tableRows(created);
     markRows(
@@ -336,6 +379,7 @@ export function buildTableOperationPreviewDoc(
       suggestionInsertMarkName,
       attrs
     );
+    markCaptionBeforeTable(applied.doc, created, attrs);
     return applied;
   }
 

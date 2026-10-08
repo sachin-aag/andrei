@@ -83,8 +83,11 @@ DV mixes LLM criteria with deterministic `check()` functions.
   drop the insert card. A changed identity cell is still stale. Pending
   table-preview insert marks on a seeded empty row are the live apply of
   `edit_cells` — commit them (narrative `alreadyMarked`) instead of
-  comparing `expectedText: ""` to the painted cell. Table previews stay
-  editor-local (do not autosave painted cells).
+  comparing `expectedText: ""` to the painted cell.   Table previews stay
+  editor-local (do not autosave painted cells). `create_table` afterAnchor
+  preview marks the inserted table (and its `Table N.` caption), not the
+  last table in the field — a mid-box 15.N.3.2 insert must not paint the
+  later 15.N.8 extraneous grid.
   Table N is the 1-based ordinal among filled grids in document order
   (starter abbreviation rows occupy Table 1; empty unused shells stay
   unnumbered). Seed-matching incomplete shells (CVP identity Capacity/MOC/
