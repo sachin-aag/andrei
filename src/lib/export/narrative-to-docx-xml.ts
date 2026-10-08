@@ -96,6 +96,15 @@ function isEmptyExportNode(node: JSONContent | undefined): boolean {
   return !nodePlainText(node).trim();
 }
 
+/**
+ * Headings and tables start a new procedure. Nested bullets, body paragraphs,
+ * and page-local notes stay inside the current numbered list so Word prints
+ * 3 after 2 instead of restarting at 1.
+ */
+function breaksOrderedListSequence(node: JSONContent): boolean {
+  return node.type === "heading" || node.type === "table";
+}
+
 function isTableTitleNode(node: JSONContent): boolean {
   if (node.type !== "paragraph" && node.type !== "heading") return false;
   const text = nodePlainText(node).trim();
@@ -183,6 +192,7 @@ export function narrativeToDocxXmlWithContext(
     }
   }
   let landscapeOpen = false;
+  let continuedOrderedNumId: number | null = null;
 
   const closeLandscape = () => {
     if (!landscapeOpen) return;
@@ -197,6 +207,9 @@ export function narrativeToDocxXmlWithContext(
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
+    if (breaksOrderedListSequence(node)) {
+      continuedOrderedNumId = null;
+    }
     if (node.type === "table") {
       if (landscapeWithTable.has(i)) {
         openLandscape();
@@ -221,7 +234,18 @@ export function narrativeToDocxXmlWithContext(
     if (node.type === "paragraph") {
       parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
     } else if (node.type === "bulletList" || node.type === "orderedList") {
-      parts.push(listToXml(node, ctx));
+      if (node.type === "orderedList") {
+        const reuseNumId = continuedOrderedNumId;
+        const allocatedBefore = ctx.allocatedNumIds.length;
+        parts.push(
+          listToXml(node, ctx, reuseNumId != null ? { numId: reuseNumId } : {})
+        );
+        if (reuseNumId == null) {
+          continuedOrderedNumId = ctx.allocatedNumIds[allocatedBefore] ?? null;
+        }
+      } else {
+        parts.push(listToXml(node, ctx));
+      }
     } else if (node.type === "heading") {
       parts.push(headingToXml(node, ctx, keepNext));
     } else if (node.type === "mathBlock") {

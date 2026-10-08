@@ -37,6 +37,13 @@ function exportCtx() {
   return createDocxExportContext(loadListNumberingBasesFromZip(zip));
 }
 
+function listItem(text: string): JSONContent {
+  return {
+    type: "listItem",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
+}
+
 function textCell(
   type: "tableCell" | "tableHeader",
   text: string,
@@ -1172,7 +1179,7 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("Numbered item");
   });
 
-  it("allocates a fresh numId per ordered list block", () => {
+  it("reuses one numId so a split ordered list continues 3 after 2", () => {
     const ctx = exportCtx();
     const doc: JSONContent = {
       type: "doc",
@@ -1180,30 +1187,99 @@ describe("narrativeToDocxXml tables", () => {
         {
           type: "orderedList",
           content: [
-            {
-              type: "listItem",
-              content: [
-                {
-                  type: "paragraph",
-                  content: [{ type: "text", text: "Define one" }],
-                },
-              ],
-            },
+            listItem("Execution of Cleaning"),
+            listItem("Drying & Visual Inspection"),
+          ],
+        },
+        {
+          type: "bulletList",
+          content: [
+            listItem("Dry the equipment."),
+            listItem("Visually inspect the interior."),
           ],
         },
         {
           type: "orderedList",
           content: [
+            listItem("Swabable Sampling"),
+            listItem("Final Rinse Sampling"),
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const orderedNumId = ctx.allocatedNumIds[0];
+    expect(orderedNumId).toBeDefined();
+    expect(xml.match(new RegExp(`<w:numId w:val="${orderedNumId}"/>`, "g"))).toHaveLength(4);
+    expect(ctx.numberingPatches.filter((patch) => patch.includes(`w:numId="${orderedNumId}"`))).toHaveLength(1);
+    expect(xml).toContain("Swabable Sampling");
+  });
+
+  it("continues numbering across body paragraphs and nested bullets", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Calculation Methodology:" }],
+        },
+        {
+          type: "orderedList",
+          content: [listItem("Calculation based on Rinse Factor (RF):")],
+        },
+        {
+          type: "paragraph",
+          content: [
             {
-              type: "listItem",
-              content: [
-                {
-                  type: "paragraph",
-                  content: [{ type: "text", text: "Measure one" }],
-                },
-              ],
+              type: "text",
+              text: "The Rinse Factor (RF) typically ranges between 1–10 L/m².",
             },
           ],
+        },
+        {
+          type: "bulletList",
+          content: [
+            listItem("1–3 L/m² for easily soluble residues"),
+            listItem("3–5 L/m² for moderately soluble residues"),
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "An RF of 3 L/m² is applied." }],
+        },
+        {
+          type: "orderedList",
+          content: [listItem("Calculation based on Solvent Adherence Factor (SAF):")],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const orderedNumId = ctx.allocatedNumIds[0];
+    expect(orderedNumId).toBeDefined();
+    expect(xml.match(new RegExp(`<w:numId w:val="${orderedNumId}"/>`, "g"))).toHaveLength(2);
+    expect(xml).toContain("Calculation based on Solvent Adherence Factor (SAF):");
+  });
+
+  it("allocates a fresh numId after a heading so a new list restarts at 1", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          content: [listItem("Define one")],
+        },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Measure" }],
+        },
+        {
+          type: "orderedList",
+          content: [listItem("Measure one")],
         },
       ],
     };
