@@ -276,11 +276,181 @@ export function drawingEquals(
   return JSON.stringify(a ?? emptyImageDrawing()) === JSON.stringify(b ?? emptyImageDrawing());
 }
 
+type CalloutSide = "left" | "right" | "top" | "bottom";
+
+const LABEL_GAP = 0.03;
+const LABEL_STACK_GAP = 0.02;
+/** Prefer left/right labels unless the tip is clearly nearer the top or bottom. */
+const HORIZ_PREF = 0.08;
+/** Slight left bias so a center tip still follows the 3xper left-margin convention. */
+const LEFT_BIAS = 0.04;
+const CROWD_PENALTY = 0.07;
+
+type PlacedCallout = {
+  index: number;
+  text: string;
+  tipX: number;
+  tipY: number;
+  w: number;
+  h: number;
+  side: CalloutSide;
+  x: number;
+  y: number;
+};
+
+function measureLabel(text: string): { w: number; h: number } {
+  const lines = text.split(/\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  const count = Math.max(1, lines.length);
+  const longest = lines.reduce((max, line) => Math.max(max, line.length), 1);
+  return {
+    w: Math.min(0.36, Math.max(0.16, 0.10 + longest * 0.011)),
+    h: Math.min(0.14, Math.max(0.05, 0.024 + count * 0.028)),
+  };
+}
+
+function hasExplicitTip(item: { tipX?: number; tipY?: number }): boolean {
+  return (
+    typeof item.tipX === "number" &&
+    Number.isFinite(item.tipX) &&
+    typeof item.tipY === "number" &&
+    Number.isFinite(item.tipY)
+  );
+}
+
+function defaultTip(index: number, count: number): { x: number; y: number } {
+  if (count <= 1) return { x: 0.58, y: 0.5 };
+  const top = 0.16;
+  const bottom = 0.84;
+  const span = Math.max(0.2, bottom - top);
+  return { x: 0.58, y: top + (span * (index + 0.5)) / count };
+}
+
+function pickSide(
+  tipX: number,
+  tipY: number,
+  counts: Record<CalloutSide, number>
+): CalloutSide {
+  const dLeft = tipX;
+  const dRight = 1 - tipX;
+  const dTop = tipY;
+  const dBottom = 1 - tipY;
+  const crowd = (side: CalloutSide) => counts[side] * CROWD_PENALTY;
+  const horiz = Math.min(dLeft, dRight);
+  const vert = Math.min(dTop, dBottom);
+  if (vert + HORIZ_PREF < horiz) {
+    const topScore = dTop + crowd("top");
+    const bottomScore = dBottom + crowd("bottom");
+    return topScore <= bottomScore ? "top" : "bottom";
+  }
+  const leftScore = dLeft + crowd("left") - LEFT_BIAS;
+  const rightScore = dRight + crowd("right");
+  return leftScore <= rightScore ? "left" : "right";
+}
+
+function packAlong(
+  desired: number[],
+  sizes: number[],
+  min: number,
+  max: number
+): number[] {
+  const n = desired.length;
+  if (n === 0) return [];
+  const order = desired.map((_, i) => i).toSorted((a, b) => desired[a]! - desired[b]!);
+  const total = sizes.reduce((sum, size) => sum + size, 0) + LABEL_STACK_GAP * (n - 1);
+  let lo = min;
+  let hi = max;
+  if (total > hi - lo) {
+    const extra = (total - (hi - lo)) / 2;
+    lo -= extra;
+    hi += extra;
+  }
+  const pos = desired.map((value) => value);
+  let cursor = lo;
+  for (const i of order) {
+    pos[i] = Math.max(pos[i]!, cursor);
+    cursor = pos[i]! + sizes[i]! + LABEL_STACK_GAP;
+  }
+  const last = order[n - 1]!;
+  if (pos[last]! + sizes[last]! <= hi) return pos;
+  cursor = hi;
+  for (let k = n - 1; k >= 0; k--) {
+    const i = order[k]!;
+    const start = cursor - sizes[i]!;
+    pos[i] = Math.min(pos[i]!, start);
+    cursor = pos[i]! - LABEL_STACK_GAP;
+  }
+  if (pos[order[0]!]! >= lo) return pos;
+  let t = lo + Math.max(0, (hi - lo - total) / 2);
+  for (const i of order) {
+    pos[i] = t;
+    t += sizes[i]! + LABEL_STACK_GAP;
+  }
+  return pos;
+}
+
+function placeOnSide(item: PlacedCallout): void {
+  switch (item.side) {
+    case "left":
+      item.x = -(item.w + LABEL_GAP);
+      item.y = item.tipY - item.h / 2;
+      return;
+    case "right":
+      item.x = 1 + LABEL_GAP;
+      item.y = item.tipY - item.h / 2;
+      return;
+    case "top":
+      item.x = item.tipX - item.w / 2;
+      item.y = -(item.h + LABEL_GAP);
+      return;
+    case "bottom":
+      item.x = item.tipX - item.w / 2;
+      item.y = 1 + LABEL_GAP;
+      return;
+    default: {
+      const _never: never = item.side;
+      return _never;
+    }
+  }
+}
+
+function packSide(items: PlacedCallout[]): void {
+  if (items.length === 0) return;
+  const side = items[0]!.side;
+  const alongY = side === "left" || side === "right";
+  const desired = items.map((item) => (alongY ? item.y : item.x));
+  const sizes = items.map((item) => (alongY ? item.h : item.w));
+  const packed = packAlong(desired, sizes, -0.12, 1.12);
+  items.forEach((item, i) => {
+    if (alongY) item.y = packed[i]!;
+    else item.x = packed[i]!;
+  });
+}
+
+function arrowStart(item: PlacedCallout): { x1: number; y1: number } {
+  switch (item.side) {
+    case "left":
+      return { x1: item.x + item.w, y1: item.y + item.h / 2 };
+    case "right":
+      return { x1: item.x, y1: item.y + item.h / 2 };
+    case "top":
+      return { x1: item.x + item.w / 2, y1: item.y + item.h };
+    case "bottom":
+      return { x1: item.x + item.w / 2, y1: item.y };
+    default: {
+      const _never: never = item.side;
+      return _never;
+    }
+  }
+}
+
 /**
- * Stack callout boxes down the left margin (outside the photo), arrows
- * pointing into the equipment — the 3xper swab pictorial layout.
+ * Place callout boxes in the margin outside the photo, arrows pointing at
+ * the equipment. No tip → 3xper left stack. Explicit tips hug the nearest
+ * outer edge (left/right, or top/bottom when clearly closer) so labels do
+ * not cover the picture and arrows stay short. Same-side labels are packed
+ * so they do not overlap.
  */
-export function layoutCalloutsLeft(callouts: readonly DrawingCallout[]): ImageDrawing {
+export function layoutCallouts(callouts: readonly DrawingCallout[]): ImageDrawing {
   const items = callouts
     .map((item) => ({
       text: item.text.trim(),
@@ -291,49 +461,80 @@ export function layoutCalloutsLeft(callouts: readonly DrawingCallout[]): ImageDr
     .slice(0, 24);
   if (items.length === 0) return emptyImageDrawing();
 
-  const count = items.length;
-  const top = 0.08;
-  const bottom = 0.92;
-  const span = Math.max(0.2, bottom - top);
-  const slot = span / count;
-  const labelW = 0.22;
-  const labelH = Math.min(0.09, Math.max(0.045, slot * 0.72));
-  const gap = 0.03;
-  const x = -(labelW + gap);
-  const shapes: DrawingShape[] = [];
+  const counts: Record<CalloutSide, number> = {
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  };
+  const placed: PlacedCallout[] = items.map((item, index) => {
+    const size = measureLabel(item.text);
+    const explicit = hasExplicitTip(item);
+    const fallback = defaultTip(index, items.length);
+    const tipX = explicit ? clamp01(item.tipX!) : fallback.x;
+    const tipY = explicit ? clamp01(item.tipY!) : fallback.y;
+    const side = explicit ? pickSide(tipX, tipY, counts) : "left";
+    counts[side] += 1;
+    const row: PlacedCallout = {
+      index,
+      text: item.text,
+      tipX,
+      tipY,
+      w: size.w,
+      h: size.h,
+      side,
+      x: 0,
+      y: 0,
+    };
+    placeOnSide(row);
+    return row;
+  });
 
-  items.forEach((item, index) => {
-    const hasTip =
-      typeof item.tipX === "number" &&
-      Number.isFinite(item.tipX) &&
-      typeof item.tipY === "number" &&
-      Number.isFinite(item.tipY);
-    const tipX = hasTip ? clamp01(item.tipX!) : 0.58;
-    const tipY = hasTip ? clamp01(item.tipY!) : top + slot * (index + 0.5);
-    const y = tipY - labelH / 2;
-    const id = `callout-${index + 1}`;
+  const bySide: Record<CalloutSide, PlacedCallout[]> = {
+    left: [],
+    right: [],
+    top: [],
+    bottom: [],
+  };
+  for (const row of placed) bySide[row.side].push(row);
+  packSide(bySide.left);
+  packSide(bySide.right);
+  packSide(bySide.top);
+  packSide(bySide.bottom);
+
+  const shapes: DrawingShape[] = [];
+  for (const row of placed) {
+    const id = `callout-${row.index + 1}`;
+    const start = arrowStart(row);
     shapes.push({
       id: `${id}-label`,
       type: "label",
-      x,
-      y,
-      w: labelW,
-      h: labelH,
-      text: item.text,
+      x: row.x,
+      y: row.y,
+      w: row.w,
+      h: row.h,
+      text: row.text,
       color: DRAWING_DEFAULT_COLOR,
     });
     shapes.push({
       id: `${id}-arrow`,
       type: "arrow",
-      x1: x + labelW,
-      y1: y + labelH / 2,
-      x2: tipX,
-      y2: tipY,
+      x1: start.x1,
+      y1: start.y1,
+      x2: row.tipX,
+      y2: row.tipY,
       color: DRAWING_DEFAULT_COLOR,
     });
-  });
+  }
 
   return { version: DRAWING_OVERLAY_VERSION, shapes };
+}
+
+/** @see layoutCallouts */
+export function layoutCalloutsLeft(
+  callouts: readonly DrawingCallout[]
+): ImageDrawing {
+  return layoutCallouts(callouts);
 }
 
 export type DrawingOperation = {
