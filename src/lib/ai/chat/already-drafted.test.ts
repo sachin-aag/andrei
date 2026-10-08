@@ -88,6 +88,8 @@ describe("isRemainingProseEdit", () => {
     );
     expect(isRemainingProseEdit("insert the suggestion")).toBe(false);
     expect(isRemainingProseEdit("make 15.6 as mlt 1303")).toBe(false);
+    expect(isRemainingProseEdit("add a table to 15.2.3.2")).toBe(false);
+    expect(isRemainingProseEdit("create a table under 15.2.3.2")).toBe(false);
   });
 });
 
@@ -132,6 +134,7 @@ describe("isExplicitDocumentEdit", () => {
         "updated these but a few more suggestions need to be made"
       )
     ).toBe(true);
+    expect(isExplicitDocumentEdit("add a table to 15.2.3.2")).toBe(true);
   });
 
   it("does not treat a lookup as a document edit", () => {

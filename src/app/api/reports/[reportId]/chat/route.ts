@@ -167,6 +167,7 @@ import {
   withUnsupportedChatToolFallback,
 } from "@/lib/ai/chat/unsupported-tool";
 import { rewriteAskAssistantParts } from "@/lib/ai/chat/ask-citation-rewrite";
+import { rewriteUnlandedWriteParts } from "@/lib/ai/chat/unlanded-write-rewrite";
 import {
   buildMentionBlock,
   mentionedAttachmentIds,
@@ -1035,16 +1036,18 @@ async function handleChatPost(
             switchToAnalytics,
             continuation: advanced?.continuation ?? undefined,
           });
-        const persistedParts = rewriteAskAssistantParts({
-          mode,
-          parts: persisted.parts,
-          history: messages,
-          response: {
-            id: responseMessage.id,
-            role: "assistant",
+        const persistedParts = rewriteUnlandedWriteParts(
+          rewriteAskAssistantParts({
+            mode,
             parts: persisted.parts,
-          },
-        });
+            history: messages,
+            response: {
+              id: responseMessage.id,
+              role: "assistant",
+              parts: persisted.parts,
+            },
+          })
+        );
         await db.insert(chatMessages).values({
           reportId,
           sessionId,
