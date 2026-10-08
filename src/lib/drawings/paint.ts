@@ -51,12 +51,14 @@ function paintArrow(
   ctx: DrawingPaintContext,
   shape: Extract<DrawingShape, { type: "arrow" }>,
   width: number,
-  height: number
+  height: number,
+  offsetX: number,
+  offsetY: number
 ): void {
-  const x1 = shape.x1 * width;
-  const y1 = shape.y1 * height;
-  const x2 = shape.x2 * width;
-  const y2 = shape.y2 * height;
+  const x1 = shape.x1 * width + offsetX;
+  const y1 = shape.y1 * height + offsetY;
+  const x2 = shape.x2 * width + offsetX;
+  const y2 = shape.y2 * height + offsetY;
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const head = Math.max(10, Math.min(width, height) * 0.018);
   ctx.strokeStyle = shape.color;
@@ -86,10 +88,12 @@ function paintLabel(
   ctx: DrawingPaintContext,
   shape: Extract<DrawingShape, { type: "label" }>,
   width: number,
-  height: number
+  height: number,
+  offsetX: number,
+  offsetY: number
 ): void {
-  const x = shape.x * width;
-  const y = shape.y * height;
+  const x = shape.x * width + offsetX;
+  const y = shape.y * height + offsetY;
   const w = Math.max(24, shape.w * width);
   const h = Math.max(18, shape.h * height);
   const pad = Math.max(4, Math.min(w, h) * 0.08);
@@ -116,10 +120,13 @@ export function paintDrawing(
   ctx: DrawingPaintContext,
   drawing: ImageDrawing,
   width: number,
-  height: number
+  height: number,
+  offset: { x?: number; y?: number } = {}
 ): void {
+  const offsetX = offset.x ?? 0;
+  const offsetY = offset.y ?? 0;
   for (const shape of drawing.shapes) {
-    if (shape.type === "arrow") paintArrow(ctx, shape, width, height);
-    else paintLabel(ctx, shape, width, height);
+    if (shape.type === "arrow") paintArrow(ctx, shape, width, height, offsetX, offsetY);
+    else paintLabel(ctx, shape, width, height, offsetX, offsetY);
   }
 }

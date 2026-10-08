@@ -25,7 +25,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v206-figure-annotate";
+export const CHAT_PROMPT_VERSION = "chat-v207-figure-annotate-overflow";
 
 export type ChatMode = "plan" | "agent";
 
@@ -220,7 +220,7 @@ function documentRules(
 - read_analysis "unassessed" means NO acceptance limits were in force for that series. It is not a clean result. Never write that such a series had no excursions — say the limits are missing.
 - Arithmetic that is not printed on a page (rinse volume SA × RF, MACO PDE × MBS / TDD, √H + 1, considered-volume rounding): call calculate with the numbers — no units, no variables. Then write the display result (or \`expression = display\` when showing the working). Do not multiply in your head. A product you did not calculate this turn will not persist.
 - To remove a figure, call remove_image with image.id from read_section (e.g. narrative#1) or image.index. Never draft_field a field just to drop a figure — that drops every figure.
-- To label an existing figure (S-1 / location arrows), call annotate_image with image.id from read_section and callouts[].text. Optional tipX/tipY (0–1) place the arrow tip; otherwise labels stack on the left. Do not generate a vessel sketch. insert_image first if the figure is not already in the field. Never claim labels were added unless annotate_image returned proposed.
+- To label an existing figure (S-1 / location arrows), call annotate_image with image.id from read_section and callouts[].text. Optional tipX/tipY (0–1) place the arrow tip on the photo; otherwise labels stack in the left margin outside the picture. Do not generate a vessel sketch. insert_image first if the figure is not already in the field. Never claim labels were added unless annotate_image returned proposed.
 ${
     includePlotMeasurements
       ? "- Charts are the only generated pixels. When the engineer asked in words for a chart of cited attachment data, call plot_measurements (never invent a data point, and never volunteer a chart). Restyle reuses the stored chartSpec — do not extract again."
@@ -338,7 +338,7 @@ Choosing the right tool:
 - insert_image — place one existing image (chat attachment, a figure already in a section, a saved Analytics plot, or a cited figure from a ready PDF/Word attachment) into a rich field. Same-field source=section with a non-empty anchorText moves that figure in one suggestion — do not also call remove_image. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a new chart from attachments, not to copy a plot already in Analytics" : ""}. source=document copies an embedded raster from a Word file or rasters one PDF page; it does not draw a new diagram. If they asked to insert "the plot" and only one is listed, insert that one. If they named a plot that is not listed, do not substitute another figure: name the available plots in prose once and stop — do not call insert_image again this turn. If the tool returns available_plots or available_figures, that is not a proposal — do not tell them you inserted a figure. Never claim a figure was proposed unless insert_image returned proposed or applied.
 ${opts.includePlotMeasurements ? `- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec.` : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). Do not use this to move a figure. The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
-- annotate_image — add S-n / location callouts (arrows + labels) onto a figure already in the field. Call read_section first. Pass image.id and callouts (text; optional tipX/tipY 0–1 for the arrow tip). Do not invent a drawing — insert_image a cited raster first. The engineer Apply / Dismisses, then can drag tips. Stay off Plan.
+- annotate_image — add S-n / location callouts (arrows + labels) onto a figure already in the field. Call read_section first. Pass image.id and callouts (text; optional tipX/tipY 0–1 for the arrow tip on the photo). Labels sit in the left margin, including outside the picture; save scales the figure so they stay visible. Do not invent a drawing — insert_image a cited raster first. The engineer Apply / Dismisses, then can drag tips. Stay off Plan.
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").
 - list_suggestions — open / approved / dismissed AI cards. Call this before claiming a prior proposal is still waiting or that nothing was proposed. Open = proposed, not landed.${analyzeToolLine}${identityToolLine}${reviewTools}
 

@@ -235,9 +235,10 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   (page raster) or Word file (embedded PNG/JPEG; letterhead skipped). Search
   first; do not invent drawings. Word drawings that are not rasters need a
   PDF of the same file. `annotate_image` proposes S-n / location callouts
-  (arrows + labels) on a figure already in the field; Apply writes the
-  overlay, then the engineer can drag tips. Stay off Plan. Do not generate
-  vessel pixels.
+  (arrows + labels) on a figure already in the field; labels may sit outside
+  the photo. Apply writes the overlay, save scales the figure so overflow
+  callouts stay visible, then the engineer can drag tips. Stay off Plan. Do
+  not generate vessel pixels.
 - A QSR RTM family-column cell persists as `{section} – {audit line}`
   from the protocol body page that prints that heading — not a
   cover/contents `Section 8` cite, and not a reused number-only `12.1`.

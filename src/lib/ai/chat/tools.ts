@@ -4211,7 +4211,7 @@ export function buildChatTools(opts: {
 
     annotate_image: tool({
       description:
-        `Add arrows and labels (S-n callouts) onto an existing inline figure. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not generate a new sketch — the figure must already be in the field (insert_image first if needed). Optional tipX/tipY (0–1) place the arrow tip on the equipment; otherwise labels stack on the left. The engineer reviews then can drag tips.${scopeHint}`,
+        `Add arrows and labels (S-n callouts) onto an existing inline figure. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not generate a new sketch — the figure must already be in the field (insert_image first if needed). Optional tipX/tipY (0–1) place the arrow tip on the photo; otherwise labels stack in the left margin outside the picture. The engineer reviews then can drag tips.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

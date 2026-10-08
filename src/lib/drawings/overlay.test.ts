@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DRAWING_DEFAULT_COLOR,
   drawingEquals,
+  drawingExtent,
+  drawingHasOverflow,
   drawingLabelTexts,
   drawingPreviewSummary,
+  editorWorkspaceExtent,
   emptyImageDrawing,
+  flattenPixelPad,
   isEmptyImageDrawing,
   layoutCalloutsLeft,
   parseDrawingOperation,
@@ -42,16 +46,18 @@ describe("parseImageDrawing", () => {
     expect(parseImageDrawing(JSON.stringify(drawing))).toEqual(drawing);
   });
 
-  it("clamps coordinates and drops junk", () => {
+  it("keeps overflow coordinates and drops junk", () => {
     const drawing = parseImageDrawing({
       shapes: [
-        { type: "arrow", x1: -2, y1: 3, x2: 0.5, y2: 0.5 },
+        { type: "arrow", x1: -0.4, y1: 1.2, x2: 0.5, y2: 0.5 },
         { type: "nope" },
-        { type: "label", x: 0.2, y: 0.2, w: 0, h: -1, text: "S-2" },
+        { type: "label", x: -0.25, y: 0.2, w: 0, h: -1, text: "S-2" },
+        { type: "arrow", x1: -9, y1: 12, x2: 0.5, y2: 0.5 },
       ],
     });
-    expect(drawing?.shapes[0]).toMatchObject({ x1: 0, y1: 1, x2: 0.5, y2: 0.5 });
-    expect(drawing?.shapes[1]).toMatchObject({ type: "label", text: "S-2", w: 0.16 });
+    expect(drawing?.shapes[0]).toMatchObject({ x1: -0.4, y1: 1.2, x2: 0.5, y2: 0.5 });
+    expect(drawing?.shapes[1]).toMatchObject({ type: "label", text: "S-2", w: 0.16, x: -0.25 });
+    expect(drawing?.shapes[2]).toMatchObject({ x1: -2, y1: 3 });
   });
 
   it("treats empty and null as empty", () => {
@@ -62,7 +68,7 @@ describe("parseImageDrawing", () => {
 });
 
 describe("layoutCalloutsLeft", () => {
-  it("stacks labels on the left and arrows into the figure", () => {
+  it("stacks labels outside the left of the photo and arrows into the figure", () => {
     const drawing = layoutCalloutsLeft([
       { text: "S-1" },
       { text: "S-9a to S-9d\n(3.9 meter level)" },
@@ -73,8 +79,28 @@ describe("layoutCalloutsLeft", () => {
     expect(labels).toHaveLength(2);
     expect(arrows).toHaveLength(2);
     expect(labels[0]?.text).toBe("S-1");
-    expect(labels[0]?.x).toBeLessThan(0.1);
+    expect(labels[0]?.x).toBeLessThan(0);
+    expect(arrows[0]?.x1).toBeLessThan(0);
     expect(arrows[0]?.x2).toBeGreaterThan(arrows[0]!.x1);
+    expect(drawingHasOverflow(drawing)).toBe(true);
+  });
+
+  it("expands the saved extent so outside labels stay visible", () => {
+    const drawing = layoutCalloutsLeft([{ text: "S-1" }]);
+    const extent = drawingExtent(drawing);
+    expect(extent.minX).toBeLessThan(0);
+    expect(extent.maxX).toBeGreaterThanOrEqual(1);
+    const pad = flattenPixelPad(extent, 100, 80);
+    expect(pad.left).toBeGreaterThan(0);
+    expect(editorWorkspaceExtent(drawing).minX).toBeLessThanOrEqual(extent.minX);
+  });
+
+  it("gives the annotate dialog a drawable margin around an empty figure", () => {
+    const extent = editorWorkspaceExtent(emptyImageDrawing());
+    expect(extent.minX).toBeLessThan(0);
+    expect(extent.maxX).toBeGreaterThan(1);
+    expect(extent.minY).toBeLessThan(0);
+    expect(extent.maxY).toBeGreaterThan(1);
   });
 
   it("uses an explicit tip when provided", () => {

@@ -58,4 +58,34 @@ describe("DrawingEditorDialog", () => {
       true
     );
   });
+
+  it("places a label in the margin outside the photo", async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DrawingEditorDialog
+        open
+        src={PNG}
+        alt="vessel"
+        initialDrawing={null}
+        onOpenChange={vi.fn()}
+        onSave={onSave}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Label" }));
+    await user.pointer({
+      keys: "[MouseLeft]",
+      target: screen.getByTestId("drawing-canvas"),
+      coords: { clientX: 20, clientY: 150 },
+    });
+    await user.click(screen.getByRole("button", { name: "Save drawing" }));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const drawing = onSave.mock.calls[0]![0] as {
+      shapes: Array<{ type: string; x?: number }>;
+    };
+    const label = drawing.shapes.find((shape) => shape.type === "label");
+    expect(label?.x).toBeLessThan(0);
+  });
 });

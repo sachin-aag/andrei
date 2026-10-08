@@ -1,4 +1,6 @@
 import {
+  drawingExtent,
+  flattenPixelPad,
   isEmptyImageDrawing,
   parseImageDrawing,
   type ImageDrawing,
@@ -78,11 +80,16 @@ export async function flattenDrawingDataUrl(
   }
   const width = Math.max(1, image.width);
   const height = Math.max(1, image.height);
-  const canvas = mod.createCanvas(width, height);
+  const pad = flattenPixelPad(drawingExtent(drawing), width, height);
+  const canvasWidth = Math.max(1, width + pad.left + pad.right);
+  const canvasHeight = Math.max(1, height + pad.top + pad.bottom);
+  const canvas = mod.createCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d");
   if (!ctx) return dataUrl;
-  ctx.drawImage(image, 0, 0, width, height);
-  paintDrawing(ctx, drawing!, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  ctx.drawImage(image, pad.left, pad.top, width, height);
+  paintDrawing(ctx, drawing!, width, height, { x: pad.left, y: pad.top });
   try {
     const png = await canvas.encode("png");
     return `data:image/png;base64,${png.toString("base64")}`;

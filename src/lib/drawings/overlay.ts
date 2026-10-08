@@ -32,19 +32,140 @@ export type ImageDrawing = {
 
 export type DrawingCallout = {
   text: string;
-  /** Optional arrow tip on the figure, 0–1. */
+  /** Optional arrow tip on the photo, 0–1. */
   tipX?: number;
   tipY?: number;
 };
+
+/**
+ * Bounding box in photo units. The picture itself is always 0–1 × 0–1;
+ * arrows and labels may sit outside that square.
+ */
+export type DrawingExtent = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+/** Extra drawable margin around the photo in the Annotate dialog (photo units). */
+export const EDITOR_DRAWING_PAD = 0.28;
+
+const COORD_MIN = -2;
+const COORD_MAX = 3;
+const STROKE_PAD = 0.02;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
 }
 
+/** Allow callouts in the margin; reject wild values. */
+function clampCoord(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(COORD_MAX, Math.max(COORD_MIN, value));
+}
+
 function clampDim(value: number, fallback: number): number {
   if (!Number.isFinite(value) || value <= 0) return fallback;
-  return Math.min(1, value);
+  return Math.min(2, value);
+}
+
+export function extentWidth(extent: DrawingExtent): number {
+  return Math.max(1e-6, extent.maxX - extent.minX);
+}
+
+export function extentHeight(extent: DrawingExtent): number {
+  return Math.max(1e-6, extent.maxY - extent.minY);
+}
+
+export function drawingHasOverflow(
+  drawing: ImageDrawing | null | undefined
+): boolean {
+  if (!drawing) return false;
+  for (const shape of drawing.shapes) {
+    if (shape.type === "arrow") {
+      if (
+        shape.x1 < 0 ||
+        shape.y1 < 0 ||
+        shape.x1 > 1 ||
+        shape.y1 > 1 ||
+        shape.x2 < 0 ||
+        shape.y2 < 0 ||
+        shape.x2 > 1 ||
+        shape.y2 > 1
+      ) {
+        return true;
+      }
+      continue;
+    }
+    if (shape.x < 0 || shape.y < 0 || shape.x + shape.w > 1 || shape.y + shape.h > 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Tight box around the photo plus any overflow shapes. Used by the document
+ * figure and Word flatten so outside labels stay visible.
+ */
+export function drawingExtent(
+  drawing: ImageDrawing | null | undefined,
+  extraPad = 0
+): DrawingExtent {
+  let minX = 0;
+  let minY = 0;
+  let maxX = 1;
+  let maxY = 1;
+  for (const shape of drawing?.shapes ?? []) {
+    if (shape.type === "arrow") {
+      minX = Math.min(minX, shape.x1, shape.x2);
+      minY = Math.min(minY, shape.y1, shape.y2);
+      maxX = Math.max(maxX, shape.x1, shape.x2);
+      maxY = Math.max(maxY, shape.y1, shape.y2);
+    } else {
+      minX = Math.min(minX, shape.x);
+      minY = Math.min(minY, shape.y);
+      maxX = Math.max(maxX, shape.x + shape.w);
+      maxY = Math.max(maxY, shape.y + shape.h);
+    }
+  }
+  const overflow = minX < 0 || minY < 0 || maxX > 1 || maxY > 1;
+  const pad = extraPad + (overflow ? STROKE_PAD : 0);
+  return {
+    minX: minX - pad,
+    minY: minY - pad,
+    maxX: maxX + pad,
+    maxY: maxY + pad,
+  };
+}
+
+/** Dialog workspace: always a margin around the photo, expanded if shapes already sit further out. */
+export function editorWorkspaceExtent(
+  drawing: ImageDrawing | null | undefined
+): DrawingExtent {
+  const inner = drawingExtent(drawing);
+  return {
+    minX: Math.min(inner.minX, -EDITOR_DRAWING_PAD),
+    minY: Math.min(inner.minY, -EDITOR_DRAWING_PAD),
+    maxX: Math.max(inner.maxX, 1 + EDITOR_DRAWING_PAD),
+    maxY: Math.max(inner.maxY, 1 + EDITOR_DRAWING_PAD),
+  };
+}
+
+/** Pixel padding to add around the source raster so overflow ink is not clipped. */
+export function flattenPixelPad(
+  extent: DrawingExtent,
+  width: number,
+  height: number
+): { left: number; top: number; right: number; bottom: number } {
+  return {
+    left: Math.max(0, Math.ceil(-extent.minX * width)),
+    top: Math.max(0, Math.ceil(-extent.minY * height)),
+    right: Math.max(0, Math.ceil((extent.maxX - 1) * width)),
+    bottom: Math.max(0, Math.ceil((extent.maxY - 1) * height)),
+  };
 }
 
 function asColor(value: unknown): string {
@@ -91,10 +212,10 @@ function parseArrow(raw: Record<string, unknown>, index: number): DrawingArrow |
   return {
     id: asId(raw.id, `arrow-${index + 1}`),
     type: "arrow",
-    x1: clamp01(Number(raw.x1)),
-    y1: clamp01(Number(raw.y1)),
-    x2: clamp01(Number(raw.x2)),
-    y2: clamp01(Number(raw.y2)),
+    x1: clampCoord(Number(raw.x1)),
+    y1: clampCoord(Number(raw.y1)),
+    x2: clampCoord(Number(raw.x2)),
+    y2: clampCoord(Number(raw.y2)),
     color: asColor(raw.color),
   };
 }
@@ -105,8 +226,8 @@ function parseLabel(raw: Record<string, unknown>, index: number): DrawingLabel |
   return {
     id: asId(raw.id, `label-${index + 1}`),
     type: "label",
-    x: clamp01(Number(raw.x)),
-    y: clamp01(Number(raw.y)),
+    x: clampCoord(Number(raw.x)),
+    y: clampCoord(Number(raw.y)),
     w: clampDim(Number(raw.w), 0.16),
     h: clampDim(Number(raw.h), 0.06),
     text,
@@ -156,8 +277,8 @@ export function drawingEquals(
 }
 
 /**
- * Stack callout boxes down the left of the figure, arrows pointing into the
- * right-hand equipment — the 3xper swab pictorial layout.
+ * Stack callout boxes down the left margin (outside the photo), arrows
+ * pointing into the equipment — the 3xper swab pictorial layout.
  */
 export function layoutCalloutsLeft(callouts: readonly DrawingCallout[]): ImageDrawing {
   const items = callouts
@@ -177,6 +298,8 @@ export function layoutCalloutsLeft(callouts: readonly DrawingCallout[]): ImageDr
   const slot = span / count;
   const labelW = 0.22;
   const labelH = Math.min(0.09, Math.max(0.045, slot * 0.72));
+  const gap = 0.03;
+  const x = -(labelW + gap);
   const shapes: DrawingShape[] = [];
 
   items.forEach((item, index) => {
@@ -187,8 +310,7 @@ export function layoutCalloutsLeft(callouts: readonly DrawingCallout[]): ImageDr
       Number.isFinite(item.tipY);
     const tipX = hasTip ? clamp01(item.tipX!) : 0.58;
     const tipY = hasTip ? clamp01(item.tipY!) : top + slot * (index + 0.5);
-    const y = clamp01(tipY - labelH / 2);
-    const x = 0.03;
+    const y = tipY - labelH / 2;
     const id = `callout-${index + 1}`;
     shapes.push({
       id: `${id}-label`,

@@ -18,11 +18,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DrawingLabelHtml, DrawingOverlay } from "@/components/report/tiptap/drawing-overlay";
+import { DrawingComposedFigure } from "@/components/report/tiptap/drawing-overlay";
 import {
   DRAWING_DEFAULT_COLOR,
+  editorWorkspaceExtent,
   emptyImageDrawing,
   newDrawingShapeId,
+  type DrawingExtent,
   type DrawingShape,
   type ImageDrawing,
 } from "@/lib/drawings/overlay";
@@ -89,6 +91,12 @@ export function DrawingEditorDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const frameRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<DrawingExtent>(
+    editorWorkspaceExtent(initialDrawing)
+  );
+  const [workspace, setWorkspace] = useState<DrawingExtent>(() =>
+    editorWorkspaceExtent(initialDrawing)
+  );
   const dragRef = useRef<{
     id: string;
     kind: "move" | "start" | "end" | "create-arrow";
@@ -98,7 +106,11 @@ export function DrawingEditorDialog({
 
   useEffect(() => {
     if (!open) return;
-    setDrawing(initialDrawing ?? emptyImageDrawing());
+    const nextDrawing = initialDrawing ?? emptyImageDrawing();
+    const nextWorkspace = editorWorkspaceExtent(nextDrawing);
+    setDrawing(nextDrawing);
+    setWorkspace(nextWorkspace);
+    workspaceRef.current = nextWorkspace;
     setSelectedId(null);
     setTool("select");
     setDraftText("");
@@ -118,9 +130,14 @@ export function DrawingEditorDialog({
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return null;
+    const extent = workspaceRef.current;
+    const spanX = extent.maxX - extent.minX;
+    const spanY = extent.maxY - extent.minY;
+    const x = extent.minX + ((event.clientX - rect.left) / rect.width) * spanX;
+    const y = extent.minY + ((event.clientY - rect.top) / rect.height) * spanY;
     return {
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+      x: Math.min(extent.maxX, Math.max(extent.minX, x)),
+      y: Math.min(extent.maxY, Math.max(extent.minY, y)),
     };
   }, []);
 
@@ -159,11 +176,12 @@ export function DrawingEditorDialog({
       const id = newDrawingShapeId("label");
       const w = 0.18;
       const h = 0.07;
+      const extent = workspaceRef.current;
       const label: DrawingShape = {
         id,
         type: "label",
-        x: Math.min(1 - w, point.x - w / 2),
-        y: Math.min(1 - h, point.y - h / 2),
+        x: Math.min(extent.maxX - w, Math.max(extent.minX, point.x - w / 2)),
+        y: Math.min(extent.maxY - h, Math.max(extent.minY, point.y - h / 2)),
         w,
         h,
         text: "",
@@ -207,12 +225,13 @@ export function DrawingEditorDialog({
         } else {
           const dx = point.x - drag.ox;
           const dy = point.y - drag.oy;
+          const extent = workspaceRef.current;
           next = {
             ...shape,
-            x1: Math.min(1, Math.max(0, shape.x1 + dx)),
-            y1: Math.min(1, Math.max(0, shape.y1 + dy)),
-            x2: Math.min(1, Math.max(0, shape.x2 + dx)),
-            y2: Math.min(1, Math.max(0, shape.y2 + dy)),
+            x1: Math.min(extent.maxX, Math.max(extent.minX, shape.x1 + dx)),
+            y1: Math.min(extent.maxY, Math.max(extent.minY, shape.y1 + dy)),
+            x2: Math.min(extent.maxX, Math.max(extent.minX, shape.x2 + dx)),
+            y2: Math.min(extent.maxY, Math.max(extent.minY, shape.y2 + dy)),
           };
         }
         return {
@@ -222,14 +241,15 @@ export function DrawingEditorDialog({
       }
       const dx = point.x - drag.ox;
       const dy = point.y - drag.oy;
+      const extent = workspaceRef.current;
       return {
         ...current,
         shapes: current.shapes.map((item) =>
           item.id === shape.id
             ? {
                 ...shape,
-                x: Math.min(1 - shape.w, Math.max(0, shape.x + dx)),
-                y: Math.min(1 - shape.h, Math.max(0, shape.y + dy)),
+                x: Math.min(extent.maxX - shape.w, Math.max(extent.minX, shape.x + dx)),
+                y: Math.min(extent.maxY - shape.h, Math.max(extent.minY, shape.y + dy)),
               }
             : item
         ),
@@ -280,8 +300,9 @@ export function DrawingEditorDialog({
         <DialogHeader>
           <DialogTitle>Annotate figure</DialogTitle>
           <DialogDescription>
-            Add arrows and labels on the picture. Drag the arrow tip onto the
-            equipment. Save writes the drawing into the report.
+            Add arrows and labels on or around the picture. The checkerboard
+            around the photo is drawable. Save scales the figure so outside
+            annotations stay visible.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-center gap-1">
@@ -334,30 +355,28 @@ export function DrawingEditorDialog({
             />
           ) : null}
         </div>
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md border border-[var(--border)] bg-[repeating-conic-gradient(#f4f4f5_0%_25%,#ffffff_0%_50%)] bg-[length:16px_16px] p-3">
-          <div
-            ref={frameRef}
-            data-testid="drawing-canvas"
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md border border-[var(--border)] bg-neutral-100 p-3">
+          <DrawingComposedFigure
+            src={src}
+            alt={alt}
+            drawing={drawing}
+            selectedId={selectedId}
+            extent={workspace}
+            surface="checkerboard"
+            photoOutline
+            frameRef={frameRef}
+            testId="drawing-canvas"
             className={cn(
-              "relative inline-block max-h-[min(62vh,720px)] max-w-full",
+              "max-h-[min(62vh,720px)]",
               tool === "arrow" && "cursor-crosshair",
               tool === "label" && "cursor-cell"
             )}
+            imgClassName="pointer-events-none max-h-[min(48vh,520px)] w-auto"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- editor data URLs */}
-            <img
-              src={src}
-              alt={alt || ""}
-              draggable={false}
-              className="pointer-events-none block max-h-[min(62vh,720px)] w-auto max-w-full select-none"
-            />
-            <DrawingOverlay drawing={drawing} selectedId={selectedId} />
-            <DrawingLabelHtml drawing={drawing} selectedId={selectedId} />
-          </div>
+          />
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

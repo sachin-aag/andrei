@@ -4,11 +4,12 @@ import { useCallback, useState, type MouseEvent } from "react";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { Pencil } from "lucide-react";
 import { DrawingEditorDialog } from "@/components/report/drawing-editor-dialog";
+import { DrawingComposedFigure } from "@/components/report/tiptap/drawing-overlay";
 import {
-  DrawingLabelHtml,
-  DrawingOverlay,
-} from "@/components/report/tiptap/drawing-overlay";
-import { parseImageDrawing, type ImageDrawing } from "@/lib/drawings/overlay";
+  drawingExtent,
+  parseImageDrawing,
+  type ImageDrawing,
+} from "@/lib/drawings/overlay";
 import { cn } from "@/lib/utils";
 
 export function ImageInlineNodeView({
@@ -59,16 +60,15 @@ export function ImageInlineNodeView({
           setOpen(true);
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- inline data URLs in TipTap */}
-        <img
+        <DrawingComposedFigure
           src={src}
           alt={alt}
-          className="tiptap-image-inline"
-          style={width ? { width, height: "auto" } : undefined}
-          data-image-inline="true"
+          drawing={drawing}
+          extent={drawingExtent(drawing)}
+          imgWidth={width}
+          imgClassName="tiptap-image-inline"
+          surface="white"
         />
-        <DrawingOverlay drawing={drawing} />
-        <DrawingLabelHtml drawing={drawing} />
         {editable ? (
           <button
             type="button"
