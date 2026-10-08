@@ -652,7 +652,16 @@ export function SectionSuggestionCard({
   hideWhenEmpty?: boolean;
 }) {
   const gutterColumnPainted = useReviewGutterColumnPainted();
-  const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
+  const {
+    report,
+    setReport,
+    readOnly,
+    currentUserId,
+    refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
+  } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
     !readOnly &&
@@ -891,6 +900,7 @@ export function SectionSuggestionCard({
     setPhase("applying");
 
     let retainHold = false;
+    closeSuggestionComments([commentId]);
     try {
       beginSuggestionApplyTransition(section, commentId, "accept", {
         parkCenterY: parkCenterY ?? undefined,
@@ -940,6 +950,15 @@ export function SectionSuggestionCard({
         replaceSection(section, result.nextSection as unknown);
         applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
       }
+      closeSuggestionComments(result.dismissed.map((row) => row.id));
+      if (!result.nextIdentity) {
+        markSectionPersisted(section, result.nextSection);
+        for (const [related, content] of Object.entries(
+          result.nextRelatedSections ?? {}
+        )) {
+          if (content) markSectionPersisted(related, content);
+        }
+      }
 
       setComments((prev) =>
         prev
@@ -966,6 +985,7 @@ export function SectionSuggestionCard({
       toast.success("Suggestion applied");
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments([commentId]);
       toast.error(
         err instanceof IdentityDuplicateError
           ? err.message
@@ -1003,6 +1023,9 @@ export function SectionSuggestionCard({
     animateQueueTransition,
     setComments,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
@@ -1028,6 +1051,7 @@ export function SectionSuggestionCard({
     setPhase("applying");
 
     let retainHold = false;
+    closeSuggestionComments([commentId]);
     try {
       beginSuggestionApplyTransition(section, commentId, "dismiss", {
         parkCenterY: parkCenterY ?? undefined,
@@ -1061,6 +1085,7 @@ export function SectionSuggestionCard({
           section,
           result.nextSection as unknown
         );
+        markSectionPersisted(section, result.nextSection);
       }
       setComments((prev) => prev.filter((c) => c.id !== commentId));
 
@@ -1079,6 +1104,7 @@ export function SectionSuggestionCard({
       toast.success("Suggestion dismissed");
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments([commentId]);
       toast.error(
         err instanceof CommentPersistError || err instanceof SectionPersistError
           ? err.message
@@ -1109,6 +1135,9 @@ export function SectionSuggestionCard({
     animateQueueTransition,
     setComments,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);

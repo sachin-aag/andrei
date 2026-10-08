@@ -396,6 +396,9 @@ export function TiptapSectionField({
     currentUserId,
     getSectionId,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
   } = useReportData();
   const {
     comments,
@@ -796,7 +799,9 @@ export function TiptapSectionField({
       if (!comment) throw new Error("Suggestion not found");
 
       beginSuggestionApplyTransition(section, suggestionId, mode);
+      closeSuggestionComments([suggestionId]);
 
+      let settled = false;
       try {
         const currentSection = sections[section] as Record<string, unknown>;
         const result =
@@ -851,6 +856,7 @@ export function TiptapSectionField({
               >)
             : null;
         const dismissedSiblings = accepted?.dismissed ?? [];
+        closeSuggestionComments(dismissedSiblings.map((row) => row.id));
 
         // Paint the applied result immediately. Preview marks live in the
         // editor, not provider state, so dismiss often has no nextSection.
@@ -860,11 +866,17 @@ export function TiptapSectionField({
         // disappeared.
         if (result.nextSection) {
           replaceSection(section, result.nextSection as unknown);
+          markSectionPersisted(section, result.nextSection);
           if (accepted) {
             applyRelatedSectionUpdates(
               replaceSection,
               accepted.nextRelatedSections
             );
+            for (const [related, content] of Object.entries(
+              accepted.nextRelatedSections ?? {}
+            )) {
+              if (content) markSectionPersisted(related, content);
+            }
           }
         }
         if (editor && !editor.isDestroyed && isRichField) {
@@ -920,9 +932,15 @@ export function TiptapSectionField({
                 return c;
               })
         );
+        settled = true;
         // Let the accepted/dismissed value paint while preview-held is still on,
         // otherwise ending the lock in the same tick re-strips the preview.
         await afterPaint();
+      } catch (err) {
+        if (!settled) {
+          releaseSuggestionComments([suggestionId]);
+        }
+        throw err;
       } finally {
         endSuggestionApplyTransition(section);
       }
@@ -943,6 +961,9 @@ export function TiptapSectionField({
       value,
       beginSuggestionApplyTransition,
       endSuggestionApplyTransition,
+      closeSuggestionComments,
+      releaseSuggestionComments,
+      markSectionPersisted,
     ]
   );
 

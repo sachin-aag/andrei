@@ -39,6 +39,10 @@ import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import { planPendingSectionFlush } from "@/lib/reports/pending-section-flush";
+import {
+  createWorkspaceRefreshGuard,
+  mergeNewRefreshComments,
+} from "@/lib/reports/workspace-refresh-guard";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { canMutateAttachments } from "@/lib/reports/access";
 import type { UserRole } from "@/lib/auth/roles";
@@ -204,6 +208,15 @@ type ReportContextValue = {
   setEvaluations: React.Dispatch<React.SetStateAction<EvaluationRecord[]>>;
   setComments: React.Dispatch<React.SetStateAction<CommentRecord[]>>;
   refresh: () => Promise<void>;
+  /** Ignore in-flight bundle GETs so Apply / Dismiss cannot be undone by chat refresh. */
+  closeSuggestionComments: (ids: readonly string[]) => void;
+  /** Re-open leftovers that Apply all skipped so a later refresh can show them. */
+  releaseSuggestionComments: (ids: readonly string[]) => void;
+  /**
+   * Stamp a section row as the last persisted snapshot so autosave does not
+   * PATCH again after Apply / Apply all already wrote it.
+   */
+  markSectionPersisted: (section: string, content?: unknown) => void;
   getSectionId: (section: SectionType) => string | null;
   /**
    * Registers the currently-mounted section's autosave flush so submit/refresh
@@ -271,6 +284,9 @@ type ReportDataContextValue = Pick<
   | "currentUserEmail"
   | "setReport"
   | "refresh"
+  | "closeSuggestionComments"
+  | "releaseSuggestionComments"
+  | "markSectionPersisted"
   | "getSectionId"
   | "registerSectionFlush"
   | "flushPendingSectionSaves"
@@ -423,6 +439,10 @@ export function ReportProvider({
   const [sections, setSections] = useState<SectionContents>(() =>
     bundleToSections(bundle.sections, bundle.report.documentType)
   );
+  const sectionsRef = useRef<SectionContents>(sections);
+  useEffect(() => {
+    sectionsRef.current = sections;
+  }, [sections]);
 
   const [trackChangesSync, setTrackChangesSync] = useState({
     id: bundle.report.id,
@@ -450,6 +470,30 @@ export function ReportProvider({
   useEffect(() => {
     commentsRef.current = comments;
   }, [comments]);
+  const refreshGuardRef = useRef(createWorkspaceRefreshGuard());
+  const closeSuggestionComments = useCallback((ids: readonly string[]) => {
+    refreshGuardRef.current.closeComments(ids);
+  }, []);
+  const releaseSuggestionComments = useCallback((ids: readonly string[]) => {
+    refreshGuardRef.current.releaseComments(ids);
+  }, []);
+  const markSectionPersisted = useCallback(
+    (section: string, content?: unknown) => {
+      const next = content ?? sectionsRef.current[section];
+      setSectionRows((prev) =>
+        prev.map((row) =>
+          row.section === section
+            ? {
+                ...row,
+                content: next ?? row.content,
+                updatedAt: new Date().toISOString(),
+              }
+            : row
+        )
+      );
+    },
+    []
+  );
   const [suggestionsFocus, setSuggestionsFocus] = useState<{
     section: SectionType;
     commentId: string;
@@ -691,6 +735,7 @@ export function ReportProvider({
         .filter((comment) => comment.status === "open")
         .map((comment) => comment.id)
     );
+    const refreshEpoch = refreshGuardRef.current.beginRefresh();
     // Force any pending debounced edit to persist before reloading — otherwise
     // an edit made in the last ~1.5s could still be un-saved when the fetch
     // below overwrites local section state.
@@ -700,9 +745,39 @@ export function ReportProvider({
       // Keep refresh usable even if a pending save failed; submit awaits
       // flushPendingSectionSaves itself and can abort on failure.
     }
-    const res = await fetch(`/api/reports/${bundle.report.id}`);
+    const res = await fetch(`/api/reports/${bundle.report.id}`, {
+      cache: "no-store",
+    });
     if (!res.ok) return;
     const data = (await res.json()) as ReportBundle;
+    const nextComments = (data.comments as Record<string, unknown>[]).map(
+      (c) => normalizeCommentRecord(c)
+    );
+    const decision = refreshGuardRef.current.decideRefresh(
+      refreshEpoch,
+      nextComments
+    );
+    if (decision.action === "discard") return;
+    if (decision.action === "keep-local") {
+      if (decision.newComments.length === 0) return;
+      setComments((prev) =>
+        mergeNewRefreshComments(prev, decision.newComments)
+      );
+      const generated = firstGeneratedSuggestion(
+        previousSuggestionIds,
+        decision.newComments,
+        getWorkspaceSections(data.report.documentType).map((s) => s.key)
+      );
+      if (generated?.section) {
+        setSuggestionApplyTransition({});
+        setSuggestionsFocus({
+          section: generated.section,
+          commentId: generated.id,
+        });
+        requestCommentFocus(generated.id);
+      }
+      return;
+    }
     setReport(data.report);
     setSectionRows(data.sections);
     setSections(bundleToSections(data.sections, data.report.documentType));
@@ -715,13 +790,10 @@ export function ReportProvider({
             : new Date(e.updatedAt as string).toISOString(),
       }))
     );
-    const nextComments = (data.comments as Record<string, unknown>[]).map(
-      (c) => normalizeCommentRecord(c)
-    );
-    setComments(nextComments);
+    setComments(decision.comments);
     const generated = firstGeneratedSuggestion(
       previousSuggestionIds,
-      nextComments,
+      decision.comments,
       getWorkspaceSections(data.report.documentType).map((s) => s.key)
     );
     if (generated?.section) {
@@ -750,12 +822,6 @@ export function ReportProvider({
     SectionType[]
   >([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
-
-  // Mirror of `sections` for callbacks that must read latest draft without widening deps.
-  const sectionsRef = useRef<SectionContents>(sections);
-  useEffect(() => {
-    sectionsRef.current = sections;
-  }, [sections]);
 
   const runEvaluation = useCallback(
     async (section?: SectionType | SectionType[]) => {
@@ -1056,6 +1122,9 @@ export function ReportProvider({
       currentUserEmail,
       setReport,
       refresh,
+      closeSuggestionComments,
+      releaseSuggestionComments,
+      markSectionPersisted,
       getSectionId,
       registerSectionFlush,
       flushPendingSectionSaves,
@@ -1073,6 +1142,9 @@ export function ReportProvider({
       currentUserRole,
       currentUserEmail,
       refresh,
+      closeSuggestionComments,
+      releaseSuggestionComments,
+      markSectionPersisted,
       getSectionId,
       registerSectionFlush,
       flushPendingSectionSaves,

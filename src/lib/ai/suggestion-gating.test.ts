@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   canSuggestFixes,
   gapCriteriaForSection,
+  countOpenAiSuggestions,
   nextOpenSuggestionAfterResolve,
+  openAiSuggestionIds,
   parseAiFixCommentContent,
   sectionContentHash,
   sectionOrderWithOpenSuggestions,
@@ -625,5 +627,18 @@ describe("parseAiFixCommentContent claimProvenance", () => {
         },
       ],
     });
+  });
+});
+
+describe("openAiSuggestionIds", () => {
+  it("lists only open top-level AI suggestion ids", () => {
+    const comments = [
+      baseComment({ id: "open-1" }),
+      baseComment({ id: "resolved", status: "resolved" }),
+      baseComment({ id: "reply", parentId: "open-1" }),
+      baseComment({ id: "human", kind: "human", source: "app" }),
+    ];
+    expect(openAiSuggestionIds(comments)).toEqual(["open-1"]);
+    expect(countOpenAiSuggestions(comments)).toBe(1);
   });
 });
