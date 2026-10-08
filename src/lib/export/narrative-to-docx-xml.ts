@@ -22,6 +22,13 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import { colorFromTextMarks, cssColorToWordVal } from "@/lib/tiptap/text-color";
 import { citationNumbersFromDoc } from "@/lib/suggestions/citations-at-end";
+import {
+  applyCvpEmptyFirstColumnMerges,
+  CVP_PAGE_BREAK_XML,
+  cvpHeadingCaps,
+  cvpHeadingParagraphXml,
+  stripTableCaptionNodes,
+} from "@/lib/export/cvp-docx-format";
 
 export type NarrativeDocxXmlResult = {
   xml: string;
@@ -150,7 +157,13 @@ export function narrativeToDocxXmlWithContext(
     return { xml: wrapParagraph("Not Applicable"), ctx };
   }
 
-  const sanitized = sanitizeDocTextNodes(doc);
+  let sanitized = sanitizeDocTextNodes(doc);
+  if (ctx.mergeEmptyFirstColumn) {
+    sanitized = applyCvpEmptyFirstColumnMerges(sanitized);
+  }
+  if (ctx.stripTableCaptions) {
+    sanitized = stripTableCaptionNodes(sanitized);
+  }
   ctx.citationNumbers = citationNumbersFromDoc(sanitized);
   const parts: string[] = [];
   const portraitMax = portraitTableGridMax(ctx);
@@ -358,16 +371,32 @@ function visualEmphasisKey(node: JSONContent | undefined, forceBold: boolean): s
   return "none";
 }
 
+function stripKnownCitationMarkers(
+  line: string,
+  citationNumbers: ReadonlySet<number>
+): string {
+  const stripped = line.replace(/\[(\d+)\]/g, (match, raw: string) =>
+    citationNumbers.has(Number(raw)) ? "" : match
+  );
+  return stripped.replace(/[ \t]+([.,;:])/g, "$1").replace(/ {2,}/g, " ");
+}
+
 function textLineToCitationAwareRuns(
   line: string,
   rPr: string,
   textTag: "w:t" | "w:delText",
   superscriptRPr: string,
-  citationNumbers: ReadonlySet<number> | undefined
+  citationNumbers: ReadonlySet<number> | undefined,
+  stripMarkers = false
 ): string {
   if (!line) return "";
   if (!citationNumbers || citationNumbers.size === 0) {
     return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(line)}</${textTag}></w:r>`;
+  }
+  if (stripMarkers) {
+    const cleaned = stripKnownCitationMarkers(line, citationNumbers);
+    if (!cleaned) return "";
+    return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(cleaned)}</${textTag}></w:r>`;
   }
 
   const parts: string[] = [];
@@ -422,24 +451,38 @@ function paragraphProperties(
   align?: string | null,
   numId?: number | null,
   keepNext?: boolean,
-  ctx?: DocxExportContext
+  ctx?: DocxExportContext,
+  extras?: { ilvl?: number; inTable?: boolean }
 ): string {
+  const inTable = extras?.inTable === true;
+  const ilvl = extras?.ilvl ?? 0;
   const jc = paragraphJustification(align, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
-  const style =
-    numId && ctx?.listParagraphStyle
-      ? `<w:pStyle w:val="ListParagraph"/>`
+  let style = "";
+  if (numId && inTable && ctx?.inTableListParagraphStyle) {
+    style = `<w:pStyle w:val="${ctx.inTableListParagraphStyle}"/>`;
+  } else if (numId && ctx?.listParagraphStyle) {
+    style = `<w:pStyle w:val="ListParagraph"/>`;
+  } else if (!numId && !inTable && ctx?.bodyParagraphStyle) {
+    style = `<w:pStyle w:val="${ctx.bodyParagraphStyle}"/>`;
+  }
+  const indent =
+    numId && inTable && ctx?.tableListIndentLeft
+      ? `<w:ind w:left="${ctx.tableListIndentLeft}" w:hanging="${ctx.tableListIndentHanging ?? "0"}"/>`
       : "";
-  const before = ctx?.paragraphSpacingBefore;
-  const after = ctx?.paragraphSpacingAfter;
+  const before = inTable ? null : ctx?.paragraphSpacingBefore;
+  const after = inTable ? null : ctx?.paragraphSpacingAfter;
+  const line = !inTable && ctx?.paragraphLine
+    ? ` w:line="${ctx.paragraphLine}" w:lineRule="${ctx.paragraphLineRule ?? "auto"}"`
+    : "";
   const spacing =
-    before || after
-      ? `<w:spacing w:before="${before ?? "0"}" w:after="${after ?? "0"}"/>`
+    before || after || line
+      ? `<w:spacing w:before="${before ?? "0"}" w:after="${after ?? "0"}"${line}/>`
       : "";
   const num = numId
-    ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>`
+    ? `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr>`
     : "";
-  return `<w:pPr>${style}${keep}${spacing}${jc}${num}</w:pPr>`;
+  return `<w:pPr>${style}${keep}${spacing}${indent}${jc}${num}</w:pPr>`;
 }
 
 function wrapParagraph(text: string, ctx?: DocxExportContext): string {
@@ -466,12 +509,41 @@ function headingToXml(
   if (!ctx.useHeadingStyles) {
     return paragraphToXml(node, true, null, null, keepNext, ctx);
   }
+  if (ctx.headingOutline === "cvp") {
+    return cvpContentHeadingToXml(node, ctx, keepNext);
+  }
   const style = headingStyleName(node.attrs?.level);
   const runs = inlineNodesToRuns(node.content ?? [], false, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
   const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${keep}${paragraphJustification(null, ctx)}</w:pPr>`;
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
+}
+
+function cvpContentHeadingToXml(
+  node: JSONContent,
+  ctx: DocxExportContext,
+  keepNext: boolean
+): string {
+  const raw = nodePlainText(node).trim();
+  if (!raw) return "";
+  const level = Number(node.attrs?.level);
+  if (level >= 3 || Number.isNaN(level)) {
+    return paragraphToXml(
+      { ...node, type: "paragraph" },
+      true,
+      null,
+      null,
+      keepNext,
+      ctx
+    );
+  }
+  const ilvl: 0 | 1 = level <= 1 ? 0 : 1;
+  const xml = cvpHeadingParagraphXml(cvpHeadingCaps(raw), ilvl);
+  if (level === 2 && ctx.pageBreakBeforeHeading2) {
+    return CVP_PAGE_BREAK_XML + xml;
+  }
+  return xml;
 }
 
 function paragraphToXml(
@@ -481,10 +553,17 @@ function paragraphToXml(
   numId?: number | null,
   keepNext = false,
   ctx?: DocxExportContext,
-  runSizeOverride?: string
+  runSizeOverride?: string,
+  extras?: { ilvl?: number; inTable?: boolean }
 ): string {
   const runs = inlineNodesToRuns(node.content ?? [], bold, ctx, runSizeOverride);
-  const pPr = paragraphProperties(paragraphAlign, numId, keepNext, ctx);
+  const pPr = paragraphProperties(
+    paragraphAlign,
+    numId,
+    keepNext,
+    ctx,
+    extras
+  );
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
@@ -574,7 +653,8 @@ function inlineNodesToRuns(
                 rPr,
                 textTag,
                 superscriptRPr,
-                ctx?.citationNumbers
+                ctx?.citationNumbers,
+                ctx?.stripInTextCitationMarkers === true
               )
             );
             emittedBoundarySpace = false;
@@ -595,7 +675,8 @@ function inlineNodesToRuns(
               rPr,
               textTag,
               superscriptRPr,
-              ctx?.citationNumbers
+              ctx?.citationNumbers,
+              ctx?.stripInTextCitationMarkers === true
             )
           );
           emittedBoundarySpace = false;
@@ -739,6 +820,9 @@ type ListXmlOptions = {
   align?: string | null;
   keepNext?: boolean;
   runSize?: string;
+  inTable?: boolean;
+  ilvl?: number;
+  numId?: number | null;
 };
 
 function listToXml(
@@ -747,20 +831,30 @@ function listToXml(
   options: ListXmlOptions = {}
 ): string {
   const listType = node.type === "orderedList" ? "orderedList" : "bulletList";
-  const numId = ctx
-    ? allocateListNumId(
-        ctx,
-        listType,
-        (node.attrs?.listStyle as string | undefined) ?? null
-      )
-    : null;
+  const ilvl = options.ilvl ?? 0;
+  const numId =
+    options.numId ??
+    (ctx
+      ? allocateListNumId(
+          ctx,
+          listType,
+          (node.attrs?.listStyle as string | undefined) ?? null
+        )
+      : null);
   const parts: string[] = [];
   for (const item of node.content ?? []) {
     if (item.type !== "listItem") continue;
     let numbered = true;
     for (const child of item.content ?? []) {
       if (child.type === "bulletList" || child.type === "orderedList") {
-        parts.push(listToXml(child, ctx, options));
+        const nestedSameType = child.type === node.type;
+        parts.push(
+          listToXml(child, ctx, {
+            ...options,
+            ilvl: nestedSameType ? ilvl + 1 : 0,
+            numId: nestedSameType ? numId : undefined,
+          })
+        );
         continue;
       }
       parts.push(
@@ -771,7 +865,8 @@ function listToXml(
           numbered ? numId : null,
           options.keepNext ?? false,
           ctx,
-          options.runSize
+          options.runSize,
+          { ilvl, inTable: options.inTable === true }
         )
       );
       numbered = false;
@@ -1049,12 +1144,14 @@ function tableCellToXml(
   // keepNext on every paragraph in every non-last row asks Word to keep the
   // table together when it fits on a single page, while still allowing a
   // genuine split when the table is too tall for one page.
-  const keepNext = !isLastRow;
+  const keepNext =
+    ctx?.tableCellKeepNext === false ? false : !isLastRow;
   const paragraphs = options.empty ? [] : cell.content ?? [];
   const cellAlign = isHeader
     ? (hAlign ?? ctx?.tableHeaderAlign ?? "left")
     : (hAlign ?? "left");
   const cellSize = ctx?.tableCellSizeHalfPoints ?? undefined;
+  const cellExtras = { inTable: true };
   const content = paragraphs
     .map((block) => {
       if (block.type === "bulletList" || block.type === "orderedList") {
@@ -1063,21 +1160,38 @@ function tableCellToXml(
           align: cellAlign,
           keepNext,
           runSize: cellSize,
+          inTable: true,
         });
       }
       if (block.type === "paragraph") {
-        return paragraphToXml(block, isHeader, cellAlign, null, keepNext, ctx, cellSize);
+        return paragraphToXml(
+          block,
+          isHeader,
+          cellAlign,
+          null,
+          keepNext,
+          ctx,
+          cellSize,
+          cellExtras
+        );
       }
-      return paragraphToXml(block, false, cellAlign, null, keepNext, ctx, cellSize);
+      return paragraphToXml(
+        block,
+        false,
+        cellAlign,
+        null,
+        keepNext,
+        ctx,
+        cellSize,
+        cellExtras
+      );
     })
     .join("");
 
   // Word requires at least one paragraph in each cell
   const cellContent =
     content ||
-    (keepNext
-      ? `<w:p>${paragraphProperties(cellAlign, null, true, ctx)}</w:p>`
-      : `<w:p>${paragraphProperties(cellAlign, null, false, ctx)}</w:p>`);
+    `<w:p>${paragraphProperties(cellAlign, null, keepNext, ctx, cellExtras)}</w:p>`;
   return `<w:tc>${tcPr}${cellContent}</w:tc>`;
 }
 
