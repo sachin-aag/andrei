@@ -149,6 +149,15 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("15.1.2 Supporting Documents");
     expect(body).not.toContain("15.1.3.1 Worst-case locations");
     expect(body).toContain("NITROSAMINE LIMITS");
+    expect(body).toContain(
+      "The rinse samples collected from the equipment after completion of the cleaning procedure"
+    );
+    expect(body).toContain(
+      "Swab and rinse samples collected during the cleaning validation study"
+    );
+    expect(body).toContain(
+      "The cleaning procedure shall be considered validated when all cleaning results comply"
+    );
     expect(body).not.toContain("15.11 Nitrosamine");
     expect(body).not.toContain("15.1–15.10 Equipment Sampling Plans");
     expect(body).not.toContain("1.0 Approval Signatures");

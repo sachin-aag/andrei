@@ -256,6 +256,55 @@ function isLimitNmtRow(cells: JSONContent[]): boolean {
   return /^limit nmt/i.test(cellPlain(cells[0]));
 }
 
+const ANALYTICAL_FOOTER_LABEL = /^(limit|loq|lod)$/i;
+
+function isAnalyticalFooterTable(labels: readonly string[]): boolean {
+  return (
+    headersMatch(labels, CVP_RESIDUE_RESULTS_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS) ||
+    headersMatch(labels, CVP_EXTRANEOUS_RESULTS_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS)
+  );
+}
+
+/**
+ * Limit / LOQ / LOD criteria sit in the last column (the results column, or
+ * Batch 3 once that column is split). Sample ID and any earlier batch
+ * columns stay blank — do not colspan the value across them.
+ */
+export function placeCvpAnalyticalFooter(table: JSONContent): JSONContent {
+  const rows = table.content ?? [];
+  if (!isAnalyticalFooterTable(headerLabels(rows[0]))) return table;
+  let changed = false;
+  const content = rows.map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    if (cells.length < 2 || !ANALYTICAL_FOOTER_LABEL.test(cellPlain(cells[0]))) {
+      return row;
+    }
+    const last = cells.length - 1;
+    const donor = cells.findIndex(
+      (cell, i) => i > 0 && i < last && cellPlain(cell).length > 0
+    );
+    if (donor < 0) return row;
+    changed = true;
+    const lastFilled = cellPlain(cells[last]).length > 0;
+    const nextCells = cells.map((cell, i) => {
+      if (i === 0) return cell;
+      if (i === last) {
+        return lastFilled
+          ? cell
+          : { ...cells[donor]!, type: "tableCell" as const };
+      }
+      return emptyLike(cell);
+    });
+    return { ...row, content: nextCells };
+  });
+  return changed ? { ...table, content } : table;
+}
+
 function rowHasContent(cells: JSONContent[]): boolean {
   return cells.some((cell) => cellPlain(cell).length > 0);
 }
@@ -406,15 +455,34 @@ function appendNumberOfBatchesRow(table: JSONContent): JSONContent {
 
 function upgradeTable(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
+  let next = table;
+  let widened = false;
   for (const spec of SPLIT_LAST) {
-    if (headersMatch(labels, spec.newHeaders)) return table;
-    if (headersMatch(labels, spec.oldHeaders)) return splitLastColumn(table, spec);
+    if (headersMatch(labels, spec.newHeaders)) {
+      widened = true;
+      break;
+    }
+    if (headersMatch(labels, spec.oldHeaders)) {
+      next = splitLastColumn(table, spec);
+      widened = true;
+      break;
+    }
   }
-  for (const spec of INSERT_BATCH) {
-    if (headersMatch(labels, spec.newHeaders)) return table;
-    if (headersMatch(labels, spec.oldHeaders)) return insertBatchColumn(table, spec);
+  if (!widened) {
+    for (const spec of INSERT_BATCH) {
+      if (headersMatch(labels, spec.newHeaders)) {
+        widened = true;
+        break;
+      }
+      if (headersMatch(labels, spec.oldHeaders)) {
+        next = insertBatchColumn(table, spec);
+        widened = true;
+        break;
+      }
+    }
   }
-  return appendNumberOfBatchesRow(table);
+  if (!widened) next = appendNumberOfBatchesRow(table);
+  return placeCvpAnalyticalFooter(next);
 }
 
 /**

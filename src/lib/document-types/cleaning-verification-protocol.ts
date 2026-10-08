@@ -9,7 +9,11 @@ import {
   CVP_IDENTITY_LABEL,
   cvpChatContextIdentity,
 } from "./cvp/chat-identity";
-import { ensureCvpBatchExecutionTable, upgradeCvpValidationDoc } from "./cvp/cycle-upgrade";
+import {
+  ensureCvpBatchExecutionTable,
+  ensureCvpTableSectionBoilerplate,
+  upgradeCvpValidationDoc,
+} from "./cvp/cycle-upgrade";
 import { CVP_DRAFTING_GUIDANCE } from "./cvp/drafting-guidance";
 import {
   concatCvpEquipmentItems,
@@ -183,10 +187,12 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
   );
   const aligned =
     key === "cvp_maco" ? alignCvpMacoEquipmentHeaders(compacted) : compacted;
-  const upgraded =
+  const upgraded = ensureCvpTableSectionBoilerplate(
+    key,
     key === "cvp_sampling_plan"
       ? ensureCvpBatchExecutionTable(upgradeCvpValidationDoc(aligned))
-      : upgradeCvpValidationDoc(aligned);
+      : upgradeCvpValidationDoc(aligned)
+  );
   return {
     [field]: stripCaptionsOnUnfilledTables(upgraded, {
       section: key,

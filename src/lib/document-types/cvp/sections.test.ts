@@ -9,16 +9,24 @@ import {
 } from "./equipment-sampling";
 import {
   CVP_BATCH_EXECUTION_HEADERS,
+  CVP_DEVIATIONS_SEED,
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
+  CVP_EVALUATION_SEEDS,
   CVP_FORM_NO,
   CVP_MACO_EQUIPMENT_HEADERS,
+  CVP_METHOD_VALIDATION_INTRO_SEED,
   CVP_NITROSAMINE_HEADERS,
+  CVP_NITROSAMINE_INTRO_SEED,
+  CVP_PGI_INTRO_SEED,
   CVP_PREVIOUS_NITROSAMINE_HEADERS,
   CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
+  CVP_PROCESS_LINE_INTRO_SEED,
   CVP_RESIDUE_RESULTS_HEADERS,
+  CVP_REVALIDATION_SEED,
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
+  CVP_TESTING_PROCEDURE_INTRO_SEED,
   EMPTY_CVP_CONTENT,
   alignCvpMacoEquipmentHeaders,
   cvpEquipmentSamplingSeed,
@@ -440,6 +448,7 @@ describe("cleaning verification protocol sections", () => {
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain("No-swab item");
     expect(CVP_DRAFTING_GUIDANCE).toContain("**Batch 1 / Batch 2 / Batch 3 stay empty.**");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("**last column only**");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "It shall be written in the cleaning validation report."
     );
@@ -469,6 +478,12 @@ describe("cleaning verification protocol sections", () => {
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "As a primary verification of equipment cleanliness"
     );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "keep the seeded intro; fill [limit]"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "keep the seeded four paragraphs"
+    );
   });
 
   it("seeds Batch 1/2/3 result columns and a 15.0 batch execution table", () => {
@@ -492,6 +507,104 @@ describe("cleaning verification protocol sections", () => {
         : { type: "doc", content: [] }
     );
     expect(nitro[0]?.headers).toEqual([...CVP_NITROSAMINE_HEADERS]);
+  });
+
+  it("seeds ISM Stage-4 boilerplate on nitrosamine through revalidation", () => {
+    const tableText = (key: keyof typeof EMPTY_CVP_CONTENT) =>
+      JSON.stringify(
+        "table" in EMPTY_CVP_CONTENT[key] ? EMPTY_CVP_CONTENT[key].table : {}
+      );
+    expect(tableText("cvp_nitrosamine")).toContain(CVP_NITROSAMINE_INTRO_SEED);
+    expect(tableText("cvp_pgi")).toContain(CVP_PGI_INTRO_SEED);
+    expect(tableText("cvp_process_line")).toContain(CVP_PROCESS_LINE_INTRO_SEED);
+    expect(tableText("cvp_process_line")).toContain("Acceptance Criteria:");
+    expect(tableText("cvp_manufacturing_area")).toContain(
+      "lint-free white wipe cloth"
+    );
+    expect(tableText("cvp_testing_procedure")).toContain(
+      CVP_TESTING_PROCEDURE_INTRO_SEED
+    );
+    expect(tableText("cvp_method_validation")).toContain(
+      CVP_METHOD_VALIDATION_INTRO_SEED
+    );
+    const evaluation = JSON.stringify(EMPTY_CVP_CONTENT.cvp_evaluation);
+    expect(evaluation).toContain(CVP_EVALUATION_SEEDS[0]);
+    expect(evaluation).not.toContain("three consecutive cleaning batches each comply");
+    expect(evaluation).toContain("concludes otherwise with QA approval");
+    expect(JSON.stringify(EMPTY_CVP_CONTENT.cvp_deviations)).toContain(
+      CVP_DEVIATIONS_SEED
+    );
+    expect(JSON.stringify(EMPTY_CVP_CONTENT.cvp_revalidation)).toContain(
+      CVP_REVALIDATION_SEED
+    );
+  });
+
+  it("prepends nitrosamine boilerplate onto a legacy table-only field at merge", () => {
+    const def = getDocumentType("cleaning_verification_protocol");
+    const legacyTable = {
+      type: "doc" as const,
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_NITROSAMINE_HEADERS].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            {
+              type: "tableRow",
+              content: ["Limit NMT (ppm)", "", "", "", "", "", "", "", "", ""].map(
+                (text) => ({
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+          ],
+        },
+      ],
+    };
+    const merged = def.mergeSection("cvp_nitrosamine", {
+      table: legacyTable,
+    }) as { table: JSONContent };
+    const text = JSON.stringify(merged.table);
+    expect(text).toContain(CVP_NITROSAMINE_INTRO_SEED);
+    expect(summarizeTablesInDoc(merged.table)[0]?.headers).toEqual([
+      ...CVP_NITROSAMINE_HEADERS,
+    ]);
+    const again = def.mergeSection("cvp_nitrosamine", merged) as {
+      table: JSONContent;
+    };
+    expect(
+      JSON.stringify(again.table).split(CVP_NITROSAMINE_INTRO_SEED).length - 1
+    ).toBe(1);
+  });
+
+  it("aligns leftover three-batch evaluation wording with the ISM Stage-4 seed", () => {
+    const def = getDocumentType("cleaning_verification_protocol");
+    const merged = def.mergeSection("cvp_evaluation", {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "The cleaning procedure shall be considered validated when three consecutive cleaning batches each comply with the visual inspection, swab, rinse, extraneous matter, pH (wherever applicable), nitrosamine, and potential genotoxic impurities acceptance criteria defined in this protocol. A failed batch shall be investigated, and the count of consecutive batches restarts unless the investigation justifies otherwise.",
+              },
+            ],
+          },
+        ],
+      },
+    }) as { narrative: JSONContent };
+    expect(JSON.stringify(merged.narrative)).toContain(CVP_EVALUATION_SEEDS[0]);
+    expect(JSON.stringify(merged.narrative)).not.toContain(
+      "three consecutive cleaning batches each comply"
+    );
   });
 
   it("widens old Results columns to Batch 1/2/3 and is idempotent", () => {
@@ -528,6 +641,78 @@ describe("cleaning verification protocol sections", () => {
     expect(summarizeTablesInDoc(upgradeCvpValidationDoc(upgraded))[0]?.headers).toEqual(
       [...CVP_RESIDUE_RESULTS_HEADERS]
     );
+  });
+
+  it("moves Limit, LOQ, and LOD into the last column and leaves Sample ID blank", () => {
+    const row = (cells: string[]) => ({
+      type: "tableRow" as const,
+      content: cells.map((text) => ({
+        type: "tableCell" as const,
+        content: [
+          {
+            type: "paragraph" as const,
+            content: text ? [{ type: "text" as const, text }] : [],
+          },
+        ],
+      })),
+    });
+    const misplaced: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_RESIDUE_RESULTS_HEADERS].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            row(["Final Rinse Sample (Acetone)", "NA", "", "", ""]),
+            row(["Limit", "NMT 10 ppm", "", "", ""]),
+            row(["LOQ", "5 ppm [3]", "", "", ""]),
+            row(["LOD", "2 ppm", "", "", ""]),
+          ],
+        },
+      ],
+    };
+    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(misplaced))[0]?.cells ?? [];
+    const byLabel = (label: string) => {
+      const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
+      return cells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(byLabel("Final Rinse Sample (Acetone)")).toEqual([
+      "Final Rinse Sample (Acetone)",
+      "NA",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+    expect(byLabel("Limit")).toEqual([
+      "Limit",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+      "NMT 10 ppm",
+    ]);
+    expect(byLabel("LOQ")).toEqual([
+      "LOQ",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+      "5 ppm [3]",
+    ]);
+    expect(byLabel("LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+      "2 ppm",
+    ]);
   });
 
   it("triples filled nitrosamine equipment rows and leaves Limit NMT once", () => {
