@@ -24,6 +24,7 @@ import { colorFromTextMarks, cssColorToWordVal } from "@/lib/tiptap/text-color";
 import { citationNumbersFromDoc } from "@/lib/suggestions/citations-at-end";
 import {
   applyCvpEmptyFirstColumnMerges,
+  applyCvpSourceTableColWidths,
   CVP_PAGE_BREAK_XML,
   cvpHeadingCaps,
   cvpHeadingParagraphXml,
@@ -159,6 +160,7 @@ export function narrativeToDocxXmlWithContext(
 
   let sanitized = sanitizeDocTextNodes(doc);
   if (ctx.mergeEmptyFirstColumn) {
+    sanitized = applyCvpSourceTableColWidths(sanitized);
     sanitized = applyCvpEmptyFirstColumnMerges(sanitized);
   }
   if (ctx.stripTableCaptions) {
@@ -982,12 +984,16 @@ function buildInnerTableXml(
   const tblJc = ctx?.tableJustify
     ? `<w:jc w:val="${ctx.tableJustify}"/>`
     : "";
+  const tblLayout = storedWidths
+    ? `<w:tblLayout w:type="fixed"/>`
+    : "";
 
   // Nested inside the keep-together wrapper: explicit dxa width prevents Word
   // from honoring an oversized imported tblGrid sum and clipping the right edge.
   const tblPr = `<w:tblPr>
 <w:tblStyle w:val="TableGrid"/>
 ${tblW}
+${tblLayout}
 ${tblJc}
 <w:tblBorders>
 <w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>

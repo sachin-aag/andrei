@@ -182,7 +182,6 @@ export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
   paragraphAlign: "both",
   listParagraphStyle: false,
   tableKeepTogetherWrapper: false,
-  tableWidthPct: "5000",
   tableBorderColor: "000000",
   tableCellVAlign: "center",
   paragraphLine: "360",

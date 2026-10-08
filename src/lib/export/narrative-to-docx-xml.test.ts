@@ -654,6 +654,7 @@ describe("narrativeToDocxXml tables", () => {
 
     const xml = narrativeToDocxXml(doc);
     expect(xml).toContain('<w:tblW w:w="2000" w:type="dxa"/>');
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
     expect(xml).toContain('<w:gridCol w:w="800"/>');
     expect(xml).toContain('<w:gridCol w:w="1200"/>');
   });
@@ -1302,6 +1303,60 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).not.toContain("[1]");
     expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
     expect(xml).toContain('w:line="360"');
+  });
+
+  it("uses source protocol column widths and dxa table width for CVP", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "Function"),
+                  textCell("tableHeader", "Department"),
+                  textCell("tableHeader", "Name"),
+                  textCell("tableHeader", "Designation"),
+                  textCell("tableHeader", "Sign & date"),
+                ],
+              },
+            ],
+          },
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "S. No"),
+                  textCell("tableHeader", "Surface Type"),
+                  textCell("tableHeader", "WAF (L/m²)"),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
+    expect(xml).toContain('<w:gridCol w:w="1524"/>');
+    expect(xml).toContain('<w:gridCol w:w="2340"/>');
+    expect(xml).toContain('<w:gridCol w:w="2225"/>');
+    expect(xml).toContain('<w:gridCol w:w="2020"/>');
+    expect(xml).toContain('<w:gridCol w:w="1773"/>');
+    expect(xml).toContain('<w:tblW w:w="9882" w:type="dxa"/>');
+    expect(xml).toContain('<w:gridCol w:w="838"/>');
+    expect(xml).toContain('<w:gridCol w:w="3251"/>');
+    expect(xml).toContain('<w:gridCol w:w="1996"/>');
+    expect(xml).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
   });
 
   it("parses plain text dash lists into numbered Word XML", () => {
