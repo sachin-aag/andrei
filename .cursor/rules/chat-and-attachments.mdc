@@ -53,11 +53,16 @@ asked to redraft / replace / make 15.N as a different equipment ID (or
 when a QSR RTM table is in `@` scope, `propose_edit` for leftover 15.N
 heading / 15.N.1 / 15.N.3 / 15.N.5 prose ("go for 15.N.1", "make these",
 "insert suggestions for 15.N.1" — create the cards if none are open;
-after two `edit_table` fails on that turn, recover with `propose_edit`
-instead of emptying tools), `edit_table` for any other table, or
-`propose_edit`. A filled CVP equipment identity rewrite is a whole-field
-`draft_field`, not cell-by-cell `edit_table`. Leftover prose after those
-tables landed is `propose_edit`. Do not claim Agent mode is read-only or
+quote heading + following paragraph only, never Table N / GFM — the
+server strips those and still lands the paragraph; after two `edit_table`
+fails on that turn, recover with `propose_edit` instead of emptying
+tools). "Add a table to 15.N.x" under a heading already in the saved box
+is `edit_table` `create_table` with `afterAnchor` — not leftover-prose
+`propose_edit` (do not strip the table and rewrite the paragraph). Then
+`edit_table` for any other table, or `propose_edit`. A filled
+CVP equipment identity rewrite is a whole-field `draft_field`, not
+cell-by-cell `edit_table`. Leftover prose after those tables landed is
+`propose_edit`. Do not claim Agent mode is read-only or
 paste a markdown table. ELR section numbers
 in chat are the Contents outline (3.10 Monitoring, 3.12 Preventive
 Maintenance, 3.15 Access Control). A printed Table N is only the number on
@@ -67,7 +72,11 @@ registered on the ToolSet; `advertisedTools` hides them. A remapped
 (Document `prepareReportChatStep` and Analytics `prepareAnalyticsChatStep`).
 `list_suggestions` lists open / approved / dismissed AI cards (section + preview, no comment ids). Wrap-up
 must not claim a fill unless a tool this turn returned proposed, drafted,
-or applied.
+or applied. Persist rewrites wrap-up that claimed a table or fill when no
+write tool returned those statuses (`rewriteUnlandedWriteParts`). CVP
+equipment `read_section` snapshots the same bound/normalized clone that
+writes stale-check, so compact (`10000 L` → `10k L`) or collapsed
+duplicate headings cannot bounce every `edit_table` as `section_changed`.
 
 Search attachments **before** `ask_user`, `draft_field`, or a `<placeholder>`
 for report facts (batch, date, result, equipment ID, requirement ID, design

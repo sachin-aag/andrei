@@ -32,6 +32,10 @@ const EXPLICIT_DOCUMENT_EDIT_RE =
 const REMAINING_PROSE_EDIT_RE =
   /\b\d+\.\d+\.\d+\b|\b(?:go ahead and )?make these\b|\bgo for \d+(?:\.\d+)+\b|\b(?:more )?suggestions? need to be (?:made|inserted|landed|applied)\b|\binsertions? (?:are |is )?(?:really )?(?:failing|failed|not landing)\b/i;
 
+/** "add a table to 15.2.3.2" is create_table, not leftover-prose propose_edit. */
+const TABLE_SHAPE_EDIT_RE =
+  /\b(?:add|create|insert|build|make)\b.{0,40}\btable\b/i;
+
 export type AlreadyDraftedSection = {
   section: SectionType;
   fillState: "partial" | "filled";
@@ -151,17 +155,25 @@ export function isExplicitDocumentEdit(text: string): boolean {
     EXPLICIT_DOCUMENT_EDIT_RE.test(normalized) ||
     isExplicitSectionRewrite(normalized) ||
     isLandWholeDraftRequest(normalized) ||
-    isRemainingProseEdit(normalized)
+    isRemainingProseEdit(normalized) ||
+    isTableShapeEdit(normalized)
   );
+}
+
+/** True when they asked to add/create a table, not leftover 15.N.x prose. */
+export function isTableShapeEdit(text: string): boolean {
+  return TABLE_SHAPE_EDIT_RE.test(text.replace(/\s+/g, " ").trim());
 }
 
 /**
  * Named leftover prose in a filled 15.N box (15.6.1, "make these",
  * "go for 15.6.1", insertions failing). Force propose_edit — not exclusive
- * edit_table — after read_section.
+ * edit_table — after read_section. Adding a table under 15.N.x is not this.
  */
 export function isRemainingProseEdit(text: string): boolean {
-  return REMAINING_PROSE_EDIT_RE.test(text.replace(/\s+/g, " ").trim());
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (isTableShapeEdit(normalized)) return false;
+  return REMAINING_PROSE_EDIT_RE.test(normalized);
 }
 
 /**
@@ -218,7 +230,7 @@ Then compare the current text to that section's quality criteria (and AI Check h
 - Gaps found: name the gaps. Do not quiz them for facts already in the section.`
       : `Call read_section on "${already.section}" FIRST. Do not call search_documents or ask_user yet.
 Then compare the current text to that section's quality criteria (and AI Check hints below, if any):
-- They asked to insert, apply, or edit the document (a cell, a row, or wording they already described): that is the change. After read_section, call draft_field with replaceFilledField: true when they asked to redraft / replace / make 15.N as a different equipment ID (or to insert a rewrite already in chat), draft_rtm_table when that tool is loaded (QSR Tables 5–10), propose_edit for leftover 15.N heading / 15.N.1 / 15.N.3 / 15.N.5 prose (including "go for 15.N.1", "make these", and "insert suggestions for 15.N.1" — zero open cards means create them now), edit_table for any other table, or propose_edit for other prose. Do not stop at a summary. Do not paste a markdown table or the remaining subsection for them to copy. Do not say write tools are disabled or that this session is read-only.
+- They asked to insert, apply, or edit the document (a cell, a row, or wording they already described): that is the change. After read_section, call draft_field with replaceFilledField: true when they asked to redraft / replace / make 15.N as a different equipment ID (or to insert a rewrite already in chat), draft_rtm_table when that tool is loaded (QSR Tables 5–10), propose_edit for leftover 15.N heading / 15.N.1 / 15.N.3 / 15.N.5 prose (including "go for 15.N.1", "make these", and "insert suggestions for 15.N.1" — zero open cards means create them now; quote the heading and the paragraph after it only, never Table N / GFM), edit_table for any other table, or propose_edit for other prose. Do not stop at a summary. Do not paste a markdown table or the remaining subsection for them to copy. Do not say write tools are disabled or that this session is read-only.
 - No specific change and no material gaps: do not rewrite and do not ask_user. Reply that the section is already drafted, summarize what is there in one or two sentences, and ask whether they want a specific change.
 - Gaps found, and they did not already name the change: search attachments only for the missing facts, then make a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.`;
 

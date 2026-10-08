@@ -444,6 +444,9 @@ describe("cleaning verification protocol sections", () => {
     expect(CVP_DRAFTING_GUIDANCE).toContain("replaceFilledField: true");
     expect(CVP_DRAFTING_GUIDANCE).toContain("**ML tank / receiver**");
     expect(CVP_DRAFTING_GUIDANCE).toContain("insert suggestions for 15.N.1");
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "the server strips those tables and still lands the paragraph"
+    );
     expect(CVP_DRAFTING_GUIDANCE).toContain("create_table: omit title");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "Do not replay these ISM4 source mismatches"

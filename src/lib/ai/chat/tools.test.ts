@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import {
+  CVP_EQUIPMENT_DETAILS_SEED,
+  CVP_SHELL_CALC_HEADERS,
   cvpEquipmentSamplingSeed,
   EMPTY_CVP_CONTENT,
 } from "@/lib/document-types/cvp/sections";
@@ -3430,6 +3432,69 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
+  it("lands leftover 15.6.1 prose even when the dump includes Table 42", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: { items: [cvpEquipmentSamplingSeed(6)] },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      mentionedTargetField: "items.0",
+      unsupportedFactPolicy: "flag",
+    });
+    const details =
+      "The equipment details, including Material of Construction (MOC) and product contact surface area, were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.";
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.0",
+        anchorText: "",
+        deleteText: "",
+        insertText: [
+          "### 15.6.1 Equipment details",
+          details,
+          "Table 42. Equipment Details",
+          "| Parameter | Details | Reference |",
+          "| --- | --- | --- |",
+          "| Capacity | 1k L | drawing |",
+        ].join("\n"),
+        reasoning: "Update 15.6.1 equipment details.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "cvp_equipment_sampling",
+      targetField: "items.0",
+    });
+    const payload = JSON.stringify(inserted);
+    expect(payload).toContain(details);
+    expect(payload).not.toContain("| Capacity |");
+    expect(payload).toContain(CVP_EQUIPMENT_DETAILS_SEED);
+  });
+
   it("refuses propose_edit that restates a table as bullets", async () => {
     mockDefineSectionSelect({
       type: "doc",
@@ -4359,6 +4424,129 @@ describe("buildChatTools propose edits", () => {
     const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
     expect(result).toMatchObject({ status: "proposed" });
     expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("does not bounce CVP create_table after read when bind only compact/collapses", async () => {
+    const shellHeading = "15.2.3.2 Calculation for shell wall swab locations";
+    const item = {
+      type: "doc" as const,
+      content: [
+        {
+          type: "heading" as const,
+          attrs: { level: 2 },
+          content: [{ type: "text" as const, text: "15.2 MIXED VESSEL (MV-1304)" }],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 2 },
+          content: [
+            { type: "text" as const, text: "15.2 Equipment name (Equipment No.)" },
+          ],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 4 },
+          content: [{ type: "text" as const, text: shellHeading }],
+        },
+        {
+          type: "heading" as const,
+          attrs: { level: 4 },
+          content: [{ type: "text" as const, text: shellHeading }],
+        },
+        {
+          type: "paragraph" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "The number of shell wall swab sampling locations shall be determined from the vessel. Capacity 10000 L.",
+            },
+          ],
+        },
+      ],
+    };
+    const mockItems = (items: unknown[]) => {
+      dbSelectMock.mockImplementation(() => ({
+        from: (table: unknown) => ({
+          where: vi.fn().mockResolvedValue(
+            table === comments
+              ? []
+              : [
+                  {
+                    id: "sec-eq",
+                    reportId: "report-1",
+                    section: "cvp_equipment_sampling",
+                    content: { items },
+                  },
+                ]
+          ),
+        }),
+      }));
+    };
+    mockItems([cvpEquipmentSamplingSeed(1), item]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      sectionScope: "cvp_equipment_sampling",
+      unsupportedFactPolicy: "flag",
+    });
+    const read = (await tools.read_section!.execute!(
+      { section: "cvp_equipment_sampling", fields: ["items.1"] },
+      TEST_TOOL_OPTIONS
+    )) as { fields: Array<{ targetField: string; text: string }> };
+    expect(read.fields[0]?.targetField).toBe("items.1");
+    expect(read.fields[0]?.text).toContain("10k L");
+    expect(read.fields[0]?.text).not.toContain("10000 L");
+
+    const proposed = await tools.edit_table!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.1",
+        reasoning: "Add the shell-wall calculation table.",
+        operation: {
+          kind: "create_table",
+          headers: [...CVP_SHELL_CALC_HEADERS],
+          rows: [["H", "NA", "3.9 m", "Shell height"]],
+          afterAnchor: shellHeading,
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(proposed).toMatchObject({
+      status: "proposed",
+      section: "cvp_equipment_sampling",
+      targetField: "items.1",
+    });
+
+    mockItems([
+      cvpEquipmentSamplingSeed(1),
+      {
+        ...item,
+        content: [
+          ...(item.content ?? []),
+          {
+            type: "paragraph" as const,
+            content: [{ type: "text" as const, text: "A concurrent apply landed." }],
+          },
+        ],
+      },
+    ]);
+    const bounced = await tools.edit_table!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.1",
+        reasoning: "Retry after a real edit.",
+        operation: {
+          kind: "create_table",
+          headers: [...CVP_SHELL_CALC_HEADERS],
+          rows: [["D", "NA", "1.2 m", "Shell diameter"]],
+          afterAnchor: shellHeading,
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(bounced).toMatchObject({ status: "section_changed" });
   });
 
   it("proposes insert_image from a saved Analytics plot", async () => {

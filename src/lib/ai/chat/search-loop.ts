@@ -77,15 +77,56 @@ export function contentToolName(part: unknown): string {
 }
 
 export function collectToolCalls(step: SearchLoopStep): ToolCallLike[] {
-  const calls: ToolCallLike[] = [
-    ...(step.toolCalls ?? []),
-    ...(step.staticToolCalls ?? []),
-  ];
+  const calls: ToolCallLike[] = [];
+  const seen = new Set<string>();
+  const push = (call: ToolCallLike) => {
+    const name = callToolName(call);
+    if (!name) return;
+    const id = typeof call.toolCallId === "string" ? call.toolCallId : "";
+    const key = `${id}\0${name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    calls.push({ ...call, toolName: name });
+  };
+  for (const call of step.toolCalls ?? []) push(call);
+  for (const call of step.staticToolCalls ?? []) push(call);
   for (const part of step.content ?? []) {
     const name = contentToolName(part);
-    if (name) calls.push({ toolName: name });
+    if (!name) continue;
+    const record = part as ToolCallLike;
+    push({
+      ...record,
+      toolName: name,
+    });
   }
   return calls;
+}
+
+function resultDedupeKey(result: ToolResultLike): string {
+  const name = callToolName(result);
+  const id = typeof result.toolCallId === "string" ? result.toolCallId : "";
+  return `${id}\0${name}`;
+}
+
+/** Tool results from `toolResults` plus completed `content` parts (AI SDK v6). */
+export function collectToolResults(step: SearchLoopStep): ToolResultLike[] {
+  const results: ToolResultLike[] = [];
+  const seen = new Set<string>();
+  const push = (result: ToolResultLike) => {
+    if (!callToolName(result)) return;
+    const key = resultDedupeKey(result);
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push(result);
+  };
+  for (const result of step.toolResults ?? []) push(result);
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const record = part as ToolResultLike;
+    if (record.output === undefined && record.result === undefined) continue;
+    push(record);
+  }
+  return results;
 }
 
 export function unwrapToolPayload(output: unknown): unknown {
