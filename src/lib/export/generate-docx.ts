@@ -42,6 +42,7 @@ import {
   CVP_DOCX_RUN_STYLE,
   VQ_DOCX_RUN_STYLE,
   createDocxExportContext,
+  nextUnusedImageIndexFromZip,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
 import {
@@ -645,7 +646,10 @@ export async function generateReportDocx({
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const pageSetup = loadDocxPageSetupFromZip(zip);
-  const ctx = createDocxExportContext(numberingBases, undefined, { pageSetup });
+  const ctx = createDocxExportContext(numberingBases, undefined, {
+    pageSetup,
+    nextImageIndex: nextUnusedImageIndexFromZip(zip),
+  });
   const data = buildTemplateData(report, exportSections, ctx, comments);
   const signatureSnapshot = signatureSnapshotFromSection(
     data._signatureApprovals as SignatureApprovalsSection
@@ -710,6 +714,7 @@ async function generateGenericDocumentDocx({
   const ctx = createDocxExportContext(numberingBases, undefined, {
     useHeadingStyles: true,
     pageSetup,
+    nextImageIndex: nextUnusedImageIndexFromZip(zip),
   });
   const bodyRow = sections.find((row) => row.section === GENERIC_DOCUMENT_SECTION);
   const merged = mergeSectionForType(
@@ -787,7 +792,11 @@ async function generateDesignVerificationDocx({
             : pack.id === "convergent"
               ? CONVERGENT_DOCX_RUN_STYLE
               : undefined,
-    { pageSetup, useHeadingStyles: documentType === "cleaning_verification_protocol" }
+    {
+      pageSetup,
+      useHeadingStyles: documentType === "cleaning_verification_protocol",
+      nextImageIndex: nextUnusedImageIndexFromZip(zip),
+    }
   );
   const def = getDocumentType(documentType);
   const mergedSections = sections.map((row) => ({

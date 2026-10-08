@@ -579,4 +579,33 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(saf).toBe(rf);
     expect(swab).not.toBe(rf);
   });
+
+  it("keeps the header logo when the protocol has nine body figures", async () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const figures: JSONContent = {
+      type: "doc",
+      content: Array.from({ length: 9 }, () => ({
+        type: "paragraph",
+        content: [{ type: "imageInline", attrs: { src: tinyPng, width: 10 } }],
+      })),
+    };
+    const empty = await exportZip(sectionsWith());
+    const withFigures = await exportZip(
+      sectionsWith({ cvp_objective: { narrative: figures } })
+    );
+    expect(withFigures.file("word/media/image9.png")?.asBinary()).toBe(
+      empty.file("word/media/image9.png")?.asBinary()
+    );
+    expect(withFigures.file("word/_rels/header1.xml.rels")?.asText()).toContain(
+      "media/image9.png"
+    );
+    expect(withFigures.file("word/_rels/header2.xml.rels")?.asText()).toContain(
+      "media/image9.png"
+    );
+    expect(withFigures.file("word/media/image10.png")).toBeTruthy();
+    expect(withFigures.file("word/document.xml")?.asText()).toContain(
+      "<w:drawing>"
+    );
+  });
 });
