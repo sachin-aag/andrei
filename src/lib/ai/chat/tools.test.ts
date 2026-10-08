@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import {
+  CVP_EQUIPMENT_DETAILS_SEED,
   cvpEquipmentSamplingSeed,
   EMPTY_CVP_CONTENT,
 } from "@/lib/document-types/cvp/sections";
@@ -3428,6 +3429,69 @@ describe("buildChatTools propose edits", () => {
     expect(result).toMatchObject({ status: "not_found" });
     expect(String((result as { hint?: string }).hint)).toMatch(/create_table/);
     expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("lands leftover 15.6.1 prose even when the dump includes Table 42", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-eq",
+                  reportId: "report-1",
+                  section: "cvp_equipment_sampling",
+                  content: { items: [cvpEquipmentSamplingSeed(6)] },
+                },
+              ]
+        ),
+      }),
+    }));
+    const inserted: unknown[] = [];
+    dbInsertMock.mockReturnValue({
+      values: vi.fn().mockImplementation((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve();
+      }),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      mentionedTargetField: "items.0",
+      unsupportedFactPolicy: "flag",
+    });
+    const details =
+      "The equipment details, including Material of Construction (MOC) and product contact surface area, were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.";
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "cvp_equipment_sampling",
+        targetField: "items.0",
+        anchorText: "",
+        deleteText: "",
+        insertText: [
+          "### 15.6.1 Equipment details",
+          details,
+          "Table 42. Equipment Details",
+          "| Parameter | Details | Reference |",
+          "| --- | --- | --- |",
+          "| Capacity | 1k L | drawing |",
+        ].join("\n"),
+        reasoning: "Update 15.6.1 equipment details.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "cvp_equipment_sampling",
+      targetField: "items.0",
+    });
+    const payload = JSON.stringify(inserted);
+    expect(payload).toContain(details);
+    expect(payload).not.toContain("| Capacity |");
+    expect(payload).toContain(CVP_EQUIPMENT_DETAILS_SEED);
   });
 
   it("refuses propose_edit that restates a table as bullets", async () => {

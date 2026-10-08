@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v202-cvp-equipment-prose");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v203-cvp-equipment-subsection");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -363,6 +363,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("insert that rewrite already in chat");
     expect(prompt).toContain("seeded boilerplate stays");
     expect(prompt).toContain("insert suggestions for 15.N.1");
+    expect(prompt).toContain("quote the heading and the paragraph after it only");
     expect(prompt).toContain("tableIndex 0 equipment list");
   });
 

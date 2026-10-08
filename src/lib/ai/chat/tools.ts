@@ -27,7 +27,9 @@ import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
+import { repairCvpEquipmentProseEdit } from "@/lib/ai/chat/cvp-equipment-prose-edit";
 import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
+import { isCvpEquipmentItemField } from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
@@ -2997,6 +2999,26 @@ export function buildChatTools(opts: {
               resolvedField
             )
           : null;
+        let editAnchorText = anchorText;
+        let editDeleteText = deleteText;
+        let editInsertText = insertText;
+        if (isCvpEquipmentItemField(resolvedField) && fieldDoc) {
+          const repaired = repairCvpEquipmentProseEdit({
+            fieldDoc,
+            fieldText,
+            edit: {
+              anchorText,
+              deleteText,
+              insertText,
+              scope: parsedScope,
+            },
+          });
+          if (repaired) {
+            editAnchorText = repaired.anchorText;
+            editDeleteText = repaired.deleteText;
+            editInsertText = repaired.insertText;
+          }
+        }
         await ensureEvidence();
         const insertGrounding = await writeGrounding(
           section,
@@ -3006,7 +3028,7 @@ export function buildChatTools(opts: {
         );
         const analysisFacts = await loadAnalysisEvidence();
         let groundedInsert = groundDraftText({
-          text: insertText,
+          text: editInsertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: insertGrounding,
@@ -3034,14 +3056,14 @@ export function buildChatTools(opts: {
                   ...groundedInsert.unsupported,
                   ...(groundedSecond?.unsupported ?? []),
                 ],
-                texts: [insertText, rawSecond?.insertText ?? ""].filter(
+                texts: [editInsertText, rawSecond?.insertText ?? ""].filter(
                   (text) => text.length > 0
                 ),
               })
             : emptyRepair;
         if (repair.hits.length > 0) {
           groundedInsert = groundDraftText({
-            text: insertText,
+            text: editInsertText,
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: insertGrounding,
@@ -3100,8 +3122,8 @@ export function buildChatTools(opts: {
         }
         const prepared = prepareEditForCitationMode(
           {
-            anchorText,
-            deleteText,
+            anchorText: editAnchorText,
+            deleteText: editDeleteText,
             insertText: groundedInsert.text,
             scope: parsedScope,
             second: rawSecond
