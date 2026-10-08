@@ -646,7 +646,7 @@ describe("cleaning verification protocol sections", () => {
     );
   });
 
-  it("moves Limit, LOQ, and LOD into the last column and leaves Sample ID blank", () => {
+  it("moves Limit, LOQ, and LOD into Batch columns when widening a single-result table", () => {
     const row = (cells: string[]) => ({
       type: "tableRow" as const,
       content: cells.map((text) => ({
@@ -659,7 +659,7 @@ describe("cleaning verification protocol sections", () => {
         ],
       })),
     });
-    const misplaced: JSONContent = {
+    const previous: JSONContent = {
       type: "doc",
       content: [
         {
@@ -667,20 +667,20 @@ describe("cleaning verification protocol sections", () => {
           content: [
             {
               type: "tableRow",
-              content: [...CVP_RESIDUE_RESULTS_HEADERS].map((text) => ({
+              content: [...CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS].map((text) => ({
                 type: "tableHeader",
                 content: [{ type: "paragraph", content: [{ type: "text", text }] }],
               })),
             },
-            row(["Final Rinse Sample (Acetone)", "NA", "", "", ""]),
-            row(["Limit", "NMT 10 ppm", "", "", ""]),
-            row(["LOQ", "5 ppm [3]", "", "", ""]),
-            row(["LOD", "2 ppm", "", "", ""]),
+            row(["Final Rinse Sample (Acetone)", "NA", ""]),
+            row(["Limit", "NMT 10 ppm", ""]),
+            row(["LOQ", "5 ppm [3]", ""]),
+            row(["LOD", "2 ppm", ""]),
           ],
         },
       ],
     };
-    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(misplaced))[0]?.cells ?? [];
+    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(previous))[0]?.cells ?? [];
     const byLabel = (label: string) => {
       const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
       return cells
@@ -715,6 +715,92 @@ describe("cleaning verification protocol sections", () => {
       "2 ppm",
       "2 ppm",
       "2 ppm",
+    ]);
+  });
+
+  it("keeps engineer Limit, LOQ, and LOD cells on an already-wide results table", () => {
+    const row = (cells: string[]) => ({
+      type: "tableRow" as const,
+      content: cells.map((text) => ({
+        type: "tableCell" as const,
+        content: [
+          {
+            type: "paragraph" as const,
+            content: text ? [{ type: "text" as const, text }] : [],
+          },
+        ],
+      })),
+    });
+    const edited: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_RESIDUE_RESULTS_HEADERS].map((text) => ({
+                type: "tableHeader",
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            row(["Final Rinse Sample (Acetone)", "NA", "", "", ""]),
+            row(["Limit", "NMT 10 ppm", "", "12 ppm", ""]),
+            row(["LOQ", "note", "5 ppm [3]", "5 ppm [3]", "6 ppm"]),
+            row(["LOD", "", "2 ppm", "2 ppm", "2 ppm"]),
+          ],
+        },
+      ],
+    };
+    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(edited))[0]?.cells ?? [];
+    const byLabel = (label: string) => {
+      const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
+      return cells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(byLabel("Limit")).toEqual([
+      "Limit",
+      "NMT 10 ppm",
+      "(empty)",
+      "12 ppm",
+      "(empty)",
+    ]);
+    expect(byLabel("LOQ")).toEqual([
+      "LOQ",
+      "note",
+      "5 ppm [3]",
+      "5 ppm [3]",
+      "6 ppm",
+    ]);
+    expect(byLabel("LOD")).toEqual(["LOD", "(empty)", "2 ppm", "2 ppm", "2 ppm"]);
+
+    const merged = getDocumentType("cleaning_verification_protocol").mergeSection(
+      "cvp_equipment_sampling",
+      { items: [edited] }
+    ) as { items: JSONContent[] };
+    const mergedCells = summarizeTablesInDoc(merged.items[0]!)[0]?.cells ?? [];
+    const mergedByLabel = (label: string) => {
+      const rowIndex = mergedCells.find((cell) => cell.col === 0 && cell.text === label)?.row;
+      return mergedCells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(mergedByLabel("Limit")).toEqual([
+      "Limit",
+      "NMT 10 ppm",
+      "(empty)",
+      "12 ppm",
+      "(empty)",
+    ]);
+    expect(mergedByLabel("LOQ")).toEqual([
+      "LOQ",
+      "note",
+      "5 ppm [3]",
+      "5 ppm [3]",
+      "6 ppm",
     ]);
   });
 
