@@ -58,8 +58,9 @@ server strips those and still lands the paragraph; after two `edit_table`
 fails on that turn, recover with `propose_edit` instead of emptying
 tools). "Add a table to 15.N.x" under a heading already in the saved box
 is `edit_table` `create_table` with `afterAnchor` — not leftover-prose
-`propose_edit` (do not strip the table and rewrite the paragraph). Then
-`edit_table` for any other table, or `propose_edit`. A filled
+`propose_edit` (do not strip the table and rewrite the paragraph). Preview
+marks the inserted table, not the last table in the box (15.N.8 extraneous).
+Then `edit_table` for any other table, or `propose_edit`. A filled
 CVP equipment identity rewrite is a whole-field `draft_field`, not
 cell-by-cell `edit_table`. Leftover prose after those tables landed is
 `propose_edit`. Do not claim Agent mode is read-only or

@@ -2375,6 +2375,64 @@ describe("applyTableOperation", () => {
     ]);
   });
 
+  it("inserts a 15.2.3.2 table before the later 15.2.8 extraneous grid", () => {
+    const heading = "15.2.3.2 Calculation for shell wall swab locations";
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 4 },
+          content: [{ type: "text", text: heading }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The number of shell wall swab sampling locations shall be determined from the vessel.",
+            },
+          ],
+        },
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [
+            {
+              type: "text",
+              text: "15.2.8 Rinse samples analysis results summary (Extraneous matter)",
+            },
+          ],
+        },
+        tableDoc(
+          ["Sample description / location", "Sample ID", "Results (Extraneous matter)"],
+          [
+            ["Rinse Sample", "NA", ""],
+            ["Limit", "Black and fiber particles should be absent", ""],
+          ]
+        ).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["Parameter", "Calculation", "Value", "Remarks"],
+      rows: [["H", "NA", "3.9 m", "Shell height"]],
+      afterAnchor: heading,
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "heading",
+      "table",
+      "paragraph",
+      "heading",
+      "table",
+    ]);
+    expect(cellText(result.doc, 0, 0, 0)).toBe("Parameter");
+    expect(cellText(result.doc, 1, 2, 0)).toBe("3.9 m");
+    expect(cellText(result.doc, 1, 0, 1)).toBe("Rinse Sample");
+  });
+
   it("refuses a missing or ambiguous afterAnchor", () => {
     const before: JSONContent = {
       type: "doc",
