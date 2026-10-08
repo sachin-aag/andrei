@@ -40,7 +40,7 @@ function cvpReport(): typeof reports.$inferSelect {
       version: "00",
       effectiveDate: "08-Apr-2026",
       documentTitle:
-        "Cleaning Verification Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)",
+        "Cleaning Validation Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)",
     },
     status: "draft",
     createdAt: new Date("2026-01-01"),
@@ -108,6 +108,16 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain(' TOC \\o "1-1" ');
     expect(document).toContain('<w:pStyle w:val="TOCHeading"/>');
     expect(document).toContain("TABLE OF CONTENTS");
+    expect(visibleText(document)).toContain("CLEANING VALIDATION PROTOCOL");
+    expect(visibleText(document)).not.toContain("CLEANING VERIFICATION PROTOCOL");
+    expect(document).toContain("CLEANING VALIDATION METHODOLOGY");
+    expect(document).not.toContain("CLEANING VERIFICATION METHODOLOGY");
+    expect(visibleText(zip.file("word/header1.xml")?.asText() ?? "")).toContain(
+      "CLEANING VALIDATION PROTOCOL"
+    );
+    expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
+      "CLEANING VALIDATION PROTOCOL"
+    );
     expect(paragraphContaining(document, "APPROVAL SIGNATURES")).toContain(
       '<w:numId w:val="3"/>'
     );
@@ -139,11 +149,22 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("15.1.2 Supporting Documents");
     expect(body).not.toContain("15.1.3.1 Worst-case locations");
     expect(body).toContain("NITROSAMINE LIMITS");
+    expect(body).toContain(
+      "The rinse samples collected from the equipment after completion of the cleaning procedure"
+    );
+    expect(body).toContain(
+      "Swab and rinse samples collected during the cleaning validation study"
+    );
+    expect(body).toContain(
+      "The cleaning procedure shall be considered validated when all cleaning results comply"
+    );
     expect(body).not.toContain("15.11 Nitrosamine");
     expect(body).not.toContain("15.1–15.10 Equipment Sampling Plans");
     expect(body).not.toContain("1.0 Approval Signatures");
     expect(body).not.toContain("15.1 Equipment name (Equipment No.)");
     expect(header).toContain("CVRP-ISM4-26-001");
+    expect(header).toContain("Cleaning Validation Protocol");
+    expect(header).not.toContain("Cleaning Verification Protocol");
     expect(header).toContain("Production");
     expect(visibleText(zip.file("word/header2.xml")?.asText() ?? "")).toContain(
       "08-Apr-2026"
@@ -212,7 +233,7 @@ describe("cleaning verification protocol DOCX export", () => {
     ]);
     expect(rows).toContainEqual([
       "3",
-      "",
+      "Isosorbide Mononitrate (Oral and Injection) PDE",
       "Isosorbide Mononitrate (Oral and Injection) PDE",
       "Page # 1",
     ]);
@@ -224,6 +245,87 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(paragraphContaining(document, "CITATIONS")).not.toContain(
       '<w:pStyle w:val="Heading1"/>'
     );
+  });
+
+  it("keeps each cited page as its own CITATIONS row and fills Document reference #", async () => {
+    function cited(body: string, sources: readonly string[]): JSONContent {
+      return {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: body }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "Citations:" }] },
+          ...sources.map((source, i) => ({
+            type: "paragraph" as const,
+            content: [{ type: "text" as const, text: `${i + 1}. ${source}` }],
+          })),
+        ],
+      };
+    }
+    const zip = await exportZip(
+      sectionsWith({
+        cvp_objective: {
+          narrative: cited("Objective cites the protocol [1].", [
+            "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 1]",
+          ]),
+        },
+        cvp_scope: {
+          narrative: cited("Scope cites later protocol pages and the sheet [1][2].", [
+            "[CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol, p. 3]",
+            "[ISM3 CV data sheet, p. 1]",
+          ]),
+        },
+        cvp_background: {
+          narrative: cited("Background repeats a short data-sheet name [1].", [
+            "[data sheet, p. 2]",
+          ]),
+        },
+      })
+    );
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const headingAt = document.indexOf("CITATIONS");
+    const citationsTable = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) =>
+        document.indexOf(tbl) > headingAt &&
+        visibleText(tbl).includes("Citation #")
+    );
+    expect(citationsTable, "citations table").toBeTruthy();
+    const rows = [...(citationsTable!.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g) ?? [])].map(
+      (row) =>
+        [...row[0].matchAll(/<w:tc[\s\S]*?<\/w:tc>/g)].map((cell) =>
+          [...cell[0].matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)]
+            .map((m) => m[1])
+            .join("")
+        )
+    );
+    expect(rows).toContainEqual([
+      "1",
+      "CVRP-ISM4-26-001-00",
+      "ISM Stage-4 Cleaning Verification Protocol",
+      "Page # 1",
+    ]);
+    expect(rows).toContainEqual([
+      "2",
+      "CVRP-ISM4-26-001-00",
+      "ISM Stage-4 Cleaning Verification Protocol",
+      "Page # 3",
+    ]);
+    expect(rows).toContainEqual([
+      "3",
+      "ISM3 CV data sheet",
+      "ISM3 CV data sheet",
+      "Page # 1",
+    ]);
+    expect(rows).toContainEqual([
+      "4",
+      "data sheet",
+      "data sheet",
+      "Page # 2",
+    ]);
+    expect(
+      rows.filter((row) => (row[1] ?? "").trim().length === 0)
+    ).toEqual([]);
+    expect(visibleText(citationsTable!)).not.toContain("Verification_Protocol");
   });
 
   it("uses Heading1 numbering for 15.N titles and merges empty Function cells", async () => {
@@ -288,5 +390,86 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain('<w:gridCol w:w="3251"/>');
     expect(document).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
     expect(document).toContain('<w:tblLayout w:type="fixed"/>');
+  });
+
+  it("exports tables with 8+ columns on a landscape page", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const innerTables =
+      document.match(/<w:tbl>(?:(?!<w:tbl>)[\s\S])*?<\/w:tbl>/g) ?? [];
+    const rinse =
+      innerTables.find((table) =>
+        visibleText(table).includes("Rinse volume RF")
+      ) ?? "";
+    expect(rinse, "rinse calculation table").toBeTruthy();
+    const tableAt = document.indexOf(rinse);
+    const landscapeAt = document.indexOf('w:orient="landscape"', tableAt);
+    expect(landscapeAt).toBeGreaterThan(tableAt);
+    const widths = [...rinse.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      Number(m[1])
+    );
+    expect(widths).toHaveLength(9);
+    const gridSum = widths.reduce((sum, w) => sum + w, 0);
+    expect(gridSum).toBeGreaterThan(10469);
+    expect(gridSum).toBeLessThanOrEqual(15394);
+
+    const waf =
+      innerTables.find((table) => {
+        const text = visibleText(table);
+        return text.includes("WAF") && text.includes("Surface Type");
+      }) ?? "";
+    expect(waf, "WAF table").toBeTruthy();
+    const wafAt = document.indexOf(waf);
+    expect(wafAt).toBeGreaterThan(-1);
+    expect(wafAt).toBeLessThan(tableAt);
+    const landscapeBeforeRinse = document
+      .slice(wafAt, tableAt)
+      .includes('w:orient="landscape"');
+    expect(landscapeBeforeRinse).toBe(false);
+  });
+
+  it("uses yellow centered header cells like the source protocol", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const approval = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) => {
+        const text = visibleText(tbl);
+        return text.includes("Function") && text.includes("Designation");
+      }
+    );
+    expect(approval, "approval table").toBeTruthy();
+    expect(approval).toContain('w:fill="FFFF00"');
+    expect(approval).not.toContain('w:fill="D9D9D9"');
+    expect(approval).toContain('<w:jc w:val="center"/>');
+  });
+
+  it("centers compact tables and uses TableGrid print chrome", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const waf = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) => {
+        const text = visibleText(tbl);
+        return text.includes("WAF") && text.includes("Surface Type");
+      }
+    );
+    expect(waf, "WAF table").toBeTruthy();
+    const tblPr = waf!.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+    expect(tblPr).toContain('<w:jc w:val="center"/>');
+    expect(tblPr).toContain("<w:tblCellMar>");
+    expect(tblPr).toContain('<w:left w:w="108" w:type="dxa"/>');
+    expect(tblPr).not.toContain("<w:tblBorders>");
+    const rows = [...(waf!.matchAll(/<w:tr[\s\S]*?<\/w:tr>/g) ?? [])].map(
+      (row) => row[0]
+    );
+    expect(rows[0]).toContain("<w:tblHeader/>");
+    for (const row of rows) {
+      expect(row).not.toContain("<w:cantSplit/>");
+    }
+    expect(
+      paragraphContaining(
+        document,
+        "This protocol applies to the cleaning validation"
+      )
+    ).toContain("<w:widowControl/>");
   });
 });

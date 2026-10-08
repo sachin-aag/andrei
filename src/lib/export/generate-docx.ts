@@ -40,6 +40,7 @@ import {
   MJ_FIR_DOCX_RUN_STYLE,
   QSR_DOCX_RUN_STYLE,
   CVP_DOCX_RUN_STYLE,
+  VQ_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
@@ -781,9 +782,11 @@ async function generateDesignVerificationDocx({
         ? QSR_DOCX_RUN_STYLE
         : documentType === "cleaning_verification_protocol"
           ? CVP_DOCX_RUN_STYLE
-          : pack.id === "convergent"
-            ? CONVERGENT_DOCX_RUN_STYLE
-            : undefined,
+          : documentType === "vendor_qualification"
+            ? VQ_DOCX_RUN_STYLE
+            : pack.id === "convergent"
+              ? CONVERGENT_DOCX_RUN_STYLE
+              : undefined,
     { pageSetup, useHeadingStyles: documentType === "cleaning_verification_protocol" }
   );
   const def = getDocumentType(documentType);

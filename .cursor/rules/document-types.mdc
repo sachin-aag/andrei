@@ -21,7 +21,8 @@ Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
 `equipment_lifecycle_report`, `generic_document` (demo pack only), or
 `vendor_qualification` / `qualification_summary_report` /
-`cleaning_verification_protocol` (3xper pack only). The registry is
+`cleaning_verification_protocol` (3xper pack only; user-facing label
+**Cleaning Validation Protocol**, three consecutive batches). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 

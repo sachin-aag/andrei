@@ -4,6 +4,7 @@ import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
 import {
   cvpEquipmentItemIndexFromTarget,
   insertBlankCvpEquipmentItem,
+  normalizeCvpEquipmentSamplingContent,
 } from "@/lib/document-types/cvp/equipment-sampling";
 import {
   bindCvpEquipmentWrite,
@@ -42,6 +43,12 @@ describe("cvpEquipmentItemFieldFromUserTexts", () => {
     expect(
       cvpEquipmentItemFieldFromUserTexts(["insert suggestions for 15.6.1"])
     ).toBe("items.5");
+    expect(
+      cvpEquipmentItemFieldFromUserTexts([
+        "15.2.3.4 Rationale for swab sample locations\n\ninsert table for this section",
+        "make the suggestion cards for all of the above",
+      ])
+    ).toBe("items.1");
   });
 });
 
@@ -105,6 +112,41 @@ describe("routeCvpEquipmentWriteField", () => {
     expect(routed.targetField).toBe("items.0");
   });
 
+  it("keeps an explicit items.0 write even when a tagged 15.2 box is set", () => {
+    const content = {
+      items: insertBlankCvpEquipmentItem(
+        [withFilledNote(cvpEquipmentSamplingSeed(1))],
+        0
+      ),
+    };
+    const bound = bindCvpEquipmentWrite(
+      "cvp_equipment_sampling",
+      "items.0",
+      "items.0",
+      content,
+      { taggedItemField: "items.1" }
+    );
+    expect(bound.targetField).toBe("items.0");
+  });
+
+  it("keeps an explicit 15.3 write even when a prior 15.2.3.4 mention is tagged", () => {
+    const content = {
+      items: [
+        withFilledNote(cvpEquipmentSamplingSeed(1)),
+        withFilledNote(cvpEquipmentSamplingSeed(2)),
+        withFilledNote(cvpEquipmentSamplingSeed(3)),
+      ],
+    };
+    const bound = bindCvpEquipmentWrite(
+      "cvp_equipment_sampling",
+      "15.3",
+      "items.2",
+      content,
+      { taggedItemField: "items.1" }
+    );
+    expect(bound.targetField).toBe("items.2");
+  });
+
   it("honors a tagged 15.2 box over the first empty item", () => {
     const content = {
       items: insertBlankCvpEquipmentItem([cvpEquipmentSamplingSeed(1)], 0),
@@ -163,6 +205,19 @@ describe("cvp_equipment_sampling sectionFillState", () => {
 
   it("treats a lone unused seed as empty", () => {
     const content = { items: [cvpEquipmentSamplingSeed(1)] };
+    expect(fieldFillState(content, "cvp_equipment_sampling", "items.0")).toBe(
+      "empty"
+    );
+    expect(sectionFillState(content, "cvp_equipment_sampling")).toBe("empty");
+  });
+
+  it("keeps residue and extraneous seed tables empty after normalize", () => {
+    const content = normalizeCvpEquipmentSamplingContent({
+      items: [cvpEquipmentSamplingSeed(1)],
+    });
+    expect(
+      (content.items[0]?.content ?? []).filter((node) => node.type === "table")
+    ).toHaveLength(4);
     expect(fieldFillState(content, "cvp_equipment_sampling", "items.0")).toBe(
       "empty"
     );

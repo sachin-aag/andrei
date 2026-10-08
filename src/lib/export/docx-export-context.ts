@@ -49,6 +49,14 @@ export type DocxRunStyle = {
   tableCellVAlign?: "center";
   tableHeaderAlign?: "center";
   tableBorderColor?: string;
+  /** When false, body rows may split across pages (3xper source tables). Default true. */
+  tableRowCantSplit?: boolean;
+  /** Widow/orphan control on body paragraphs, not table cells. */
+  widowControl?: boolean;
+  /** Emit Word TableGrid cell margins (0 / 108 / 0 / 108 dxa). */
+  tableCellMar?: boolean;
+  /** Skip explicit tblBorders and let the TableGrid style draw hairlines. */
+  tableUseStyleBorders?: boolean;
   paragraphLine?: string;
   paragraphLineRule?: "auto";
   bodyParagraphStyle?: string;
@@ -89,6 +97,10 @@ export type DocxExportContext = {
   tableCellVAlign: "center" | null;
   tableHeaderAlign: "center" | null;
   tableBorderColor: string | null;
+  tableRowCantSplit: boolean;
+  widowControl: boolean;
+  tableCellMar: boolean;
+  tableUseStyleBorders: boolean;
   paragraphLine: string | null;
   paragraphLineRule: "auto" | null;
   bodyParagraphStyle: string | null;
@@ -154,6 +166,20 @@ export const MJ_FIR_DOCX_RUN_STYLE: DocxRunStyle = {
 };
 
 /**
+ * Compact 3xper narrative tables: center on the page, inherit TableGrid
+ * hairlines/padding, and let rows split at a page break the way the source
+ * protocols do. Citations styles override these so the appendix stays put.
+ */
+const THREE_XPER_NARRATIVE_TABLE_CHROME = {
+  tableKeepTogetherWrapper: false,
+  tableJustify: "center",
+  tableRowCantSplit: false,
+  widowControl: true,
+  tableCellMar: true,
+  tableUseStyleBorders: true,
+} as const satisfies Partial<DocxRunStyle>;
+
+/**
  * 3xper QAD/016/F06-00: Times New Roman 12pt, black text, gold table headers.
  * Used only for content the QSR slot renderer hands back to the generic
  * converter (lists, images, tables that do not fit the form grid).
@@ -165,25 +191,24 @@ export const QSR_DOCX_RUN_STYLE: DocxRunStyle = {
   tableHeaderFill: "FFD966",
   paragraphAlign: "both",
   listParagraphStyle: true,
-  tableKeepTogetherWrapper: false,
   tableWidthPct: "5000",
-  tableBorderColor: "000000",
+  ...THREE_XPER_NARRATIVE_TABLE_CHROME,
 };
 
 /**
- * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, grey headers.
+ * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, yellow
+ * header cells (source highlight, not grey TableGrid first-row fill).
  * Source protocol: Heading1 + numId 3, 1.5 body leading, TableParagraph bullets.
  */
 export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
   font: "Times New Roman",
   sizeHalfPoints: "24",
   forceBlackText: true,
-  tableHeaderFill: "D9D9D9",
+  tableHeaderFill: "FFFF00",
   paragraphAlign: "both",
   listParagraphStyle: false,
-  tableKeepTogetherWrapper: false,
-  tableBorderColor: "000000",
   tableCellVAlign: "center",
+  tableHeaderAlign: "center",
   paragraphLine: "360",
   paragraphLineRule: "auto",
   bodyParagraphStyle: "BodyText",
@@ -196,6 +221,21 @@ export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
   mergeEmptyFirstColumn: true,
   tableCellKeepNext: false,
   pageBreakBeforeHeading2: true,
+  ...THREE_XPER_NARRATIVE_TABLE_CHROME,
+};
+
+/**
+ * 3xper QAD-SOP-MS-001-F04: Times New Roman 12pt for rich overflow tables
+ * in VQ section bodies. Form grids are centered in export-xml separately.
+ */
+export const VQ_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Times New Roman",
+  sizeHalfPoints: "24",
+  forceBlackText: true,
+  tableHeaderFill: "D9D9D9",
+  paragraphAlign: "both",
+  listParagraphStyle: true,
+  ...THREE_XPER_NARRATIVE_TABLE_CHROME,
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -240,6 +280,10 @@ export function createDocxExportContext(
     tableCellVAlign: runStyle?.tableCellVAlign ?? null,
     tableHeaderAlign: runStyle?.tableHeaderAlign ?? null,
     tableBorderColor: runStyle?.tableBorderColor ?? null,
+    tableRowCantSplit: runStyle?.tableRowCantSplit !== false,
+    widowControl: runStyle?.widowControl === true,
+    tableCellMar: runStyle?.tableCellMar === true,
+    tableUseStyleBorders: runStyle?.tableUseStyleBorders === true,
     paragraphLine: runStyle?.paragraphLine ?? null,
     paragraphLineRule: runStyle?.paragraphLineRule ?? null,
     bodyParagraphStyle: runStyle?.bodyParagraphStyle ?? null,

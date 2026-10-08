@@ -200,7 +200,7 @@ export function narrativeToDocxXmlWithContext(
     if (node.type === "table") {
       if (landscapeWithTable.has(i)) {
         openLandscape();
-        parts.push(tableToXml(node, ctx, landscapeMax));
+        parts.push(tableToXml(node, ctx, landscapeMax, true));
       } else {
         closeLandscape();
         parts.push(tableToXml(node, ctx, portraitMax));
@@ -308,9 +308,14 @@ const TABLE_GRID_TOTAL_MAX_DXA = 10469;
 /** Minimum per-column width in dxa so cells stay readable after scaling. */
 const TABLE_GRID_MIN_COL_DXA = 180;
 
-function normalizeGridColWidths(widths: number[], maxTotalDxa: number): number[] {
+function normalizeGridColWidths(
+  widths: number[],
+  maxTotalDxa: number,
+  fillToMax = false
+): number[] {
   const sum = widths.reduce((a, b) => a + b, 0);
-  if (sum <= maxTotalDxa) return widths;
+  if (sum <= 0) return widths;
+  if (!fillToMax && sum <= maxTotalDxa) return widths;
 
   const scale = maxTotalDxa / sum;
   const scaled = widths.map((w) =>
@@ -460,6 +465,8 @@ function paragraphProperties(
   const ilvl = extras?.ilvl ?? 0;
   const jc = paragraphJustification(align, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
+  const widow =
+    !inTable && ctx?.widowControl === true ? "<w:widowControl/>" : "";
   let style = "";
   if (numId && inTable && ctx?.inTableListParagraphStyle) {
     style = `<w:pStyle w:val="${ctx.inTableListParagraphStyle}"/>`;
@@ -484,7 +491,7 @@ function paragraphProperties(
   const num = numId
     ? `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr>`
     : "";
-  return `<w:pPr>${style}${keep}${spacing}${indent}${jc}${num}</w:pPr>`;
+  return `<w:pPr>${style}${keep}${widow}${spacing}${indent}${jc}${num}</w:pPr>`;
 }
 
 function wrapParagraph(text: string, ctx?: DocxExportContext): string {
@@ -888,14 +895,15 @@ function portraitTableGridMax(ctx: DocxExportContext): number {
 function tableToXml(
   node: JSONContent,
   ctx?: DocxExportContext,
-  maxGridDxa?: number
+  maxGridDxa?: number,
+  fillToMax = false
 ): string {
   const gridMax =
     maxGridDxa ??
     ctx?.tableGridMaxDxa ??
     ctx?.pageSetup.portraitContentWidthDxa ??
     TABLE_GRID_TOTAL_MAX_DXA;
-  const inner = buildInnerTableXml(node, ctx, gridMax);
+  const inner = buildInnerTableXml(node, ctx, gridMax, fillToMax);
   if (!inner) return "";
   if (ctx && ctx.tableKeepTogetherWrapper === false) {
     return inner;
@@ -947,7 +955,8 @@ function tableToXml(
 function buildInnerTableXml(
   node: JSONContent,
   ctx: DocxExportContext | undefined,
-  maxGridDxa: number
+  maxGridDxa: number,
+  fillToMax = false
 ): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return "";
@@ -970,7 +979,7 @@ function buildInnerTableXml(
   const rawWidths = storedWidths
     ? storedWidths
     : Array.from({ length: colCount }, () => perColFallback);
-  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa);
+  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa, fillToMax);
   const gridTotalDxa = colWidths.reduce((a, b) => a + b, 0);
   const gridColXmlParts = colWidths.map(
     (w) => `<w:gridCol w:w="${Math.round(w)}"/>`
@@ -987,6 +996,26 @@ function buildInnerTableXml(
   const tblLayout = storedWidths
     ? `<w:tblLayout w:type="fixed"/>`
     : "";
+  const tblBorders = ctx?.tableUseStyleBorders
+    ? ""
+    : `<w:tblBorders>
+<w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:left w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:bottom w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:right w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:insideH w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:insideV w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+</w:tblBorders>
+`;
+  const tblCellMar = ctx?.tableCellMar
+    ? `<w:tblCellMar>
+<w:top w:w="0" w:type="dxa"/>
+<w:left w:w="108" w:type="dxa"/>
+<w:bottom w:w="0" w:type="dxa"/>
+<w:right w:w="108" w:type="dxa"/>
+</w:tblCellMar>
+`
+    : "";
 
   // Nested inside the keep-together wrapper: explicit dxa width prevents Word
   // from honoring an oversized imported tblGrid sum and clipping the right edge.
@@ -995,15 +1024,7 @@ function buildInnerTableXml(
 ${tblW}
 ${tblLayout}
 ${tblJc}
-<w:tblBorders>
-<w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:left w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:bottom w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:right w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:insideH w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-<w:insideV w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
-</w:tblBorders>
-<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
+${tblCellMar}${tblBorders}<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
 </w:tblPr>`;
 
   const activeMerges: (ActiveRowMerge | null)[] = [];
@@ -1038,9 +1059,11 @@ function tableRowToXml(
   ctx?: DocxExportContext
 ): string {
   const cells = row.content ?? [];
-  // Always set cantSplit so a single row never breaks mid-content across pages.
-  // Header rows additionally repeat at the top of each page if the table spills.
-  let trPr = "<w:trPr><w:cantSplit/>";
+  // Default: a single row never breaks mid-content. 3xper turns this off so
+  // wrapped cells can continue on the next page the way the source protocols do.
+  // Header rows still repeat at the top of each page if the table spills.
+  let trPr = "<w:trPr>";
+  if (ctx?.tableRowCantSplit !== false) trPr += "<w:cantSplit/>";
   if (isHeader) trPr += "<w:tblHeader/>";
   if (ctx?.tableJustify) trPr += `<w:jc w:val="${ctx.tableJustify}"/>`;
   trPr += "</w:trPr>";

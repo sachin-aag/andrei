@@ -212,6 +212,67 @@ describe("CVP Word import split", () => {
     expect(sections.cvp_scope).toBeUndefined();
   });
 
+  it("maps both verification and validation outline headings", () => {
+    const lineTable = table([["Process Line Description", "Observation"]]);
+    const areaTable = table([["Equipment ID", "Verified by"]]);
+    const verification: JSONContent = {
+      type: "doc",
+      content: [
+        h("12.0 CLEANING VERIFICATION METHODOLOGY"),
+        p("Sequence for each cleaning run."),
+        h(
+          "15.0 Sampling Plan, Acceptance Criteria and Cleaning Verification Results Summary"
+        ),
+        p("Plan for the verification study."),
+        h("PROCESS LINE CLEANING VERIFICATION SUMMARY"),
+        lineTable,
+        h("MANUFACTURING AREA CLEANING VERIFICATION"),
+        areaTable,
+      ],
+    };
+    const validation: JSONContent = {
+      type: "doc",
+      content: [
+        h("12.0 CLEANING VALIDATION METHODOLOGY"),
+        p("Sequence for each of the three batches."),
+        h(
+          "15.0 Sampling Plan, Acceptance Criteria and Cleaning Validation Results Summary"
+        ),
+        p("Plan for the validation study."),
+        h("PROCESS LINE CLEANING VALIDATION SUMMARY"),
+        lineTable,
+        h("MANUFACTURING AREA CLEANING VALIDATION"),
+        areaTable,
+      ],
+    };
+    const fromVerification = splitCvpNarrativeIntoSections(verification).sections;
+    const fromValidation = splitCvpNarrativeIntoSections(validation).sections;
+    expect(JSON.stringify(fromVerification.cvp_methodology)).toContain(
+      "each cleaning run"
+    );
+    expect(JSON.stringify(fromVerification.cvp_sampling_plan)).toContain(
+      "verification study"
+    );
+    expect(JSON.stringify(fromVerification.cvp_process_line)).toContain(
+      "Process Line Description"
+    );
+    expect(JSON.stringify(fromVerification.cvp_manufacturing_area)).toContain(
+      "Verified by"
+    );
+    expect(JSON.stringify(fromValidation.cvp_methodology)).toContain(
+      "three batches"
+    );
+    expect(JSON.stringify(fromValidation.cvp_sampling_plan)).toContain(
+      "validation study"
+    );
+    expect(JSON.stringify(fromValidation.cvp_process_line)).toContain(
+      "Process Line Description"
+    );
+    expect(JSON.stringify(fromValidation.cvp_manufacturing_area)).toContain(
+      "Verified by"
+    );
+  });
+
   it("promotes Word BodyText 15.N.M titles to H3/H4", () => {
     const promoted = promoteCvpEquipmentOutline([
       h("MIXED VESSEL (MV-1304):"),

@@ -430,7 +430,7 @@ const QSR_TOC: TableOfContentsEntry[] = [
   { label: "Conclusion", sectionKey: "qsr_conclusion" },
 ];
 
-/** QAD-SOP-PS-003-F08-00 Cleaning Verification Protocol. Form numbers stay as printed. */
+/** QAD-SOP-PS-003-F08-00 Cleaning Validation Protocol. Form numbers stay as printed. */
 const CVP_TOC: TableOfContentsEntry[] = [
   { label: "1.0 Approval Signatures", sectionKey: "cvp_approvals" },
   { label: "2.0 Objective", sectionKey: "cvp_objective" },
@@ -453,7 +453,7 @@ const CVP_TOC: TableOfContentsEntry[] = [
     sectionKey: "cvp_acceptance_limits",
   },
   {
-    label: "12.0 Cleaning Verification Methodology",
+    label: "12.0 Cleaning Validation Methodology",
     sectionKey: "cvp_methodology",
   },
   { label: "13.0 Sampling Procedure", sectionKey: "cvp_sampling_procedure" },
@@ -479,11 +479,11 @@ const CVP_TOC: TableOfContentsEntry[] = [
         sectionKey: "cvp_pgi",
       },
       {
-        label: "Process Line Cleaning Verification Summary",
+        label: "Process Line Cleaning Validation Summary",
         sectionKey: "cvp_process_line",
       },
       {
-        label: "Manufacturing Area Cleaning Verification",
+        label: "Manufacturing Area Cleaning Validation",
         sectionKey: "cvp_manufacturing_area",
       },
       {

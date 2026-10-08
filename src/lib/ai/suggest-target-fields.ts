@@ -138,7 +138,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   qsr_operating_range: ["table"],
   qsr_other_details: ["narrative"],
   qsr_conclusion: ["narrative"],
-  // 3xper Cleaning Verification Protocol (QAD-SOP-PS-003-F08-00).
+  // 3xper Cleaning Validation Protocol (QAD-SOP-PS-003-F08-00).
   cvp_approvals: ["table"],
   cvp_objective: ["narrative"],
   cvp_scope: ["narrative"],

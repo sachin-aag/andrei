@@ -81,6 +81,6 @@ export function cvpChatContextIdentity(
     line("plant", meta.plant),
     line("department", meta.department),
     `form: ${CVP_FORM_NO} version ${sanitizePromptMetadata(meta.version, 20) || "00"}`,
-    "This is a Cleaning Verification Protocol. Numbered headings, the running header, footer Format No., and approval chrome are fixed by the form — do not draft those as section titles. Fill cover identity (product, code, stage, plant, protocol no.) with draft_identity from attachments. Cover scalars never include citations.",
+    "This is a Cleaning Validation Protocol. Numbered headings, the running header, footer Format No., and approval chrome are fixed by the form — do not draft those as section titles. Fill cover identity (product, code, stage, plant, protocol no.) with draft_identity from attachments. Cover scalars never include citations. Result tables record three consecutive batches (Batch 1 / Batch 2 / Batch 3); execution cells stay blank.",
   ];
 }
