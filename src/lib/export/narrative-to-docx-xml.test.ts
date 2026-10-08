@@ -1357,6 +1357,9 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain('<w:gridCol w:w="1996"/>');
     expect(xml).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
     expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    expect(xml).toContain('w:fill="FFFF00"');
+    expect(xml).not.toContain('w:fill="D9D9D9"');
+    expect(xml).toContain('<w:jc w:val="center"/>');
   });
 
   it("parses plain text dash lists into numbered Word XML", () => {

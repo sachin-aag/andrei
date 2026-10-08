@@ -171,19 +171,21 @@ export const QSR_DOCX_RUN_STYLE: DocxRunStyle = {
 };
 
 /**
- * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, grey headers.
+ * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, yellow
+ * header cells (source highlight, not grey TableGrid first-row fill).
  * Source protocol: Heading1 + numId 3, 1.5 body leading, TableParagraph bullets.
  */
 export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
   font: "Times New Roman",
   sizeHalfPoints: "24",
   forceBlackText: true,
-  tableHeaderFill: "D9D9D9",
+  tableHeaderFill: "FFFF00",
   paragraphAlign: "both",
   listParagraphStyle: false,
   tableKeepTogetherWrapper: false,
   tableBorderColor: "000000",
   tableCellVAlign: "center",
+  tableHeaderAlign: "center",
   paragraphLine: "360",
   paragraphLineRule: "auto",
   bodyParagraphStyle: "BodyText",

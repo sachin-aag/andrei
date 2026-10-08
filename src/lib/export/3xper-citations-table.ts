@@ -44,6 +44,13 @@ const QSR_CITATIONS_RUN_STYLE: DocxRunStyle = {
   tableHeaderAlign: "center",
 };
 
+/** Keep CITATIONS grey even when CVP form tables use yellow headers. */
+const CVP_CITATIONS_RUN_STYLE: DocxRunStyle = {
+  ...CVP_DOCX_RUN_STYLE,
+  tableHeaderFill: "D9D9D9",
+  tableHeaderAlign: "center",
+};
+
 const QSR_CATALOG_SECTIONS = [
   "qsr_qualification_documents",
   "qsr_references",
@@ -617,7 +624,7 @@ export function threeXperCitationsAppendixXml(
     options.variant === "vq"
       ? VQ_CITATIONS_RUN_STYLE
       : options.variant === "cvp"
-        ? CVP_DOCX_RUN_STYLE
+        ? CVP_CITATIONS_RUN_STYLE
         : QSR_CITATIONS_RUN_STYLE;
   const ctx = createDocxExportContext(undefined, runStyle);
   const heading =

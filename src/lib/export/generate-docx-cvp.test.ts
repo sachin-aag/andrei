@@ -289,4 +289,19 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
     expect(document).toContain('<w:tblLayout w:type="fixed"/>');
   });
+
+  it("uses yellow centered header cells like the source protocol", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    const approval = (document.match(/<w:tbl[ >][\s\S]*?<\/w:tbl>/g) ?? []).find(
+      (tbl) => {
+        const text = visibleText(tbl);
+        return text.includes("Function") && text.includes("Designation");
+      }
+    );
+    expect(approval, "approval table").toBeTruthy();
+    expect(approval).toContain('w:fill="FFFF00"');
+    expect(approval).not.toContain('w:fill="D9D9D9"');
+    expect(approval).toContain('<w:jc w:val="center"/>');
+  });
 });
