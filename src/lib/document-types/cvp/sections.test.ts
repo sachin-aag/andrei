@@ -407,7 +407,25 @@ describe("cleaning verification protocol sections", () => {
     ]);
   });
 
-  it("tells Agent that 15.N is a protocol with blank results and equipment-type outlines", () => {
+  it("tells Agent the whole form is a protocol with explicit leave-blank execution fields", () => {
+    const def = getDocumentType("cleaning_verification_protocol");
+    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v2");
+    expect(def.prompts.base).toContain(
+      "This is a protocol, not an executed cleaning verification report"
+    );
+    expect(def.prompts.base).toContain("Blank execution cells");
+    expect(def.chat.persona).toContain(
+      "not the cleaning verification **report**"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "PROTOCOL vs REPORT — fill the plan; leave execution blank"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "1.0 Name, Designation, Sign & date"
+    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "Result fields are intentionally left blank for recording during report finalization."
+    );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "Equipment sampling (15.1, 15.2, …) is a **protocol**, not a report"
     );

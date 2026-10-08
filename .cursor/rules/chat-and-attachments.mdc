@@ -489,7 +489,7 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   template are empty, not partial, including seed prose that belongs
   to the template (QSR 6.1 “Auxiliary Equipment:”, 6.3 “Agitator Type:”)
   — `sectionHasTable` still sees them. Extra engineer sentences are not
-  empty. Canned default paragraphs (QSR 1.2 Scope) stay filled. Empty ELR inventory fills
+  empty. Canned default paragraphs (QSR 1.2 Scope) stay filled. CVP overall-results seed (“Result fields are intentionally left blank…”) is protocol copy, not a filled results grid — execution cells staying blank is correct. Empty ELR inventory fills
   (`chat.inventorySections` table fields) require a finished review
   whose coverage key matches that section (`coverageKeySatisfiesObjective`
   on `|obj:`). `isFinished()` after a qualification walk does not unlock
