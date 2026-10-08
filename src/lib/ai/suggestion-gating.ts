@@ -32,6 +32,10 @@ import {
   parseIdentityOperation,
   type IdentityOperation,
 } from "@/lib/suggestions/identity-suggestion";
+import {
+  parseDrawingOperation,
+  type DrawingOperation,
+} from "@/lib/drawings/overlay";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -239,6 +243,8 @@ export type ParsedAiFixPayload = {
   claimProvenance?: ClaimProvenance;
   /** Whole-header identity fill from `draft_identity` (one card). */
   identityOperation?: IdentityOperation;
+  /** Overlay arrows/labels on an existing inline figure (`annotate_image`). */
+  drawingOperation?: DrawingOperation;
 };
 
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
@@ -251,7 +257,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         "tableOperation" in parsed ||
         "insertImage" in parsed ||
         "removeImage" in parsed ||
-        "identityOperation" in parsed)
+        "identityOperation" in parsed ||
+        "drawingOperation" in parsed)
     ) {
       const tableOperation =
         parsed.tableOperation !== undefined
@@ -322,6 +329,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
           : undefined,
         claimProvenance: parseClaimProvenance(parsed.claimProvenance),
         identityOperation: parseIdentityOperation(parsed.identityOperation),
+        drawingOperation: parseDrawingOperation(parsed.drawingOperation),
       };
     }
   } catch {

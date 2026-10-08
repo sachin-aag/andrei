@@ -540,6 +540,7 @@ describe("pickPlanModeChatTools", () => {
       insert_image: { kind: "image" },
       plot_measurements: { kind: "chart" },
       remove_image: { kind: "image-remove" },
+      annotate_image: { kind: "image-annotate" },
       edit_table: { kind: "table" },
       draft_rtm_table: { kind: "rtm" },
     };
@@ -569,6 +570,7 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("insert_image");
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
+    expect(planTools).not.toHaveProperty("annotate_image");
     expect(planTools).not.toHaveProperty("edit_table");
     expect(planTools).not.toHaveProperty("draft_rtm_table");
     expect(planTools).not.toHaveProperty("draft_identity");

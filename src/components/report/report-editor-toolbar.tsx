@@ -9,6 +9,7 @@ import { TrackChangesToggle } from "@/components/report/track-changes-toggle";
 import {
   FontColorToolbar,
   HeadingToolbar,
+  InsertDrawingButton,
   InsertImageButton,
   InsertTableButton,
   InsertTableRefButton,
@@ -107,6 +108,7 @@ export function ReportEditorToolbar() {
           <AdvancedFormattingToolbar editor={editor} />
           <Separator orientation="vertical" className="h-5" />
           <InsertImageButton editor={editor} />
+          <InsertDrawingButton editor={editor} />
           <Separator orientation="vertical" className="h-5" />
           <InsertTableButton editor={editor} />
           <InsertTableRefButton editor={editor} />

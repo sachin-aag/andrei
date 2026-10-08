@@ -42,6 +42,7 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation, type DocumentTableContent } from "@/lib/suggestions/table-operation";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
 import {
   cascadeFilledTableCaptionsInSections,
   documentContentsFromReportState,
@@ -310,6 +311,24 @@ export function applySuggestionToContent(
       nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
     }
     return { ok: true, nextSection: setRichFieldValue(sectionContent, path, nextDoc) };
+  }
+
+  if (payload.drawingOperation) {
+    if (!isRichTargetField(section, path)) {
+      return { ok: false, reason: "not_found" };
+    }
+    const doc = getRichFieldValue(sectionContent, path);
+    const result = applyDrawingOperationToDoc(doc, payload.drawingOperation);
+    if (!result.ok) {
+      return { ok: false, reason: "not_found" };
+    }
+    if (result.status === "already_present") {
+      return { ok: false, reason: "noop" };
+    }
+    return {
+      ok: true,
+      nextSection: setRichFieldValue(sectionContent, path, result.doc),
+    };
   }
 
   const edit = suggestionEditFromComment(comment);

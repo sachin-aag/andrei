@@ -1010,3 +1010,92 @@ describe("acceptSuggestion identity header card", () => {
     expect(result.error).toBeInstanceOf(IdentityDuplicateError);
   });
 });
+
+describe("applySuggestionToContent drawing operations", () => {
+  const PNG =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const drawing = {
+    version: 1 as const,
+    shapes: [
+      {
+        id: "callout-1-label",
+        type: "label" as const,
+        x: 0.03,
+        y: 0.4,
+        w: 0.22,
+        h: 0.08,
+        text: "S-1",
+        color: "#c62828",
+      },
+    ],
+  };
+  const figureField = {
+    narrative: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: PNG, alt: "Vessel", width: 400 },
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const drawingComment: CommentRecord = {
+    ...comment,
+    id: "draw-1",
+    content: serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "Annotate: S-1",
+      reasoning: "Label the dish",
+      drawingOperation: { index: 1, drawing },
+    }),
+    anchorText: "",
+  };
+
+  it("writes overlay onto the figure", () => {
+    const result = applySuggestionToContent({
+      section: "define",
+      comment: drawingComment,
+      sectionContent: figureField,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const node = (
+      result.nextSection.narrative as {
+        content: Array<{ content: Array<{ attrs: { drawing: unknown } }> }>;
+      }
+    ).content[0]!.content[0]!;
+    expect(node.attrs.drawing).toEqual(drawing);
+  });
+
+  it("no-ops when the overlay is already present", () => {
+    const result = applySuggestionToContent({
+      section: "define",
+      comment: drawingComment,
+      sectionContent: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "imageInline",
+                  attrs: { src: PNG, alt: "Vessel", width: 400, drawing },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("noop");
+  });
+});

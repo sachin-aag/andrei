@@ -70,6 +70,7 @@ const REPORT_ONLY_TOOLS = new Set([
   "edit_table",
   "insert_image",
   "remove_image",
+  "annotate_image",
   "select_analyze_method",
   "draft_identity",
   "start_document_review",

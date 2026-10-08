@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v186-equation-anchors");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v205-figure-annotate");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -304,7 +304,9 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("remove_image");
     expect(prompt).toContain("Never draft_field a field just to drop a figure");
-    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image / annotate_image");
+    expect(prompt).toContain("To label an existing figure");
+    expect(prompt).toContain("figures to insert_image / remove_image / annotate_image");
   });
 
   it("tells Document chat not to dump a worksheet table into the thread", () => {
@@ -393,15 +395,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Section focus: Define [define]");
     expect(prompt).toContain("The engineer tagged **Define**");
     expect(prompt).toContain('on section "define"');
-    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image / annotate_image");
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });
 
   it("includes plot_measurements by default, including Convergent", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image / annotate_image");
     expect(prompt).toContain("- plot_measurements — extract cited numeric measurements");
+    expect(prompt).toContain("- annotate_image — add S-n / location callouts");
     expect(prompt).not.toContain("Measurement charts belong in Analytics, not Document chat");
     expect(prompt).not.toContain("Tell the engineer to open Analytics");
   });
@@ -412,8 +415,8 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       includePlotMeasurements: false,
     });
-    expect(prompt).toContain("use insert_image / remove_image");
-    expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("use insert_image / remove_image / annotate_image");
+    expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image / annotate_image");
     expect(prompt).toContain("Measurement plots — not available in Document chat");
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });

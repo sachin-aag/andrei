@@ -21,6 +21,7 @@ import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
 import { resolveSuggestionMerge } from "@/lib/suggestions/resolve-merge";
 import { narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 
@@ -102,7 +103,13 @@ export function frozenPayloadStillPending(
 ): boolean {
   if (comment.kind === "ai_redraft") return false;
   const payload = parseAiFixCommentContent(comment.content);
-  if (payload.tableOperation || payload.tableOperationInvalid) return false;
+  if (
+    payload.tableOperation ||
+    payload.tableOperationInvalid ||
+    payload.drawingOperation
+  ) {
+    return false;
+  }
   const record = sectionContent as Record<string, unknown>;
   const path = effectivePlainTextContentPath(
     section,
@@ -227,7 +234,7 @@ export function validateSuggestionLocate(
   }
 
   if (
-    (payload.insertImage || payload.removeImage) &&
+    (payload.insertImage || payload.removeImage || payload.drawingOperation) &&
     !isRichTargetField(section, path)
   ) {
     return {
@@ -287,6 +294,45 @@ export function validateSuggestionLocate(
     // Do not probe payload.second here. An empty-anchor Citations: append
     // that fails locate used to mark the whole table card stale so inject
     // never painted cells. Inject and Apply still try the second separately.
+    return {
+      locateStatus: "locatable",
+      documentChanged: false,
+      canApply: true,
+      canPreview: true,
+      mergeStatus: "legacy",
+    };
+  }
+
+  if (payload.drawingOperation) {
+    if (!isRichTargetField(section, path)) {
+      return {
+        locateStatus: "not_found",
+        documentChanged: true,
+        canApply: false,
+        canPreview: false,
+        mergeStatus: "legacy",
+      };
+    }
+    const doc = getRichFieldValue(record, path);
+    const result = applyDrawingOperationToDoc(doc, payload.drawingOperation);
+    if (!result.ok) {
+      return {
+        locateStatus: "not_found",
+        documentChanged: true,
+        canApply: false,
+        canPreview: false,
+        mergeStatus: "legacy",
+      };
+    }
+    if (result.status === "already_present") {
+      return {
+        locateStatus: "locatable",
+        documentChanged: false,
+        canApply: false,
+        canPreview: false,
+        mergeStatus: "noop",
+      };
+    }
     return {
       locateStatus: "locatable",
       documentChanged: false,

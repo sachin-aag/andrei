@@ -42,7 +42,10 @@ DV mixes LLM criteria with deterministic `check()` functions.
   locatable atoms; overlapping deletes paint the whole equation.
 - Accept/dismiss: three-way merge when `suggestionBase`/`suggestionIntent`
   are stored (`mergeField` in `three-way-merge.ts`); otherwise locate the
-  frozen span. If merge reports identity but the stored delete/insert still
+  frozen span. `drawingOperation` (`annotate_image`) is table-op-style: probe
+  `applyDrawingOperationToDoc`, skip `mergeField`, `already_present` is a
+  noop dismiss. Preview reuses the table-preview don't-persist latch so the
+  overlay is not auto-saved. If merge reports identity but the stored delete/insert still
   locates and the insert is not already in the field, preview and apply that
   span — do not hide inline marks behind "already in the document." PATCH
   section → flip comment. Never resolve without a successful apply. Zero-ops

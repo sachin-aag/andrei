@@ -369,6 +369,12 @@ Monthly voice minutes are a separate Limits cap (`voice-budget`, default
   skipped). Word drawings that are not rasters cannot be copied — attach a
   PDF of the same file. Search first; do not invent a figure. `available_figures`
   is not a proposal. Stay off the Plan allowlist.
+- `annotate_image` proposes arrows and labels (S-n callouts) on a figure
+  already in the field (`image.id` from `read_section`). Optional `tipX`/`tipY`
+  (0–1) place the arrow tip; otherwise labels stack on the left. Apply writes
+  the overlay JSON onto `imageInline.drawing`; the engineer can then drag tips
+  in Annotate. Do not generate a vessel sketch — `insert_image` first. Stay
+  off Plan. `already_present` is not a proposal.
 - Document **and** Agent chrome **propose** (red/green `ai_fix` comments;
   nothing lands until Apply / Dismiss, including Apply all / Dismiss all
   for one or more open suggestions). Same-turn `propose_edit` calls

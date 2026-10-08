@@ -23,6 +23,7 @@ import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
 } from "@/lib/ai/chat/document-review";
+import { layoutCalloutsLeft } from "@/lib/drawings/overlay";
 
 const {
   readDocumentOutlineMock,
@@ -628,6 +629,15 @@ describe("buildChatTools tagged sections", () => {
       })
     ).toBe(false);
     expect(
+      accepts(tools, "annotate_image", {
+        section: "control",
+        targetField: "narrative",
+        reasoning: "y",
+        image: { id: "narrative#1" },
+        callouts: [{ text: "S-1" }],
+      })
+    ).toBe(false);
+    expect(
       accepts(tools, "plot_measurements", {
         section: "control",
         targetField: "narrative",
@@ -734,6 +744,39 @@ describe("buildChatTools plot_measurements", () => {
       includePlotMeasurements: false,
     });
     expect(tools).not.toHaveProperty("plot_measurements");
+  });
+});
+
+describe("buildChatTools annotate_image", () => {
+  it("accepts id or index plus callouts on an in-scope rich field", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "annotate_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Label the dish",
+        image: { id: "narrative#1" },
+        callouts: [{ text: "S-1" }, { text: "S-2", tipX: 0.7, tipY: 0.4 }],
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "annotate_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Label the dish",
+        image: { index: 1 },
+        callouts: [{ text: "S-1" }],
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "annotate_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "missing callouts",
+        image: { id: "narrative#1" },
+        callouts: [],
+      })
+    ).toBe(false);
   });
 });
 
@@ -1943,6 +1986,120 @@ function mockDefineSectionSelect(narrative: unknown = DEFINE_NARRATIVE) {
     }),
   }));
 }
+
+describe("buildChatTools annotate_image execute", () => {
+  const tinyPng =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const dataUrl = `data:image/png;base64,${tinyPng}`;
+  const figureNarrative = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "imageInline",
+            attrs: { src: dataUrl, alt: "Vessel", width: 400, mediaId: null },
+          },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    dbSelectMock.mockReset();
+    dbInsertMock.mockReset();
+    dbUpdateMock.mockReset();
+    mockDefineSectionSelect(figureNarrative);
+    dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    dbUpdateMock.mockReturnValue({
+      set: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    });
+  });
+
+  it("proposes callouts on an existing figure", async () => {
+    const inserted: Array<Record<string, unknown>> = [];
+    dbInsertMock.mockImplementation(() => ({
+      values: vi.fn(async (value: Record<string, unknown>) => {
+        inserted.push(value);
+      }),
+    }));
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.annotate_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Label the top dish",
+        image: { id: "narrative#1" },
+        callouts: [{ text: "S-1" }],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "proposed" });
+    expect(inserted).toHaveLength(1);
+    const payload = parseAiFixCommentContent(String(inserted[0]!.content));
+    expect(payload.drawingOperation?.index).toBe(1);
+    expect(
+      payload.drawingOperation?.drawing.shapes.some(
+        (shape) => shape.type === "label" && shape.text === "S-1"
+      )
+    ).toBe(true);
+  });
+
+  it("returns already_present when those callouts are already on the figure", async () => {
+    const drawing = layoutCalloutsLeft([{ text: "S-1" }]);
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: dataUrl,
+                alt: "Vessel",
+                width: 400,
+                drawing,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.annotate_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Label the top dish",
+        image: { id: "narrative#1" },
+        callouts: [{ text: "S-1" }],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "already_present" });
+  });
+
+  it("returns image_not_found when the figure is missing", async () => {
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "No figure." }] }],
+    });
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.annotate_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Label the top dish",
+        image: { id: "narrative#1" },
+        callouts: [{ text: "S-1" }],
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+  });
+});
 
 describe("buildChatTools propose edits", () => {
   const actor = {

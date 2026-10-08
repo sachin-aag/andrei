@@ -36,6 +36,12 @@ import {
   type SuggestionImageInsert,
   type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
+import {
+  drawingPreviewSummary,
+  layoutCalloutsLeft,
+  type DrawingCallout,
+} from "@/lib/drawings/overlay";
 import {
   countImagesInDoc,
   MAX_IMAGES_PER_SECTION,
@@ -458,7 +464,8 @@ export type InsertImageResult =
       message: string;
     }
   | { status: "too_many_images"; message: string }
-  | { status: "review_incomplete"; message: string };
+  | { status: "review_incomplete"; message: string }
+  | { status: "already_present"; message: string };
 
 type ProposedSecondInput = {
   anchorText?: string;
@@ -1396,7 +1403,11 @@ function suggestionPreviewFromRow(row: {
   const preview =
     payload.insertText ||
     payload.deleteText ||
-    (payload.tableOperation ? JSON.stringify(payload.tableOperation) : "");
+    (payload.drawingOperation
+      ? drawingPreviewSummary(payload.drawingOperation.drawing)
+      : payload.tableOperation
+        ? JSON.stringify(payload.tableOperation)
+        : "");
   return preview.replace(/\s+/g, " ").trim().slice(0, 400);
 }
 
@@ -4011,6 +4022,247 @@ export function buildChatTools(opts: {
       },
     }),
 
+    annotate_image: tool({
+      description:
+        `Add arrows and labels (S-n callouts) onto an existing inline figure. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not generate a new sketch — the figure must already be in the field (insert_image first if needed). Optional tipX/tipY (0–1) place the arrow tip on the equipment; otherwise labels stack on the left. The engineer reviews then can drag tips.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("Rich field path that currently contains the figure, e.g. 'narrative'."),
+        image: z.object({
+          index: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("1-based imageInline index in that field. Omit when passing id."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the field."
+            ),
+        }),
+        callouts: z
+          .array(
+            z.object({
+              text: z
+                .string()
+                .trim()
+                .min(1)
+                .max(80)
+                .describe("Callout label, e.g. 'S-1' or 'Top dish'."),
+              tipX: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .describe("Optional arrow tip X on the figure, 0–1 from the left."),
+              tipY: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .describe("Optional arrow tip Y on the figure, 0–1 from the top."),
+            })
+          )
+          .min(1)
+          .max(24)
+          .describe("Location callouts to draw. Order is top-to-bottom on the left."),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining the labels."),
+      }),
+      execute: async ({
+        section,
+        targetField,
+        image,
+        callouts,
+        reasoning,
+      }): Promise<InsertImageResult> => {
+        try {
+          if (!canEdit) {
+            return {
+              status: "not_editable",
+              message:
+                "This report is not editable in its current state, so figure annotations cannot be proposed.",
+            };
+          }
+          if (
+            shouldGateInProgressOrComprehensive({ retrievalPolicy, documentReview })
+          ) {
+            return {
+              status: "review_incomplete",
+              message: REVIEW_INCOMPLETE_MESSAGE,
+            };
+          }
+          if (!isChatEditableSection(section, documentType)) {
+            return { status: "invalid_section", message: `Unknown section '${section}'.` };
+          }
+          const resolvedField = resolveTargetField(section, targetField);
+          if (!resolvedField) {
+            return {
+              status: "invalid_field",
+              message: `'${targetField}' is not an editable field of ${section}.`,
+              allowedFields: chatTargetFields(section).map((f) => f.targetField),
+            };
+          }
+          if (!isRichTargetField(section, resolvedField)) {
+            return {
+              status: "plain_field",
+              message: `'${resolvedField}' is a plain-text field and cannot hold a figure.`,
+            };
+          }
+
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            index: image.index,
+            id: image.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+          if (
+            locator.locator.section !== section ||
+            locator.locator.targetField !== resolvedField
+          ) {
+            return {
+              status: "image_not_found",
+              message:
+                "annotate_image only labels a figure already in the field you are editing. Pass image.id from that field's read_section (e.g. 'narrative#1'). To copy a figure first, use insert_image.",
+            };
+          }
+
+          const loaded = await loadMergedSection(reportId, section);
+          if (!loaded) {
+            return { status: "section_not_found", message: "Section not found." };
+          }
+          const staleAnnotate = unchangedOrStale(section, resolvedField, loaded.content);
+          if (staleAnnotate) return staleAnnotate;
+
+          const fieldDoc = getRichFieldValue(
+            loaded.content as Record<string, unknown>,
+            resolvedField
+          );
+          const listed = listInlineImagesInDoc(fieldDoc);
+          const hit = listed.find((img) => img.index === locator.locator.index);
+          if (!hit) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: section,
+                sourceField: resolvedField,
+                index: locator.locator.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: false,
+              }),
+            };
+          }
+
+          const drawingCallouts: DrawingCallout[] = callouts.map((item) => ({
+            text: item.text,
+            tipX: item.tipX,
+            tipY: item.tipY,
+          }));
+          const drawing = layoutCalloutsLeft(drawingCallouts);
+          if (drawing.shapes.length === 0) {
+            return {
+              status: "image_not_found",
+              message: "Provide at least one callout with non-empty text.",
+            };
+          }
+          const probe = applyDrawingOperationToDoc(fieldDoc, {
+            index: hit.index,
+            drawing,
+          });
+          if (!probe.ok) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: section,
+                sourceField: resolvedField,
+                index: hit.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: false,
+              }),
+            };
+          }
+          if (probe.status === "already_present") {
+            return {
+              status: "already_present",
+              message:
+                "Those callouts are already on this figure. Do not propose the same annotation again.",
+            };
+          }
+
+          const suggestionId = createId();
+          const payload: ParsedAiFixPayload = {
+            deleteText: "",
+            insertText: "",
+            drawingOperation: { index: hit.index, drawing },
+            reasoning,
+          };
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent(
+              attachRecord(
+                payload,
+                loaded.content as Record<string, unknown>,
+                section,
+                resolvedField,
+                {
+                  kind: "located",
+                  edit: {
+                    anchorText: "",
+                    deleteText: "",
+                    insertText: drawingPreviewSummary(drawing),
+                  },
+                }
+              )
+            ),
+            anchorText: "",
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+          const supersededSuggestionIds = await dismissCovered({
+            section,
+            sectionContent: loaded.content,
+            newCommentId: suggestionId,
+          });
+          return proposedWithSupersession(
+            {
+              status: "proposed" as const,
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              summary: reasoning,
+            },
+            supersededSuggestionIds
+          );
+        } catch (err) {
+          console.error("annotate_image failed", err);
+          return {
+            status: "image_not_found",
+            message:
+              "Could not annotate this figure. Call read_section and pass image.id (e.g. 'narrative#1') or image.index. The figure must already be in the field.",
+          };
+        }
+      },
+    }),
+
     edit_table: tool({
       description:
         `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
@@ -4632,7 +4884,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image. Cover/header identity scalars use draft_identity, not this tool.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image / annotate_image. Cover/header identity scalars use draft_identity, not this tool.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

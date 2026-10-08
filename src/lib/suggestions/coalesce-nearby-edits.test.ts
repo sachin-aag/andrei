@@ -58,6 +58,11 @@ describe("nearbyCoalesceSkipReason", () => {
       "table"
     );
     expect(nearbyCoalesceSkipReason({ insertImage: { src: "x" } })).toBe("image");
+    expect(
+      nearbyCoalesceSkipReason({
+        drawingOperation: { index: 1, drawing: { version: 1, shapes: [] } },
+      })
+    ).toBe("image");
     expect(nearbyCoalesceSkipReason({ second: { insertText: "Citations:" } })).toBe(
       "second"
     );

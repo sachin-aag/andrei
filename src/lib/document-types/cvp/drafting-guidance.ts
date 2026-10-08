@@ -6,7 +6,7 @@ Cover identity (draft_identity, no citations): Protocol No. (CVRP-…), Name of 
 
 Do not generate:
 - Word drawings, grouped shapes, arrows, or text-box stacked fractions (MACO PDE×MBS/TDD brackets in the source form). Write the same arithmetic as table rows Attribute | Description | Value / Calculation, or as Unicode (n = √H + 1, SA × RF).
-- Equipment-train diagrams, PFR flow schematics, swab-stroke figures, or labelled vessel sketches (S-1 on the top dish). Describe locations in tables (Location ID | Description). Use insert_image only when a cited attachment page is a figure the engineer asked to place.
+- Equipment-train diagrams, PFR flow schematics, swab-stroke figures, or labelled vessel sketches (S-1 on the top dish). Describe locations in tables (Location ID | Description). Use insert_image when a cited attachment page is a figure the engineer asked to place, then annotate_image for S-n / location callouts on that figure. Do not generate a vessel sketch.
 - Two-row merged headers (Nitrosamine spanning NDMA…NDBA; PGI spanning three impurities; qualification dates on a continuation row under the protocol number). Use the seeded flat columns. One editor row per equipment (or Production then QA for manufacturing-area).
 - Highlighted yellow “filled” cells, handwritten signatures, or chromatograms.
 

@@ -123,6 +123,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
 import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
@@ -1212,7 +1213,16 @@ export function TiptapSectionField({
           };
 
           const payload = parseAiFixCommentContent(comment.content);
-          if (payload.tableOperation) {
+          if (payload.drawingOperation) {
+            const preview = applyDrawingOperationToDoc(
+              canonicalJson,
+              payload.drawingOperation
+            );
+            if (preview.ok) {
+              json = preview.doc;
+              tablePreviewSuggestionIdRef.current = activeSuggestionId;
+            }
+          } else if (payload.tableOperation) {
             const preview = buildTableOperationPreviewDoc(
               canonicalJson,
               payload.tableOperation,
