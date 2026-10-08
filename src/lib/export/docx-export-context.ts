@@ -265,14 +265,42 @@ const DEFAULT_RUN_FONT = "Times New Roman";
 const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 const DEFAULT_TABLE_HEADER_FILL = "D9E2F3";
 
+const TEMPLATE_IMAGE_INDEX = /(?:^|\/)image(\d+)\.[^/]+$/i;
+
+/**
+ * Next `imageN` index that does not collide with template media. CVP keeps the
+ * header logo at `image9.png`; VQ / QSR / investigation keep theirs at
+ * `image1.png` / `image3.png`. Export used to start at 1 and overwrite the logo
+ * once a report had that many figures.
+ */
+export function nextUnusedImageIndex(mediaPaths: readonly string[]): number {
+  let max = 0;
+  for (const path of mediaPaths) {
+    const match = TEMPLATE_IMAGE_INDEX.exec(path);
+    if (!match) continue;
+    max = Math.max(max, Number(match[1]));
+  }
+  return max + 1;
+}
+
+export function nextUnusedImageIndexFromZip(zip: {
+  files: Record<string, unknown>;
+}): number {
+  return nextUnusedImageIndex(Object.keys(zip.files));
+}
+
 export function createDocxExportContext(
   numberingBases: ListNumberingBases = EMPTY_NUMBERING_BASES,
   runStyle?: DocxRunStyle,
-  options?: { useHeadingStyles?: boolean; pageSetup?: DocxPageSetup }
+  options?: {
+    useHeadingStyles?: boolean;
+    pageSetup?: DocxPageSetup;
+    nextImageIndex?: number;
+  }
 ): DocxExportContext {
   return {
     media: [],
-    nextImageIndex: 1,
+    nextImageIndex: options?.nextImageIndex ?? 1,
     nextRelNum: 100,
     numberingBases,
     nextNumId: numberingBases.maxNumId + 1,
