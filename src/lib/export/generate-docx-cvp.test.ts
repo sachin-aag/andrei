@@ -276,4 +276,17 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(document).toContain('w:line="360"');
     expect(visibleText(document)).not.toContain("Table 1. Scope equipment");
   });
+
+  it("matches source protocol column widths on form tables", async () => {
+    const zip = await exportZip(sectionsWith());
+    const document = zip.file("word/document.xml")?.asText() ?? "";
+    expect(document).toContain('<w:gridCol w:w="1524"/>');
+    expect(document).toContain('<w:gridCol w:w="2340"/>');
+    expect(document).toContain('<w:gridCol w:w="2225"/>');
+    expect(document).toContain('<w:tblW w:w="9882" w:type="dxa"/>');
+    expect(document).toContain('<w:gridCol w:w="838"/>');
+    expect(document).toContain('<w:gridCol w:w="3251"/>');
+    expect(document).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(document).toContain('<w:tblLayout w:type="fixed"/>');
+  });
 });

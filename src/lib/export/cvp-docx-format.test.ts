@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import {
   applyCvpEmptyFirstColumnMerges,
+  applyCvpSourceTableColWidths,
   CVP_DOCX_HEADING_NUM_ID,
   cvpHeadingCaps,
   cvpTemplateHeadingSpec,
@@ -9,6 +10,7 @@ import {
   stripCvpOutlineNumber,
   stripTableCaptionNodes,
 } from "./cvp-docx-format";
+import { cvpSourceColWidthsForHeaders } from "./cvp-table-col-widths";
 
 function cell(text: string): JSONContent {
   return {
@@ -91,5 +93,60 @@ describe("cvp-docx-format", () => {
     const next = stripTableCaptionNodes(doc);
     expect(next.content).toHaveLength(1);
     expect(next.content?.[0]?.type).toBe("table");
+  });
+
+  it("maps source protocol column widths by table headers", () => {
+    expect(
+      cvpSourceColWidthsForHeaders([
+        "Function",
+        "Department",
+        "Name",
+        "Designation",
+        "Sign & date",
+      ])
+    ).toEqual([1524, 2340, 2225, 2020, 1773]);
+    expect(
+      cvpSourceColWidthsForHeaders(["S. No", "Surface Type", "WAF (L/m²)"])
+    ).toEqual([838, 3251, 1996]);
+    expect(
+      cvpSourceColWidthsForHeaders([
+        "S. No",
+        "Name of the Equipment",
+        "Equipment No.",
+        "Capacity",
+        "Internal surface area m²",
+        "Rinsing Volume (L) based on RF Formula= SA X RF",
+        "Rinsing Volume based on SAF Formula = SAXSAFXSF",
+        "Considered volume",
+        "Rinsing Sample Quantity",
+      ])
+    ).toEqual([460, 1172, 1172, 983, 915, 1407, 1595, 1194, 984]);
+    expect(
+      cvpSourceColWidthsForHeaders([
+        "Sample description / location",
+        "Sample ID",
+        "Results (Extraneous matter)",
+      ])
+    ).toEqual([4494, 1214, 4097]);
+    expect(
+      cvpSourceColWidthsForHeaders(["Unknown", "Headers"])
+    ).toBeNull();
+  });
+
+  it("stamps source colWidths onto matching tables", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            row(["Function", "Department", "Name", "Designation", "Sign & date"]),
+            row(["Prepared by", "QA", "", "", ""]),
+          ],
+        },
+      ],
+    };
+    const table = applyCvpSourceTableColWidths(doc).content?.[0];
+    expect(table?.attrs?.colWidths).toEqual([1524, 2340, 2225, 2020, 1773]);
   });
 });

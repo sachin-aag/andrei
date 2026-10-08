@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { CvpSectionKey } from "@/lib/document-types/cvp/sections";
 import { CVP_SECTION_LABELS } from "@/lib/document-types/cvp/sections";
+import { cvpSourceColWidthsForHeaders } from "@/lib/export/cvp-table-col-widths";
 
 /**
  * Source QAD-SOP-PS-003-F08-00 numbering: `w:numId` 3 → abstract `%1.0` /
@@ -185,10 +186,34 @@ function mapDocNodes(
   return visit(doc);
 }
 
+function tableHeaderTexts(table: JSONContent): string[] {
+  const firstRow = table.content?.find((row) => row.type === "tableRow");
+  if (!firstRow) return [];
+  return (firstRow.content ?? [])
+    .filter(isTableCell)
+    .map((cell) => nodePlainText(cell).trim());
+}
+
+function stampSourceColWidths(table: JSONContent): JSONContent {
+  const widths = cvpSourceColWidthsForHeaders(tableHeaderTexts(table));
+  if (!widths) return table;
+  return {
+    ...table,
+    attrs: { ...table.attrs, colWidths: widths },
+  };
+}
+
 /** Consecutive empty first-column body cells become a Word vMerge (Reviewed by). */
 export function applyCvpEmptyFirstColumnMerges(doc: JSONContent): JSONContent {
   return mapDocNodes(doc, (node) =>
     node.type === "table" ? mergeEmptyFirstColumnOnTable(node) : node
+  );
+}
+
+/** Copy source-protocol tblGrid widths onto matching CVP tables. */
+export function applyCvpSourceTableColWidths(doc: JSONContent): JSONContent {
+  return mapDocNodes(doc, (node) =>
+    node.type === "table" ? stampSourceColWidths(node) : node
   );
 }
 
