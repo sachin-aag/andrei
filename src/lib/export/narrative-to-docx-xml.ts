@@ -96,6 +96,15 @@ function isEmptyExportNode(node: JSONContent | undefined): boolean {
   return !nodePlainText(node).trim();
 }
 
+/**
+ * Headings and tables start a new procedure. Nested bullets, body paragraphs,
+ * and page-local notes stay inside the current numbered list so Word prints
+ * 3 after 2 instead of restarting at 1.
+ */
+function breaksOrderedListSequence(node: JSONContent): boolean {
+  return node.type === "heading" || node.type === "table";
+}
+
 function isTableTitleNode(node: JSONContent): boolean {
   if (node.type !== "paragraph" && node.type !== "heading") return false;
   const text = nodePlainText(node).trim();
@@ -183,6 +192,8 @@ export function narrativeToDocxXmlWithContext(
     }
   }
   let landscapeOpen = false;
+  let continuedOrderedNumId: number | null = null;
+  let lastEmittedWasTable = false;
 
   const closeLandscape = () => {
     if (!landscapeOpen) return;
@@ -197,14 +208,27 @@ export function narrativeToDocxXmlWithContext(
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
+    if (breaksOrderedListSequence(node)) {
+      continuedOrderedNumId = null;
+    }
     if (node.type === "table") {
       if (landscapeWithTable.has(i)) {
         openLandscape();
-        parts.push(tableToXml(node, ctx, landscapeMax, true));
       } else {
         closeLandscape();
-        parts.push(tableToXml(node, ctx, portraitMax));
       }
+      if (lastEmittedWasTable) {
+        parts.push(tableSeparatorParagraphXml(ctx));
+      }
+      parts.push(
+        tableToXml(
+          node,
+          ctx,
+          landscapeWithTable.has(i) ? landscapeMax : portraitMax,
+          landscapeWithTable.has(i)
+        )
+      );
+      lastEmittedWasTable = true;
       continue;
     }
     // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
@@ -217,11 +241,23 @@ export function narrativeToDocxXmlWithContext(
     } else if (!(forceLandscape && landscapeOpen)) {
       closeLandscape();
     }
+    lastEmittedWasTable = false;
     const keepNext = keepWithTable.has(i);
     if (node.type === "paragraph") {
       parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
     } else if (node.type === "bulletList" || node.type === "orderedList") {
-      parts.push(listToXml(node, ctx));
+      if (node.type === "orderedList") {
+        const reuseNumId = continuedOrderedNumId;
+        const allocatedBefore = ctx.allocatedNumIds.length;
+        parts.push(
+          listToXml(node, ctx, reuseNumId != null ? { numId: reuseNumId } : {})
+        );
+        if (reuseNumId == null) {
+          continuedOrderedNumId = ctx.allocatedNumIds[allocatedBefore] ?? null;
+        }
+      } else {
+        parts.push(listToXml(node, ctx));
+      }
     } else if (node.type === "heading") {
       parts.push(headingToXml(node, ctx, keepNext));
     } else if (node.type === "mathBlock") {
@@ -891,6 +927,11 @@ function listToXml(
     }
   }
   return parts.join("");
+}
+
+/** Word joins adjacent `<w:tbl>` into one grid. A paragraph keeps them apart. */
+function tableSeparatorParagraphXml(ctx: DocxExportContext): string {
+  return paragraphToXml({ type: "paragraph" }, false, null, null, false, ctx);
 }
 
 function portraitTableGridMax(ctx: DocxExportContext): number {

@@ -79,6 +79,30 @@ describe("cvp-docx-format", () => {
     expect(rows[5]?.content?.[0]?.attrs?.rowspan).toBe(1);
   });
 
+  it("does not merge an all-empty spacer row into the location label above it", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            row(["Location", "ID", "Batch 1", "Batch 2"]),
+            row(["Shell wall Level 3 (S-10d)", "S-10d", "", ""]),
+            row(["", "", "", ""]),
+            row(["Limit", "", "", ""]),
+            row(["LOQ", "", "5 ppm", "5 ppm"]),
+          ],
+        },
+      ],
+    };
+    const table = applyCvpEmptyFirstColumnMerges(doc).content?.[0];
+    const rows = table?.content ?? [];
+    expect(rows[1]?.content?.[0]?.attrs?.rowspan ?? 1).toBe(1);
+    expect(rows[2]?.content).toHaveLength(4);
+    expect(JSON.stringify(rows[1])).toContain("Shell wall");
+    expect(JSON.stringify(rows[3])).toContain("Limit");
+  });
+
   it("drops Table N. caption paragraphs", () => {
     const doc: JSONContent = {
       type: "doc",
