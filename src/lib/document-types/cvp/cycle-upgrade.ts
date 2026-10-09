@@ -327,12 +327,21 @@ function unboldCvpBatchHeaders(table: JSONContent): JSONContent {
  * Limit / LOQ / LOD (and the extraneous Limit sentence) are the acceptance
  * criterion for every batch. Copy that text into Batch 1, Batch 2, and
  * Batch 3. Sample ID on those rows stays blank.
+ *
+ * Agent `edit_table` / `create_table` always relocates. Read/merge upgrade
+ * only relocates when the table was just widened from a single Results
+ * column — re-running on an already-wide grid wipes engineer keystrokes
+ * in Sample ID and any batch cell that differs from the first filled one.
  */
-export function placeCvpAnalyticalFooter(table: JSONContent): JSONContent {
+export function placeCvpAnalyticalFooter(
+  table: JSONContent,
+  options?: { relocateCriteria?: boolean }
+): JSONContent {
   const rows = table.content ?? [];
   const labels = headerLabels(rows[0]);
   const aligned = unboldCvpBatchHeaders(table);
   if (!isAnalyticalFooterTable(labels)) return aligned;
+  if (options?.relocateCriteria === false) return aligned;
   const batchStart = batchColumnStart(labels);
   let changed = aligned !== table;
   const content = (aligned.content ?? []).map((row, index) => {
@@ -523,6 +532,7 @@ function upgradeTable(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
   let next = table;
   let widened = false;
+  let justMigrated = false;
   for (const spec of SPLIT_LAST) {
     if (headersMatch(labels, spec.newHeaders)) {
       widened = true;
@@ -531,6 +541,7 @@ function upgradeTable(table: JSONContent): JSONContent {
     if (headersMatch(labels, spec.oldHeaders)) {
       next = splitLastColumn(table, spec);
       widened = true;
+      justMigrated = true;
       break;
     }
   }
@@ -543,12 +554,15 @@ function upgradeTable(table: JSONContent): JSONContent {
       if (headersMatch(labels, spec.oldHeaders)) {
         next = insertBatchColumn(table, spec);
         widened = true;
+        justMigrated = true;
         break;
       }
     }
   }
   if (!widened) next = appendNumberOfBatchesRow(table);
-  return applyCvpTemplateImpurityLimits(placeCvpAnalyticalFooter(next));
+  return applyCvpTemplateImpurityLimits(
+    placeCvpAnalyticalFooter(next, { relocateCriteria: justMigrated })
+  );
 }
 
 /**
