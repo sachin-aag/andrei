@@ -1585,7 +1585,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
           [
             table(CVP_OVERALL_RESULTS_HEADERS, [
               ["", "", "", "", "", "", ""],
-              ["", "Manufacturing Areas", "", "", "", "", ""],
+              ["Manufacturing Areas", "", "", "", "", "", ""],
             ]),
           ]
         ),

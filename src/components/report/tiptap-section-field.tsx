@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Content, JSONContent, Editor } from "@tiptap/core";
+import { posToDOMRect, type Content, type JSONContent, type Editor } from "@tiptap/core";
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -65,6 +65,10 @@ import {
   isSelectionOverPlaceholder,
   placeholderRefreshMeta,
 } from "@/lib/tiptap/placeholder-highlights";
+import {
+  rectIntersectsBounds,
+  shouldShowSelectionCommentBubble,
+} from "@/lib/tiptap/selection-comment-anchor";
 import {
   SuggestionInsert,
   SuggestionDelete,
@@ -1458,6 +1462,26 @@ export function TiptapSectionField({
     ? buildInactiveSuggestionCss(activeSuggestionId)
     : "";
 
+  const commentCanvasPane =
+    editor?.view.dom.closest<HTMLElement>("[data-canvas-pane]") ?? null;
+  const commentBubbleOptions = useMemo(() => {
+    const boundary = commentCanvasPane ?? undefined;
+    return {
+      strategy: "fixed" as const,
+      placement: "right-end" as const,
+      offset: 10,
+      flip: boundary ? { boundary, padding: 8 } : true,
+      shift: boundary ? { boundary, padding: 8 } : { padding: 8 },
+      // Hide when the selection is clipped by the canvas. Otherwise shift
+      // pins the chip to the viewport edge — over the app header.
+      hide: {
+        strategy: "referenceHidden" as const,
+        ...(boundary ? { boundary } : {}),
+      },
+      scrollTarget: commentCanvasPane ?? window,
+    };
+  }, [commentCanvasPane]);
+
   return (
     <div className={className}>
       {inactiveSuggestionCss ? (
@@ -1507,20 +1531,32 @@ export function TiptapSectionField({
           editor={editor}
           appendTo={() => document.body}
           className="z-50"
-          options={{
-            placement: "right-end",
-            offset: 10,
-            flip: true,
-            shift: { padding: 8 },
-          }}
+          options={commentBubbleOptions}
           shouldShow={({ editor: ed, state }) => {
-            if (!canInlineComment || !ed.isEditable) return false;
-            if (commentComposing) return true;
-            if (state.selection.empty) return false;
-            // Don't show comment bubble when the selection covers a placeholder
-            // (user clicked to fill it, not to comment on it)
-            if (isSelectionOverPlaceholder(state)) return false;
-            return true;
+            const pane = ed.view.dom.closest<HTMLElement>("[data-canvas-pane]");
+            const bounds = (pane ?? ed.view.dom).getBoundingClientRect();
+            let anchorIntersectsPane = false;
+            if (!state.selection.empty) {
+              try {
+                anchorIntersectsPane = rectIntersectsBounds(
+                  posToDOMRect(ed.view, state.selection.from, state.selection.to),
+                  bounds
+                );
+              } catch {
+                anchorIntersectsPane = false;
+              }
+            }
+            return shouldShowSelectionCommentBubble({
+              canInlineComment,
+              editable: ed.isEditable,
+              composing: commentComposing,
+              editorFocused: ed.view.hasFocus(),
+              selectionEmpty: state.selection.empty,
+              overPlaceholder: isSelectionOverPlaceholder(state),
+              paneActive:
+                pane == null || pane.getAttribute("data-canvas-pane") === "active",
+              anchorIntersectsPane,
+            });
           }}
         >
           <div

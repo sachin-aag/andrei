@@ -17,6 +17,8 @@ import {
   CVP_FORM_NO,
   CVP_MACO_EQUIPMENT_HEADERS,
   CVP_MANUFACTURING_AREA_LIMIT,
+  CVP_OVERALL_RESULTS_HEADERS,
+  CVP_PREVIOUS_OVERALL_RESULTS_HEADERS,
   CVP_METHOD_VALIDATION_INTRO_SEED,
   CVP_NITROSAMINE_HEADERS,
   CVP_NITROSAMINE_INTRO_SEED,
@@ -43,6 +45,7 @@ import {
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpTableSectionKey,
+  table,
   upgradeCvpEquipmentSamplingNarrative,
 } from "./sections";
 import { upgradeCvpValidationDoc } from "./cycle-upgrade";
@@ -194,9 +197,11 @@ describe("cleaning verification protocol sections", () => {
     expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[1]);
     expect(reactor).toContain("Reactor top dish near manhole");
     expect(reactor).toContain("Bottom discharge valve");
+    expect(reactor).toContain("Thermowell bottom");
     expect(reactor).toContain("S-1");
-    expect(reactor).toContain("S-4a");
-    expect(reactor).toContain("Shell wall at middle level (0°)");
+    expect(reactor).toContain("Shell wall Level 1 (S-8a)");
+    expect(reactor).toContain("Shell wall Level 3 (S-10d)");
+    expect(reactor).toContain("S-8a, S-8b, S-8c, S-8d");
     const visual = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1)).find(
       (table) =>
         table.headers[0] === "Sample description / location" &&
@@ -563,6 +568,48 @@ describe("cleaning verification protocol sections", () => {
     expect(JSON.stringify(EMPTY_CVP_CONTENT.cvp_revalidation)).toContain(
       CVP_REVALIDATION_SEED
     );
+  });
+
+  it("seeds Manufacturing Areas in the first overall-results column", () => {
+    const overall = EMPTY_CVP_CONTENT.cvp_overall_results;
+    const cells =
+      summarizeTablesInDoc(
+        "narrative" in overall ? overall.narrative : { type: "doc", content: [] }
+      )[0]?.cells ?? [];
+    const label = cells.find((cell) => cell.text === "Manufacturing Areas");
+    expect(label?.col).toBe(0);
+    expect(cells.find((cell) => cell.row === label?.row && cell.col === 1)?.text).toBe(
+      "(empty)"
+    );
+
+    const misplaced = table(CVP_OVERALL_RESULTS_HEADERS, [
+      ["", "Manufacturing Areas", "", "", "", "", ""],
+    ]);
+    const moved =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [misplaced] })
+      )[0]?.cells ?? [];
+    expect(moved.find((cell) => cell.text === "Manufacturing Areas")?.col).toBe(0);
+
+    const kept = table(CVP_OVERALL_RESULTS_HEADERS, [
+      ["GLR-1302", "Manufacturing Areas", "", "", "", "", ""],
+    ]);
+    const unchanged =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [kept] })
+      )[0]?.cells ?? [];
+    expect(
+      unchanged.find((cell) => cell.col === 0 && cell.text === "GLR-1302")
+    ).toBeTruthy();
+
+    const legacy = table(CVP_PREVIOUS_OVERALL_RESULTS_HEADERS, [
+      ["", "", "", "", "", "", "", "", "", ""],
+    ]);
+    const reshaped =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [legacy] })
+      )[0]?.cells ?? [];
+    expect(reshaped.find((cell) => cell.text === "Manufacturing Areas")?.col).toBe(0);
   });
 
   it("prepends nitrosamine boilerplate onto a legacy table-only field at merge", () => {
@@ -1155,7 +1202,87 @@ describe("cleaning verification protocol sections", () => {
       true
     );
     expect(cells.some((cell) => cell.text === "S-1")).toBe(true);
-    expect(cells.some((cell) => cell.text === "S-4a")).toBe(true);
+    expect(cells.some((cell) => cell.text === "Thermowell bottom")).toBe(true);
+    expect(cells.filter((cell) => cell.text === "S-8a")).toHaveLength(1);
+    expect(cells.some((cell) => cell.text === "Shell wall Level 3 (S-10d)")).toBe(
+      true
+    );
+  });
+
+  it("splits grouped shell-level rows into one row per measurement", () => {
+    const grouped = groupedResultsTable(
+      ["Sample description / location", "Sample ID", "Limit"],
+      [
+        ["Reflux Sample (Acetone)", "NA", "For information", "", "", ""],
+        [
+          "Shell wall at bottom level (0°, 90°, 180°, 270°)",
+          "S-8a, S-8b, S-8c, S-8d",
+          "NMT 2 ppm",
+          "ND",
+          "",
+          "",
+        ],
+        [
+          "Shell wall at middle level (0°, 90°, 180°, 270°)",
+          "S-9a, S-9b, S-9c, S-9d",
+          "NMT 2 ppm",
+          "",
+          "",
+          "",
+        ],
+        [
+          "Shell wall at top level (0°, 90°, 180°, 270°)",
+          "S-10a, S-10b, S-10c, S-10d",
+          "NMT 2 ppm",
+          "",
+          "",
+          "",
+        ],
+        ["LOQ", "", "", CVP_RESIDUE_LOQ, CVP_RESIDUE_LOQ, CVP_RESIDUE_LOQ],
+      ]
+    );
+    const upgraded = upgradeCvpValidationDoc({
+      type: "doc",
+      content: [grouped],
+    });
+    const cells = summarizeTablesInDoc(upgraded)[0]?.cells ?? [];
+    const sampleIds = cells
+      .filter((cell) => cell.col === 1 && /^S-\d+[a-d]$/.test(cell.text))
+      .map((cell) => cell.text);
+    expect(sampleIds).toEqual([
+      "S-8a",
+      "S-8b",
+      "S-8c",
+      "S-8d",
+      "S-9a",
+      "S-9b",
+      "S-9c",
+      "S-9d",
+      "S-10a",
+      "S-10b",
+      "S-10c",
+      "S-10d",
+    ]);
+    const firstShell = cells.find((cell) => cell.text === "S-8a");
+    expect(
+      cells.some(
+        (cell) =>
+          cell.row === firstShell?.row &&
+          cell.col === 0 &&
+          cell.text === "Shell wall Level 1 (S-8a)"
+      )
+    ).toBe(true);
+    expect(
+      cells.some(
+        (cell) => cell.row === firstShell?.row && cell.text === "ND"
+      )
+    ).toBe(true);
+    expect(cells.filter((cell) => cell.text === "LOQ")).toHaveLength(1);
+    const again = summarizeTablesInDoc(upgradeCvpValidationDoc(upgraded))[0]
+      ?.cells ?? [];
+    expect(
+      again.filter((cell) => cell.col === 1 && /^S-\d+[a-d]$/.test(cell.text))
+    ).toHaveLength(12);
   });
 
   it("drops the bold mark on a Batch 1 header so it matches Sample ID", () => {

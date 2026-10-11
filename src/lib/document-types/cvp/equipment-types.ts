@@ -265,12 +265,53 @@ const REACTOR_LOCATIONS: readonly CvpSwabLocation[] = [
   { id: "S-1", description: "Reactor top dish near manhole" },
   { id: "S-2", description: "Reactor bottom side inner surface" },
   { id: "S-3", description: "Manhole lid seating area" },
-  { id: "S-4a", description: "Shell wall at middle level (0°)" },
-  { id: "S-4b", description: "Shell wall at middle level (180°)" },
-  { id: "S-5", description: "Reactor's Stirrer" },
-  { id: "S-6", description: "Reactor's stirrer blade" },
-  { id: "S-7", description: "Bottom discharge valve" },
+  { id: "S-4", description: "Reactor's stirrer middle location" },
+  { id: "S-5", description: "Reactor's stirrer blade" },
+  { id: "S-6", description: "Bottom discharge valve" },
+  { id: "S-7", description: "Thermowell bottom" },
 ];
+
+/** 3 horizontal levels × 4 circumferential positions. One row per measurement. */
+const REACTOR_SHELL_LEVELS = [
+  { level: 1, idBase: 8, place: "bottom" },
+  { level: 2, idBase: 9, place: "middle" },
+  { level: 3, idBase: 10, place: "top" },
+] as const;
+
+const REACTOR_SHELL_LETTERS = ["a", "b", "c", "d"] as const;
+
+export type CvpShellMeasurement = {
+  id: string;
+  description: string;
+};
+
+export function cvpReactorShellMeasurements(): readonly CvpShellMeasurement[] {
+  const rows: CvpShellMeasurement[] = [];
+  for (const level of REACTOR_SHELL_LEVELS) {
+    for (const letter of REACTOR_SHELL_LETTERS) {
+      const id = `S-${level.idBase}${letter}`;
+      rows.push({
+        id,
+        description: `Shell wall Level ${level.level} (${id})`,
+      });
+    }
+  }
+  return rows;
+}
+
+function reactorShellRationale(): CvpSwabRationale[] {
+  return REACTOR_SHELL_LEVELS.map((level) => {
+    const ids = REACTOR_SHELL_LETTERS.map(
+      (letter) => `S-${level.idBase}${letter}`
+    );
+    return {
+      id: ids.join(", "),
+      description: `Shell wall at ${level.place} level (0°, 90°, 180°, 270°)`,
+      rationale: `Representative vessel shell wall sampling at the ${level.place} level.`,
+      samples: "4",
+    };
+  });
+}
 
 const REACTOR_RATIONALE: readonly CvpSwabRationale[] = [
   {
@@ -295,32 +336,33 @@ const REACTOR_RATIONALE: readonly CvpSwabRationale[] = [
     samples: "1",
   },
   {
-    id: "S-4a & S-4b",
-    description: "Shell wall at middle level (0° & 180°)",
-    rationale:
-      "Product contact surface. Representative of the largest contact area. Coverage of the lower shell.",
-    samples: "2",
-  },
-  {
-    id: "S-5",
-    description: "Reactor's Stirrer",
+    id: "S-4",
+    description: "Reactor's stirrer middle location",
     rationale: "Product contact. Hard to reach. Irregular shape.",
     samples: "1",
   },
   {
-    id: "S-6",
+    id: "S-5",
     description: "Reactor's stirrer blade",
     rationale:
       "Product contact surface. Hard to reach. Irregular shape (blade and hub junction). Potential spray shadow.",
     samples: "1",
   },
   {
-    id: "S-7",
+    id: "S-6",
     description: "Bottom discharge valve",
     rationale:
       "Product contact surface. Hard to clean. Seam and gasket. Lowest point, flow dead-leg potential.",
     samples: "1",
   },
+  {
+    id: "S-7",
+    description: "Thermowell bottom",
+    rationale:
+      "Product contact surface. Dead-end pocket at the thermal interface.",
+    samples: "1",
+  },
+  ...reactorShellRationale(),
 ];
 
 const SPARKLER_LOCATIONS: readonly CvpSwabLocation[] = [
@@ -802,6 +844,11 @@ export function cvpResidueSampleRows(
   rows.push(["Swab samples", "", "", "", "", ""]);
   for (const location of locations) {
     rows.push([location.description, location.id, SWAB, "", "", ""]);
+  }
+  if (cvpIsReactorFamily(type)) {
+    for (const measurement of cvpReactorShellMeasurements()) {
+      rows.push([measurement.description, measurement.id, SWAB, "", "", ""]);
+    }
   }
   return rows;
 }

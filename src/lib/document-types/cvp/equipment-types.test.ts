@@ -93,10 +93,14 @@ describe("CVP equipment type recipes", () => {
       true
     );
     expect(rows.some((row) => row[0] === "Bottom discharge valve")).toBe(true);
+    expect(rows.some((row) => row[0] === "Thermowell bottom")).toBe(true);
     expect(rows.some((row) => row[1] === "S-1")).toBe(true);
-    expect(rows.some((row) => row[1] === "S-4a")).toBe(true);
+    const shell = rows.filter((row) => /^S-\d+[a-d]$/.test(row[1] ?? ""));
+    expect(shell).toHaveLength(12);
+    expect(shell[0]?.[1]).toBe("S-8a");
+    expect(shell[11]?.[0]).toBe("Shell wall Level 3 (S-10d)");
     expect(rows.filter((row) => row[2] === "NMT 2 ppm").length).toBeGreaterThanOrEqual(
-      7
+      19
     );
   });
 

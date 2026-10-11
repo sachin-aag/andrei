@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v216-cvp-ssr-picker");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v217-cvp-mfg-areas-column");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {

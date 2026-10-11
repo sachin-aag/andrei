@@ -56,6 +56,7 @@ import {
   type CvpPersistableSectionKey,
 } from "./sections";
 import {
+  cvpReactorShellMeasurements,
   cvpSwabLocations,
   type CvpEquipmentType,
 } from "./equipment-types";
@@ -1297,6 +1298,138 @@ function expandStubReactorSwabRows(table: JSONContent): JSONContent {
   return expandStubCvpSwabRows(table, "reactor");
 }
 
+function letteredSwabIds(text: string): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const match of text.matchAll(/S-\d+[a-d]/gi)) {
+    const id = match[0].replace(/^s-/i, "S-").replace(/[a-d]$/i, (letter) =>
+      letter.toLowerCase()
+    );
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function groupedShellIds(
+  cells: JSONContent[],
+  sampleIdCol: number
+): string[] {
+  const sample = sampleIdCol >= 0 ? cellPlain(cells[sampleIdCol]) : "";
+  const fromSample = letteredSwabIds(sample);
+  if (fromSample.length >= 2) return fromSample;
+  const description = cellPlain(cells[0]);
+  if (description.length > 160) return [];
+  if (!/shell wall/i.test(description) && !/^S-\d/i.test(description)) {
+    return [];
+  }
+  const fromDescription = letteredSwabIds(description);
+  return fromDescription.length >= 2 ? fromDescription : [];
+}
+
+function clonePlainCell(cell: JSONContent): JSONContent {
+  return cloneCellWithText(cell, cellPlain(cell));
+}
+
+/**
+ * 15.N.7 lists one shell-wall swab per measurement. A level row that
+ * packs S-8a–S-8d (and the same for S-9 / S-10) becomes four rows.
+ * Reactor reflux tables that never had those IDs gain the 12-row grid.
+ */
+function expandReactorShellMeasurementRows(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!isResidueResultsTable(labels)) return table;
+  const grouped = isGroupedResultsTable(table);
+  const bodyStart = grouped ? 2 : 1;
+  const sampleIdCol = labels.findIndex((label) => /sample id/i.test(label));
+  const measurements = cvpReactorShellMeasurements();
+  const descriptionById = new Map(
+    measurements.map((measurement) => [measurement.id, measurement.description])
+  );
+  let changed = false;
+  const rows = table.content ?? [];
+  const splitRows = rows.flatMap((row, index) => {
+    if (index < bodyStart || row.type !== "tableRow") return [row];
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const first = cellPlain(cells[0]);
+    if (isLoqLodRowLabel(first) || isLimitRowLabel(first)) return [row];
+    const ids = groupedShellIds(cells, sampleIdCol);
+    if (ids.length < 2) return [row];
+    changed = true;
+    return ids.map((id) => ({
+      ...row,
+      content: cells.map((cell, cellIndex) => {
+        if (cellIndex === 0) {
+          return makeCell(
+            "tableCell",
+            descriptionById.get(id) ?? cellPlain(cells[0])
+          );
+        }
+        if (cellIndex === sampleIdCol) return makeCell("tableCell", id);
+        return clonePlainCell(cell);
+      }),
+    }));
+  });
+
+  const present = new Set<string>();
+  for (const row of splitRows.slice(bodyStart)) {
+    if (row.type !== "tableRow") continue;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const sample = sampleIdCol >= 0 ? cellPlain(cells[sampleIdCol]) : "";
+    for (const id of letteredSwabIds(sample)) present.add(id);
+    for (const id of letteredSwabIds(cellPlain(cells[0]))) present.add(id);
+  }
+  const hasReflux = splitRows.slice(bodyStart).some((row) => {
+    if (row.type !== "tableRow") return false;
+    const first = cellPlain(
+      (row.content ?? []).find(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      )
+    );
+    return /reflux/i.test(first);
+  });
+  const missing = hasReflux
+    ? measurements.filter((measurement) => !present.has(measurement.id))
+    : [];
+  if (missing.length === 0) {
+    return changed ? { ...table, content: splitRows } : table;
+  }
+  const colCount = residueColumnCount({ ...table, content: splitRows });
+  const limitCol = residueLimitColumn(labels);
+  const inserted = missing.map((measurement) => ({
+    type: "tableRow" as const,
+    content: Array.from({ length: colCount }, (_, index) => {
+      if (index === 0) return makeCell("tableCell", measurement.description);
+      if (index === sampleIdCol) return makeCell("tableCell", measurement.id);
+      if (index === limitCol) return makeCell("tableCell", CVP_SWAB_LIMIT);
+      return makeCell("tableCell", "");
+    }),
+  }));
+  const loqIndex = splitRows.findIndex((row, index) => {
+    if (index < bodyStart || row.type !== "tableRow") return false;
+    const first = cellPlain(
+      (row.content ?? []).find(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      )
+    );
+    return isLoqLodRowLabel(first);
+  });
+  const at = loqIndex < 0 ? splitRows.length : loqIndex;
+  return {
+    ...table,
+    content: [
+      ...splitRows.slice(0, at),
+      ...inserted,
+      ...splitRows.slice(at),
+    ],
+  };
+}
+
 function residueResultsStart(table: JSONContent): number {
   const labels = headerLabels(table.content?.[0]);
   const limitCol = residueLimitColumn(labels);
@@ -1421,6 +1554,30 @@ function reshapeEmptyManufacturingArea(table: JSONContent): JSONContent {
   ]);
 }
 
+function placeManufacturingAreasFirst(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!headersMatch(labels, CVP_OVERALL_RESULTS_HEADERS)) return table;
+  let changed = false;
+  const content = (table.content ?? []).map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const id = cells[0];
+    const equipment = cells[1];
+    if (!id || !equipment) return row;
+    if (cellPlain(id) !== "" || cellPlain(equipment) !== "Manufacturing Areas") {
+      return row;
+    }
+    changed = true;
+    const next = cells.slice();
+    next[0] = cloneCellWithText(id, "Manufacturing Areas");
+    next[1] = emptyLike(equipment);
+    return { ...row, content: next };
+  });
+  return changed ? { ...table, content } : table;
+}
+
 function reshapeEmptyOverall(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
   const oldShape =
@@ -1441,7 +1598,7 @@ function reshapeEmptyOverall(table: JSONContent): JSONContent {
       {
         type: "tableRow",
         content: CVP_OVERALL_RESULTS_HEADERS.map((_, i) =>
-          makeCell("tableCell", i === 1 ? "Manufacturing Areas" : "")
+          makeCell("tableCell", i === 0 ? "Manufacturing Areas" : "")
         ),
       },
     ],
@@ -1589,6 +1746,7 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     if (node.type !== "table") return node;
     let next = reshapeEmptyManufacturingArea(node);
     next = reshapeEmptyOverall(next);
+    next = placeManufacturingAreasFirst(next);
     next = reshapeEmptyTesting(next);
     next = reshapeEmptyHistory(next);
     next = flattenGroupedVisualInspection(next);
@@ -1598,6 +1756,7 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     next = promoteAndDropLimitRow(next);
     next = fillEmptyResidueSeeds(next);
     next = expandStubReactorSwabRows(next);
+    next = expandReactorShellMeasurementRows(next);
     if (
       !isExtraneousSampleTable(next) &&
       !isManufacturingAreaSampleTable(headerLabels(next.content?.[0]))
