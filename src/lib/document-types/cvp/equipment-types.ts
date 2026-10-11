@@ -183,6 +183,19 @@ function millOrSifterRows(
   ];
 }
 
+/** Named 15.N.7 swab rows for a reactor. Sample IDs stay blank until cited. */
+export const CVP_REACTOR_SWAB_LOCATION_SEEDS = [
+  "Reactor top dish near manhole",
+  "Reactor bottom side inner surface",
+  "Manhole lid seating area",
+  "Shell wall (positions per Section 14.0)",
+  "Reactor stirrer",
+  "Reactor stirrer blade",
+  "Bottom discharge valve",
+] as const;
+
+const BLANK_SWAB_LOCATION_COUNT = 6;
+
 export function cvpResidueSampleRows(
   type: CvpEquipmentType
 ): readonly (readonly string[])[] {
@@ -198,6 +211,12 @@ export function cvpResidueSampleRows(
     rows.push(["Final Rinse Sample (Acetone)", "NA", "", "", "", ""]);
   }
   rows.push(["Swab samples", "", "", "", "", ""]);
-  rows.push(["", "", swab, "", "", ""]);
+  const locations =
+    type === "reactor"
+      ? CVP_REACTOR_SWAB_LOCATION_SEEDS
+      : Array.from({ length: BLANK_SWAB_LOCATION_COUNT }, () => "");
+  for (const location of locations) {
+    rows.push([location, "", swab, "", "", ""]);
+  }
   return rows;
 }

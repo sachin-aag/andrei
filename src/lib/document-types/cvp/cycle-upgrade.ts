@@ -6,6 +6,7 @@ import {
   CVP_DEVIATIONS_SEED,
   CVP_EQUIPMENT_DETAILS_SEED,
   CVP_EVALUATION_SEEDS,
+  CVP_EXTRANEOUS_LIMIT,
   CVP_EXTRANEOUS_RESULTS_HEADERS,
   CVP_HISTORY_HEADERS,
   CVP_MANUFACTURING_AREA_HEADERS,
@@ -46,11 +47,15 @@ import {
   CVP_SWAB_LIMIT,
   CVP_TABLE_SECTION_BOILERPLATE,
   CVP_VISUAL_INSPECTION_INTRO_SEED,
+  CVP_METHODOLOGY_INTRO_SEED,
+  CVP_PREREQUISITES_INTRO_SEED,
   CVP_TESTING_HEADERS,
   CVP_VISUAL_INSPECTION_HEADERS,
+  CVP_VISUAL_INSPECTION_ROWS,
   groupedResultsTable,
   type CvpPersistableSectionKey,
 } from "./sections";
+import { CVP_REACTOR_SWAB_LOCATION_SEEDS } from "./equipment-types";
 
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
 
@@ -81,11 +86,23 @@ const SEED_SWAPS: ReadonlyArray<readonly [string, string]> = [
   ],
   [
     "Prior to initiating cleaning verification, the following criteria, but not limited to, must be met to ensure process readiness and compliance with GMP requirements:",
-    "Prior to initiating cleaning validation, the following criteria, but not limited to, must be met to ensure process readiness and compliance with GMP requirements:",
+    CVP_PREREQUISITES_INTRO_SEED,
+  ],
+  [
+    "Prior to initiating cleaning verification activities, the following pre-requisites must be met to ensure process readiness, data integrity, and compliance with cGMP requirements:",
+    CVP_PREREQUISITES_INTRO_SEED,
   ],
   [
     "Cleaning verification activities shall be performed in the following sequence for each cleaning run:",
+    CVP_METHODOLOGY_INTRO_SEED,
+  ],
+  [
     "Cleaning validation activities shall be performed in the following sequence for each of the three cleaning batches:",
+    CVP_METHODOLOGY_INTRO_SEED,
+  ],
+  [
+    "Prior to initiating cleaning validation, the following criteria, but not limited to, must be met to ensure process readiness and compliance with GMP requirements:",
+    CVP_PREREQUISITES_INTRO_SEED,
   ],
   [
     "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table. Result and observation fields stay blank until the cleaning verification report is written.",
@@ -564,9 +581,49 @@ function appendNumberOfBatchesRow(table: JSONContent): JSONContent {
   };
 }
 
-function upgradeTable(table: JSONContent): JSONContent {
+function flattenGroupedVisualInspection(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
-  let next = table;
+  if (!/^sample description/i.test(labels[0] ?? "")) return table;
+  if (labels.some((label) => /sample id/i.test(label))) return table;
+  if (labels.some((label) => /^limit$/i.test(normHeader(label)))) return table;
+  if (!isGroupedResultsTable(table)) return table;
+  const rows = (table.content ?? []).filter((row) => row.type === "tableRow");
+  const body = rows.slice(2).map((row) => {
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    return [
+      cellPlain(cells[0]),
+      cellPlain(cells[1]),
+      cellPlain(cells[2]),
+      cellPlain(cells[3]),
+    ];
+  });
+  const data = body.length > 0 ? body : [...CVP_VISUAL_INSPECTION_ROWS];
+  return {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: CVP_VISUAL_INSPECTION_HEADERS.map((label) =>
+          makeCell("tableHeader", label)
+        ),
+      },
+      ...data.map((row) => ({
+        type: "tableRow" as const,
+        content: CVP_VISUAL_INSPECTION_HEADERS.map((_, i) =>
+          makeCell("tableCell", row[i] ?? "")
+        ),
+      })),
+    ],
+  };
+}
+
+function upgradeTable(table: JSONContent): JSONContent {
+  const flattened = flattenGroupedVisualInspection(table);
+  const withLimit = insertSampleLimitColumn(flattened);
+  const labels = headerLabels(withLimit.content?.[0]);
+  let next = withLimit;
   let widened = false;
   let justMigrated = false;
   for (const spec of SPLIT_LAST) {
@@ -575,7 +632,7 @@ function upgradeTable(table: JSONContent): JSONContent {
       break;
     }
     if (headersMatch(labels, spec.oldHeaders)) {
-      next = splitLastColumn(table, spec);
+      next = splitLastColumn(next, spec);
       widened = true;
       justMigrated = true;
       break;
@@ -588,17 +645,17 @@ function upgradeTable(table: JSONContent): JSONContent {
         break;
       }
       if (headersMatch(labels, spec.oldHeaders)) {
-        next = insertBatchColumn(table, spec);
+        next = insertBatchColumn(next, spec);
         widened = true;
         justMigrated = true;
         break;
       }
     }
   }
-  if (!widened) next = appendNumberOfBatchesRow(table);
-  return applyCvpTemplateImpurityLimits(
-    placeCvpAnalyticalFooter(next, { relocateCriteria: justMigrated })
-  );
+  if (!widened) next = appendNumberOfBatchesRow(next);
+  next = placeCvpAnalyticalFooter(next, { relocateCriteria: justMigrated });
+  next = promoteAndDropLimitRow(next);
+  return applyCvpTemplateImpurityLimits(next);
 }
 
 /**
@@ -831,6 +888,10 @@ function fillEmptyCell(
   return { cell: cloneCellWithText(cell, value), changed: true };
 }
 
+function normHeader(label: string): string {
+  return label.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function isResidueResultsTable(labels: readonly string[]): boolean {
   return (
     /^sample description/i.test(labels[0] ?? "") &&
@@ -839,7 +900,72 @@ function isResidueResultsTable(labels: readonly string[]): boolean {
 }
 
 function residueLimitColumn(labels: readonly string[]): number {
-  return labels.findIndex((label) => /^limit$/i.test(label));
+  return labels.findIndex((label) => /^limit$/i.test(normHeader(label)));
+}
+
+function isManufacturingAreaSampleTable(labels: readonly string[]): boolean {
+  return labels.some((label) => {
+    const n = normHeader(label);
+    return n === "area name" || n === "sampled area";
+  });
+}
+
+function isGroupedResultsTable(table: JSONContent): boolean {
+  const header = table.content?.[0];
+  const labels = headerLabels(header);
+  const resultsIdx = labels.findIndex((label) =>
+    /^results\b/.test(normHeader(label))
+  );
+  if (resultsIdx < 0) return false;
+  const resultsCell = (header?.content ?? []).filter(
+    (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+  )[resultsIdx];
+  if (Number(resultsCell?.attrs?.colspan) > 1) return true;
+  const second = headerLabels(table.content?.[1]);
+  return (
+    second.length > 0 &&
+    second.every((label) => !label || /^batch(?:\s+\d+)?$/i.test(label))
+  );
+}
+
+function sampleIdHeaderIndex(labels: readonly string[]): number {
+  return labels.findIndex((label) => normHeader(label).includes("sample id"));
+}
+
+function needsSampleLimitColumn(table: JSONContent): boolean {
+  const labels = headerLabels(table.content?.[0]);
+  if (labels.some((label) => /^limit$/.test(normHeader(label)))) return false;
+  const grouped = isGroupedResultsTable(table);
+  const batches = labels.filter((label) =>
+    /^batch(?:\s+\d+)?$/.test(normHeader(label))
+  ).length;
+  if (!grouped && batches < 3) return false;
+  const desc = labels.some((label) =>
+    normHeader(label).includes("sample description")
+  );
+  const sampleId = sampleIdHeaderIndex(labels) >= 0;
+  return (desc && sampleId) || isManufacturingAreaSampleTable(labels);
+}
+
+function limitInsertIndex(labels: readonly string[]): number {
+  const testParam = labels.findIndex(
+    (label) => normHeader(label) === "test parameter"
+  );
+  if (testParam >= 0) return testParam + 1;
+  const sampled = labels.findIndex(
+    (label) => normHeader(label) === "sampled area"
+  );
+  if (sampled >= 0) return sampled + 1;
+  const sampleId = sampleIdHeaderIndex(labels);
+  if (sampleId >= 0) return sampleId + 1;
+  const results = labels.findIndex((label) =>
+    /^results\b/.test(normHeader(label))
+  );
+  if (results >= 0) return results;
+  const batch = labels.findIndex((label) =>
+    /^batch(?:\s+\d+)?$/.test(normHeader(label))
+  );
+  return batch >= 0 ? batch : 2;
 }
 
 /** Copy an already-filled NMT / ppm figure into an empty Limit cell. */
@@ -894,24 +1020,34 @@ function ensureCvpInferenceConclusionShall(doc: JSONContent): JSONContent {
   return changed ? { ...doc, content: next } : doc;
 }
 
-function insertResidueLimitColumn(table: JSONContent): JSONContent {
+function insertSampleLimitColumn(table: JSONContent): JSONContent {
+  if (!needsSampleLimitColumn(table)) return table;
   const rows = table.content ?? [];
   const labels = headerLabels(rows[0]);
-  if (!headersMatch(labels, CVP_PREVIOUS_BATCH_RESIDUE_RESULTS_HEADERS)) {
-    return table;
-  }
-  const insertAt = 2;
+  const grouped = isGroupedResultsTable(table);
+  const insertAt = limitInsertIndex(labels);
   const content = rows.map((row, index) => {
     if (row.type !== "tableRow") return row;
+    if (grouped && index === 1) return row;
     const cells = (row.content ?? []).filter(
       (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
     );
-    const kind = index === 0 ? "tableHeader" : "tableCell";
+    if (index === 0) {
+      const limitHeader: JSONContent = {
+        type: "tableHeader",
+        attrs: { ...CELL_ATTRS, rowspan: grouped ? 2 : 1 },
+        content: [textParagraph("Limit")],
+      };
+      return {
+        ...row,
+        content: [...cells.slice(0, insertAt), limitHeader, ...cells.slice(insertAt)],
+      };
+    }
     return {
       ...row,
       content: [
         ...cells.slice(0, insertAt),
-        makeCell(kind, index === 0 ? "Limit" : ""),
+        makeCell("tableCell", ""),
         ...cells.slice(insertAt),
       ],
     };
@@ -919,12 +1055,109 @@ function insertResidueLimitColumn(table: JSONContent): JSONContent {
   return { ...table, content };
 }
 
-function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
+function firstNonEmptyCellText(
+  cells: JSONContent[],
+  skip: ReadonlySet<number>
+): string {
+  for (let i = 0; i < cells.length; i++) {
+    if (skip.has(i)) continue;
+    const text = cellPlain(cells[i]);
+    if (!text || /^na$/i.test(text)) continue;
+    return text;
+  }
+  return "";
+}
+
+function isLimitRowLabel(text: string): boolean {
+  return /^limit$/i.test(text);
+}
+
+function isLoqLodRowLabel(text: string): boolean {
+  return /^(loq|lod)$/i.test(text);
+}
+
+function tableHasBlackAndFiber(table: JSONContent): boolean {
+  return (table.content ?? []).some((row) =>
+    (row.content ?? []).some((cell) => /black and fiber/i.test(cellPlain(cell)))
+  );
+}
+
+function isExtraneousSampleTable(table: JSONContent): boolean {
   const labels = headerLabels(table.content?.[0]);
-  if (!isResidueResultsTable(labels)) return table;
+  if (isManufacturingAreaSampleTable(labels)) return false;
+  const names = residueBodyNames(table);
+  if (
+    names.some(
+      (name) =>
+        /^(loq|lod)$/i.test(name) ||
+        /swab/i.test(name) ||
+        /reflux/i.test(name) ||
+        /final rinse/i.test(name)
+    )
+  ) {
+    return false;
+  }
+  return (
+    names.some((name) => /^rinse sample$/i.test(name)) ||
+    tableHasBlackAndFiber(table)
+  );
+}
+
+function promoteAndDropLimitRow(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
   const limitCol = residueLimitColumn(labels);
   if (limitCol < 0) return table;
-  const grouped = labels.includes("Results");
+  const grouped = isGroupedResultsTable(table);
+  const rows = table.content ?? [];
+  const bodyStart = grouped ? 2 : 1;
+  const limitRowIndex = rows.findIndex((row, index) => {
+    if (index < bodyStart || row.type !== "tableRow") return false;
+    const first = cellPlain(
+      (row.content ?? []).find(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      )
+    );
+    return isLimitRowLabel(first);
+  });
+  if (limitRowIndex < 0) return table;
+  const limitCells = (rows[limitRowIndex]?.content ?? []).filter(
+    (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+  );
+  const criterion = firstNonEmptyCellText(
+    limitCells,
+    new Set([0, limitCol])
+  );
+  const content = rows.flatMap((row, index) => {
+    if (index === limitRowIndex) return [];
+    if (index < bodyStart || row.type !== "tableRow") return [row];
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const first = cellPlain(cells[0]);
+    if (isLoqLodRowLabel(first) || !criterion) return [row];
+    const limitCell = cells[limitCol];
+    if (!limitCell || cellPlain(limitCell).length > 0) return [row];
+    const next = cells.slice();
+    next[limitCol] = cloneCellWithText(limitCell, criterion);
+    return [{ ...row, content: next }];
+  });
+  return { ...table, content };
+}
+
+function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  const limitCol = residueLimitColumn(labels);
+  if (limitCol < 0) return table;
+  const residue = isResidueResultsTable(labels);
+  const extraneous = isExtraneousSampleTable(table);
+  if (!residue && !extraneous) return table;
+  const grouped = isGroupedResultsTable(table);
+  const names = residueBodyNames(table);
+  const hasLocationRows = names.some(
+    (name) =>
+      !/^(swab samples|loq|lod|limit)$/i.test(name) &&
+      !/rinse|reflux/i.test(name)
+  );
   let changed = false;
   const content = (table.content ?? []).map((row, index) => {
     if (index === 0 || row.type !== "tableRow") return row;
@@ -935,15 +1168,16 @@ function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
     const first = cellPlain(cells[0]);
     const limitCell = cells[limitCol];
     if (!limitCell) return row;
+    if (isLimitRowLabel(first)) return row;
+    if (/^swab samples$/i.test(first) && hasLocationRows) return row;
     let seed = "";
-    if (/^loq$/i.test(first)) seed = CVP_RESIDUE_LOQ;
+    if (extraneous && !isLoqLodRowLabel(first)) seed = CVP_EXTRANEOUS_LIMIT;
+    else if (/^loq$/i.test(first)) seed = CVP_RESIDUE_LOQ;
     else if (/^lod$/i.test(first)) seed = CVP_RESIDUE_LOD;
-    else if (/swab/i.test(first) || first === "") seed = CVP_SWAB_LIMIT;
-    if (!seed) return row;
-    if (first === "" && cellPlain(cells[limitCol]).length > 0) return row;
-    if (!/^loq$|^lod$/i.test(first) && !/swab/i.test(first) && first !== "") {
-      return row;
+    else if (/^swab samples$/i.test(first) || /swab/i.test(first) || first === "") {
+      seed = CVP_SWAB_LIMIT;
     }
+    if (!seed) return row;
     const existing = firstFilledResidueValue(cells, limitCol);
     const filled = fillEmptyCell(limitCell, existing || seed);
     if (!filled.changed) return row;
@@ -976,6 +1210,60 @@ function residueColumnCount(table: JSONContent): number {
     return labels.filter((label) => label !== "Results").length + 3;
   }
   return labels.length;
+}
+
+function expandStubReactorSwabRows(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!isResidueResultsTable(labels)) return table;
+  const names = residueBodyNames(table);
+  if (!names.some((name) => /reflux/i.test(name))) return table;
+  const hasLocations = names.some(
+    (name) =>
+      !/^(swab samples|loq|lod|limit)$/i.test(name) &&
+      !/rinse|reflux/i.test(name)
+  );
+  if (hasLocations) return table;
+  const grouped = isGroupedResultsTable(table);
+  const bodyStart = grouped ? 2 : 1;
+  const rows = table.content ?? [];
+  const swabIndex = rows.findIndex((row, index) => {
+    if (index < bodyStart || row.type !== "tableRow") return false;
+    const first = cellPlain(
+      (row.content ?? []).find(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      )
+    );
+    return /^swab samples$/i.test(first);
+  });
+  if (swabIndex < 0) return table;
+  let end = swabIndex + 1;
+  while (end < rows.length) {
+    const first = cellPlain(
+      (rows[end]?.content ?? []).find(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      )
+    );
+    if (first.length > 0) break;
+    end += 1;
+  }
+  const limitCol = residueLimitColumn(labels);
+  const colCount = residueColumnCount(table);
+  const locationRows = CVP_REACTOR_SWAB_LOCATION_SEEDS.map((location) => ({
+    type: "tableRow" as const,
+    content: Array.from({ length: colCount }, (_, i) => {
+      if (i === 0) return makeCell("tableCell", location);
+      if (i === limitCol) return makeCell("tableCell", CVP_SWAB_LIMIT);
+      return makeCell("tableCell", "");
+    }),
+  }));
+  return {
+    ...table,
+    content: [
+      ...rows.slice(0, swabIndex + 1),
+      ...locationRows,
+      ...rows.slice(end),
+    ],
+  };
 }
 
 function ensureResidueLoqLodRows(table: JSONContent): JSONContent {
@@ -1157,8 +1445,10 @@ function fillEmptyManufacturingLimit(table: JSONContent): JSONContent {
   const limitCol = labels.findIndex((label) => /^limit$/i.test(label));
   if (limitCol < 0) return table;
   let changed = false;
+  const grouped = isGroupedResultsTable(table);
   const content = (table.content ?? []).map((row, index) => {
     if (index === 0 || row.type !== "tableRow") return row;
+    if (grouped && index === 1) return row;
     const cells = (row.content ?? []).filter(
       (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
     );
@@ -1183,9 +1473,17 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     next = reshapeEmptyOverall(next);
     next = reshapeEmptyTesting(next);
     next = reshapeEmptyHistory(next);
-    next = insertResidueLimitColumn(next);
+    next = flattenGroupedVisualInspection(next);
+    next = insertSampleLimitColumn(next);
+    next = promoteAndDropLimitRow(next);
     next = fillEmptyResidueSeeds(next);
-    next = ensureResidueLoqLodRows(next);
+    next = expandStubReactorSwabRows(next);
+    if (
+      !isExtraneousSampleTable(next) &&
+      !isManufacturingAreaSampleTable(headerLabels(next.content?.[0]))
+    ) {
+      next = ensureResidueLoqLodRows(next);
+    }
     next = fillEmptyTestingLoqLod(next);
     next = fillEmptyManufacturingLimit(next);
     if (next !== node) changed = true;

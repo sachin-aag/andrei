@@ -44,6 +44,17 @@ describe("CVP equipment type recipes", () => {
     expect(cvpResidueSampleRows("reactor")[0]?.[0]).toMatch(/Reflux/i);
   });
 
+  it("seeds named swab location rows on the reactor residue table", () => {
+    const rows = cvpResidueSampleRows("reactor");
+    expect(rows.some((row) => row[0] === "Reactor top dish near manhole")).toBe(
+      true
+    );
+    expect(rows.some((row) => row[0] === "Bottom discharge valve")).toBe(true);
+    expect(rows.filter((row) => row[2] === "NMT 2 ppm").length).toBeGreaterThanOrEqual(
+      7
+    );
+  });
+
   it("gives the centrifuge a second MLT rinse row", () => {
     const rows = cvpResidueSampleRows("centrifuge");
     expect(rows.some((row) => /MLT/i.test(row[0] ?? ""))).toBe(true);

@@ -22,6 +22,7 @@ import {
   CVP_VISUAL_INSPECTION_ROWS,
   cvpEquipmentTypeFromMarker,
   cvpEquipmentTypeMarker,
+  cvpVisualInspectionTable,
   groupedResultsTable,
 } from "./sections";
 
@@ -558,10 +559,7 @@ function cleaningTable(type: CvpEquipmentType): JSONContent {
 }
 
 function visualTable(): JSONContent {
-  return groupedResultsTable(
-    ["Sample description / location"],
-    CVP_VISUAL_INSPECTION_ROWS
-  );
+  return cvpVisualInspectionTable();
 }
 
 function cleaningSectionNodes(

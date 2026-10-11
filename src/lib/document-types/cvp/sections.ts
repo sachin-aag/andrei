@@ -699,6 +699,16 @@ function textParagraph(text: string, bold = false): JSONContent {
   };
 }
 
+function bulletList(items: readonly string[]): JSONContent {
+  return {
+    type: "bulletList",
+    content: items.map((text) => ({
+      type: "listItem",
+      content: [textParagraph(text)],
+    })),
+  };
+}
+
 function cell(
   type: "tableHeader" | "tableCell",
   text: string,
@@ -715,7 +725,7 @@ function cell(
   };
 }
 
-function table(
+export function table(
   headers: readonly string[],
   rows: readonly (readonly string[])[] = []
 ): JSONContent {
@@ -816,32 +826,85 @@ const APPROVAL_ROWS = [
   ["Approved by", "Quality Assurance", "", "", ""],
 ] as const;
 
-const RESPONSIBILITY_ROWS = [
-  [
-    "Quality Assurance",
-    "Preparation and review of the Cleaning Validation Protocol; verification of visual inspection and sampling; review of results and approval of the report.",
-  ],
-  [
-    "Production",
-    "Execution of the cleaning activity; collection of swab and rinse samples as defined in this protocol; visual inspection of equipment and manufacturing area.",
-  ],
-  [
-    "Quality Control",
-    "Review and approval of the protocol as applicable; analysis of swab and rinse samples using approved methods; reporting of results.",
-  ],
-  [
-    "Head / In-Charge (Technical Services)",
-    "Review and approval of the Cleaning Validation Protocol; technical support for equipment and process understanding.",
-  ],
-  [
-    "Engineering",
-    "Review of the protocol and support for equipment drawings, surface-area data, and utility readiness.",
-  ],
-  [
-    "Head-Quality",
-    "Approval of the Cleaning Validation Protocol and the cleaning validation report.",
-  ],
-] as const;
+const RESPONSIBILITY_ROWS: ReadonlyArray<{
+  department: string;
+  duties: readonly string[];
+}> = [
+  {
+    department: "Quality Assurance",
+    duties: [
+      "Preparation and review of the Cleaning Validation Protocol and Report.",
+      "Collection of swab samples from the equipment and verification of visual cleanliness.",
+      "Monitor the cleaning and sampling activities for compliance with the approved protocol and batch cleaning record.",
+      "Initiate and lead investigations for deviations, OOS results or non-conformances observed during execution.",
+    ],
+  },
+  {
+    department: "Production",
+    duties: [
+      "Execution of the cleaning activity.",
+      "Collection of rinse samples from the equipment.",
+      "Compile and document cleaning execution data following established SOPs.",
+      "Submission of the samples to QC for analysis with TRF.",
+    ],
+  },
+  {
+    department: "Quality Control",
+    duties: [
+      "Review and approval of the Cleaning Validation Protocol and report.",
+      "Ensure that all cleaning analytical methods are validated before sample analysis.",
+      "Analyze samples as per the approved Standard Testing Procedure (STP).",
+      "Ensure timely and accurate reporting of analytical data.",
+      "Coordinate with production personnel for sample analysis and data review.",
+      "Support investigations for deviations, Out-of-Specification (OOS) results, or non-conformances observed during analysis.",
+    ],
+  },
+  {
+    department: "Head / In-Charge (Technical Services)",
+    duties: [
+      "Review and approval of the Cleaning Validation Protocol and report.",
+      "Monitor and assess process performance, reviewing results for consistency and compliance.",
+    ],
+  },
+  {
+    department: "Engineering",
+    duties: [
+      "Review the Cleaning Validation Protocol and support cleaning execution.",
+      "Ensure that all equipment and utilities are operating within specified parameters and are qualified for use.",
+      "Equipment dismantling and re-fixing for cleaning activity, if required.",
+    ],
+  },
+  {
+    department: "Head-Quality",
+    duties: [
+      "Approval of the Cleaning Validation Protocol, protocol deviations, and final Cleaning Validation Report.",
+      "Grant clearance for equipment usage based on acceptable validation results.",
+    ],
+  },
+];
+
+function responsibilityTable(): JSONContent {
+  return {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: CVP_RESPONSIBILITY_HEADERS.map((h) => cell("tableHeader", h)),
+      },
+      ...RESPONSIBILITY_ROWS.map((row) => ({
+        type: "tableRow" as const,
+        content: [
+          cell("tableCell", row.department),
+          {
+            type: "tableCell" as const,
+            attrs: { ...CELL_ATTRS },
+            content: [bulletList(row.duties)],
+          },
+        ],
+      })),
+    ],
+  };
+}
 
 const WAF_ROWS = [
   ["1", "Polished Stainless Steel", "0.1-0.3"],
@@ -1108,6 +1171,57 @@ export const CVP_VISUAL_INSPECTION_ROWS: readonly (readonly string[])[] = [
   ["Is any permanent stain recorded?", "", "", ""],
 ];
 
+/** Flat Batch 1–3 grid — not a grouped Results header. */
+export function cvpVisualInspectionTable(): JSONContent {
+  return table(CVP_VISUAL_INSPECTION_HEADERS, CVP_VISUAL_INSPECTION_ROWS);
+}
+
+export const CVP_SURFACE_AREA_INTRO_SEED =
+  "The internal product-contact surface areas for the equipment train shall be taken from equipment engineering design drawings, manufacturer design qualification packages (DQPs), and verified physical measurements. The individual equipment surface areas, interconnected process transfer piping, and total train contact surface area are summarized in the following table.";
+
+export const CVP_SURFACE_AREA_ROWS: readonly (readonly string[])[] = [
+  ["", "", "", ""],
+  ["", "", "", ""],
+  ["", "", "", ""],
+  ["", "Process lines surface area", "NA", ""],
+  ["—", "Total surface area", "—", ""],
+];
+
+export const CVP_PREREQUISITES_INTRO_SEED =
+  "Prior to initiating cleaning validation activities, the following pre-requisites must be met to ensure process readiness, data integrity, and compliance with cGMP requirements:";
+
+export const CVP_PREREQUISITE_SEEDS = [
+  "Critical Utilities & Support Systems: All critical utilities (purified water, nitrogen, oil-free compressed air, process exhaust, and HVAC systems) supplying the stated plant must be qualified, verified, and operating within established alert and action specifications.",
+  "Equipment Qualification Status: All product-contact and auxiliary equipment comprising the manufacturing train must be fully qualified (IQ/OQ/PQ) and maintained in a validated state as detailed in Section 7.0.",
+  "Standard Operating Procedures (SOPs): Current, effective, and approved SOPs governing equipment operation, routine and product-changeover cleaning, sampling techniques, and analytical testing must be available and implemented in the processing area.",
+  "Specifications & Analytical Method Validation: Approved Standard Testing Procedures (STPs) and validated analytical methods for determining product residues, cleaning solvents, and potential nitrosamines must be available with established LOD, LOQ, and recovery factors prior to sample testing.",
+  "Batch Cleaning Records (BCRs): Equipment-specific BCRs must be approved, issued, and executed by trained production personnel immediately following the completion of manufacturing activities.",
+  "Raw Material & Solvent Control: All cleaning agents and solvents must be sourced from approved vendors. The solvent used for the final validation rinse must be from a tested and released lot, with lot details recorded in the BCR and a control solvent sample retained for baseline analytical comparison.",
+  "Calibration of Critical Instrumentation: All process instruments, temperature sensors (RTDs), pressure gauges, timing devices, and analytical weighing balances utilized during cleaning and validation must be within their valid calibration periods.",
+  "Personnel Training & Competency: All production, sampling, and QC testing personnel involved in the execution of this protocol must have documented training on the protocol requirements, swab sampling procedures, and relevant SOPs.",
+  "Pre-approved Sampling Plan: Detailed swab locations, rinse volume requirements, and sample containers must be identified and pre-arranged in accordance with Section 13.0 and Section 15.0 prior to initiating validation execution.",
+] as const;
+
+export const CVP_METHODOLOGY_INTRO_SEED =
+  "Cleaning validation activities shall be performed in the following sequence for each of the three cleaning batches:";
+
+export const CVP_METHODOLOGY_SEEDS = [
+  "The equipment shall be cleaned as per the approved Batch Cleaning Records.",
+  "Visual inspection shall be performed. If the equipment is not visually clean, sampling shall not be performed; the equipment shall be re-cleaned and the event recorded as a deviation.",
+  "Drying & Visual Inspection: After completion of the cleaning procedure, the equipment shall be dried to facilitate visual inspection. No visible residues shall be observed. Visual inspection shall be performed by Production personnel and verified by QA personnel using adequate illumination (e.g., torch light) wherever direct observation is not possible.",
+  "During visual inspection, discolored surfaces, worn or damaged parts, and the presence of solid residues shall be evaluated. For final product equipment used downstream of the last filtration step, residues shall be additionally evaluated by passing the final washings through a suitable coarse filter medium (e.g., lint-free cloth).",
+  "Swab samples shall be collected from the predefined sampling locations after completion of the final rinse (refer Section 15.0).",
+  "Final rinse samples and solvent control samples shall be collected (refer Section 15.0).",
+  "Samples shall be appropriately labeled, sampling details recorded, and submitted to QC along with the RCTR.",
+  "The samples shall be analyzed as per the testing procedures specified in Section 16.0.",
+  "The analytical results shall be evaluated against the acceptance criteria specified in Section 15.0.",
+  "Visual inspection and chemical evaluation of the equipment shall be performed following cleaning to demonstrate that product residues have been removed to levels within the established acceptance criteria.",
+  "Equipment cleanliness shall be demonstrated through visual inspection, testing, and evaluation of rinse and swab samples in accordance with this protocol.",
+  "Extraneous matter testing shall be performed for rinse samples collected from all equipment.",
+  "Small molecule nitrosamine impurity testing shall be performed on rinse samples collected from designated equipment.",
+  "A Cleaning Validation Report shall be prepared to assess the data generated and determine the validation status.",
+] as const;
+
 function residueFooterRows(): (readonly string[])[] {
   return [
     ["LOQ", "", CVP_RESIDUE_LOQ, "", "", ""],
@@ -1169,30 +1283,9 @@ export function cvpEquipmentSamplingSeed(
         ]
       : [];
   const residueRows = [
-    ...cvpResidueSampleRows(type).map((row) => {
-      const next = [...row];
-      if (
-        /swab samples/i.test(next[0] ?? "") &&
-        next[0] &&
-        !/^swab samples$/i.test(next[0])
-      ) {
-        return next;
-      }
-      return next;
-    }),
+    ...cvpResidueSampleRows(type),
     ...residueFooterRows(),
   ];
-  const swabLimitRowIndex = residueRows.findIndex(
-    (row) => (row[0] ?? "") === "" && (row[2] ?? "") === CVP_SWAB_LIMIT
-  );
-  if (swabLimitRowIndex < 0) {
-    const swabBanner = residueRows.findIndex((row) =>
-      /^swab samples$/i.test(row[0] ?? "")
-    );
-    if (swabBanner >= 0) {
-      residueRows.splice(swabBanner + 1, 0, ["", "", CVP_SWAB_LIMIT, "", "", ""]);
-    }
-  }
   return {
     type: "doc",
     content: [
@@ -1221,10 +1314,7 @@ export function cvpEquipmentSamplingSeed(
       ),
       heading(3, `${n}.6 Visual inspection summary`),
       textParagraph(CVP_VISUAL_INSPECTION_INTRO_SEED),
-      groupedResultsTable(
-        ["Sample description / location"],
-        CVP_VISUAL_INSPECTION_ROWS
-      ),
+      cvpVisualInspectionTable(),
       heading(3, cvpResidueHeadingTitle(type, ordinal)),
       textParagraph(CVP_EQUIPMENT_RESIDUE_INTRO_SEED),
       groupedResultsTable(CVP_RESIDUE_LEADING_HEADERS, residueRows),
@@ -1334,7 +1424,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
         ),
       };
     case "cvp_responsibilities":
-      return { table: tableDoc(CVP_RESPONSIBILITY_HEADERS, RESPONSIBILITY_ROWS) };
+      return { table: { type: "doc", content: [responsibilityTable()] } };
     case "cvp_background":
       return {
         narrative: narrativeDoc(
@@ -1346,25 +1436,25 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
       };
     case "cvp_prerequisites":
       return {
-        narrative: narrativeDoc([
-          "Prior to initiating cleaning validation, the following criteria, but not limited to, must be met to ensure process readiness and compliance with GMP requirements:",
-          "Critical Utilities & Support Systems: The utilities and support systems must be assessed and demonstrated as adequate to support the intended manufacturing process.",
-          "Equipment Qualification: All equipment of the train, associated auxiliary systems, critical utilities and analytical instruments must be qualified and within their valid qualification / calibration status as detailed in Section 7.0.",
-          "Standard Operating Procedures (SOPs): Approved and effective SOPs for the operation and cleaning of equipment involved in the manufacturing process must be available and implemented.",
-          "Specifications & Analytical Methods: Approved specifications and validated methods of analysis for cleaning solvents, final intermediate and cleaning residues must be available.",
-          "Batch Cleaning Record (BCRs) for cleaning must be prepared and approved before execution.",
-          "Raw Material Compliance: All cleaning solvents must be sourced from approved vendors.",
-        ]),
+        narrative: {
+          type: "doc",
+          content: [
+            textParagraph(CVP_PREREQUISITES_INTRO_SEED),
+            bulletList(CVP_PREREQUISITE_SEEDS),
+          ],
+        },
       };
     case "cvp_qualification_status":
       return { table: tableDoc(CVP_QUALIFICATION_HEADERS) };
     case "cvp_surface_area":
       return {
-        table: tableDoc(CVP_SURFACE_AREA_HEADERS, [
-          ["", "", "", ""],
-          ["", "Process lines", "", ""],
-          ["", "Total", "", ""],
-        ]),
+        table: {
+          type: "doc",
+          content: [
+            textParagraph(CVP_SURFACE_AREA_INTRO_SEED),
+            table(CVP_SURFACE_AREA_HEADERS, CVP_SURFACE_AREA_ROWS),
+          ],
+        },
       };
     case "cvp_rinse_volume":
       return {
@@ -1406,17 +1496,13 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
       };
     case "cvp_methodology":
       return {
-        narrative: narrativeDoc([
-          "Cleaning validation activities shall be performed in the following sequence for each of the three cleaning batches:",
-          "Clean the equipment as per the approved Batch Cleaning Record.",
-          "Perform visual inspection. If the equipment is not visually clean, sampling shall not be performed; the equipment shall be re-cleaned and the event recorded as a deviation.",
-          "Visual Inspection: After the cleaning procedure is performed, the equipment shall be dried to allow the visual inspection. No residue shall be visible. Visual inspection shall be performed by Production and verified by QA.",
-          "Collect the swab samples from the defined locations after the final rinse (refer Section 15.0).",
-          "Collect the final rinse samples (refer Section 15.0) and the solvent control sample.",
-          "Label the samples, record the sampling details and submit the samples to QC.",
-          "Analyse the samples as per the testing procedures given in Sections 16.0 and 17.0.",
-          "Evaluate the results against the acceptance criteria given in Section 15.0.",
-        ]),
+        narrative: {
+          type: "doc",
+          content: [
+            textParagraph(CVP_METHODOLOGY_INTRO_SEED),
+            bulletList(CVP_METHODOLOGY_SEEDS),
+          ],
+        },
       };
     case "cvp_sampling_procedure":
       return {

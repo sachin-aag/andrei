@@ -16,6 +16,7 @@ import {
   CVP_EVALUATION_SEEDS,
   CVP_FORM_NO,
   CVP_MACO_EQUIPMENT_HEADERS,
+  CVP_MANUFACTURING_AREA_LIMIT,
   CVP_METHOD_VALIDATION_INTRO_SEED,
   CVP_NITROSAMINE_HEADERS,
   CVP_NITROSAMINE_INTRO_SEED,
@@ -31,9 +32,14 @@ import {
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
   CVP_TESTING_PROCEDURE_INTRO_SEED,
+  CVP_VISUAL_INSPECTION_HEADERS,
+  CVP_METHODOLOGY_INTRO_SEED,
+  CVP_PREREQUISITES_INTRO_SEED,
+  CVP_SURFACE_AREA_INTRO_SEED,
   EMPTY_CVP_CONTENT,
   alignCvpMacoEquipmentHeaders,
   cvpEquipmentSamplingSeed,
+  groupedResultsTable,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpTableSectionKey,
@@ -183,6 +189,35 @@ describe("cleaning verification protocol sections", () => {
     expect(reactor).toContain("15.1.4 Cleaning operation results summary");
     expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[0]);
     expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[1]);
+    expect(reactor).toContain("Reactor top dish near manhole");
+    expect(reactor).toContain("Bottom discharge valve");
+    const visual = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1)).find(
+      (table) =>
+        table.headers[0] === "Sample description / location" &&
+        !table.headers.includes("Sample ID")
+    );
+    expect(visual?.headers).toEqual([...CVP_VISUAL_INSPECTION_HEADERS]);
+    expect(visual?.headers).not.toContain("Results");
+  });
+
+  it("seeds protocol responsibilities, pre-requisites, surface area, and methodology", () => {
+    const responsibilities = JSON.stringify(EMPTY_CVP_CONTENT.cvp_responsibilities);
+    expect(responsibilities).toContain("Collection of swab samples");
+    expect(responsibilities).toContain("Grant clearance for equipment usage");
+    expect(responsibilities).toContain("bulletList");
+    const prerequisites = JSON.stringify(EMPTY_CVP_CONTENT.cvp_prerequisites);
+    expect(prerequisites).toContain(CVP_PREREQUISITES_INTRO_SEED);
+    expect(prerequisites).toContain("Calibration of Critical Instrumentation");
+    expect(prerequisites).toContain("Personnel Training & Competency");
+    const surface = JSON.stringify(EMPTY_CVP_CONTENT.cvp_surface_area);
+    expect(surface).toContain(CVP_SURFACE_AREA_INTRO_SEED);
+    expect(surface).toContain("Process lines surface area");
+    expect(surface).toContain("Total surface area");
+    const methodology = JSON.stringify(EMPTY_CVP_CONTENT.cvp_methodology);
+    expect(methodology).toContain(CVP_METHODOLOGY_INTRO_SEED);
+    expect(methodology).toContain("torch light");
+    expect(methodology).toContain("Extraneous matter testing");
+    expect(methodology).toContain("Cleaning Validation Report shall be prepared");
   });
 
   it("upgrades a lumped identity table into the 15.N.M outline", () => {
@@ -609,7 +644,7 @@ describe("cleaning verification protocol sections", () => {
     );
   });
 
-  it("moves Limit, LOQ, and LOD into Batch columns when widening a single-result table", () => {
+  it("promotes the Limit row into the Limit column and keeps LOQ / LOD rows", () => {
     const row = (cells: string[]) => ({
       type: "tableRow" as const,
       content: cells.map((text) => ({
@@ -654,19 +689,12 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("Final Rinse Sample (Acetone)")).toEqual([
       "Final Rinse Sample (Acetone)",
       "NA",
-      "(empty)",
+      "NMT 10 ppm",
       "(empty)",
       "(empty)",
       "(empty)",
     ]);
-    expect(byLabel("Limit")).toEqual([
-      "Limit",
-      "(empty)",
-      "(empty)",
-      "NMT 10 ppm",
-      "NMT 10 ppm",
-      "NMT 10 ppm",
-    ]);
+    expect(byLabel("Limit")).toEqual([]);
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "(empty)",
@@ -685,7 +713,7 @@ describe("cleaning verification protocol sections", () => {
     ]);
   });
 
-  it("keeps engineer Limit, LOQ, and LOD cells on an already-wide results table", () => {
+  it("drops a leftover Limit row on an already-wide results table and keeps LOQ / LOD", () => {
     const row = (cells: string[]) => ({
       type: "tableRow" as const,
       content: cells.map((text) => ({
@@ -727,13 +755,8 @@ describe("cleaning verification protocol sections", () => {
         .sort((a, b) => a.col - b.col)
         .map((cell) => cell.text);
     };
-    expect(byLabel("Limit")).toEqual([
-      "Limit",
-      "NMT 10 ppm",
-      "(empty)",
-      "12 ppm",
-      "(empty)",
-    ]);
+    expect(byLabel("Limit")).toEqual([]);
+    expect(byLabel("Final Rinse Sample (Acetone)")[2]).toBe("NMT 10 ppm");
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "note",
@@ -755,13 +778,8 @@ describe("cleaning verification protocol sections", () => {
         .sort((a, b) => a.col - b.col)
         .map((cell) => cell.text);
     };
-    expect(mergedByLabel("Limit")).toEqual([
-      "Limit",
-      "NMT 10 ppm",
-      "(empty)",
-      "12 ppm",
-      "(empty)",
-    ]);
+    expect(mergedByLabel("Limit")).toEqual([]);
+    expect(mergedByLabel("Final Rinse Sample (Acetone)")[2]).toBe("NMT 10 ppm");
     expect(mergedByLabel("LOQ")).toEqual([
       "LOQ",
       "note",
@@ -926,6 +944,70 @@ describe("cleaning verification protocol sections", () => {
     expect(filledByLabel("Swab samples")[2]).toBe("NMT 10 ppm");
     expect(filledByLabel("LOQ")[2]).toBe("5 ppm");
     expect(filledByLabel("LOD")[2]).toBe("2 ppm");
+  });
+
+  it("inserts a Limit column on grouped leftover residue and manufacturing-area tables", () => {
+    const residue = groupedResultsTable(
+      ["Sample description / location", "Sample ID"],
+      [
+        ["Swab samples", "", "", "", ""],
+        ["Final Rinse Sample (Acetone)", "NA", "", "", ""],
+        ["Limit", "", "NMT 10 ppm", "", ""],
+      ]
+    );
+    const residueCells =
+      summarizeTablesInDoc(upgradeCvpValidationDoc({ type: "doc", content: [residue] }))[0]
+        ?.cells ?? [];
+    const residueHeaders = summarizeTablesInDoc(
+      upgradeCvpValidationDoc({ type: "doc", content: [residue] })
+    )[0]?.headers;
+    expect(residueHeaders).toContain("Limit");
+    expect(residueHeaders).toContain("Results");
+    expect(
+      residueCells.some((cell) => cell.col === 0 && cell.text === "Limit")
+    ).toBe(false);
+    const rinseRow = residueCells.find(
+      (cell) => cell.col === 0 && cell.text === "Final Rinse Sample (Acetone)"
+    )?.row;
+    expect(
+      residueCells.find((cell) => cell.row === rinseRow && cell.text === "NMT 10 ppm")
+    ).toBeTruthy();
+
+    const area = groupedResultsTable(
+      ["Area Name", "Sampled area", "Sampling method", "Test parameter"],
+      [["", "", "", "", "", "", ""]]
+    );
+    const areaTable = summarizeTablesInDoc(
+      upgradeCvpValidationDoc({ type: "doc", content: [area] })
+    )[0];
+    expect(areaTable?.headers).toContain("Limit");
+    expect(
+      areaTable?.cells.some((cell) => cell.text === CVP_MANUFACTURING_AREA_LIMIT)
+    ).toBe(true);
+  });
+
+  it("expands a stub reactor residue table with named swab location rows", () => {
+    const stub = groupedResultsTable(
+      ["Sample description / location", "Sample ID", "Limit"],
+      [
+        ["Reflux Sample (Acetone)", "NA", "For information", "", "", ""],
+        ["Final Rinse Sample (Acetone)", "NA", "", "", "", ""],
+        ["Swab samples", "", "", "", "", ""],
+        ["", "", CVP_SWAB_LIMIT, "", "", ""],
+        ["LOQ", "", CVP_RESIDUE_LOQ, "", "", ""],
+        ["LOD", "", CVP_RESIDUE_LOD, "", "", ""],
+      ]
+    );
+    const cells =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [stub] })
+      )[0]?.cells ?? [];
+    expect(
+      cells.some((cell) => cell.text === "Reactor top dish near manhole")
+    ).toBe(true);
+    expect(cells.some((cell) => cell.text === "Bottom discharge valve")).toBe(
+      true
+    );
   });
 
   it("drops the bold mark on a Batch 1 header so it matches Sample ID", () => {
