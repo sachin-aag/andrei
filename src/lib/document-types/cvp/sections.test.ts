@@ -42,10 +42,10 @@ import {
   alignCvpMacoEquipmentHeaders,
   cvpEquipmentSamplingSeed,
   groupedResultsTable,
+  table,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpTableSectionKey,
-  table,
   upgradeCvpEquipmentSamplingNarrative,
 } from "./sections";
 import { upgradeCvpValidationDoc } from "./cycle-upgrade";
@@ -201,7 +201,15 @@ describe("cleaning verification protocol sections", () => {
     expect(reactor).toContain("S-1");
     expect(reactor).toContain("Shell wall Level 1 (S-8a)");
     expect(reactor).toContain("Shell wall Level 3 (S-10d)");
-    expect(reactor).toContain("S-8a, S-8b, S-8c, S-8d");
+    expect(reactor).toContain("Shell wall Level 1 (0°)");
+    expect(reactor).toContain(
+      "Representative of upper shell cylindrical section."
+    );
+    expect(reactor).not.toContain("S-8a–d");
+    expect(reactor).not.toContain("S-8a, S-8b, S-8c, S-8d");
+    expect(reactor).not.toContain(
+      "Shell wall Level 1 (four circumferential locations)"
+    );
     const visual = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1)).find(
       (table) =>
         table.headers[0] === "Sample description / location" &&
@@ -1283,6 +1291,151 @@ describe("cleaning verification protocol sections", () => {
     expect(
       again.filter((cell) => cell.col === 1 && /^S-\d+[a-d]$/.test(cell.text))
     ).toHaveLength(12);
+  });
+
+  it("splits an S-8a–d results row into one measurement per position", () => {
+    const residue = groupedResultsTable(
+      ["Sample description / location", "Sample ID", "Limit"],
+      [
+        ["Final Rinse Sample (Acetone)", "NA", "10 ppm", "", "", ""],
+        ["Swab samples", "", "", "", "", ""],
+        ["Reactor top dish near manhole", "S-1", "NMT 10 ppm", "", "", ""],
+        ["Thermowell bottom", "S-7", "NMT 10 ppm", "", "", ""],
+        [
+          "Shell wall Level 1 (four circumferential locations)",
+          "S-8a–d",
+          "NMT 10 ppm",
+          "",
+          "",
+          "",
+        ],
+        [
+          "Shell wall Level 2 (four circumferential locations)",
+          "S-9a–d",
+          "NMT 10 ppm",
+          "",
+          "",
+          "",
+        ],
+        [
+          "Shell wall Level 3 (four circumferential locations)",
+          "S-10a–d",
+          "NMT 10 ppm",
+          "",
+          "",
+          "",
+        ],
+      ]
+    );
+    const cells =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [residue] })
+      )[0]?.cells ?? [];
+    const sampleIds = cells
+      .filter((cell) => cell.col === 1 && /^S-\d+[a-d]$/.test(cell.text))
+      .map((cell) => cell.text);
+    expect(sampleIds).toEqual([
+      "S-8a",
+      "S-8b",
+      "S-8c",
+      "S-8d",
+      "S-9a",
+      "S-9b",
+      "S-9c",
+      "S-9d",
+      "S-10a",
+      "S-10b",
+      "S-10c",
+      "S-10d",
+    ]);
+    expect(cells.some((cell) => cell.text === "S-8a–d")).toBe(false);
+    expect(
+      cells.some((cell) => cell.text.includes("four circumferential"))
+    ).toBe(false);
+    const firstShell = cells.find((cell) => cell.text === "S-8a");
+    expect(
+      cells.some(
+        (cell) =>
+          cell.row === firstShell?.row &&
+          cell.text === "Shell wall Level 1 (S-8a)"
+      )
+    ).toBe(true);
+    expect(
+      cells.some(
+        (cell) => cell.row === firstShell?.row && cell.text === "NMT 10 ppm"
+      )
+    ).toBe(true);
+    expect(cells.some((cell) => cell.text === "S-1")).toBe(true);
+    expect(cells.some((cell) => cell.text === "Final Rinse Sample (Acetone)")).toBe(
+      true
+    );
+  });
+
+  it("splits S-8a–d rationale rows into one measurement each", () => {
+    const rationale = table(
+      ["Swab ID", "Description", "Rationale", "No. of samples"],
+      [
+        ["S-1", "Reactor top dish near manhole", "Hard to clean.", "1"],
+        [
+          "S-8a–d",
+          "Shell wall Level 1 (four circumferential locations)",
+          "Product contact surface. Representative of upper shell cylindrical section.",
+          "4",
+        ],
+        [
+          "S-9a–d",
+          "Shell wall Level 2 (four circumferential locations)",
+          "Product contact surface. Representative of middle shell cylindrical section.",
+          "4",
+        ],
+        [
+          "S-10a–d",
+          "Shell wall Level 3 (four circumferential locations)",
+          "Product contact surface. Representative of lower shell cylindrical section.",
+          "4",
+        ],
+      ]
+    );
+    const cells =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [rationale] })
+      )[0]?.cells ?? [];
+    const ids = cells
+      .filter((cell) => cell.col === 0 && /^S-\d+[a-d]$/.test(cell.text))
+      .map((cell) => cell.text);
+    expect(ids).toEqual([
+      "S-8a",
+      "S-8b",
+      "S-8c",
+      "S-8d",
+      "S-9a",
+      "S-9b",
+      "S-9c",
+      "S-9d",
+      "S-10a",
+      "S-10b",
+      "S-10c",
+      "S-10d",
+    ]);
+    expect(cells.some((cell) => cell.text === "S-1")).toBe(true);
+    expect(cells.some((cell) => cell.text === "Shell wall Level 1 (0°)")).toBe(
+      true
+    );
+    expect(cells.some((cell) => cell.text === "Shell wall Level 3 (270°)")).toBe(
+      true
+    );
+    expect(cells.filter((cell) => cell.text === "4")).toHaveLength(0);
+    expect(cells.filter((cell) => cell.col === 3 && cell.text === "1")).toHaveLength(
+      13
+    );
+    const again =
+      summarizeTablesInDoc(upgradeCvpValidationDoc(upgradeCvpValidationDoc({
+        type: "doc",
+        content: [rationale],
+      })))[0]?.cells ?? [];
+    expect(
+      again.filter((cell) => cell.col === 0 && /^S-8/.test(cell.text))
+    ).toHaveLength(4);
   });
 
   it("drops the bold mark on a Batch 1 header so it matches Sample ID", () => {

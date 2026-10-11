@@ -1312,30 +1312,120 @@ function letteredSwabIds(text: string): string[] {
   return ids;
 }
 
+/** Any unicode dash, so S-8a–d and S-8a-d parse the same way. */
+function normalizeDashes(text: string): string {
+  return text.replace(/\p{Pd}/gu, "-");
+}
+
+function abbreviatedShellRange(text: string): boolean {
+  return /S-\d+[a-d]\s*(?:-|to)\s*(?:S-\d+)?[a-d]/i.test(normalizeDashes(text));
+}
+
+/** S-8a–d, S-8a-d, S-8a to S-8d, or a comma list of lettered IDs. */
+function expandShellIdList(text: string): string[] {
+  const normalized = normalizeDashes(text);
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  const add = (id: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  };
+  const range = /S-(\d+)([a-d])\s*(?:-|to)\s*(?:S-\d+)?([a-d])/gi;
+  let ranged = false;
+  for (const match of normalized.matchAll(range)) {
+    ranged = true;
+    const base = match[1];
+    const start = match[2].toLowerCase().charCodeAt(0);
+    const end = match[3].toLowerCase().charCodeAt(0);
+    const lo = Math.min(start, end);
+    const hi = Math.max(start, end);
+    for (let code = lo; code <= hi; code++) {
+      add(`S-${base}${String.fromCharCode(code)}`);
+    }
+  }
+  if (!ranged) {
+    for (const id of letteredSwabIds(normalized)) add(id);
+  }
+  return ids;
+}
+
+const SHELL_ANGLE: Record<string, string> = {
+  a: "0°",
+  b: "90°",
+  c: "180°",
+  d: "270°",
+};
+
+function shellMeasurementDescription(id: string, original: string): string {
+  const match = /^S-(\d+)([a-d])$/i.exec(id);
+  if (!match || !/shell wall/i.test(original)) return original;
+  const angle = SHELL_ANGLE[match[2].toLowerCase()] ?? id;
+  const levelFromText = original.match(/level\s*(\d+)/i)?.[1];
+  const level =
+    levelFromText ??
+    (match[1] === "8"
+      ? "1"
+      : match[1] === "9"
+        ? "2"
+        : match[1] === "10"
+          ? "3"
+          : "");
+  if (!level) return original;
+  return `Shell wall Level ${level} (${angle})`;
+}
+
 function groupedShellIds(
   cells: JSONContent[],
   sampleIdCol: number
 ): string[] {
   const sample = sampleIdCol >= 0 ? cellPlain(cells[sampleIdCol]) : "";
-  const fromSample = letteredSwabIds(sample);
+  const fromSample = shellIdsToSplit(sample);
   if (fromSample.length >= 2) return fromSample;
   const description = cellPlain(cells[0]);
   if (description.length > 160) return [];
   if (!/shell wall/i.test(description) && !/^S-\d/i.test(description)) {
     return [];
   }
-  const fromDescription = letteredSwabIds(description);
-  return fromDescription.length >= 2 ? fromDescription : [];
+  return shellIdsToSplit(description);
+}
+
+/** A two-ID pair such as sparkler S-4a & S-4b stays one row. A level range does not. */
+function shellIdsToSplit(text: string): string[] {
+  const ids = expandShellIdList(text);
+  if (ids.length >= 3) return ids;
+  if (ids.length >= 2 && abbreviatedShellRange(text)) return ids;
+  return [];
 }
 
 function clonePlainCell(cell: JSONContent): JSONContent {
   return cloneCellWithText(cell, cellPlain(cell));
 }
 
+function residueSwabLimit(
+  table: JSONContent,
+  labels: readonly string[]
+): string {
+  const limitCol = residueLimitColumn(labels);
+  if (limitCol < 0) return CVP_SWAB_LIMIT;
+  const grouped = isGroupedResultsTable(table);
+  const bodyStart = grouped ? 2 : 1;
+  for (const row of (table.content ?? []).slice(bodyStart)) {
+    if (row.type !== "tableRow") continue;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const text = cellPlain(cells[limitCol]);
+    if (/\bnmt\b/i.test(text)) return text;
+  }
+  return CVP_SWAB_LIMIT;
+}
+
 /**
  * 15.N.7 lists one shell-wall swab per measurement. A level row that
  * packs S-8a–S-8d (and the same for S-9 / S-10) becomes four rows.
- * Reactor reflux tables that never had those IDs gain the 12-row grid.
+ * Reactor tables that already list a shell level, including a Final Rinse
+ * row that does not say “reflux”, gain any of the 12 measurements still missing.
  */
 function expandReactorShellMeasurementRows(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
@@ -1393,20 +1483,35 @@ function expandReactorShellMeasurementRows(table: JSONContent): JSONContent {
     );
     return /reflux/i.test(first);
   });
-  const missing = hasReflux
-    ? measurements.filter((measurement) => !present.has(measurement.id))
-    : [];
+  const hasReactorShell = splitRows.slice(bodyStart).some((row) => {
+    if (row.type !== "tableRow") return false;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const first = cellPlain(cells[0]);
+    if (!/shell wall\s+level\s*[1-3]/i.test(first)) return false;
+    const sample = sampleIdCol >= 0 ? cellPlain(cells[sampleIdCol]) : "";
+    return expandShellIdList(`${sample} ${first}`).some((id) =>
+      /^S-(?:8|9|10)[a-d]$/.test(id)
+    );
+  });
+  const missing =
+    hasReflux || hasReactorShell
+      ? measurements.filter((measurement) => !present.has(measurement.id))
+      : [];
   if (missing.length === 0) {
     return changed ? { ...table, content: splitRows } : table;
   }
-  const colCount = residueColumnCount({ ...table, content: splitRows });
+  const shaped = { ...table, content: splitRows };
+  const colCount = residueColumnCount(shaped);
   const limitCol = residueLimitColumn(labels);
+  const swabLimit = residueSwabLimit(shaped, labels);
   const inserted = missing.map((measurement) => ({
     type: "tableRow" as const,
     content: Array.from({ length: colCount }, (_, index) => {
       if (index === 0) return makeCell("tableCell", measurement.description);
       if (index === sampleIdCol) return makeCell("tableCell", measurement.id);
-      if (index === limitCol) return makeCell("tableCell", CVP_SWAB_LIMIT);
+      if (index === limitCol) return makeCell("tableCell", swabLimit);
       return makeCell("tableCell", "");
     }),
   }));
@@ -1428,6 +1533,54 @@ function expandReactorShellMeasurementRows(table: JSONContent): JSONContent {
       ...splitRows.slice(at),
     ],
   };
+}
+
+function isSwabRationaleTable(labels: readonly string[]): boolean {
+  const hasId = labels.some((label) => /swab id/i.test(label));
+  const hasCount = labels.some((label) => /no\.?\s*of samples/i.test(label));
+  return hasId && hasCount;
+}
+
+/**
+ * Rationale rows that pack a whole level (S-8a–d, samples = 4) become one
+ * row per circumferential measurement.
+ */
+function expandGroupedSwabRationaleRows(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!isSwabRationaleTable(labels)) return table;
+  const idCol = labels.findIndex((label) => /swab id/i.test(label));
+  const descriptionCol = labels.findIndex((label) =>
+    /description/i.test(label)
+  );
+  const samplesCol = labels.findIndex((label) =>
+    /no\.?\s*of samples/i.test(label)
+  );
+  let changed = false;
+  const content = (table.content ?? []).flatMap((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return [row];
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const ids = expandShellIdList(cellPlain(cells[idCol]));
+    if (ids.length < 3) return [row];
+    changed = true;
+    const description = cellPlain(cells[descriptionCol]);
+    return ids.map((id) => ({
+      ...row,
+      content: cells.map((cell, cellIndex) => {
+        if (cellIndex === idCol) return makeCell("tableCell", id);
+        if (cellIndex === descriptionCol) {
+          return makeCell(
+            "tableCell",
+            shellMeasurementDescription(id, description)
+          );
+        }
+        if (cellIndex === samplesCol) return makeCell("tableCell", "1");
+        return clonePlainCell(cell);
+      }),
+    }));
+  });
+  return changed ? { ...table, content } : table;
 }
 
 function residueResultsStart(table: JSONContent): number {
@@ -1757,6 +1910,7 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     next = fillEmptyResidueSeeds(next);
     next = expandStubReactorSwabRows(next);
     next = expandReactorShellMeasurementRows(next);
+    next = expandGroupedSwabRationaleRows(next);
     if (
       !isExtraneousSampleTable(next) &&
       !isManufacturingAreaSampleTable(headerLabels(next.content?.[0]))

@@ -273,10 +273,12 @@ const REACTOR_LOCATIONS: readonly CvpSwabLocation[] = [
 
 /** 3 horizontal levels × 4 circumferential positions. One row per measurement. */
 const REACTOR_SHELL_LEVELS = [
-  { level: 1, idBase: 8, place: "bottom" },
+  { level: 1, idBase: 8, place: "upper" },
   { level: 2, idBase: 9, place: "middle" },
-  { level: 3, idBase: 10, place: "top" },
+  { level: 3, idBase: 10, place: "lower" },
 ] as const;
+
+const SHELL_ANGLE = { a: "0°", b: "90°", c: "180°", d: "270°" } as const;
 
 const REACTOR_SHELL_LETTERS = ["a", "b", "c", "d"] as const;
 
@@ -300,17 +302,19 @@ export function cvpReactorShellMeasurements(): readonly CvpShellMeasurement[] {
 }
 
 function reactorShellRationale(): CvpSwabRationale[] {
-  return REACTOR_SHELL_LEVELS.map((level) => {
-    const ids = REACTOR_SHELL_LETTERS.map(
-      (letter) => `S-${level.idBase}${letter}`
-    );
-    return {
-      id: ids.join(", "),
-      description: `Shell wall at ${level.place} level (0°, 90°, 180°, 270°)`,
-      rationale: `Representative vessel shell wall sampling at the ${level.place} level.`,
-      samples: "4",
-    };
-  });
+  const rows: CvpSwabRationale[] = [];
+  for (const level of REACTOR_SHELL_LEVELS) {
+    for (const letter of REACTOR_SHELL_LETTERS) {
+      const id = `S-${level.idBase}${letter}`;
+      rows.push({
+        id,
+        description: `Shell wall Level ${level.level} (${SHELL_ANGLE[letter]})`,
+        rationale: `Product contact surface. Representative of ${level.place} shell cylindrical section.`,
+        samples: "1",
+      });
+    }
+  }
+  return rows;
 }
 
 const REACTOR_RATIONALE: readonly CvpSwabRationale[] = [
