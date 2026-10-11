@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  CVP_EQUIPMENT_TYPE_OPTIONS,
   classifyCvpEquipmentType,
   cvpHasRefluxSampleRow,
   cvpHasShellWallCalc,
+  cvpIsReactorFamily,
   cvpResidueHeadingTitle,
   cvpResidueSampleRows,
   cvpSwabLocations,
@@ -17,12 +19,34 @@ describe("CVP equipment type recipes", () => {
     expect(classifyCvpEquipmentType("RVD-1201")).toBe("rvd");
   });
 
-  it("classifies SSR / stainless steel reactor as reactor, not Other", () => {
+  it("lists stainless steel reactor next to glass lined reactor in Add equipment", () => {
+    expect(CVP_EQUIPMENT_TYPE_OPTIONS.map((option) => option.label)).toEqual([
+      "Glass lined reactor",
+      "Stainless steel reactor",
+      "Mixed vessel",
+      "Plug flow reactor",
+      "Sparkler filter",
+      "Centrifuge",
+      "Roto cone vacuum drier",
+      "Multi mill",
+      "Sifter",
+      "Agitated Nutsche filter",
+      "Agitated Nutsche filter cum drier",
+      "Leaf filter",
+      "Other",
+    ]);
+  });
+
+  it("classifies SSR as its own picker type with the reactor recipe", () => {
     expect(
       classifyCvpEquipmentType("15.2 Stainless Steel Reactor (SSR-1302)")
-    ).toBe("reactor");
-    expect(classifyCvpEquipmentType("SSR-1303")).toBe("reactor");
-    expect(cvpHasShellWallCalc("reactor")).toBe(true);
+    ).toBe("ssr");
+    expect(classifyCvpEquipmentType("SSR-1303")).toBe("ssr");
+    expect(classifyCvpEquipmentType("GLR-1301")).toBe("reactor");
+    expect(cvpIsReactorFamily("ssr")).toBe(true);
+    expect(cvpHasShellWallCalc("ssr")).toBe(true);
+    expect(cvpHasRefluxSampleRow("ssr")).toBe(true);
+    expect(cvpSwabLocations("ssr")).toEqual(cvpSwabLocations("reactor"));
   });
 
   it("classifies Stage-4 specialty equipment from the protocol", () => {

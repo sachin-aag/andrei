@@ -5,6 +5,7 @@
  */
 export const CVP_EQUIPMENT_TYPES = [
   "reactor",
+  "ssr",
   "vessel",
   "pfr",
   "sparkler",
@@ -22,6 +23,7 @@ export type CvpEquipmentType = (typeof CVP_EQUIPMENT_TYPES)[number];
 
 export const CVP_EQUIPMENT_TYPE_LABELS: Record<CvpEquipmentType, string> = {
   reactor: "Glass lined reactor",
+  ssr: "Stainless steel reactor",
   vessel: "Mixed vessel",
   pfr: "Plug flow reactor",
   sparkler: "Sparkler filter",
@@ -57,8 +59,11 @@ const TYPE_FROM_ID: ReadonlyArray<{ pattern: RegExp; type: CvpEquipmentType }> =
     { pattern: /\bMV\b|\bmixed\s*vessel\b/i, type: "vessel" },
     { pattern: /\bPFR\b|\bplug\s*flow\b/i, type: "pfr" },
     {
-      pattern:
-        /\bGLR\b|\bglass\s*lined\s*reactor\b|\bSSR\b|\bstainless\s*steel\s*reactor\b/i,
+      pattern: /\bSSR\b|\bstainless\s*steel\s*reactor\b/i,
+      type: "ssr",
+    },
+    {
+      pattern: /\bGLR\b|\bglass\s*lined\s*reactor\b/i,
       type: "reactor",
     },
     { pattern: /\bSF\b|\bsparkler\b/i, type: "sparkler" },
@@ -83,28 +88,36 @@ export function classifyCvpEquipmentType(title: string): CvpEquipmentType {
   return "other";
 }
 
+/** GLR and SSR share shell-calc, reflux, agitator, and S-1–S-7 swabs. */
+export function cvpIsReactorFamily(type: CvpEquipmentType): boolean {
+  return type === "reactor" || type === "ssr";
+}
+
 export function cvpResidueHeadingTitle(
   type: CvpEquipmentType,
   ordinal: number
 ): string {
   const n = `15.${ordinal}.7`;
-  if (type === "reactor" || type === "sparkler") {
+  if (cvpIsReactorFamily(type) || type === "sparkler") {
     return `${n} Reflux, Swab & Rinse samples analysis results summary`;
   }
   return `${n} Swab & Rinse samples analysis results summary`;
 }
 
 export function cvpHasRefluxSampleRow(type: CvpEquipmentType): boolean {
-  return type === "reactor";
+  return cvpIsReactorFamily(type);
 }
 
 export function cvpHasShellWallCalc(type: CvpEquipmentType): boolean {
-  return type === "reactor" || type === "vessel";
+  return cvpIsReactorFamily(type) || type === "vessel";
 }
 
 export function cvpHasAgitatorIdentityRow(type: CvpEquipmentType): boolean {
   return (
-    type === "reactor" || type === "vessel" || type === "anf" || type === "anfd"
+    cvpIsReactorFamily(type) ||
+    type === "vessel" ||
+    type === "anf" ||
+    type === "anfd"
   );
 }
 
@@ -114,6 +127,7 @@ export function cvpCleaningParameterRows(
 ): readonly (readonly [string, string])[] {
   switch (type) {
     case "reactor":
+    case "ssr":
       return [
         ["Water Quantity Used for flushing (L)", "As per approved cleaning SOP"],
         ["Acetone Quantity Used for flushing (L)", "As per approved cleaning SOP"],
@@ -694,6 +708,7 @@ export function cvpSwabLocations(
 ): readonly CvpSwabLocation[] {
   switch (type) {
     case "reactor":
+    case "ssr":
       return REACTOR_LOCATIONS;
     case "vessel":
       return VESSEL_LOCATIONS;
@@ -728,6 +743,7 @@ export function cvpSwabRationaleRows(
 ): readonly CvpSwabRationale[] {
   switch (type) {
     case "reactor":
+    case "ssr":
       return REACTOR_RATIONALE;
     case "vessel":
       return VESSEL_RATIONALE;

@@ -337,4 +337,59 @@ describe("applyCvpEquipmentTypeRecipe — 15.N.4 / 15.N.6 on-read", () => {
       (headings(upgraded).filter((text) => text.includes("15.3.6")) ?? []).length
     ).toBe(1);
   });
+
+  it("does not put an Equipment type line back after it is deleted", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        heading(2, "15.2 Stainless Steel Reactor (SSR-1302)"),
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The subject equipment is located in Production Block-2.",
+            },
+          ],
+        },
+      ],
+    };
+    const upgraded = applyCvpEquipmentTypeRecipe(doc);
+    const text = JSON.stringify(upgraded);
+    expect(text).not.toContain("Equipment type:");
+    expect(text).toContain("Production Block-2");
+
+    const withBoth: JSONContent = {
+      type: "doc",
+      content: [
+        heading(2, "15.2 Stainless Steel Reactor (SSR-1302)"),
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Equipment type: Glass lined reactor" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Equipment type: Stainless steel reactor" },
+          ],
+        },
+      ],
+    };
+    const kept = applyCvpEquipmentTypeRecipe(withBoth);
+    const withoutGlass: JSONContent = {
+      ...kept,
+      content: (kept.content ?? []).filter(
+        (node) =>
+          node.type !== "paragraph" ||
+          !JSON.stringify(node).includes("Glass lined reactor")
+      ),
+    };
+    const { items } = normalizeCvpEquipmentSamplingContent({
+      items: [withoutGlass],
+    });
+    const saved = JSON.stringify(items[0]);
+    expect(saved).not.toContain("Glass lined reactor");
+    expect(saved).toContain("Equipment type: Stainless steel reactor");
+    expect(saved.match(/Equipment type:/g)?.length).toBe(1);
+  });
 });

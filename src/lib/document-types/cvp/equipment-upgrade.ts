@@ -3,6 +3,7 @@ import {
   classifyCvpEquipmentType,
   cvpCleaningParameterRows,
   cvpHasShellWallCalc,
+  cvpIsReactorFamily,
   cvpResidueHeadingTitle,
   cvpSwabLocations,
   cvpSwabRationaleRows,
@@ -26,7 +27,6 @@ import {
   CVP_VISUAL_INSPECTION_INTRO_SEED,
   CVP_VISUAL_INSPECTION_ROWS,
   cvpEquipmentTypeFromMarker,
-  cvpEquipmentTypeMarker,
   cvpVisualInspectionTable,
   groupedResultsTable,
   table,
@@ -219,27 +219,6 @@ export function readCvpEquipmentType(doc: JSONContent): CvpEquipmentType {
   return classifyCvpEquipmentType(h2 ? headingText(h2) : "");
 }
 
-function hasTypeMarker(doc: JSONContent): boolean {
-  return (doc.content ?? []).some(
-    (node) =>
-      node.type === "paragraph" &&
-      cvpEquipmentTypeFromMarker(paragraphPlain(node)) != null
-  );
-}
-
-function insertTypeMarker(doc: JSONContent, type: CvpEquipmentType): JSONContent {
-  const nodes = [...(doc.content ?? [])];
-  const h2Index = nodes.findIndex(
-    (node) => node.type === "heading" && Number(node.attrs?.level) === 2
-  );
-  const marker = textParagraph(cvpEquipmentTypeMarker(type));
-  if (h2Index < 0) {
-    return { ...doc, content: [marker, ...nodes] };
-  }
-  nodes.splice(h2Index + 1, 0, marker);
-  return { ...doc, content: nodes };
-}
-
 function ordinalFromHeading(doc: JSONContent): number {
   const text = findH2(doc) ? headingText(findH2(doc)!) : "";
   const match = /^15\.(\d+)/.exec(text);
@@ -305,7 +284,7 @@ function cleaningTableReplaceable(
     ([parameter]) => parameter
   );
   const leftoverReactorSeed =
-    type !== "reactor" &&
+    !cvpIsReactorFamily(type) &&
     (namesMatch(names, reactorNames) ||
       /^water quantity used for flushing \(l\)$/i.test(names[0] ?? ""));
   return leftoverReactorSeed;
@@ -730,12 +709,15 @@ function addShellWallIfMissing(
  * Classify an existing 15.N box and fill missing type-specific structure.
  * Does not rewrite a box the engineer has already filled past the seed,
  * and does not copy report-side shortcuts (RCVD labels, D>1 m two-location).
+ * Does not write an Equipment type line back. A new box still gets that
+ * line from its seed; deleting it stays deleted. Type then comes from the
+ * heading.
  */
 export function applyCvpEquipmentTypeRecipe(doc: JSONContent): JSONContent {
   if (!doc.content?.length || !isCvpEquipmentBox(doc)) return doc;
   const type = readCvpEquipmentType(doc);
   const ordinal = ordinalFromHeading(doc);
-  let next = hasTypeMarker(doc) ? doc : insertTypeMarker(doc, type);
+  let next = doc;
   next = addShellWallIfMissing(next, type, ordinal);
   next = addCleaningSectionIfMissing(next, type, ordinal);
   next = addVisualSectionIfMissing(next, ordinal);

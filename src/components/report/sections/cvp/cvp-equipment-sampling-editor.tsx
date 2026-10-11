@@ -43,7 +43,7 @@ export function CvpEquipmentSamplingEditor() {
   return (
     <SectionShell
       title={CVP_SECTION_LABELS[SECTION]}
-      description="One box per product-contact equipment. Add equipment picks a type (reactor, mixed vessel, PFR, sparkler, centrifuge, RVD, mill, sifter, ANF, ANFD, leaf filter, or Other) and inserts a blank 15.N box — numbering and Contents update automatically."
+      description="One box per product-contact equipment. Add equipment picks a type (glass lined reactor, stainless steel reactor, mixed vessel, PFR, sparkler, centrifuge, RVD, mill, sifter, ANF, ANFD, leaf filter, or Other) and inserts a blank 15.N box — numbering and Contents update automatically."
       status={status}
       lastSavedAt={lastSavedAt}
       section={SECTION}

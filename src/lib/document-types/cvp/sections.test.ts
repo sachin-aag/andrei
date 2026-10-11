@@ -186,7 +186,10 @@ describe("cleaning verification protocol sections", () => {
     expect(CVP_EQUIPMENT_H3_OUTLINE).toHaveLength(8);
     expect(CVP_EQUIPMENT_H4_OUTLINE[0]?.title).toBe("Worst-case locations");
     const reactor = JSON.stringify(cvpEquipmentSamplingSeed(1, "reactor"));
+    const ssr = JSON.stringify(cvpEquipmentSamplingSeed(1, "ssr"));
     expect(reactor).toContain("15.1.4 Cleaning operation results summary");
+    expect(ssr).toContain("15.1.4 Cleaning operation results summary");
+    expect(ssr).toContain("Stainless steel reactor");
     expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[0]);
     expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[1]);
     expect(reactor).toContain("Reactor top dish near manhole");
@@ -487,6 +490,7 @@ describe("cleaning verification protocol sections", () => {
     expect(CVP_DRAFTING_GUIDANCE).toContain("Limit NMT is 0.01 ppm");
     expect(CVP_DRAFTING_GUIDANCE).toContain("D > 1 m → four");
     expect(CVP_DRAFTING_GUIDANCE).toContain("never RCVD");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Stainless steel reactor");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "Do not write that samples were sent"
     );
