@@ -28,7 +28,10 @@ import {
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
 import { repairCvpEquipmentProseEdit } from "@/lib/ai/chat/cvp-equipment-prose-edit";
-import { cvpAcceptanceLimitsDeleteBlocked } from "@/lib/ai/chat/cvp-acceptance-limits-edit";
+import {
+  editTableBlockedByTableRoles,
+  tableRoleGuidanceForField,
+} from "@/lib/ai/chat/table-role-guidance";
 import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
 import { isCvpEquipmentItemField } from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -2083,6 +2086,12 @@ export function buildChatTools(opts: {
           );
           const trimmed = chat.text.replace(/\s+/g, " ").trim();
           captureFieldSnapshot(section, targetField, content);
+          const tableGuidance = tableRoleGuidanceForField({
+            documentType,
+            section,
+            targetField,
+            tables: chat.tables,
+          });
           return {
             targetField,
             kind: f.kind,
@@ -2105,6 +2114,7 @@ export function buildChatTools(opts: {
              * Present only when the field contains at least one table.
              */
             tables: chat.tables,
+            ...(tableGuidance.length > 0 ? { tableGuidance } : {}),
           };
         });
 
@@ -4529,17 +4539,6 @@ export function buildChatTools(opts: {
           return { status: "invalid", hint: tableOperationInvalidHint(operation) };
         }
 
-        const acceptanceDeleteBlocked = cvpAcceptanceLimitsDeleteBlocked({
-          documentType,
-          section,
-          operationKind: parsedOp.kind,
-          userText: latestUserMessageText(messages) ?? "",
-          reasoning,
-        });
-        if (acceptanceDeleteBlocked) {
-          return { status: "invalid", hint: acceptanceDeleteBlocked };
-        }
-
         const loadedRaw = await loadMergedSection(reportId, section);
         if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
@@ -4573,6 +4572,27 @@ export function buildChatTools(opts: {
           loaded.content
         );
         if (staleTable) return staleTable;
+
+        const liveTables = listFieldTables(
+          loaded.content as Record<string, unknown>,
+          section,
+          resolvedField
+        );
+        if ("tableIndex" in parsedOp && typeof parsedOp.tableIndex === "number") {
+          const roleBlock = editTableBlockedByTableRoles({
+            documentType,
+            section,
+            targetField: resolvedField,
+            operationKind: parsedOp.kind,
+            tableIndex: parsedOp.tableIndex,
+            liveTables,
+            operationRows:
+              parsedOp.kind === "insert_rows" ? parsedOp.rows : undefined,
+          });
+          if (roleBlock) {
+            return { status: "invalid", hint: roleBlock };
+          }
+        }
 
         const fieldDoc = getRichFieldValue(
           loaded.content as Record<string, unknown>,

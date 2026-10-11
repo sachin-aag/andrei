@@ -4559,7 +4559,23 @@ describe("buildChatTools propose edits", () => {
     });
   });
 
-  it("blocks delete_table on CVP 11.0 when the user asked to add a rinse table", async () => {
+  it("blocks delete_table on CVP 11.0 calculation grids when the equipment rinse matrix is missing", async () => {
+    const { markdownToDoc } = await import("@/lib/tiptap/markdown-to-doc");
+    const langfuseLikeLimits = {
+      narrative: markdownToDoc(
+        [
+          "Allowable carryover per m² = MACO ÷ total surface area.",
+          "",
+          "| Attribute | Description of Attribute | Value / Calculation |",
+          "| --- | --- | --- |",
+          "| Train surface area | m² | 120 |",
+          "",
+          "| Attribute | Description of Attribute | Value / Calculation |",
+          "| --- | --- | --- |",
+          "| Rinse limit | ppm | 0.5 |",
+        ].join("\n")
+      ),
+    };
     dbSelectMock.mockImplementation(() => ({
       from: (table: unknown) => ({
         where: vi.fn().mockResolvedValue(
@@ -4570,7 +4586,7 @@ describe("buildChatTools propose edits", () => {
                   id: "sec-acc",
                   reportId: "report-1",
                   section: "cvp_acceptance_limits",
-                  content: EMPTY_CVP_CONTENT.cvp_acceptance_limits,
+                  content: langfuseLikeLimits,
                 },
               ]
         ),
@@ -4582,18 +4598,6 @@ describe("buildChatTools propose edits", () => {
       actor,
       documentType: "cleaning_verification_protocol",
       unsupportedFactPolicy: "flag",
-      messages: [
-        {
-          id: "u1",
-          role: "user",
-          parts: [
-            {
-              type: "text",
-              text: "add table with rinse acceptance criteria for all equipments",
-            },
-          ],
-        },
-      ],
     });
     const result = await tools.edit_table!.execute!(
       {
@@ -4606,7 +4610,7 @@ describe("buildChatTools propose edits", () => {
       TEST_TOOL_OPTIONS
     );
     expect(result).toMatchObject({ status: "invalid" });
-    expect(String((result as { hint?: string }).hint)).toContain("insert_rows");
+    expect(String((result as { hint?: string }).hint)).toContain("create_table");
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
