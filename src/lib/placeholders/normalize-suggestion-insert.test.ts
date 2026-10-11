@@ -116,6 +116,12 @@ describe("normalizeSuggestionInsertText", () => {
     ).toBe("since the last Periodic Re-Qualification [PRQR-25-PR-005].");
   });
 
+  it("unescapes literal \\n from chat insert text", () => {
+    expect(
+      normalizeSuggestionInsertText("Line one\\nLine two")
+    ).toBe("Line one\nLine two");
+  });
+
   it("compacts long comma-containing instructional brackets", () => {
     const out = normalizeSuggestionInsertText(
       "[Justification for why this deviation does or does not invalidate the study results, including whether the safety or effectiveness of the device is compromised]."

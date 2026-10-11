@@ -53,6 +53,25 @@ const UNDERSCORE_ITALIC_PART_RE = new RegExp(
 /** GFM table cells and DOCX import use `<br>` when a cell spans multiple lines. */
 const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
 
+/** Two-character `\n` from JSON / LLM output (not a real newline). */
+const LITERAL_ESCAPED_NEWLINE_RE = /\\r\\n|\\n|\\r/g;
+
+/**
+ * LLM and chat tools sometimes persist JSON-style escapes as literal characters
+ * (`\` + `n`) inside a single text node. Skip TeX commands such as `\neq`.
+ */
+export function unescapeLiteralNewlines(text: string): string {
+  return text
+    .replace(/\\r\\n/g, "\n")
+    // TeX commands continue with lowercase letters (`\neq`, `\newline`); `\nLine` is an escape.
+    .replace(/\\n(?![a-z])/g, "\n")
+    .replace(/\\r(?![a-z])/g, "\n");
+}
+
+export function textHasLiteralEscapedNewlines(text: string): boolean {
+  return LITERAL_ESCAPED_NEWLINE_RE.test(text);
+}
+
 /**
  * Display `$...$` fences (`$$...$$`), including an inner span that may wrap.
  * Currency `$100` is a single dollar and does not match.
@@ -462,7 +481,7 @@ export function markdownToPlainText(markdown: string): string {
  * Returns null when the cell should stay one paragraph.
  */
 export function tableCellContentFromText(text: string): JSONContent[] | null {
-  const lines = text
+  const lines = unescapeLiteralNewlines(text)
     .replace(/\r\n/g, "\n")
     .split(HTML_BR_SPLIT_RE)
     .flatMap((segment) => segment.split("\n"));
@@ -735,7 +754,7 @@ export function inlineMarkdownToTextNodesWithBreaks(
   text: string,
   extraMarks?: JSONContent["marks"]
 ): JSONContent[] {
-  const segments = text.split(HTML_BR_SPLIT_RE);
+  const segments = unescapeLiteralNewlines(text).split(HTML_BR_SPLIT_RE);
   const nodes: JSONContent[] = [];
   for (let i = 0; i < segments.length; i++) {
     if (i > 0) nodes.push({ type: "hardBreak" });

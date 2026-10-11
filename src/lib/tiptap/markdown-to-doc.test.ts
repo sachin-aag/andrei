@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   hydrateLiteralMarkdownInDoc,
   inlineMarkdownToTextNodes,
+  inlineMarkdownToTextNodesWithBreaks,
   markdownHasImage,
   markdownHasTable,
   markdownToDoc,
   markdownToPlainText,
   promoteAtxHeadingsInDoc,
+  unescapeLiteralNewlines,
 } from "@/lib/tiptap/markdown-to-doc";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
@@ -181,6 +183,28 @@ describe("markdownToDoc", () => {
       { type: "hardBreak" },
       { type: "text", text: "Line two" },
     ]);
+  });
+
+  it("converts literal \\n in table cell markdown to hardBreak and bold", () => {
+    const cellText =
+      "**Maximum allowable residue on equipment surfaces after cleaning, expressed per square meter.**\\n**Calculation:** MACO ÷ Total Surface Area";
+    const nodes = inlineMarkdownToTextNodesWithBreaks(cellText);
+    expect(nodes).toEqual([
+      {
+        type: "text",
+        text: "Maximum allowable residue on equipment surfaces after cleaning, expressed per square meter.",
+        marks: [{ type: "bold" }],
+      },
+      { type: "hardBreak" },
+      { type: "text", text: "Calculation:", marks: [{ type: "bold" }] },
+      { type: "text", text: " MACO ÷ Total Surface Area" },
+    ]);
+  });
+
+  it("does not treat TeX \\neq as an escaped newline", () => {
+    expect(unescapeLiteralNewlines(String.raw`limit $a \neq b$`)).toBe(
+      String.raw`limit $a \neq b$`
+    );
   });
 
   it("keeps consecutive GFM tables separate when a new header+separator starts", () => {
