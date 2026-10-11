@@ -487,6 +487,9 @@ describe("cleaning verification protocol sections", () => {
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "keep the seeded four paragraphs"
     );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Acceptance limits (11.0");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Never");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("delete_table");
   });
 
   it("seeds Batch 1/2/3 result columns and a 15.0 batch execution table", () => {

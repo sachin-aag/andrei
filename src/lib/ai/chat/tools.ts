@@ -28,6 +28,7 @@ import {
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
 import { repairCvpEquipmentProseEdit } from "@/lib/ai/chat/cvp-equipment-prose-edit";
+import { cvpAcceptanceLimitsDeleteBlocked } from "@/lib/ai/chat/cvp-acceptance-limits-edit";
 import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
 import { isCvpEquipmentItemField } from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -4526,6 +4527,17 @@ export function buildChatTools(opts: {
         let parsedOp = parseTableOperation(operation);
         if (!parsedOp) {
           return { status: "invalid", hint: tableOperationInvalidHint(operation) };
+        }
+
+        const acceptanceDeleteBlocked = cvpAcceptanceLimitsDeleteBlocked({
+          documentType,
+          section,
+          operationKind: parsedOp.kind,
+          userText: latestUserMessageText(messages) ?? "",
+          reasoning,
+        });
+        if (acceptanceDeleteBlocked) {
+          return { status: "invalid", hint: acceptanceDeleteBlocked };
         }
 
         const loadedRaw = await loadMergedSection(reportId, section);

@@ -4559,6 +4559,57 @@ describe("buildChatTools propose edits", () => {
     });
   });
 
+  it("blocks delete_table on CVP 11.0 when the user asked to add a rinse table", async () => {
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-acc",
+                  reportId: "report-1",
+                  section: "cvp_acceptance_limits",
+                  content: EMPTY_CVP_CONTENT.cvp_acceptance_limits,
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      unsupportedFactPolicy: "flag",
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [
+            {
+              type: "text",
+              text: "add table with rinse acceptance criteria for all equipments",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "cvp_acceptance_limits",
+        targetField: "narrative",
+        reasoning:
+          "Remove Table 13 to replace it with the complete per-equipment rinse acceptance criteria table.",
+        operation: { kind: "delete_table", tableIndex: 1 },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(String((result as { hint?: string }).hint)).toContain("insert_rows");
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("coerces a malformed delete-all-rows call into delete_table", async () => {
     mockDefineSectionSelect({
       type: "doc",
