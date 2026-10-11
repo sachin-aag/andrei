@@ -230,6 +230,53 @@ describe("rich text helpers", () => {
     expect(richJsonToPlainText(doc)).not.toContain("**");
   });
 
+  it("repairs literal \\n and **markdown** inside table cells on load", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [
+                        {
+                          type: "text",
+                          text:
+                            "**Maximum allowable residue on equipment surfaces after cleaning, expressed per square meter.**\\n**Calculation:** MACO ÷ Total Surface Area",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const paragraph = doc.content![0]!.content![0]!.content![0]!.content![0]!;
+    expect(paragraph.content).toEqual([
+      {
+        type: "text",
+        text:
+          "Maximum allowable residue on equipment surfaces after cleaning, expressed per square meter.",
+        marks: [{ type: "bold" }],
+      },
+      { type: "hardBreak" },
+      { type: "text", text: "Calculation:", marks: [{ type: "bold" }] },
+      { type: "text", text: " MACO ÷ Total Surface Area" },
+    ]);
+    expect(richJsonToPlainText(doc)).not.toContain("\\n");
+    expect(richJsonToPlainText(doc)).not.toContain("**");
+  });
+
   it("preserves mammoth soft line breaks as hardBreak nodes", () => {
     expect(
       legacyStringToDoc(

@@ -1,3 +1,4 @@
+import { unescapeLiteralNewlines } from "@/lib/tiptap/markdown-to-doc";
 import { compactPlaceholderLabel } from "./label";
 import { normalizeBracketPlaceholdersInPlainText } from "./normalize-bracket-placeholders";
 
@@ -37,7 +38,7 @@ function collapseNestedLabelPlaceholders(text: string): string {
  * square brackets. Long AI labels are compacted to the shared length limit.
  */
 export function normalizeSuggestionInsertText(text: string): string {
-  let out = text.trim();
+  let out = unescapeLiteralNewlines(text.trim());
   if (!out) return out;
 
   out = collapseNestedLabelPlaceholders(out);
