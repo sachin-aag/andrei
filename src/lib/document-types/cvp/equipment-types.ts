@@ -278,8 +278,6 @@ const REACTOR_SHELL_LEVELS = [
   { level: 3, idBase: 10, place: "lower" },
 ] as const;
 
-const SHELL_ANGLE = { a: "0°", b: "90°", c: "180°", d: "270°" } as const;
-
 const REACTOR_SHELL_LETTERS = ["a", "b", "c", "d"] as const;
 
 export type CvpShellMeasurement = {
@@ -302,19 +300,12 @@ export function cvpReactorShellMeasurements(): readonly CvpShellMeasurement[] {
 }
 
 function reactorShellRationale(): CvpSwabRationale[] {
-  const rows: CvpSwabRationale[] = [];
-  for (const level of REACTOR_SHELL_LEVELS) {
-    for (const letter of REACTOR_SHELL_LETTERS) {
-      const id = `S-${level.idBase}${letter}`;
-      rows.push({
-        id,
-        description: `Shell wall Level ${level.level} (${SHELL_ANGLE[letter]})`,
-        rationale: `Product contact surface. Representative of ${level.place} shell cylindrical section.`,
-        samples: "1",
-      });
-    }
-  }
-  return rows;
+  return REACTOR_SHELL_LEVELS.map((level) => ({
+    id: `S-${level.idBase}a–d`,
+    description: `Shell wall Level ${level.level} (four circumferential locations)`,
+    rationale: `Product contact surface. Representative of ${level.place} shell cylindrical section.`,
+    samples: "4",
+  }));
 }
 
 const REACTOR_RATIONALE: readonly CvpSwabRationale[] = [

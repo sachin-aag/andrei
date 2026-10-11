@@ -1350,31 +1350,6 @@ function expandShellIdList(text: string): string[] {
   return ids;
 }
 
-const SHELL_ANGLE: Record<string, string> = {
-  a: "0°",
-  b: "90°",
-  c: "180°",
-  d: "270°",
-};
-
-function shellMeasurementDescription(id: string, original: string): string {
-  const match = /^S-(\d+)([a-d])$/i.exec(id);
-  if (!match || !/shell wall/i.test(original)) return original;
-  const angle = SHELL_ANGLE[match[2].toLowerCase()] ?? id;
-  const levelFromText = original.match(/level\s*(\d+)/i)?.[1];
-  const level =
-    levelFromText ??
-    (match[1] === "8"
-      ? "1"
-      : match[1] === "9"
-        ? "2"
-        : match[1] === "10"
-          ? "3"
-          : "");
-  if (!level) return original;
-  return `Shell wall Level ${level} (${angle})`;
-}
-
 function groupedShellIds(
   cells: JSONContent[],
   sampleIdCol: number
@@ -1382,6 +1357,9 @@ function groupedShellIds(
   const sample = sampleIdCol >= 0 ? cellPlain(cells[sampleIdCol]) : "";
   const fromSample = shellIdsToSplit(sample);
   if (fromSample.length >= 2) return fromSample;
+  // One sample ID is already one measurement. IDs named in the description
+  // must not split that row again on the next load.
+  if (letteredSwabIds(sample).length === 1) return [];
   const description = cellPlain(cells[0]);
   if (description.length > 160) return [];
   if (!/shell wall/i.test(description) && !/^S-\d/i.test(description)) {
@@ -1455,7 +1433,8 @@ function expandReactorShellMeasurementRows(table: JSONContent): JSONContent {
         if (cellIndex === 0) {
           return makeCell(
             "tableCell",
-            descriptionById.get(id) ?? cellPlain(cells[0])
+            descriptionById.get(id) ??
+              shellDescriptionWithoutIdList(cellPlain(cells[0]))
           );
         }
         if (cellIndex === sampleIdCol) return makeCell("tableCell", id);
@@ -1535,51 +1514,169 @@ function expandReactorShellMeasurementRows(table: JSONContent): JSONContent {
   };
 }
 
+function shellDescriptionWithoutIdList(description: string): string {
+  if (!/shell wall/i.test(description)) return description;
+  const match = /\s*\(([^)]*)\)\s*$/.exec(description);
+  if (!match) return description;
+  const ids = letteredSwabIds(match[1]);
+  if (ids.length < 2) return description;
+  const rest = match[1]
+    .replace(/S-\d+[a-d]/gi, "")
+    .replace(/[,&]|\band\b/gi, "")
+    .trim();
+  if (rest.length > 0) return description;
+  const stripped = description.slice(0, match.index).trim();
+  return stripped || description;
+}
+
+/**
+ * A shell-wall description that still names every ID was split once per load.
+ * Drop that parenthetical, then keep one copy of each identical row.
+ */
+function collapseRepeatedShellRows(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!isResidueResultsTable(labels)) return table;
+  const grouped = isGroupedResultsTable(table);
+  const bodyStart = grouped ? 2 : 1;
+  let changed = false;
+  const seen = new Set<string>();
+  const content = (table.content ?? []).flatMap((row, index) => {
+    if (index < bodyStart || row.type !== "tableRow") return [row];
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const description = cellPlain(cells[0]);
+    const nextDescription = shellDescriptionWithoutIdList(description);
+    const nextCells =
+      nextDescription === description
+        ? cells
+        : cells.map((cell, cellIndex) =>
+            cellIndex === 0 ? makeCell("tableCell", nextDescription) : cell
+          );
+    if (nextDescription !== description) changed = true;
+    const key = nextCells.map((cell) => cellPlain(cell)).join("\u0000");
+    if (seen.has(key)) {
+      changed = true;
+      return [];
+    }
+    seen.add(key);
+    return nextCells === cells ? [row] : [{ ...row, content: nextCells }];
+  });
+  return changed ? { ...table, content } : table;
+}
+
 function isSwabRationaleTable(labels: readonly string[]): boolean {
   const hasId = labels.some((label) => /swab id/i.test(label));
   const hasCount = labels.some((label) => /no\.?\s*of samples/i.test(label));
   return hasId && hasCount;
 }
 
+function singleLetteredSwabId(text: string): { base: string; letter: string } | null {
+  const match = /^S-(\d+)([a-d])$/i.exec(text.trim());
+  if (!match) return null;
+  return { base: match[1], letter: match[2].toLowerCase() };
+}
+
+function groupedLevelDescription(descriptions: readonly string[]): string {
+  const levels = descriptions.map(
+    (description) =>
+      /^Shell wall Level (\d+) \((?:0°|90°|180°|270°)\)$/.exec(description)?.[1]
+  );
+  if (levels.every((level) => level && level === levels[0])) {
+    return `Shell wall Level ${levels[0]} (four circumferential locations)`;
+  }
+  return descriptions[0] ?? "";
+}
+
 /**
- * Rationale rows that pack a whole level (S-8a–d, samples = 4) become one
- * row per circumferential measurement.
+ * 15.N.3.4 keeps one row per shell level. A previous pass split S-8a–d into
+ * four angle rows; fold those back. 15.N.7 is a different table and stays
+ * one row per measurement.
  */
-function expandGroupedSwabRationaleRows(table: JSONContent): JSONContent {
+function collapseSplitSwabRationaleRows(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
   if (!isSwabRationaleTable(labels)) return table;
   const idCol = labels.findIndex((label) => /swab id/i.test(label));
-  const descriptionCol = labels.findIndex((label) =>
-    /description/i.test(label)
-  );
+  const descriptionCol = labels.findIndex((label) => /description/i.test(label));
   const samplesCol = labels.findIndex((label) =>
     /no\.?\s*of samples/i.test(label)
   );
+  if (idCol < 0) return table;
+  const rows = table.content ?? [];
   let changed = false;
-  const content = (table.content ?? []).flatMap((row, index) => {
-    if (index === 0 || row.type !== "tableRow") return [row];
-    const cells = (row.content ?? []).filter(
-      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+  const content: JSONContent[] = [];
+  let index = 0;
+  while (index < rows.length) {
+    const row = rows[index];
+    if (!row || index === 0 || row.type !== "tableRow") {
+      if (row) content.push(row);
+      index += 1;
+      continue;
+    }
+    const cellsOf = (candidate: JSONContent) =>
+      (candidate.content ?? []).filter(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      );
+    const firstId = singleLetteredSwabId(cellPlain(cellsOf(row)[idCol]));
+    const group = [row];
+    if (firstId) {
+      let next = index + 1;
+      while (next < rows.length) {
+        const candidate = rows[next];
+        if (!candidate || candidate.type !== "tableRow") break;
+        const parsed = singleLetteredSwabId(
+          cellPlain(cellsOf(candidate)[idCol])
+        );
+        if (!parsed || parsed.base !== firstId.base) break;
+        group.push(candidate);
+        next += 1;
+      }
+    }
+    const parsedIds = group.map((member) =>
+      singleLetteredSwabId(cellPlain(cellsOf(member)[idCol]))
     );
-    const ids = expandShellIdList(cellPlain(cells[idCol]));
-    if (ids.length < 3) return [row];
+    const letters = parsedIds.flatMap((parsed) =>
+      parsed ? [parsed.letter] : []
+    );
+    const codes = letters.map((letter) => letter.charCodeAt(0));
+    const contiguous =
+      parsedIds.every((parsed) => parsed?.base === firstId?.base) &&
+      letters.length >= 3 &&
+      new Set(letters).size === letters.length &&
+      Math.max(...codes) - Math.min(...codes) + 1 === letters.length;
+    if (!firstId || !contiguous) {
+      content.push(row);
+      index += 1;
+      continue;
+    }
     changed = true;
-    const description = cellPlain(cells[descriptionCol]);
-    return ids.map((id) => ({
-      ...row,
-      content: cells.map((cell, cellIndex) => {
-        if (cellIndex === idCol) return makeCell("tableCell", id);
-        if (cellIndex === descriptionCol) {
-          return makeCell(
-            "tableCell",
-            shellMeasurementDescription(id, description)
-          );
+    const descriptions = group.map((member) =>
+      cellPlain(cellsOf(member)[descriptionCol])
+    );
+    const samples = group.map((member) =>
+      cellPlain(cellsOf(member)[samplesCol])
+    );
+    const lo = String.fromCharCode(Math.min(...codes));
+    const hi = String.fromCharCode(Math.max(...codes));
+    const sampleCount = samples.every((sample) => sample === "1" || sample === "")
+      ? String(group.length)
+      : (samples[0] ?? String(group.length));
+    const template = cellsOf(group[0]);
+    content.push({
+      ...group[0],
+      content: template.map((cell, cellIndex) => {
+        if (cellIndex === idCol) {
+          return makeCell("tableCell", `S-${firstId.base}${lo}–${hi}`);
         }
-        if (cellIndex === samplesCol) return makeCell("tableCell", "1");
+        if (cellIndex === descriptionCol) {
+          return makeCell("tableCell", groupedLevelDescription(descriptions));
+        }
+        if (cellIndex === samplesCol) return makeCell("tableCell", sampleCount);
         return clonePlainCell(cell);
       }),
-    }));
-  });
+    });
+    index += group.length;
+  }
   return changed ? { ...table, content } : table;
 }
 
@@ -1910,7 +2007,8 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     next = fillEmptyResidueSeeds(next);
     next = expandStubReactorSwabRows(next);
     next = expandReactorShellMeasurementRows(next);
-    next = expandGroupedSwabRationaleRows(next);
+    next = collapseRepeatedShellRows(next);
+    next = collapseSplitSwabRationaleRows(next);
     if (
       !isExtraneousSampleTable(next) &&
       !isManufacturingAreaSampleTable(headerLabels(next.content?.[0]))
