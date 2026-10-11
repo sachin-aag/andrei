@@ -191,6 +191,9 @@ describe("cleaning verification protocol sections", () => {
     expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[1]);
     expect(reactor).toContain("Reactor top dish near manhole");
     expect(reactor).toContain("Bottom discharge valve");
+    expect(reactor).toContain("S-1");
+    expect(reactor).toContain("S-4a");
+    expect(reactor).toContain("Shell wall at middle level (0°)");
     const visual = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1)).find(
       (table) =>
         table.headers[0] === "Sample description / location" &&
@@ -1008,6 +1011,8 @@ describe("cleaning verification protocol sections", () => {
     expect(cells.some((cell) => cell.text === "Bottom discharge valve")).toBe(
       true
     );
+    expect(cells.some((cell) => cell.text === "S-1")).toBe(true);
+    expect(cells.some((cell) => cell.text === "S-4a")).toBe(true);
   });
 
   it("drops the bold mark on a Batch 1 header so it matches Sample ID", () => {

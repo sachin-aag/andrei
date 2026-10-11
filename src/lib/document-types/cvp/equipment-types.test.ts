@@ -5,6 +5,8 @@ import {
   cvpHasShellWallCalc,
   cvpResidueHeadingTitle,
   cvpResidueSampleRows,
+  cvpSwabLocations,
+  cvpSwabRationaleRows,
 } from "./equipment-types";
 
 describe("CVP equipment type recipes", () => {
@@ -23,10 +25,27 @@ describe("CVP equipment type recipes", () => {
     expect(cvpHasShellWallCalc("reactor")).toBe(true);
   });
 
-  it("leaves leaf filter as other so it does not get a typed 15.N.4 table", () => {
-    expect(classifyCvpEquipmentType("15.5 Leaf Filter (LF-1301)")).toBe("other");
-    expect(classifyCvpEquipmentType("ANFD-1301")).toBe("other");
+  it("classifies Stage-4 specialty equipment from the protocol", () => {
+    expect(classifyCvpEquipmentType("15.1 Mixed Vessel (MV-1304)")).toBe(
+      "vessel"
+    );
+    expect(classifyCvpEquipmentType("15.3 Plug Flow Reactor (PFR-1301)")).toBe(
+      "pfr"
+    );
+    expect(
+      classifyCvpEquipmentType("15.8 Agitated Nutsche Filter (ANF-1301)")
+    ).toBe("anf");
+    expect(
+      classifyCvpEquipmentType(
+        "15.10 Agitated Nutsche Filter Cum Drier (ANFD-1301)"
+      )
+    ).toBe("anfd");
+    expect(classifyCvpEquipmentType("15.5 Leaf Filter (LF-1301)")).toBe(
+      "leaf_filter"
+    );
     expect(classifyCvpEquipmentType("MLT-1301")).toBe("other");
+    expect(cvpHasShellWallCalc("vessel")).toBe(true);
+    expect(cvpHasShellWallCalc("anf")).toBe(false);
   });
 
   it("gives sparkler the reflux title without a reflux sample row", () => {
@@ -50,9 +69,35 @@ describe("CVP equipment type recipes", () => {
       true
     );
     expect(rows.some((row) => row[0] === "Bottom discharge valve")).toBe(true);
+    expect(rows.some((row) => row[1] === "S-1")).toBe(true);
+    expect(rows.some((row) => row[1] === "S-4a")).toBe(true);
     expect(rows.filter((row) => row[2] === "NMT 2 ppm").length).toBeGreaterThanOrEqual(
       7
     );
+  });
+
+  it("seeds report swab IDs and descriptions for shared equipment types", () => {
+    const sparkler = cvpSwabLocations("sparkler");
+    expect(sparkler.map((row) => row.id)).toEqual([
+      "S-1",
+      "S-2",
+      "S-3",
+      "S-4a",
+      "S-4b",
+    ]);
+    expect(sparkler[0]?.description).toBe(
+      "Sparkler filter bottom inner side surface"
+    );
+    expect(cvpSwabRationaleRows("sparkler").some((row) => row.id === "S-4a & S-4b")).toBe(
+      true
+    );
+    expect(cvpSwabLocations("centrifuge").some((row) => row.id === "S-4")).toBe(
+      true
+    );
+    expect(cvpSwabLocations("rvd")[0]?.description).toMatch(/^RVD inner wall/);
+    expect(cvpSwabLocations("pfr")).toEqual([]);
+    expect(cvpSwabLocations("leaf_filter")[0]?.id).toBe("S-1");
+    expect(cvpResidueSampleRows("rvd")[0]?.[0]).toMatch(/Heated acetone/i);
   });
 
   it("gives the centrifuge a second MLT rinse row", () => {

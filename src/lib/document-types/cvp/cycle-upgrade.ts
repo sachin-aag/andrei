@@ -55,7 +55,10 @@ import {
   groupedResultsTable,
   type CvpPersistableSectionKey,
 } from "./sections";
-import { CVP_REACTOR_SWAB_LOCATION_SEEDS } from "./equipment-types";
+import {
+  cvpSwabLocations,
+  type CvpEquipmentType,
+} from "./equipment-types";
 
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
 
@@ -1212,15 +1215,19 @@ function residueColumnCount(table: JSONContent): number {
   return labels.length;
 }
 
-function expandStubReactorSwabRows(table: JSONContent): JSONContent {
+export function expandStubCvpSwabRows(
+  table: JSONContent,
+  type: CvpEquipmentType
+): JSONContent {
+  const locations = cvpSwabLocations(type);
+  if (locations.length === 0) return table;
   const labels = headerLabels(table.content?.[0]);
   if (!isResidueResultsTable(labels)) return table;
   const names = residueBodyNames(table);
-  if (!names.some((name) => /reflux/i.test(name))) return table;
   const hasLocations = names.some(
     (name) =>
       !/^(swab samples|loq|lod|limit)$/i.test(name) &&
-      !/rinse|reflux/i.test(name)
+      !/rinse|reflux|heated acetone/i.test(name)
   );
   if (hasLocations) return table;
   const grouped = isGroupedResultsTable(table);
@@ -1247,11 +1254,13 @@ function expandStubReactorSwabRows(table: JSONContent): JSONContent {
     end += 1;
   }
   const limitCol = residueLimitColumn(labels);
+  const sampleIdCol = labels.findIndex((label) => /sample id/i.test(label));
   const colCount = residueColumnCount(table);
-  const locationRows = CVP_REACTOR_SWAB_LOCATION_SEEDS.map((location) => ({
+  const locationRows = locations.map((location) => ({
     type: "tableRow" as const,
     content: Array.from({ length: colCount }, (_, i) => {
-      if (i === 0) return makeCell("tableCell", location);
+      if (i === 0) return makeCell("tableCell", location.description);
+      if (i === sampleIdCol) return makeCell("tableCell", location.id);
       if (i === limitCol) return makeCell("tableCell", CVP_SWAB_LIMIT);
       return makeCell("tableCell", "");
     }),
@@ -1264,6 +1273,14 @@ function expandStubReactorSwabRows(table: JSONContent): JSONContent {
       ...rows.slice(end),
     ],
   };
+}
+
+function expandStubReactorSwabRows(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!isResidueResultsTable(labels)) return table;
+  const names = residueBodyNames(table);
+  if (!names.some((name) => /reflux/i.test(name))) return table;
+  return expandStubCvpSwabRows(table, "reactor");
 }
 
 function ensureResidueLoqLodRows(table: JSONContent): JSONContent {

@@ -4,10 +4,11 @@ import {
   CVP_EQUIPMENT_TYPE_LABELS,
   cvpCleaningParameterRows,
   cvpHasAgitatorIdentityRow,
-  cvpHasRefluxSampleRow,
   cvpHasShellWallCalc,
   cvpResidueHeadingTitle,
   cvpResidueSampleRows,
+  cvpSwabLocations,
+  cvpSwabRationaleRows,
   isCvpEquipmentType,
   type CvpEquipmentType,
 } from "./equipment-types";
@@ -1241,7 +1242,13 @@ export function cvpEquipmentSamplingSeed(
     textParagraph(
       "The following worst-case product-contact locations shall be included as mandatory swab sampling locations based on equipment design, accessibility, cleanability, and residue accumulation potential."
     ),
-    table(CVP_SWAB_LOCATION_HEADERS),
+    table(
+      CVP_SWAB_LOCATION_HEADERS,
+      cvpSwabLocations(type).map((location) => [
+        location.id,
+        location.description,
+      ])
+    ),
   ];
   if (cvpHasShellWallCalc(type)) {
     swabNodes.push(
@@ -1261,7 +1268,15 @@ export function cvpEquipmentSamplingSeed(
     textParagraph(
       "Swab sampling locations have been selected on a risk basis from the equipment design and operation, considering accessibility, cleanability, residue accumulation potential and the extent of product-contact surface."
     ),
-    table(CVP_SWAB_RATIONALE_HEADERS)
+    table(
+      CVP_SWAB_RATIONALE_HEADERS,
+      cvpSwabRationaleRows(type).map((row) => [
+        row.id,
+        row.description,
+        row.rationale,
+        row.samples,
+      ])
+    )
   );
   const cleaningNodes: JSONContent[] =
     cleaningRows.length > 0

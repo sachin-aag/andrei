@@ -4,8 +4,11 @@ import {
   cvpCleaningParameterRows,
   cvpHasShellWallCalc,
   cvpResidueHeadingTitle,
+  cvpSwabLocations,
+  cvpSwabRationaleRows,
   type CvpEquipmentType,
 } from "./equipment-types";
+import { expandStubCvpSwabRows } from "./cycle-upgrade";
 import {
   CVP_CLEANING_OPERATION_HEADERS,
   CVP_CLEANING_OPERATION_INTRO_SEEDS,
@@ -17,6 +20,8 @@ import {
   CVP_PREVIOUS_VISUAL_INSPECTION_HEADERS,
   CVP_PREVIOUS_VISUAL_INSPECTION_INTRO_SEED,
   CVP_SHELL_CALC_HEADERS,
+  CVP_SWAB_LOCATION_HEADERS,
+  CVP_SWAB_RATIONALE_HEADERS,
   CVP_VISUAL_INSPECTION_HEADERS,
   CVP_VISUAL_INSPECTION_INTRO_SEED,
   CVP_VISUAL_INSPECTION_ROWS,
@@ -24,6 +29,7 @@ import {
   cvpEquipmentTypeMarker,
   cvpVisualInspectionTable,
   groupedResultsTable,
+  table,
 } from "./sections";
 
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
@@ -628,6 +634,63 @@ function addVisualSectionIfMissing(
   return ensureVisualIntro(next);
 }
 
+function tableBodyIsEmpty(tableNode: JSONContent): boolean {
+  return firstColumnNames(tableNode).length === 0;
+}
+
+function fillEmptySwabCatalogTables(
+  doc: JSONContent,
+  type: CvpEquipmentType
+): JSONContent {
+  const locations = cvpSwabLocations(type);
+  const rationale = cvpSwabRationaleRows(type);
+  let next = doc;
+  if (locations.length > 0) {
+    next = replaceFirstTable(
+      next,
+      (node) =>
+        tableLooksLike(node, CVP_SWAB_LOCATION_HEADERS) && tableBodyIsEmpty(node),
+      table(
+        CVP_SWAB_LOCATION_HEADERS,
+        locations.map((location) => [location.id, location.description])
+      )
+    );
+  }
+  if (rationale.length > 0) {
+    next = replaceFirstTable(
+      next,
+      (node) =>
+        tableLooksLike(node, CVP_SWAB_RATIONALE_HEADERS) &&
+        tableBodyIsEmpty(node),
+      table(
+        CVP_SWAB_RATIONALE_HEADERS,
+        rationale.map((row) => [
+          row.id,
+          row.description,
+          row.rationale,
+          row.samples,
+        ])
+      )
+    );
+  }
+  return next;
+}
+
+function expandResidueSwabCatalog(
+  doc: JSONContent,
+  type: CvpEquipmentType
+): JSONContent {
+  if (cvpSwabLocations(type).length === 0) return doc;
+  let changed = false;
+  const content = (doc.content ?? []).map((node) => {
+    if (node.type !== "table") return node;
+    const next = expandStubCvpSwabRows(node, type);
+    if (next !== node) changed = true;
+    return next;
+  });
+  return changed ? { ...doc, content } : doc;
+}
+
 function addShellWallIfMissing(
   doc: JSONContent,
   type: CvpEquipmentType,
@@ -676,6 +739,8 @@ export function applyCvpEquipmentTypeRecipe(doc: JSONContent): JSONContent {
   next = addShellWallIfMissing(next, type, ordinal);
   next = addCleaningSectionIfMissing(next, type, ordinal);
   next = addVisualSectionIfMissing(next, ordinal);
+  next = fillEmptySwabCatalogTables(next, type);
+  next = expandResidueSwabCatalog(next, type);
   next = retitleHeadingsToOutline(next, ordinal);
   next = retitleResidueHeading(next, type, ordinal);
   return next;
