@@ -1225,8 +1225,8 @@ export const CVP_METHODOLOGY_SEEDS = [
 
 function residueFooterRows(): (readonly string[])[] {
   return [
-    ["LOQ", "", CVP_RESIDUE_LOQ, "", "", ""],
-    ["LOD", "", CVP_RESIDUE_LOD, "", "", ""],
+    ["LOQ", "", "", CVP_RESIDUE_LOQ, CVP_RESIDUE_LOQ, CVP_RESIDUE_LOQ],
+    ["LOD", "", "", CVP_RESIDUE_LOD, CVP_RESIDUE_LOD, CVP_RESIDUE_LOD],
   ];
 }
 

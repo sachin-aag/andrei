@@ -326,17 +326,29 @@ const ANALYTICAL_FOOTER_LABEL = /^(limit|loq|lod)\b/i;
 const BATCH_HEADER_LABEL = /^batch(?:\s+\d+)?$/i;
 
 function isAnalyticalFooterTable(labels: readonly string[]): boolean {
-  return (
+  if (
     headersMatch(labels, CVP_RESIDUE_RESULTS_HEADERS) ||
     headersMatch(labels, CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS) ||
     headersMatch(labels, CVP_EXTRANEOUS_RESULTS_HEADERS) ||
     headersMatch(labels, CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS)
+  ) {
+    return true;
+  }
+  return (
+    /^sample description/i.test(labels[0] ?? "") &&
+    (labels.some((label) => /sample id/i.test(label)) ||
+      labels.some((label) => /^limit$/i.test(normHeader(label)))) &&
+    (labels.some((label) => /^results$/i.test(normHeader(label))) ||
+      labels.some((label) => BATCH_HEADER_LABEL.test(label)))
   );
 }
 
 function batchColumnStart(labels: readonly string[]): number {
-  const idx = labels.findIndex((label) => BATCH_HEADER_LABEL.test(label));
-  return idx >= 0 ? idx : Math.max(1, labels.length - 1);
+  const batch = labels.findIndex((label) => BATCH_HEADER_LABEL.test(label));
+  if (batch >= 0) return batch;
+  const results = labels.findIndex((label) => /^results$/i.test(normHeader(label)));
+  if (results >= 0) return results;
+  return Math.max(1, labels.length - 1);
 }
 
 function stripBold(node: JSONContent): { node: JSONContent; changed: boolean } {
@@ -626,7 +638,10 @@ function upgradeTable(table: JSONContent): JSONContent {
   const flattened = flattenGroupedVisualInspection(table);
   const withLimit = insertSampleLimitColumn(flattened);
   const labels = headerLabels(withLimit.content?.[0]);
-  let next = withLimit;
+  let next =
+    withLimit !== flattened
+      ? placeLoqLodInResults(withLimit, { fillEmptyResultsFromSiblings: true })
+      : withLimit;
   let widened = false;
   let justMigrated = false;
   for (const spec of SPLIT_LAST) {
@@ -1174,9 +1189,8 @@ function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
     if (isLimitRowLabel(first)) return row;
     if (/^swab samples$/i.test(first) && hasLocationRows) return row;
     let seed = "";
-    if (extraneous && !isLoqLodRowLabel(first)) seed = CVP_EXTRANEOUS_LIMIT;
-    else if (/^loq$/i.test(first)) seed = CVP_RESIDUE_LOQ;
-    else if (/^lod$/i.test(first)) seed = CVP_RESIDUE_LOD;
+    if (isLoqLodRowLabel(first)) return row;
+    if (extraneous) seed = CVP_EXTRANEOUS_LIMIT;
     else if (/^swab samples$/i.test(first) || /swab/i.test(first) || first === "") {
       seed = CVP_SWAB_LIMIT;
     }
@@ -1283,11 +1297,97 @@ function expandStubReactorSwabRows(table: JSONContent): JSONContent {
   return expandStubCvpSwabRows(table, "reactor");
 }
 
+function residueResultsStart(table: JSONContent): number {
+  const labels = headerLabels(table.content?.[0]);
+  const limitCol = residueLimitColumn(labels);
+  if (limitCol >= 0) return limitCol + 1;
+  return batchColumnStart(labels);
+}
+
+function looksLikeLoqLodValue(text: string): boolean {
+  return /\bppm\b|\bnmt\b/i.test(text);
+}
+
+function loqLodSeed(label: string): string {
+  if (/^loq$/i.test(label)) return CVP_RESIDUE_LOQ;
+  if (/^lod$/i.test(label)) return CVP_RESIDUE_LOD;
+  return "";
+}
+
+/**
+ * LOQ / LOD are method sensitivity, not the residue Limit. A value still
+ * sitting in Limit or Sample ID moves into empty Results cells.
+ *
+ * Copying a filled Results cell into an empty sibling (or reseeding
+ * NMT 1 ppm / NMT 0.3 ppm) only happens when this pass just inserted the
+ * Limit column. Re-running that on an already-wide grid puts back a cell
+ * the engineer cleared.
+ */
+function placeLoqLodInResults(
+  table: JSONContent,
+  options?: { fillEmptyResultsFromSiblings?: boolean }
+): JSONContent {
+  const fillEmptyResultsFromSiblings =
+    options?.fillEmptyResultsFromSiblings === true;
+  const labels = headerLabels(table.content?.[0]);
+  if (!isResidueResultsTable(labels)) return table;
+  const grouped = isGroupedResultsTable(table);
+  const limitCol = residueLimitColumn(labels);
+  const resultsStart = residueResultsStart(table);
+  const sampleIdCol = labels.findIndex((label) => /sample id/i.test(label));
+  let changed = false;
+  const content = (table.content ?? []).map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    if (grouped && index === 1) return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const first = cellPlain(cells[0]);
+    if (!isLoqLodRowLabel(first)) return row;
+    const resultTexts = cells
+      .slice(resultsStart)
+      .map((cell) => cellPlain(cell));
+    const filledResults = resultTexts.filter((text) => text.length > 0);
+    const limitText = limitCol >= 0 ? cellPlain(cells[limitCol]) : "";
+    const sampleText = sampleIdCol >= 0 ? cellPlain(cells[sampleIdCol]) : "";
+    const misplaced =
+      (looksLikeLoqLodValue(limitText) ? limitText : "") ||
+      (looksLikeLoqLodValue(sampleText) ? sampleText : "");
+    const criterion = fillEmptyResultsFromSiblings
+      ? filledResults[0] || misplaced || loqLodSeed(first)
+      : filledResults.length === 0
+        ? misplaced
+        : "";
+    let rowChanged = false;
+    const nextCells = cells.map((cell, i) => {
+      if (i === 0) return cell;
+      if (i === sampleIdCol && looksLikeLoqLodValue(cellPlain(cell))) {
+        rowChanged = true;
+        return makeCell("tableCell", "");
+      }
+      if (i === limitCol) {
+        if (cellPlain(cell).length === 0) return cell;
+        rowChanged = true;
+        return makeCell("tableCell", "");
+      }
+      if (i >= resultsStart) {
+        const text = cellPlain(cell);
+        if (text.length > 0 || !criterion) return cell;
+        rowChanged = true;
+        return makeCell("tableCell", criterion);
+      }
+      return cell;
+    });
+    if (!rowChanged) return row;
+    changed = true;
+    return { ...row, content: nextCells };
+  });
+  return changed ? { ...table, content } : table;
+}
+
 function ensureResidueLoqLodRows(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
   if (!isResidueResultsTable(labels)) return table;
-  const limitCol = residueLimitColumn(labels);
-  if (limitCol < 0) return table;
   const names = residueBodyNames(table);
   const missing: Array<readonly [string, string]> = [];
   if (!names.some((name) => /^loq$/i.test(name))) {
@@ -1298,11 +1398,12 @@ function ensureResidueLoqLodRows(table: JSONContent): JSONContent {
   }
   if (missing.length === 0) return table;
   const colCount = residueColumnCount(table);
-  const extra = missing.map(([label, limit]) => ({
+  const resultsStart = residueResultsStart(table);
+  const extra = missing.map(([label, value]) => ({
     type: "tableRow" as const,
     content: Array.from({ length: colCount }, (_, i) => {
       if (i === 0) return makeCell("tableCell", label);
-      if (i === limitCol) return makeCell("tableCell", limit);
+      if (i >= resultsStart) return makeCell("tableCell", value);
       return makeCell("tableCell", "");
     }),
   }));
@@ -1491,7 +1592,9 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     next = reshapeEmptyTesting(next);
     next = reshapeEmptyHistory(next);
     next = flattenGroupedVisualInspection(next);
-    next = insertSampleLimitColumn(next);
+    const withLimit = insertSampleLimitColumn(next);
+    const limitJustInserted = withLimit !== next;
+    next = withLimit;
     next = promoteAndDropLimitRow(next);
     next = fillEmptyResidueSeeds(next);
     next = expandStubReactorSwabRows(next);
@@ -1500,6 +1603,9 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
       !isManufacturingAreaSampleTable(headerLabels(next.content?.[0]))
     ) {
       next = ensureResidueLoqLodRows(next);
+      next = placeLoqLodInResults(next, {
+        fillEmptyResultsFromSiblings: limitJustInserted,
+      });
     }
     next = fillEmptyTestingLoqLod(next);
     next = fillEmptyManufacturingLimit(next);

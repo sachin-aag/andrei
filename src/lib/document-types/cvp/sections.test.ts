@@ -492,15 +492,33 @@ describe("cleaning verification protocol sections", () => {
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain("Do not add a PGI section");
     expect(CVP_DRAFTING_GUIDANCE).toContain("Overall results (21.0)");
+    expect(CVP_DRAFTING_GUIDANCE).toContain(
+      "LOQ NMT 1 ppm and LOD NMT 0.3 ppm sit in the Results columns"
+    );
   });
 
   it("seeds grouped Results columns and no 15.0 batch execution table", () => {
-    const residue = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1));
-    const residueHeaders = residue.find((table) =>
+    const residue = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1)).find((table) =>
       table.headers.includes("Sample ID")
-    )?.headers;
+    );
+    const residueHeaders = residue?.headers;
     expect(residueHeaders?.[0]).toBe("Sample description / location");
     expect(residueHeaders).toContain("Results");
+    const loqRowIndex = residue?.cells.find(
+      (cell) => cell.col === 0 && cell.text === "LOQ"
+    )?.row;
+    const loqRow = residue?.cells
+      .filter((cell) => cell.row === loqRowIndex)
+      .sort((a, b) => a.col - b.col)
+      .map((cell) => cell.text);
+    expect(loqRow).toEqual([
+      "LOQ",
+      "(empty)",
+      "(empty)",
+      CVP_RESIDUE_LOQ,
+      CVP_RESIDUE_LOQ,
+      CVP_RESIDUE_LOQ,
+    ]);
     const sampling = EMPTY_CVP_CONTENT.cvp_sampling_plan;
     const tables = summarizeTablesInDoc(
       "narrative" in sampling ? sampling.narrative : { type: "doc", content: [] }
@@ -701,7 +719,7 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "(empty)",
-      "5 ppm [3]",
+      "(empty)",
       "5 ppm [3]",
       "5 ppm [3]",
       "5 ppm [3]",
@@ -709,7 +727,7 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOD")).toEqual([
       "LOD",
       "(empty)",
-      "2 ppm",
+      "(empty)",
       "2 ppm",
       "2 ppm",
       "2 ppm",
@@ -763,11 +781,17 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "note",
-      "5 ppm [3]",
+      "(empty)",
       "5 ppm [3]",
       "6 ppm",
     ]);
-    expect(byLabel("LOD")).toEqual(["LOD", "(empty)", "2 ppm", "2 ppm", "2 ppm"]);
+    expect(byLabel("LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      "(empty)",
+      "2 ppm",
+      "2 ppm",
+    ]);
 
     const merged = getDocumentType("cleaning_verification_protocol").mergeSection(
       "cvp_equipment_sampling",
@@ -786,7 +810,7 @@ describe("cleaning verification protocol sections", () => {
     expect(mergedByLabel("LOQ")).toEqual([
       "LOQ",
       "note",
-      "5 ppm [3]",
+      "(empty)",
       "5 ppm [3]",
       "6 ppm",
     ]);
@@ -856,18 +880,18 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "(empty)",
+      "(empty)",
       CVP_RESIDUE_LOQ,
-      "(empty)",
-      "(empty)",
-      "(empty)",
+      CVP_RESIDUE_LOQ,
+      CVP_RESIDUE_LOQ,
     ]);
     expect(byLabel("LOD")).toEqual([
       "LOD",
       "(empty)",
+      "(empty)",
       CVP_RESIDUE_LOD,
-      "(empty)",
-      "(empty)",
-      "(empty)",
+      CVP_RESIDUE_LOD,
+      CVP_RESIDUE_LOD,
     ]);
 
     const customLimit: JSONContent = {
@@ -901,14 +925,21 @@ describe("cleaning verification protocol sections", () => {
         .map((cell) => cell.text);
     };
     expect(customByLabel("Swab samples")[2]).toBe("NMT 10 ppm");
-    expect(customByLabel("LOQ")[2]).toBe("5 ppm");
+    expect(customByLabel("LOQ")).toEqual([
+      "LOQ",
+      "(empty)",
+      "(empty)",
+      "5 ppm",
+      "5 ppm",
+      "5 ppm",
+    ]);
     expect(customByLabel("LOD")).toEqual([
       "LOD",
       "(empty)",
+      "(empty)",
       CVP_RESIDUE_LOD,
-      "(empty)",
-      "(empty)",
-      "(empty)",
+      CVP_RESIDUE_LOD,
+      CVP_RESIDUE_LOD,
     ]);
 
     const filledFiveCol: JSONContent = {
@@ -945,8 +976,116 @@ describe("cleaning verification protocol sections", () => {
         .map((cell) => cell.text);
     };
     expect(filledByLabel("Swab samples")[2]).toBe("NMT 10 ppm");
-    expect(filledByLabel("LOQ")[2]).toBe("5 ppm");
-    expect(filledByLabel("LOD")[2]).toBe("2 ppm");
+    expect(filledByLabel("LOQ")).toEqual([
+      "LOQ",
+      "(empty)",
+      "(empty)",
+      "5 ppm",
+      "5 ppm",
+      "5 ppm",
+    ]);
+    expect(filledByLabel("LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      "(empty)",
+      "2 ppm",
+      "2 ppm",
+      "2 ppm",
+    ]);
+  });
+
+  it("moves grouped-table LOQ / LOD values from Limit into Results", () => {
+    const leftover = groupedResultsTable(
+      ["Sample description / location", "Sample ID", "Limit"],
+      [
+        ["Final Rinse Sample (Acetone)", "NA", "", "", "", ""],
+        ["Swab samples", "", CVP_SWAB_LIMIT, "", "", ""],
+        ["", "", CVP_SWAB_LIMIT, "", "", ""],
+        ["LOQ", "", CVP_RESIDUE_LOQ, "", "", ""],
+        ["LOD", "", CVP_RESIDUE_LOD, "", "", ""],
+      ]
+    );
+    const cells =
+      summarizeTablesInDoc(
+        upgradeCvpValidationDoc({ type: "doc", content: [leftover] })
+      )[0]?.cells ?? [];
+    const byLabel = (label: string) => {
+      const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
+      return cells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(byLabel("Swab samples")).toEqual([
+      "Swab samples",
+      "(empty)",
+      CVP_SWAB_LIMIT,
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+    expect(byLabel("LOQ")).toEqual([
+      "LOQ",
+      "(empty)",
+      "(empty)",
+      CVP_RESIDUE_LOQ,
+      CVP_RESIDUE_LOQ,
+      CVP_RESIDUE_LOQ,
+    ]);
+    expect(byLabel("LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      "(empty)",
+      CVP_RESIDUE_LOD,
+      CVP_RESIDUE_LOD,
+      CVP_RESIDUE_LOD,
+    ]);
+  });
+
+  it("keeps a cleared LOQ / LOD result cell empty", () => {
+    const cleared = groupedResultsTable(
+      ["Sample description / location", "Sample ID", "Limit"],
+      [
+        ["Swab samples", "", CVP_SWAB_LIMIT, "", "", ""],
+        ["LOQ", "", "", CVP_RESIDUE_LOQ, "", CVP_RESIDUE_LOQ],
+        ["LOD", "", "", "", "", ""],
+      ]
+    );
+    const doc: JSONContent = { type: "doc", content: [cleared] };
+    const byLabel = (cells: { row: number; col: number; text: string }[], label: string) => {
+      const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
+      return cells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(doc))[0]?.cells ?? [];
+    expect(byLabel(cells, "LOQ")).toEqual([
+      "LOQ",
+      "(empty)",
+      "(empty)",
+      CVP_RESIDUE_LOQ,
+      "(empty)",
+      CVP_RESIDUE_LOQ,
+    ]);
+    expect(byLabel(cells, "LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+    const again =
+      summarizeTablesInDoc(upgradeCvpValidationDoc(upgradeCvpValidationDoc(doc)))[0]
+        ?.cells ?? [];
+    expect(byLabel(again, "LOQ")).toEqual(byLabel(cells, "LOQ"));
+    expect(byLabel(again, "LOD")).toEqual(byLabel(cells, "LOD"));
+
+    const { items } = normalizeCvpEquipmentSamplingContent({ items: [doc] });
+    const normalized = summarizeTablesInDoc(items[0]!)[0]?.cells ?? [];
+    expect(byLabel(normalized, "LOQ")).toEqual(byLabel(cells, "LOQ"));
+    expect(byLabel(normalized, "LOD")).toEqual(byLabel(cells, "LOD"));
   });
 
   it("inserts a Limit column on grouped leftover residue and manufacturing-area tables", () => {
@@ -997,8 +1136,8 @@ describe("cleaning verification protocol sections", () => {
         ["Final Rinse Sample (Acetone)", "NA", "", "", "", ""],
         ["Swab samples", "", "", "", "", ""],
         ["", "", CVP_SWAB_LIMIT, "", "", ""],
-        ["LOQ", "", CVP_RESIDUE_LOQ, "", "", ""],
-        ["LOD", "", CVP_RESIDUE_LOD, "", "", ""],
+        ["LOQ", "", "", CVP_RESIDUE_LOQ, CVP_RESIDUE_LOQ, CVP_RESIDUE_LOQ],
+        ["LOD", "", "", CVP_RESIDUE_LOD, CVP_RESIDUE_LOD, CVP_RESIDUE_LOD],
       ]
     );
     const cells =
