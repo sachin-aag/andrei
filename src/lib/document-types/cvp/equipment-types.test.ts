@@ -15,6 +15,20 @@ describe("CVP equipment type recipes", () => {
     expect(classifyCvpEquipmentType("RVD-1201")).toBe("rvd");
   });
 
+  it("classifies SSR / stainless steel reactor as reactor, not Other", () => {
+    expect(
+      classifyCvpEquipmentType("15.2 Stainless Steel Reactor (SSR-1302)")
+    ).toBe("reactor");
+    expect(classifyCvpEquipmentType("SSR-1303")).toBe("reactor");
+    expect(cvpHasShellWallCalc("reactor")).toBe(true);
+  });
+
+  it("leaves leaf filter as other so it does not get a typed 15.N.4 table", () => {
+    expect(classifyCvpEquipmentType("15.5 Leaf Filter (LF-1301)")).toBe("other");
+    expect(classifyCvpEquipmentType("ANFD-1301")).toBe("other");
+    expect(classifyCvpEquipmentType("MLT-1301")).toBe("other");
+  });
+
   it("gives sparkler the reflux title without a reflux sample row", () => {
     expect(cvpResidueHeadingTitle("sparkler", 2)).toContain("Reflux, Swab & Rinse");
     expect(cvpHasRefluxSampleRow("sparkler")).toBe(false);

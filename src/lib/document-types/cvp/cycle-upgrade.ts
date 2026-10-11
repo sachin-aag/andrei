@@ -4,6 +4,7 @@ import {
   CVP_BATCH_LABELS,
   CVP_CLEANING_OPERATION_HEADERS,
   CVP_DEVIATIONS_SEED,
+  CVP_EQUIPMENT_DETAILS_SEED,
   CVP_EVALUATION_SEEDS,
   CVP_EXTRANEOUS_RESULTS_HEADERS,
   CVP_HISTORY_HEADERS,
@@ -21,7 +22,9 @@ import {
   CVP_PREVIOUS_BATCH_MANUFACTURING_AREA_HEADERS,
   CVP_PREVIOUS_BATCH_NITROSAMINE_HEADERS,
   CVP_PREVIOUS_BATCH_OVERALL_RESULTS_HEADERS,
+  CVP_PREVIOUS_BATCH_RESIDUE_RESULTS_HEADERS,
   CVP_PREVIOUS_CLEANING_OPERATION_HEADERS,
+  CVP_PREVIOUS_EQUIPMENT_DETAILS_SEEDS,
   CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS,
   CVP_PREVIOUS_HISTORY_HEADERS,
   CVP_PREVIOUS_MANUFACTURING_AREA_HEADERS,
@@ -34,6 +37,7 @@ import {
   CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
   CVP_PREVIOUS_TESTING_HEADERS,
   CVP_PREVIOUS_VISUAL_INSPECTION_HEADERS,
+  CVP_PREVIOUS_VISUAL_INSPECTION_INTRO_SEED,
   CVP_PROCESS_LINE_HEADERS,
   CVP_RESIDUE_LOD,
   CVP_RESIDUE_LOQ,
@@ -41,6 +45,7 @@ import {
   CVP_REVALIDATION_SEED,
   CVP_SWAB_LIMIT,
   CVP_TABLE_SECTION_BOILERPLATE,
+  CVP_VISUAL_INSPECTION_INTRO_SEED,
   CVP_TESTING_HEADERS,
   CVP_VISUAL_INSPECTION_HEADERS,
   groupedResultsTable,
@@ -50,6 +55,13 @@ import {
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
 
 const SEED_SWAPS: ReadonlyArray<readonly [string, string]> = [
+  ...CVP_PREVIOUS_EQUIPMENT_DETAILS_SEEDS.map(
+    (old) => [old, CVP_EQUIPMENT_DETAILS_SEED] as const
+  ),
+  [
+    CVP_PREVIOUS_VISUAL_INSPECTION_INTRO_SEED,
+    CVP_VISUAL_INSPECTION_INTRO_SEED,
+  ],
   [
     "Preparation and review of the Cleaning Verification Protocol; verification of visual inspection and sampling; review of results and approval of the report.",
     "Preparation and review of the Cleaning Validation Protocol; verification of visual inspection and sampling; review of results and approval of the report.",
@@ -819,13 +831,104 @@ function fillEmptyCell(
   return { cell: cloneCellWithText(cell, value), changed: true };
 }
 
+function isResidueResultsTable(labels: readonly string[]): boolean {
+  return (
+    /^sample description/i.test(labels[0] ?? "") &&
+    labels.some((label) => /sample id/i.test(label))
+  );
+}
+
+function residueLimitColumn(labels: readonly string[]): number {
+  return labels.findIndex((label) => /^limit$/i.test(label));
+}
+
+/** Copy an already-filled NMT / ppm figure into an empty Limit cell. */
+function firstFilledResidueValue(
+  cells: JSONContent[],
+  limitCol: number
+): string {
+  for (let i = 0; i < cells.length; i++) {
+    if (i === 0 || i === limitCol) continue;
+    const text = cellPlain(cells[i]);
+    if (!text || /^na$/i.test(text)) continue;
+    if (!/\bnmt\b|\bppm\b/i.test(text)) continue;
+    return text;
+  }
+  return "";
+}
+
+const INFERENCE_CONCLUSION_LABEL = /^(inference|conclusion):?$/i;
+const INFERENCE_CONCLUSION_SHALL =
+  "It shall be written in the cleaning validation report.";
+
+function ensureCvpInferenceConclusionShall(doc: JSONContent): JSONContent {
+  const nodes = doc.content ?? [];
+  if (nodes.length === 0) return doc;
+  const next: JSONContent[] = [];
+  let changed = false;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    next.push(node);
+    if (node.type !== "paragraph" && node.type !== "heading") continue;
+    const plain = nodePlain(node).replace(/\s+/g, " ").trim();
+    if (!INFERENCE_CONCLUSION_LABEL.test(plain)) continue;
+    const following = nodes[i + 1];
+    const followPlain = following
+      ? nodePlain(following).replace(/\s+/g, " ").trim()
+      : "";
+    const followIsLabel =
+      following != null &&
+      (following.type === "paragraph" || following.type === "heading") &&
+      INFERENCE_CONCLUSION_LABEL.test(followPlain);
+    if (following?.type === "paragraph" && followPlain.length === 0) {
+      next.push(textParagraph(INFERENCE_CONCLUSION_SHALL));
+      i += 1;
+      changed = true;
+      continue;
+    }
+    if (!following || followIsLabel) {
+      next.push(textParagraph(INFERENCE_CONCLUSION_SHALL));
+      changed = true;
+    }
+  }
+  return changed ? { ...doc, content: next } : doc;
+}
+
+function insertResidueLimitColumn(table: JSONContent): JSONContent {
+  const rows = table.content ?? [];
+  const labels = headerLabels(rows[0]);
+  if (!headersMatch(labels, CVP_PREVIOUS_BATCH_RESIDUE_RESULTS_HEADERS)) {
+    return table;
+  }
+  const insertAt = 2;
+  const content = rows.map((row, index) => {
+    if (row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const kind = index === 0 ? "tableHeader" : "tableCell";
+    return {
+      ...row,
+      content: [
+        ...cells.slice(0, insertAt),
+        makeCell(kind, index === 0 ? "Limit" : ""),
+        ...cells.slice(insertAt),
+      ],
+    };
+  });
+  return { ...table, content };
+}
+
 function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
   const labels = headerLabels(table.content?.[0]);
-  const limitCol = labels.findIndex((label) => /^limit$/i.test(label));
+  if (!isResidueResultsTable(labels)) return table;
+  const limitCol = residueLimitColumn(labels);
   if (limitCol < 0) return table;
+  const grouped = labels.includes("Results");
   let changed = false;
   const content = (table.content ?? []).map((row, index) => {
     if (index === 0 || row.type !== "tableRow") return row;
+    if (grouped && index === 1) return row;
     const cells = (row.content ?? []).filter(
       (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
     );
@@ -841,7 +944,8 @@ function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
     if (!/^loq$|^lod$/i.test(first) && !/swab/i.test(first) && first !== "") {
       return row;
     }
-    const filled = fillEmptyCell(limitCell, seed);
+    const existing = firstFilledResidueValue(cells, limitCol);
+    const filled = fillEmptyCell(limitCell, existing || seed);
     if (!filled.changed) return row;
     changed = true;
     const nextCells = cells.slice();
@@ -849,6 +953,55 @@ function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
     return { ...row, content: nextCells };
   });
   return changed ? { ...table, content } : table;
+}
+
+function residueBodyNames(table: JSONContent): string[] {
+  const labels = headerLabels(table.content?.[0]);
+  const grouped = labels.includes("Results");
+  return (table.content ?? []).flatMap((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return [];
+    if (grouped && index === 1) return [];
+    const first = cellPlain(
+      (row.content ?? []).find(
+        (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+      )
+    );
+    return first ? [first] : [];
+  });
+}
+
+function residueColumnCount(table: JSONContent): number {
+  const labels = headerLabels(table.content?.[0]);
+  if (labels.includes("Results")) {
+    return labels.filter((label) => label !== "Results").length + 3;
+  }
+  return labels.length;
+}
+
+function ensureResidueLoqLodRows(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!isResidueResultsTable(labels)) return table;
+  const limitCol = residueLimitColumn(labels);
+  if (limitCol < 0) return table;
+  const names = residueBodyNames(table);
+  const missing: Array<readonly [string, string]> = [];
+  if (!names.some((name) => /^loq$/i.test(name))) {
+    missing.push(["LOQ", CVP_RESIDUE_LOQ]);
+  }
+  if (!names.some((name) => /^lod$/i.test(name))) {
+    missing.push(["LOD", CVP_RESIDUE_LOD]);
+  }
+  if (missing.length === 0) return table;
+  const colCount = residueColumnCount(table);
+  const extra = missing.map(([label, limit]) => ({
+    type: "tableRow" as const,
+    content: Array.from({ length: colCount }, (_, i) => {
+      if (i === 0) return makeCell("tableCell", label);
+      if (i === limitCol) return makeCell("tableCell", limit);
+      return makeCell("tableCell", "");
+    }),
+  }));
+  return { ...table, content: [...(table.content ?? []), ...extra] };
 }
 
 function reshapeEmptyManufacturingArea(table: JSONContent): JSONContent {
@@ -1030,7 +1183,9 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
     next = reshapeEmptyOverall(next);
     next = reshapeEmptyTesting(next);
     next = reshapeEmptyHistory(next);
+    next = insertResidueLimitColumn(next);
     next = fillEmptyResidueSeeds(next);
+    next = ensureResidueLoqLodRows(next);
     next = fillEmptyTestingLoqLod(next);
     next = fillEmptyManufacturingLimit(next);
     if (next !== node) changed = true;
@@ -1040,7 +1195,9 @@ function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
 }
 
 export function upgradeCvpValidationDoc(doc: JSONContent): JSONContent {
-  return reshapeCvpStage5Tables(
-    swapCvpValidationSeedText(upgradeCvpCycleTables(doc))
+  return ensureCvpInferenceConclusionShall(
+    reshapeCvpStage5Tables(
+      swapCvpValidationSeedText(upgradeCvpCycleTables(doc))
+    )
   );
 }

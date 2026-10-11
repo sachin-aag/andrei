@@ -34,7 +34,11 @@ export const CVP_EQUIPMENT_TYPE_OPTIONS: ReadonlyArray<{
 
 const TYPE_FROM_ID: ReadonlyArray<{ pattern: RegExp; type: CvpEquipmentType }> =
   [
-    { pattern: /\bGLR\b|\bglass\s*lined\s*reactor\b/i, type: "reactor" },
+    {
+      pattern:
+        /\bGLR\b|\bglass\s*lined\s*reactor\b|\bSSR\b|\bstainless\s*steel\s*reactor\b/i,
+      type: "reactor",
+    },
     { pattern: /\bSF\b|\bsparkler\b/i, type: "sparkler" },
     { pattern: /\bCF\b|\bcentrifuge\b/i, type: "centrifuge" },
     { pattern: /\bRVD\b|\bRCVD\b|\broto\s*cone\b/i, type: "rvd" },

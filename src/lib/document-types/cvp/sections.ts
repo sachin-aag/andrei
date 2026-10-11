@@ -934,6 +934,22 @@ export const CVP_EQUIPMENT_INTRO_SEED =
 export const CVP_EQUIPMENT_DETAILS_SEED =
   "The equipment details, including Material of Construction (MOC), product contact surface area, shell height, and shell diameter, shall be taken from CPDR Annexure-2 and the applicable equipment qualification documents.";
 
+/** Past-tense 15.N.1 leftovers — swap only when the stored sentence still matches. */
+export const CVP_PREVIOUS_EQUIPMENT_DETAILS_SEEDS = [
+  "The equipment details, including Material of Construction (MOC) and product contact surface area, were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.",
+  "The equipment details, including Material of Construction (MOC) and product contact surface area, were obtained from CPDR Annexure-2.",
+  "The equipment details, including Material of Construction (MOC), were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.",
+] as const;
+
+export const CVP_CLEANING_OPERATION_INTRO_SEEDS = [
+  "The cleaning operation shall be performed in accordance with the approved cleaning procedure and associated cleaning instructions. Critical cleaning process parameters shall be recorded for each of the three cleaning validation batches. The recorded process parameters shall be reviewed to confirm compliance with the approved cleaning procedure and to demonstrate consistency and reproducibility of the cleaning process.",
+  "The results of the cleaning operation shall be recorded in the following table.",
+] as const;
+
+/** Short chat leftover under 15.N.4 — swap when the stored sentence still starts this way. */
+export const CVP_PREVIOUS_CLEANING_OPERATION_INTRO_SEED =
+  "Record cleaning parameters against the approved cleaning SOP / BCR. Batch columns stay blank until the cleaning validation report is written.";
+
 export const CVP_EQUIPMENT_RESIDUE_INTRO_SEED =
   "The following table summarizes the sampling locations and results for [analyte] residue analysis during the three consecutive cleaning validation batches. Results from each batch shall be compared against the established acceptance criterion of NMT [limit].";
 
@@ -1079,14 +1095,18 @@ function identityRows(type: CvpEquipmentType): (readonly string[])[] {
   return rows;
 }
 
-function visualInspectionRows(): (readonly string[])[] {
-  return [
-    ["Production Chemist verification", "", "", ""],
-    ["Production Shift in-charge verification", "", "", ""],
-    ["QA verification", "", "", ""],
-    ["Is any permanent stain recorded?", "", "", ""],
-  ];
-}
+export const CVP_VISUAL_INSPECTION_INTRO_SEED =
+  "As a primary verification of equipment cleanliness, visual inspection shall be conducted under established inspection conditions to assess the presence of visible product residues, foreign matter, staining, or other indications of inadequate cleaning. The observations made by the Production Chemist, Production Shift In-charge, and QA representative during each of the three cleaning validation batches shall be recorded in the following table. Any permanent stains observed shall be evaluated to confirm that they do not impact the effectiveness of the cleaning process or product quality.";
+
+export const CVP_PREVIOUS_VISUAL_INSPECTION_INTRO_SEED =
+  "Visual inspection shall be performed independently by the Production Chemist, Production Shift In-charge, and QA Executive under qualified light intensity (NLT 500 Lux). The inspection verifies that all internal product-contact surfaces are visibly clean, dry, and free from particulate matter.";
+
+export const CVP_VISUAL_INSPECTION_ROWS: readonly (readonly string[])[] = [
+  ["Production Chemist verification", "", "", ""],
+  ["Production Shift in-charge verification", "", "", ""],
+  ["QA verification", "", "", ""],
+  ["Is any permanent stain recorded?", "", "", ""],
+];
 
 function residueFooterRows(): (readonly string[])[] {
   return [
@@ -1133,6 +1153,9 @@ export function cvpEquipmentSamplingSeed(
     cleaningRows.length > 0
       ? [
           heading(3, `${n}.4 Cleaning operation results summary`),
+          ...CVP_CLEANING_OPERATION_INTRO_SEEDS.map((text) =>
+            textParagraph(text)
+          ),
           groupedResultsTable(
             ["Cleaning Parameter", "Acceptance Criteria / Target"],
             cleaningRows.map(([parameter, target]) => [
@@ -1197,12 +1220,10 @@ export function cvpEquipmentSamplingSeed(
         "Upon completion of cleaning, the equipment shall undergo visual inspection under qualified inspection conditions. Following satisfactory visual inspection, swab samples shall be collected from predefined worst-case locations and final rinse samples shall be collected from the equipment. The results shall be evaluated against the established acceptance criteria to demonstrate the effectiveness and consistency of the cleaning procedure."
       ),
       heading(3, `${n}.6 Visual inspection summary`),
-      textParagraph(
-        "As a primary verification of equipment cleanliness, visual inspection shall be conducted under established inspection conditions to assess the presence of visible product residues, foreign matter, staining, or other indications of inadequate cleaning. The observations made by the Production Chemist, Production Shift In-charge, and QA representative during each of the three cleaning validation batches shall be recorded in the following table. Any permanent stains observed shall be evaluated to confirm that they do not impact the effectiveness of the cleaning process or product quality."
-      ),
+      textParagraph(CVP_VISUAL_INSPECTION_INTRO_SEED),
       groupedResultsTable(
         ["Sample description / location"],
-        visualInspectionRows()
+        CVP_VISUAL_INSPECTION_ROWS
       ),
       heading(3, cvpResidueHeadingTitle(type, ordinal)),
       textParagraph(CVP_EQUIPMENT_RESIDUE_INTRO_SEED),

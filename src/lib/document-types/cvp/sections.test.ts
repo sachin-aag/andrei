@@ -8,7 +8,9 @@ import {
   normalizeCvpEquipmentSamplingContent,
 } from "./equipment-sampling";
 import {
+  CVP_CLEANING_OPERATION_INTRO_SEEDS,
   CVP_DEVIATIONS_SEED,
+  CVP_EQUIPMENT_DETAILS_SEED,
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
   CVP_EVALUATION_SEEDS,
@@ -17,9 +19,14 @@ import {
   CVP_METHOD_VALIDATION_INTRO_SEED,
   CVP_NITROSAMINE_HEADERS,
   CVP_NITROSAMINE_INTRO_SEED,
+  CVP_PREVIOUS_BATCH_RESIDUE_RESULTS_HEADERS,
+  CVP_PREVIOUS_EQUIPMENT_DETAILS_SEEDS,
   CVP_PREVIOUS_NITROSAMINE_HEADERS,
   CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
+  CVP_RESIDUE_LOD,
+  CVP_RESIDUE_LOQ,
   CVP_RESIDUE_RESULTS_HEADERS,
+  CVP_SWAB_LIMIT,
   CVP_REVALIDATION_SEED,
   CVP_SECTION_KEYS,
   CVP_TABLE_SECTION_KEYS,
@@ -172,6 +179,10 @@ describe("cleaning verification protocol sections", () => {
     expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.4");
     expect(CVP_EQUIPMENT_H3_OUTLINE).toHaveLength(8);
     expect(CVP_EQUIPMENT_H4_OUTLINE[0]?.title).toBe("Worst-case locations");
+    const reactor = JSON.stringify(cvpEquipmentSamplingSeed(1, "reactor"));
+    expect(reactor).toContain("15.1.4 Cleaning operation results summary");
+    expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[0]);
+    expect(reactor).toContain(CVP_CLEANING_OPERATION_INTRO_SEEDS[1]);
   });
 
   it("upgrades a lumped identity table into the 15.N.M outline", () => {
@@ -659,7 +670,7 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "(empty)",
-      "NMT 1 ppm",
+      "5 ppm [3]",
       "5 ppm [3]",
       "5 ppm [3]",
       "5 ppm [3]",
@@ -667,7 +678,7 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOD")).toEqual([
       "LOD",
       "(empty)",
-      "NMT 0.3 ppm",
+      "2 ppm",
       "2 ppm",
       "2 ppm",
       "2 ppm",
@@ -760,6 +771,163 @@ describe("cleaning verification protocol sections", () => {
     ]);
   });
 
+  it("inserts Limit / LOQ / LOD seed values on an old batch residue table", () => {
+    const row = (cells: string[]) => ({
+      type: "tableRow" as const,
+      content: cells.map((text) => ({
+        type: "tableCell" as const,
+        content: [
+          {
+            type: "paragraph" as const,
+            content: text ? [{ type: "text" as const, text }] : [],
+          },
+        ],
+      })),
+    });
+    const previous: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_PREVIOUS_BATCH_RESIDUE_RESULTS_HEADERS].map(
+                (text) => ({
+                  type: "tableHeader" as const,
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+            row(["Swab samples", "", "", "", ""]),
+            row(["Final Rinse Sample (Acetone)", "NA", "", "", ""]),
+          ],
+        },
+      ],
+    };
+    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(previous))[0]?.cells ?? [];
+    const byLabel = (label: string) => {
+      const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
+      return cells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(summarizeTablesInDoc(upgradeCvpValidationDoc(previous))[0]?.headers).toEqual(
+      [...CVP_RESIDUE_RESULTS_HEADERS]
+    );
+    expect(byLabel("Swab samples")).toEqual([
+      "Swab samples",
+      "(empty)",
+      CVP_SWAB_LIMIT,
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+    expect(byLabel("Final Rinse Sample (Acetone)")).toEqual([
+      "Final Rinse Sample (Acetone)",
+      "NA",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+    expect(byLabel("LOQ")).toEqual([
+      "LOQ",
+      "(empty)",
+      CVP_RESIDUE_LOQ,
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+    expect(byLabel("LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      CVP_RESIDUE_LOD,
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+
+    const customLimit: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_RESIDUE_RESULTS_HEADERS].map((text) => ({
+                type: "tableHeader" as const,
+                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+              })),
+            },
+            row(["Swab samples", "", "NMT 10 ppm", "", "", ""]),
+            row(["LOQ", "", "5 ppm", "", "", ""]),
+          ],
+        },
+      ],
+    };
+    const customCells =
+      summarizeTablesInDoc(upgradeCvpValidationDoc(customLimit))[0]?.cells ?? [];
+    const customByLabel = (label: string) => {
+      const rowIndex = customCells.find(
+        (cell) => cell.col === 0 && cell.text === label
+      )?.row;
+      return customCells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(customByLabel("Swab samples")[2]).toBe("NMT 10 ppm");
+    expect(customByLabel("LOQ")[2]).toBe("5 ppm");
+    expect(customByLabel("LOD")).toEqual([
+      "LOD",
+      "(empty)",
+      CVP_RESIDUE_LOD,
+      "(empty)",
+      "(empty)",
+      "(empty)",
+    ]);
+
+    const filledFiveCol: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [...CVP_PREVIOUS_BATCH_RESIDUE_RESULTS_HEADERS].map(
+                (text) => ({
+                  type: "tableHeader" as const,
+                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+                })
+              ),
+            },
+            row(["Swab samples", "", "NMT 10 ppm", "", ""]),
+            row(["LOQ", "", "5 ppm", "", ""]),
+            row(["LOD", "", "2 ppm", "", ""]),
+          ],
+        },
+      ],
+    };
+    const filledCells =
+      summarizeTablesInDoc(upgradeCvpValidationDoc(filledFiveCol))[0]?.cells ?? [];
+    const filledByLabel = (label: string) => {
+      const rowIndex = filledCells.find(
+        (cell) => cell.col === 0 && cell.text === label
+      )?.row;
+      return filledCells
+        .filter((cell) => cell.row === rowIndex)
+        .sort((a, b) => a.col - b.col)
+        .map((cell) => cell.text);
+    };
+    expect(filledByLabel("Swab samples")[2]).toBe("NMT 10 ppm");
+    expect(filledByLabel("LOQ")[2]).toBe("5 ppm");
+    expect(filledByLabel("LOD")[2]).toBe("2 ppm");
+  });
+
   it("drops the bold mark on a Batch 1 header so it matches Sample ID", () => {
     const headerCell = (text: string, bold = false): JSONContent => ({
       type: "tableHeader",
@@ -796,7 +964,10 @@ describe("cleaning verification protocol sections", () => {
     };
     const upgraded = upgradeCvpValidationDoc(doc);
     const header = upgraded.content?.[0]?.content?.[0];
-    const batch1 = header?.content?.[2];
+    const batch1 = header?.content?.find((cell) => {
+      const text = cell.content?.[0]?.content?.[0];
+      return text?.type === "text" && text.text === "Batch 1";
+    });
     const text = batch1?.content?.[0]?.content?.[0];
     expect(text?.text).toBe("Batch 1");
     expect(text?.marks ?? []).toEqual([]);
@@ -931,6 +1102,32 @@ describe("cleaning verification protocol sections", () => {
     const text = JSON.stringify(swapped);
     expect(text).toContain("It shall be written in the cleaning validation report.");
     expect(text).toContain("This verification protocol was drafted for the ISM4 train.");
+
+    const leftoverDetails: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: CVP_PREVIOUS_EQUIPMENT_DETAILS_SEEDS[0] }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Inference:", marks: [{ type: "bold" }] }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Conclusion:", marks: [{ type: "bold" }] }],
+        },
+      ],
+    };
+    const detailsSwapped = upgradeCvpValidationDoc(leftoverDetails);
+    const detailsText = JSON.stringify(detailsSwapped);
+    expect(detailsText).toContain(CVP_EQUIPMENT_DETAILS_SEED);
+    expect(detailsText).not.toContain("were obtained from CPDR");
+    expect(
+      (detailsText.match(/It shall be written in the cleaning validation report\./g) ?? [])
+        .length
+    ).toBe(2);
   });
 
   it("drops an empty 15.0 batch execution table and rewrites sampling-plan seed prose", () => {
