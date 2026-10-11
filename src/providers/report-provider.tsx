@@ -30,6 +30,7 @@ import {
   getWorkspaceSections,
   mergeSectionForType,
 } from "@/lib/document-types";
+import { CVP_LEGACY_SECTION_KEYS } from "@/lib/document-types/cvp/sections";
 import { firstGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import {
   preferredOpenSuggestion,
@@ -398,6 +399,14 @@ function bundleToSections(
       );
     } else {
       out[section.key] = section.emptyContent;
+    }
+  }
+  if (documentType === "cleaning_verification_protocol") {
+    for (const key of CVP_LEGACY_SECTION_KEYS) {
+      const row = rows.find((r) => r.section === key);
+      if (row) {
+        out[key] = mergeSectionForType(documentType, key, row.content);
+      }
     }
   }
   // Backfill investigation keys if somehow missing

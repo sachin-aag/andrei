@@ -6,7 +6,10 @@ import {
   CVP_DEVIATIONS_SEED,
   CVP_EVALUATION_SEEDS,
   CVP_EXTRANEOUS_RESULTS_HEADERS,
+  CVP_HISTORY_HEADERS,
   CVP_MANUFACTURING_AREA_HEADERS,
+  CVP_MANUFACTURING_AREA_LEADING_HEADERS,
+  CVP_MANUFACTURING_AREA_LIMIT,
   CVP_NITROSAMINE_HEADERS,
   CVP_NITROSAMINE_INTRO_SEED,
   CVP_NITROSAMINE_LIMIT,
@@ -15,21 +18,33 @@ import {
   CVP_PGI_HEADERS,
   CVP_PGI_INTRO_SEED,
   CVP_PGI_LIMIT,
+  CVP_PREVIOUS_BATCH_MANUFACTURING_AREA_HEADERS,
+  CVP_PREVIOUS_BATCH_NITROSAMINE_HEADERS,
+  CVP_PREVIOUS_BATCH_OVERALL_RESULTS_HEADERS,
   CVP_PREVIOUS_CLEANING_OPERATION_HEADERS,
   CVP_PREVIOUS_EXTRANEOUS_RESULTS_HEADERS,
+  CVP_PREVIOUS_HISTORY_HEADERS,
   CVP_PREVIOUS_MANUFACTURING_AREA_HEADERS,
   CVP_PREVIOUS_NITROSAMINE_HEADERS,
+  CVP_PREVIOUS_NITROSAMINE_INTRO_SEED,
+  CVP_PREVIOUS_NITROSAMINE_LIMIT,
   CVP_PREVIOUS_OVERALL_RESULTS_HEADERS,
   CVP_PREVIOUS_PGI_HEADERS,
   CVP_PREVIOUS_PROCESS_LINE_HEADERS,
   CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
+  CVP_PREVIOUS_TESTING_HEADERS,
   CVP_PREVIOUS_VISUAL_INSPECTION_HEADERS,
   CVP_PROCESS_LINE_HEADERS,
+  CVP_RESIDUE_LOD,
+  CVP_RESIDUE_LOQ,
   CVP_RESIDUE_RESULTS_HEADERS,
   CVP_REVALIDATION_SEED,
+  CVP_SWAB_LIMIT,
   CVP_TABLE_SECTION_BOILERPLATE,
+  CVP_TESTING_HEADERS,
   CVP_VISUAL_INSPECTION_HEADERS,
-  type CvpSectionKey,
+  groupedResultsTable,
+  type CvpPersistableSectionKey,
 } from "./sections";
 
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
@@ -62,10 +77,18 @@ const SEED_SWAPS: ReadonlyArray<readonly [string, string]> = [
   ],
   [
     "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table. Result and observation fields stay blank until the cleaning verification report is written.",
+    "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine limits, manufacturing-area cleaning verification, testing through revalidation, overall results, and recommendations. Result and observation fields stay blank until the cleaning validation report is written.",
+  ],
+  [
     "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area validation, and the overall results table. Result and observation fields stay blank until the cleaning validation report is written. Record three consecutive cleaning batches in the batch execution summary and in the Batch columns of the result tables.",
+    "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine limits, manufacturing-area cleaning verification, testing through revalidation, overall results, and recommendations. Result and observation fields stay blank until the cleaning validation report is written.",
   ],
   [
     "The rinse samples collected from the equipment after completion of the cleaning procedure shall be analyzed for nitrosamine impurities to verify the effectiveness of the cleaning process and to ensure that nitrosamine residues, if any, are controlled within the predefined acceptance criteria. The rinse samples shall be evaluated for NDMA, NMBA, NDEA, NEIPA, NDIPA, NMPA, and NDBA. The acceptance criterion for each nitrosamine impurity is Not More Than (NMT) [limit] in the rinse sample. Compliance with the specified limits demonstrates the adequacy of the cleaning procedure in controlling nitrosamine contamination and minimizing the risk of cross-contamination.",
+    CVP_NITROSAMINE_INTRO_SEED,
+  ],
+  [
+    CVP_PREVIOUS_NITROSAMINE_INTRO_SEED,
     CVP_NITROSAMINE_INTRO_SEED,
   ],
   [
@@ -114,7 +137,11 @@ const SEED_SWAPS: ReadonlyArray<readonly [string, string]> = [
   ],
   [
     "Result fields are intentionally left blank for recording during report finalization. List each equipment ID. Write NA only where a test does not apply to that item. A second table holds the protocol’s overall acceptance criteria.",
+    "Result fields are intentionally left blank for recording during report finalization. List each equipment ID on one row, plus a Manufacturing Areas row. Write NA only where a test does not apply to that item.",
+  ],
+  [
     "Result fields are intentionally left blank for recording during report finalization. List each equipment ID with one row per batch (Batch 1, Batch 2, Batch 3). Write NA only where a test does not apply to that item. A second table holds the protocol’s overall acceptance criteria.",
+    "Result fields are intentionally left blank for recording during report finalization. List each equipment ID on one row, plus a Manufacturing Areas row. Write NA only where a test does not apply to that item.",
   ],
   [
     "Swab sampling using swab cloth: Use a new swab cloth (4 × 4 inches). Wear fresh gloves and do not touch the cloth directly. Immerse the cloth in the sample bottle containing the stated volume of cleaning-verification solvent, squeeze to remove excess solvent, and wipe the designated location with overlapping horizontal then vertical strokes. Place the used cloth back into the sample bottle.",
@@ -156,11 +183,6 @@ const SPLIT_LAST: readonly SplitLastSpec[] = [
 
 const INSERT_BATCH: readonly InsertBatchSpec[] = [
   {
-    oldHeaders: CVP_PREVIOUS_NITROSAMINE_HEADERS,
-    newHeaders: CVP_NITROSAMINE_HEADERS,
-    batchIndex: 2,
-  },
-  {
     oldHeaders: CVP_PREVIOUS_PGI_HEADERS,
     newHeaders: CVP_PGI_HEADERS,
     batchIndex: 2,
@@ -172,12 +194,12 @@ const INSERT_BATCH: readonly InsertBatchSpec[] = [
   },
   {
     oldHeaders: CVP_PREVIOUS_MANUFACTURING_AREA_HEADERS,
-    newHeaders: CVP_MANUFACTURING_AREA_HEADERS,
+    newHeaders: CVP_PREVIOUS_BATCH_MANUFACTURING_AREA_HEADERS,
     batchIndex: 1,
   },
   {
     oldHeaders: CVP_PREVIOUS_OVERALL_RESULTS_HEADERS,
-    newHeaders: CVP_OVERALL_RESULTS_HEADERS,
+    newHeaders: CVP_PREVIOUS_BATCH_OVERALL_RESULTS_HEADERS,
     batchIndex: 2,
   },
 ];
@@ -421,15 +443,17 @@ function splitLastColumn(table: JSONContent, spec: SplitLastSpec): JSONContent {
       type: "tableCell" as const,
     }));
     const last = cells[spec.oldHeaders.length - 1];
+    const split = [
+      ...kept,
+      last ? { ...last, type: "tableCell" as const } : makeCell("tableCell", ""),
+    ];
+    while (split.length < spec.newHeaders.length) {
+      split.push(emptyLike(last));
+    }
     return {
       ...row,
       type: "tableRow" as const,
-      content: [
-        ...kept,
-        last ? { ...last, type: "tableCell" } : makeCell("tableCell", ""),
-        emptyLike(last),
-        emptyLike(last),
-      ],
+      content: split.slice(0, spec.newHeaders.length),
     };
   });
   return { ...table, content: [newHeader, ...body] };
@@ -566,23 +590,20 @@ function upgradeTable(table: JSONContent): JSONContent {
 }
 
 /**
- * Nitrosamine Limit NMT cells are 0.1 ppm and PGI Limit NMT cells are
- * 0.2 ppm, the same value in every impurity column. This pass overwrites
- * those cells, including a previously filled number.
+ * Nitrosamine Limit NMT cells that still show the old 0.1 ppm seed become
+ * 0.01 ppm. A number the engineer already changed is left as stored.
  */
 function applyCvpTemplateImpurityLimits(table: JSONContent): JSONContent {
   const rows = table.content ?? [];
   const labels = headerLabels(rows[0]);
-  const limit = headersMatch(labels, CVP_NITROSAMINE_HEADERS)
-    ? CVP_NITROSAMINE_LIMIT
-    : headersMatch(labels, CVP_PREVIOUS_NITROSAMINE_HEADERS)
-      ? CVP_NITROSAMINE_LIMIT
-      : headersMatch(labels, CVP_PGI_HEADERS)
-        ? CVP_PGI_LIMIT
-        : headersMatch(labels, CVP_PREVIOUS_PGI_HEADERS)
-          ? CVP_PGI_LIMIT
-          : null;
-  if (!limit) return table;
+  const nitrosamine =
+    headersMatch(labels, CVP_NITROSAMINE_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_NITROSAMINE_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_BATCH_NITROSAMINE_HEADERS);
+  const pgi =
+    headersMatch(labels, CVP_PGI_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_PGI_HEADERS);
+  if (!nitrosamine && !pgi) return table;
   const batch = labels.findIndex((label) => /^batch$/i.test(label));
   const impurityStart = batch >= 0 ? batch + 1 : 2;
   let changed = false;
@@ -595,9 +616,20 @@ function applyCvpTemplateImpurityLimits(table: JSONContent): JSONContent {
     let rowChanged = false;
     const nextCells = cells.map((cell, i) => {
       if (i < impurityStart) return cell;
-      if (cellPlain(cell) === limit) return cell;
-      rowChanged = true;
-      return cloneCellWithText(cell, limit);
+      const current = cellPlain(cell);
+      if (nitrosamine) {
+        const previousSeed =
+          current === "" ||
+          current === CVP_PREVIOUS_NITROSAMINE_LIMIT ||
+          /^0\.1(?:\s*ppm)?$/i.test(current);
+        if (current === CVP_NITROSAMINE_LIMIT || !previousSeed) {
+          return cell;
+        }
+        rowChanged = true;
+        return cloneCellWithText(cell, CVP_NITROSAMINE_LIMIT);
+      }
+      if (current === "" || current === CVP_PGI_LIMIT) return cell;
+      return cell;
     });
     if (!rowChanged) return row;
     changed = true;
@@ -697,7 +729,7 @@ export function ensureCvpTableSectionBoilerplate(
   key: string,
   doc: JSONContent
 ): JSONContent {
-  const intros = CVP_TABLE_SECTION_BOILERPLATE[key as CvpSectionKey];
+  const intros = CVP_TABLE_SECTION_BOILERPLATE[key as CvpPersistableSectionKey];
   if (!intros?.length) return doc;
   const nodes = doc.content ?? [];
   if (!nodes.some((node) => node.type === "table")) return doc;
@@ -719,32 +751,296 @@ export function ensureCvpTableSectionBoilerplate(
   };
 }
 
-/** Sampling plan (15.0): add the three-row Batch 1/2/3 execution table if missing. */
+function batchExecutionValueCellsEmpty(table: JSONContent): boolean {
+  for (const row of (table.content ?? []).slice(1)) {
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    for (let i = 1; i < cells.length; i++) {
+      if (cellPlain(cells[i]).length > 0) return false;
+    }
+  }
+  return true;
+}
+
+/** Sampling plan (15.0): drop the unused batch-execution table when its value cells are empty. */
 export function ensureCvpBatchExecutionTable(doc: JSONContent): JSONContent {
-  if (hasBatchExecutionTable(doc)) return doc;
-  const table: JSONContent = {
+  if (!hasBatchExecutionTable(doc)) return doc;
+  const content = (doc.content ?? []).filter((node) => {
+    if (node.type !== "table") return true;
+    if (!headersMatch(headerLabels(node.content?.[0]), CVP_BATCH_EXECUTION_HEADERS)) {
+      return true;
+    }
+    return !batchExecutionValueCellsEmpty(node);
+  });
+  return content.length === (doc.content ?? []).length
+    ? doc
+    : { ...doc, content };
+}
+
+function tableExecutionEmpty(table: JSONContent): boolean {
+  const rows = table.content ?? [];
+  const labels = headerLabels(rows[0]);
+  const skip = new Set(
+    [
+      CVP_SWAB_LIMIT,
+      CVP_RESIDUE_LOQ,
+      CVP_RESIDUE_LOD,
+      CVP_MANUFACTURING_AREA_LIMIT,
+      CVP_NITROSAMINE_LIMIT,
+      CVP_PREVIOUS_NITROSAMINE_LIMIT,
+      "1 ppm",
+      "0.3 ppm",
+      "NA",
+    ].map((s) => s.toLowerCase())
+  );
+  for (const row of rows.slice(1)) {
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    if (ANALYTICAL_FOOTER_LABEL.test(cellPlain(cells[0]))) continue;
+    for (let i = 1; i < cells.length; i++) {
+      const text = cellPlain(cells[i]);
+      if (!text) continue;
+      if (skip.has(text.toLowerCase())) continue;
+      if (/^nmt\s+/i.test(text)) continue;
+      return false;
+    }
+  }
+  void labels;
+  return true;
+}
+
+function fillEmptyCell(
+  cell: JSONContent,
+  value: string
+): { cell: JSONContent; changed: boolean } {
+  if (cellPlain(cell).length > 0) return { cell, changed: false };
+  return { cell: cloneCellWithText(cell, value), changed: true };
+}
+
+function fillEmptyResidueSeeds(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  const limitCol = labels.findIndex((label) => /^limit$/i.test(label));
+  if (limitCol < 0) return table;
+  let changed = false;
+  const content = (table.content ?? []).map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const first = cellPlain(cells[0]);
+    const limitCell = cells[limitCol];
+    if (!limitCell) return row;
+    let seed = "";
+    if (/^loq$/i.test(first)) seed = CVP_RESIDUE_LOQ;
+    else if (/^lod$/i.test(first)) seed = CVP_RESIDUE_LOD;
+    else if (/swab/i.test(first) || first === "") seed = CVP_SWAB_LIMIT;
+    if (!seed) return row;
+    if (first === "" && cellPlain(cells[limitCol]).length > 0) return row;
+    if (!/^loq$|^lod$/i.test(first) && !/swab/i.test(first) && first !== "") {
+      return row;
+    }
+    const filled = fillEmptyCell(limitCell, seed);
+    if (!filled.changed) return row;
+    changed = true;
+    const nextCells = cells.slice();
+    nextCells[limitCol] = filled.cell;
+    return { ...row, content: nextCells };
+  });
+  return changed ? { ...table, content } : table;
+}
+
+function reshapeEmptyManufacturingArea(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  const oldShape =
+    headersMatch(labels, CVP_PREVIOUS_MANUFACTURING_AREA_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_BATCH_MANUFACTURING_AREA_HEADERS);
+  if (!oldShape || !tableExecutionEmpty(table)) return table;
+  return groupedResultsTable(CVP_MANUFACTURING_AREA_LEADING_HEADERS, [
+    ["", "", "", "", CVP_MANUFACTURING_AREA_LIMIT, "", "", ""],
+  ]);
+}
+
+function reshapeEmptyOverall(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  const oldShape =
+    headersMatch(labels, CVP_PREVIOUS_OVERALL_RESULTS_HEADERS) ||
+    headersMatch(labels, CVP_PREVIOUS_BATCH_OVERALL_RESULTS_HEADERS);
+  if (!oldShape || !tableExecutionEmpty(table)) return table;
+  return {
     type: "table",
     content: [
       {
         type: "tableRow",
-        content: CVP_BATCH_EXECUTION_HEADERS.map((h) => makeCell("tableHeader", h)),
+        content: CVP_OVERALL_RESULTS_HEADERS.map((h) => makeCell("tableHeader", h)),
       },
-      ...CVP_BATCH_LABELS.map((label) => ({
-        type: "tableRow" as const,
-        content: [
-          makeCell("tableCell", label),
-          makeCell("tableCell", ""),
-          makeCell("tableCell", ""),
-          makeCell("tableCell", ""),
-          makeCell("tableCell", ""),
-          makeCell("tableCell", ""),
-        ],
-      })),
+      {
+        type: "tableRow",
+        content: CVP_OVERALL_RESULTS_HEADERS.map(() => makeCell("tableCell", "")),
+      },
+      {
+        type: "tableRow",
+        content: CVP_OVERALL_RESULTS_HEADERS.map((_, i) =>
+          makeCell("tableCell", i === 1 ? "Manufacturing Areas" : "")
+        ),
+      },
     ],
   };
-  return { ...doc, content: [...(doc.content ?? []), table] };
+}
+
+function reshapeEmptyTesting(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!headersMatch(labels, CVP_PREVIOUS_TESTING_HEADERS)) return table;
+  if (!tableExecutionEmpty(table)) return table;
+  return {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: CVP_TESTING_HEADERS.map((h) => makeCell("tableHeader", h)),
+      },
+      {
+        type: "tableRow",
+        content: [
+          makeCell("tableCell", "Product content"),
+          makeCell("tableCell", ""),
+          makeCell("tableCell", ""),
+          makeCell("tableCell", "1 ppm"),
+          makeCell("tableCell", "0.3 ppm"),
+        ],
+      },
+      {
+        type: "tableRow",
+        content: [
+          makeCell("tableCell", "Extraneous matter"),
+          makeCell("tableCell", ""),
+          makeCell("tableCell", ""),
+          makeCell("tableCell", "NA"),
+          makeCell("tableCell", "NA"),
+        ],
+      },
+    ],
+  };
+}
+
+function reshapeEmptyHistory(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  if (!headersMatch(labels, CVP_PREVIOUS_HISTORY_HEADERS)) return table;
+  const rows = table.content ?? [];
+  const body = rows.slice(1);
+  const hasUserReason = body.some((row) => {
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const reason = cellPlain(cells[2]);
+    return reason.length > 0 && reason.toLowerCase() !== "new document";
+  });
+  if (hasUserReason) return table;
+  return {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: CVP_HISTORY_HEADERS.map((h) => makeCell("tableHeader", h)),
+      },
+      {
+        type: "tableRow",
+        content: [
+          makeCell("tableCell", "00"),
+          makeCell("tableCell", "New document"),
+        ],
+      },
+    ],
+  };
+}
+
+function fillEmptyTestingLoqLod(table: JSONContent): JSONContent {
+  if (!headersMatch(headerLabels(table.content?.[0]), CVP_TESTING_HEADERS)) {
+    return table;
+  }
+  let changed = false;
+  const content = (table.content ?? []).map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const first = cellPlain(cells[0]).toLowerCase();
+    const loq = cells[3];
+    const lod = cells[4];
+    if (!loq || !lod) return row;
+    let next = cells;
+    if (/product content|residue/i.test(first)) {
+      const a = fillEmptyCell(loq, "1 ppm");
+      const b = fillEmptyCell(lod, "0.3 ppm");
+      if (a.changed || b.changed) {
+        changed = true;
+        next = cells.slice();
+        next[3] = a.cell;
+        next[4] = b.cell;
+      }
+    }
+    if (/extraneous/i.test(first)) {
+      const a = fillEmptyCell(loq, "NA");
+      const b = fillEmptyCell(lod, "NA");
+      if (a.changed || b.changed) {
+        changed = true;
+        next = cells.slice();
+        next[3] = a.cell;
+        next[4] = b.cell;
+      }
+    }
+    return next === cells ? row : { ...row, content: next };
+  });
+  return changed ? { ...table, content } : table;
+}
+
+function fillEmptyManufacturingLimit(table: JSONContent): JSONContent {
+  const labels = headerLabels(table.content?.[0]);
+  const areaTable =
+    headersMatch(labels, CVP_MANUFACTURING_AREA_HEADERS) ||
+    labels[0]?.toLowerCase() === "area name";
+  if (!areaTable) return table;
+  const limitCol = labels.findIndex((label) => /^limit$/i.test(label));
+  if (limitCol < 0) return table;
+  let changed = false;
+  const content = (table.content ?? []).map((row, index) => {
+    if (index === 0 || row.type !== "tableRow") return row;
+    const cells = (row.content ?? []).filter(
+      (cell) => cell.type === "tableHeader" || cell.type === "tableCell"
+    );
+    const target = cells[limitCol];
+    if (!target) return row;
+    const filled = fillEmptyCell(target, CVP_MANUFACTURING_AREA_LIMIT);
+    if (!filled.changed) return row;
+    changed = true;
+    const next = cells.slice();
+    next[limitCol] = filled.cell;
+    return { ...row, content: next };
+  });
+  return changed ? { ...table, content } : table;
+}
+
+function reshapeCvpStage5Tables(doc: JSONContent): JSONContent {
+  if (!doc.content) return doc;
+  let changed = false;
+  const content = doc.content.map((node) => {
+    if (node.type !== "table") return node;
+    let next = reshapeEmptyManufacturingArea(node);
+    next = reshapeEmptyOverall(next);
+    next = reshapeEmptyTesting(next);
+    next = reshapeEmptyHistory(next);
+    next = fillEmptyResidueSeeds(next);
+    next = fillEmptyTestingLoqLod(next);
+    next = fillEmptyManufacturingLimit(next);
+    if (next !== node) changed = true;
+    return next;
+  });
+  return changed ? { ...doc, content } : doc;
 }
 
 export function upgradeCvpValidationDoc(doc: JSONContent): JSONContent {
-  return swapCvpValidationSeedText(upgradeCvpCycleTables(doc));
+  return reshapeCvpStage5Tables(
+    swapCvpValidationSeedText(upgradeCvpCycleTables(doc))
+  );
 }

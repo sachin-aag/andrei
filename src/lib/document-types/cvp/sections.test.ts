@@ -8,7 +8,6 @@ import {
   normalizeCvpEquipmentSamplingContent,
 } from "./equipment-sampling";
 import {
-  CVP_BATCH_EXECUTION_HEADERS,
   CVP_DEVIATIONS_SEED,
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
@@ -18,10 +17,8 @@ import {
   CVP_METHOD_VALIDATION_INTRO_SEED,
   CVP_NITROSAMINE_HEADERS,
   CVP_NITROSAMINE_INTRO_SEED,
-  CVP_PGI_INTRO_SEED,
   CVP_PREVIOUS_NITROSAMINE_HEADERS,
   CVP_PREVIOUS_RESIDUE_RESULTS_HEADERS,
-  CVP_PROCESS_LINE_INTRO_SEED,
   CVP_RESIDUE_RESULTS_HEADERS,
   CVP_REVALIDATION_SEED,
   CVP_SECTION_KEYS,
@@ -39,12 +36,12 @@ import { upgradeCvpValidationDoc } from "./cycle-upgrade";
 import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 
 describe("cleaning verification protocol sections", () => {
-  it("registers thirty F08 sections with a narrative or table field", () => {
+  it("registers twenty-nine F08 sections with a narrative or table field", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     expect(def.key).toBe("cleaning_verification_protocol");
     expect(def.documentNoLabel).toBe("Protocol No.");
     expect(def.wordImport).toEqual({ kind: "cleaning_verification_protocol" });
-    expect(def.sections).toHaveLength(30);
+    expect(def.sections).toHaveLength(29);
     expect(def.sections.map((s) => s.key)).toEqual([...CVP_SECTION_KEYS]);
     expect(CVP_FORM_NO).toBe("QAD-SOP-PS-003-F08-00");
     for (const key of CVP_SECTION_KEYS) {
@@ -124,11 +121,7 @@ describe("cleaning verification protocol sections", () => {
   });
 
   it("strips a leftover Table 15 caption on the unused 15.1 identity shell at merge", () => {
-    const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
-    const item =
-      "items" in seed
-        ? structuredClone(seed.items[0])
-        : { type: "doc" as const, content: [] };
+    const item = structuredClone(cvpEquipmentSamplingSeed(1));
     const tableIndex =
       item.content?.findIndex((node) => node.type === "table") ?? -1;
     item.content?.splice(tableIndex, 0, {
@@ -144,11 +137,10 @@ describe("cleaning verification protocol sections", () => {
     expect(text).not.toMatch(/Cvp Equipment Sampling/);
   });
 
-  it("seeds shared 15.N boilerplate without swab/visual tables", () => {
-    const seed = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
-    expect(seed).toHaveProperty("items");
-    const nodes =
-      "items" in seed ? (seed.items[0]?.content ?? []) : [];
+  it("starts equipment sampling empty and seeds 15.N.3 / .6 on Add equipment", () => {
+    const empty = EMPTY_CVP_CONTENT.cvp_equipment_sampling;
+    expect(empty).toEqual({ items: [] });
+    const nodes = cvpEquipmentSamplingSeed(1).content ?? [];
     const headings = nodes
       .filter((node) => node.type === "heading")
       .map((node) => ({
@@ -157,27 +149,27 @@ describe("cleaning verification protocol sections", () => {
       }));
     const tables = nodes.filter((node) => node.type === "table");
     const text = JSON.stringify(nodes);
-    expect(headings).toEqual([
-      { level: 2, text: "15.1 Equipment name (Equipment No.)" },
-      { level: 3, text: "15.1.1 Equipment details" },
-      { level: 3, text: "15.1.2 Supporting Documents and References" },
-      { level: 3, text: "15.1.5 Cleaning validation results summary" },
-      {
-        level: 3,
-        text: "15.1.7 Swab & Rinse samples analysis results summary",
-      },
-      {
-        level: 3,
-        text: "15.1.8 Rinse samples analysis results summary (Extraneous matter)",
-      },
-    ]);
-    expect(tables).toHaveLength(4);
+    expect(headings).toContainEqual({
+      level: 2,
+      text: "15.1 Equipment name (Equipment No.)",
+    });
+    expect(headings).toContainEqual({
+      level: 3,
+      text: "15.1.1 Equipment details",
+    });
+    expect(headings).toContainEqual({
+      level: 4,
+      text: "15.1.3.1 Worst-case locations",
+    });
+    expect(headings).toContainEqual({
+      level: 3,
+      text: "15.1.6 Visual inspection summary",
+    });
     expect(JSON.stringify(tables[0])).toContain("Capacity");
-    expect(JSON.stringify(tables[0])).not.toContain("Shell height");
+    expect(JSON.stringify(tables[0])).toContain("Shell height");
     expect(text).toContain("[Plant]");
     expect(text).toContain("Black and fiber particles should be absent");
-    expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.3.1");
-    expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.6");
+    expect(headings.map((h) => h.text).join(" ")).not.toContain("15.1.4");
     expect(CVP_EQUIPMENT_H3_OUTLINE).toHaveLength(8);
     expect(CVP_EQUIPMENT_H4_OUTLINE[0]?.title).toBe("Worst-case locations");
   });
@@ -423,7 +415,7 @@ describe("cleaning verification protocol sections", () => {
 
   it("tells Agent the whole form is a protocol with explicit leave-blank execution fields", () => {
     const def = getDocumentType("cleaning_verification_protocol");
-    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v3");
+    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v4");
     expect(def.prompts.base).toContain(
       "This is a protocol, not an executed cleaning validation report"
     );
@@ -438,71 +430,33 @@ describe("cleaning verification protocol sections", () => {
       "1.0 Name, Designation, Sign & date"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "Result fields are intentionally left blank for recording during report finalization."
+      "Execution cells stay blank"
     );
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "Equipment sampling (15.1, 15.2, …) is a **protocol**, not a report"
     );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Limit NMT is 0.01 ppm");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("D > 1 m → four");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("never RCVD");
     expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "Subsections are **not identical for every item**"
+      "Do not write that samples were sent"
     );
-    expect(CVP_DRAFTING_GUIDANCE).toContain("No-swab item");
-    expect(CVP_DRAFTING_GUIDANCE).toContain("**Batch 1 / Batch 2 / Batch 3 stay empty.**");
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "same text in Batch 1, Batch 2, and Batch 3"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "It shall be written in the cleaning validation report."
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "The three Batch columns stay blank in the protocol"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "already has the **shared** 15.N boilerplate"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain("**Do not draft_field**");
-    expect(CVP_DRAFTING_GUIDANCE).toContain("replaceFilledField: true");
-    expect(CVP_DRAFTING_GUIDANCE).toContain("**ML tank / receiver**");
-    expect(CVP_DRAFTING_GUIDANCE).toContain("insert suggestions for 15.N.1");
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "the server strips those tables and still lands the paragraph"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain("create_table: omit title");
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "Do not replay these ISM4 source mismatches"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "skip 15.N.3.2 when identity has no shell"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "Upon completion of cleaning, rinse sample shall be collected"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "As a primary verification of equipment cleanliness"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "NMT 0.1 ppm for every nitrosamine"
-    );
-    expect(CVP_DRAFTING_GUIDANCE).toContain("NMT 0.2 ppm for every PGI");
-    expect(CVP_DRAFTING_GUIDANCE).toContain(
-      "keep the seeded four paragraphs"
-    );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Do not add a PGI section");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Overall results (21.0)");
   });
 
-  it("seeds Batch 1/2/3 result columns and a 15.0 batch execution table", () => {
+  it("seeds grouped Results columns and no 15.0 batch execution table", () => {
     const residue = summarizeTablesInDoc(cvpEquipmentSamplingSeed(1));
     const residueHeaders = residue.find((table) =>
       table.headers.includes("Sample ID")
     )?.headers;
-    expect(residueHeaders).toEqual([...CVP_RESIDUE_RESULTS_HEADERS]);
+    expect(residueHeaders?.[0]).toBe("Sample description / location");
+    expect(residueHeaders).toContain("Results");
     const sampling = EMPTY_CVP_CONTENT.cvp_sampling_plan;
     const tables = summarizeTablesInDoc(
       "narrative" in sampling ? sampling.narrative : { type: "doc", content: [] }
     );
-    expect(tables[0]?.headers).toEqual([...CVP_BATCH_EXECUTION_HEADERS]);
-    expect(
-      tables[0]?.cells.filter((cell) => cell.col === 0 && cell.row > 0).map((cell) => cell.text)
-    ).toEqual(["Batch 1", "Batch 2", "Batch 3"]);
+    expect(tables).toHaveLength(0);
     expect(EMPTY_CVP_CONTENT.cvp_nitrosamine).toHaveProperty("table");
     const nitro = summarizeTablesInDoc(
       "table" in EMPTY_CVP_CONTENT.cvp_nitrosamine
@@ -518,12 +472,10 @@ describe("cleaning verification protocol sections", () => {
         "table" in EMPTY_CVP_CONTENT[key] ? EMPTY_CVP_CONTENT[key].table : {}
       );
     expect(tableText("cvp_nitrosamine")).toContain(CVP_NITROSAMINE_INTRO_SEED);
-    expect(tableText("cvp_pgi")).toContain(CVP_PGI_INTRO_SEED);
-    expect(tableText("cvp_process_line")).toContain(CVP_PROCESS_LINE_INTRO_SEED);
-    expect(tableText("cvp_process_line")).toContain("Acceptance Criteria:");
-    expect(tableText("cvp_manufacturing_area")).toContain(
-      "lint-free white wipe cloth"
-    );
+    expect(tableText("cvp_nitrosamine")).toContain("0.01 ppm");
+    expect(EMPTY_CVP_CONTENT).not.toHaveProperty("cvp_pgi");
+    expect(EMPTY_CVP_CONTENT).not.toHaveProperty("cvp_process_line");
+    expect(tableText("cvp_manufacturing_area")).toContain("10 ppm");
     expect(tableText("cvp_testing_procedure")).toContain(
       CVP_TESTING_PROCEDURE_INTRO_SEED
     );
@@ -640,7 +592,7 @@ describe("cleaning verification protocol sections", () => {
     expect(tables[0]?.headers).toEqual([...CVP_RESIDUE_RESULTS_HEADERS]);
     expect(
       tables[0]?.cells.filter((cell) => cell.row === 1).map((cell) => cell.text)
-    ).toEqual(["Final rinse", "RS-1", "0.12", "(empty)", "(empty)"]);
+    ).toEqual(["Final rinse", "RS-1", "0.12", "(empty)", "(empty)", "(empty)"]);
     expect(summarizeTablesInDoc(upgradeCvpValidationDoc(upgraded))[0]?.headers).toEqual(
       [...CVP_RESIDUE_RESULTS_HEADERS]
     );
@@ -694,9 +646,11 @@ describe("cleaning verification protocol sections", () => {
       "(empty)",
       "(empty)",
       "(empty)",
+      "(empty)",
     ]);
     expect(byLabel("Limit")).toEqual([
       "Limit",
+      "(empty)",
       "(empty)",
       "NMT 10 ppm",
       "NMT 10 ppm",
@@ -705,6 +659,7 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOQ")).toEqual([
       "LOQ",
       "(empty)",
+      "NMT 1 ppm",
       "5 ppm [3]",
       "5 ppm [3]",
       "5 ppm [3]",
@@ -712,6 +667,7 @@ describe("cleaning verification protocol sections", () => {
     expect(byLabel("LOD")).toEqual([
       "LOD",
       "(empty)",
+      "NMT 0.3 ppm",
       "2 ppm",
       "2 ppm",
       "2 ppm",
@@ -846,7 +802,7 @@ describe("cleaning verification protocol sections", () => {
     expect(text?.marks ?? []).toEqual([]);
   });
 
-  it("triples filled nitrosamine equipment rows and leaves Limit NMT once", () => {
+  it("keeps a single nitrosamine equipment row and upgrades 0.1 Limit NMT to 0.01 ppm", () => {
     const old: JSONContent = {
       type: "doc",
       content: [
@@ -885,21 +841,16 @@ describe("cleaning verification protocol sections", () => {
     const firstCol = tables[0]?.cells
       .filter((cell) => cell.col === 0 && cell.row > 0)
       .map((c) => c.text);
-    expect(firstCol).toEqual(["Limit NMT (ppm)", "GLR", "GLR", "GLR"]);
-    const batchCol = tables[0]?.cells
-      .filter((cell) => cell.col === 2 && cell.row > 0)
-      .map((c) => c.text);
-    expect(batchCol).toEqual(["(empty)", "Batch 1", "Batch 2", "Batch 3"]);
+    expect(firstCol).toEqual(["Limit NMT (ppm)", "GLR"]);
     const limitRow = tables[0]?.cells.filter((cell) => cell.row === 1) ?? [];
     expect(limitRow.map((cell) => cell.text)).toEqual([
       "Limit NMT (ppm)",
       "(empty)",
-      "(empty)",
-      ...CVP_NITROSAMINE_HEADERS.slice(3).map(() => "0.1 ppm"),
+      ...CVP_NITROSAMINE_HEADERS.slice(2).map(() => "0.01 ppm"),
     ]);
   });
 
-  it("overwrites stored nitrosamine and PGI Limit NMT cells with the template limits", () => {
+  it("upgrades empty or 0.1 ppm nitrosamine Limit NMT cells to 0.01 ppm", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     const nitro = def.mergeSection("cvp_nitrosamine", {
       table: {
@@ -927,7 +878,6 @@ describe("cleaning verification protocol sections", () => {
                   "",
                   "",
                   "",
-                  "",
                 ].map((text) => ({
                   type: "tableCell",
                   content: [{ type: "paragraph", content: [{ type: "text", text }] }],
@@ -941,24 +891,16 @@ describe("cleaning verification protocol sections", () => {
     const nitroLimit = summarizeTablesInDoc(nitro.table)[0]?.cells.filter(
       (cell) => cell.row === 1
     );
-    expect(nitroLimit?.slice(3).map((cell) => cell.text)).toEqual(
-      CVP_NITROSAMINE_HEADERS.slice(3).map(() => "0.1 ppm")
-    );
-    expect(JSON.stringify(nitro.table)).toContain("(NMT) 0.1 ppm");
-    expect(JSON.stringify(nitro.table)).not.toContain("[limit]");
-
-    const pgi = def.mergeSection("cvp_pgi", EMPTY_CVP_CONTENT.cvp_pgi) as {
-      table: JSONContent;
-    };
-    const pgiLimit = summarizeTablesInDoc(pgi.table)[0]?.cells.filter(
-      (cell) => cell.row === 1
-    );
-    expect(pgiLimit?.slice(3).map((cell) => cell.text)).toEqual([
-      "0.2 ppm",
-      "0.2 ppm",
-      "0.2 ppm",
+    expect(nitroLimit?.slice(3).map((cell) => cell.text)).toEqual([
+      "0.01",
+      "TBU",
+      "0.01 ppm",
+      "0.01 ppm",
+      "0.01 ppm",
+      "0.01 ppm",
     ]);
-    expect(JSON.stringify(pgi.table)).toContain("(NMT) 0.2 ppm");
+    expect(JSON.stringify(nitro.table)).toContain("(NMT) 0.01 ppm");
+    expect(JSON.stringify(nitro.table)).not.toContain("[limit]");
   });
 
   it("swaps untouched seed wording and leaves custom verification prose", () => {
@@ -991,7 +933,7 @@ describe("cleaning verification protocol sections", () => {
     expect(text).toContain("This verification protocol was drafted for the ISM4 train.");
   });
 
-  it("adds the 15.0 batch execution table on merge of a legacy sampling-plan paragraph", () => {
+  it("drops an empty 15.0 batch execution table and rewrites sampling-plan seed prose", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     const merged = def.mergeSection("cvp_sampling_plan", {
       narrative: {
@@ -1010,8 +952,9 @@ describe("cleaning verification protocol sections", () => {
       },
     }) as { narrative: JSONContent };
     const tables = summarizeTablesInDoc(merged.narrative);
-    expect(tables.some((table) => table.headers[0] === "Batch")).toBe(true);
+    expect(tables.some((table) => table.headers[0] === "Batch")).toBe(false);
     expect(JSON.stringify(merged.narrative)).toContain("cleaning validation report");
+    expect(JSON.stringify(merged.narrative)).toContain("recommendations");
   });
 
   it("prints a product-specific title when the cover product is set", () => {

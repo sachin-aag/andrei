@@ -217,7 +217,7 @@ describe("cvp_equipment_sampling sectionFillState", () => {
     });
     expect(
       (content.items[0]?.content ?? []).filter((node) => node.type === "table")
-    ).toHaveLength(4);
+    ).toHaveLength(7);
     expect(fieldFillState(content, "cvp_equipment_sampling", "items.0")).toBe(
       "empty"
     );

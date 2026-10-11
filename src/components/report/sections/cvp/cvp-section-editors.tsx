@@ -8,24 +8,33 @@ import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import {
   EMPTY_CVP_CONTENT,
+  EMPTY_CVP_LEGACY_CONTENT,
+  CVP_LEGACY_SECTION_KEYS,
   CVP_SECTION_KEYS,
   CVP_SECTION_LABELS,
   alignCvpMacoEquipmentHeaders,
+  isCvpLegacySectionKey,
   isCvpTableSectionKey,
+  type CvpPersistableSectionKey,
   type CvpSectionContent,
-  type CvpSectionKey,
 } from "@/lib/document-types/cvp/sections";
 import {
   useGenericReportSection,
   useReportData,
 } from "@/providers/report-provider";
 
-function CvpSectionEditor({ section }: { section: CvpSectionKey }) {
+function emptyCvpSection(section: CvpPersistableSectionKey): CvpSectionContent {
+  return isCvpLegacySectionKey(section)
+    ? EMPTY_CVP_LEGACY_CONTENT[section]
+    : EMPTY_CVP_CONTENT[section];
+}
+
+function CvpSectionEditor({ section }: { section: CvpPersistableSectionKey }) {
   const { readOnly } = useReportData();
   const { update } = useGenericReportSection<CvpSectionContent>(section);
   const { status, lastSavedAt, value, flushSave } = useGenericSectionSave(section);
   const content =
-    (value as CvpSectionContent | undefined) ?? EMPTY_CVP_CONTENT[section];
+    (value as CvpSectionContent | undefined) ?? emptyCvpSection(section);
   const field = isCvpTableSectionKey(section) ? "table" : "narrative";
   const stored = (content as Record<string, JSONContent | undefined>)[field];
   const doc =
@@ -65,7 +74,7 @@ function CvpSectionEditor({ section }: { section: CvpSectionKey }) {
   );
 }
 
-function makeEditor(section: CvpSectionKey): ComponentType {
+function makeEditor(section: CvpPersistableSectionKey): ComponentType {
   if (section === "cvp_equipment_sampling") return CvpEquipmentSamplingEditor;
   function Editor() {
     return <CvpSectionEditor section={section} />;
@@ -74,7 +83,12 @@ function makeEditor(section: CvpSectionKey): ComponentType {
   return Editor;
 }
 
-export const CVP_SECTION_EDITORS: Record<CvpSectionKey, ComponentType> =
-  Object.fromEntries(
-    CVP_SECTION_KEYS.map((key) => [key, makeEditor(key)])
-  ) as Record<CvpSectionKey, ComponentType>;
+export const CVP_SECTION_EDITORS: Record<
+  CvpPersistableSectionKey,
+  ComponentType
+> = Object.fromEntries(
+  [...CVP_SECTION_KEYS, ...CVP_LEGACY_SECTION_KEYS].map((key) => [
+    key,
+    makeEditor(key),
+  ])
+) as Record<CvpPersistableSectionKey, ComponentType>;

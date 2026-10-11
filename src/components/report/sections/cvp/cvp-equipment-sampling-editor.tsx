@@ -5,6 +5,12 @@ import { Plus, Trash2 } from "lucide-react";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import {
   appendCvpEquipmentItem,
@@ -15,6 +21,10 @@ import {
   removeCvpEquipmentItem,
   type CvpEquipmentSamplingContent,
 } from "@/lib/document-types/cvp/equipment-sampling";
+import {
+  CVP_EQUIPMENT_TYPE_OPTIONS,
+  type CvpEquipmentType,
+} from "@/lib/document-types/cvp/equipment-types";
 import { CVP_SECTION_LABELS } from "@/lib/document-types/cvp/sections";
 import { emptyDoc } from "@/lib/tiptap/rich-text";
 import { useGenericReportSection } from "@/providers/report-provider";
@@ -33,7 +43,7 @@ export function CvpEquipmentSamplingEditor() {
   return (
     <SectionShell
       title={CVP_SECTION_LABELS[SECTION]}
-      description="One box per product-contact equipment. Add equipment for a blank 15.2, 15.3, … box — numbering and Contents update automatically."
+      description="One box per product-contact equipment. Add equipment picks a type (reactor, sparkler, centrifuge, RVD, mill, sifter, or Other) and inserts a blank 15.N box — numbering and Contents update automatically."
       status={status}
       lastSavedAt={lastSavedAt}
       section={SECTION}
@@ -44,26 +54,23 @@ export function CvpEquipmentSamplingEditor() {
             key={cvpEquipmentItemAnchor(index)}
             index={index}
             doc={doc}
-            canRemove={items.length > 1}
+            canRemove
             onChange={(next) => {
               const nextItems = items.slice();
               nextItems[index] = next;
               write(nextItems);
             }}
-            onAddEquipment={() => write(insertBlankCvpEquipmentItem(items, index))}
+            onAddEquipment={(type) =>
+              write(insertBlankCvpEquipmentItem(items, index, type))
+            }
             onRemove={() => write(removeCvpEquipmentItem(items, index))}
             onFlushSave={flushSave}
           />
         ))}
-        <Button
-          type="button"
+        <CvpAddEquipmentMenu
           variant="outline"
-          className="justify-self-start"
-          onClick={() => write(appendCvpEquipmentItem(items))}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          Add equipment
-        </Button>
+          onAdd={(type) => write(appendCvpEquipmentItem(items, type))}
+        />
       </div>
     </SectionShell>
   );
@@ -82,7 +89,7 @@ function CvpEquipmentItemCard({
   doc: JSONContent;
   canRemove: boolean;
   onChange: (next: JSONContent) => void;
-  onAddEquipment: () => void;
+  onAddEquipment: (type: CvpEquipmentType) => void;
   onRemove: () => void;
   onFlushSave: () => void;
 }) {
@@ -96,16 +103,11 @@ function CvpEquipmentItemCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium text-[var(--foreground)]">{title}</p>
         <div className="flex items-center gap-1">
-          <Button
-            type="button"
+          <CvpAddEquipmentMenu
             variant="ghost"
             size="sm"
-            onClick={onAddEquipment}
-            title="Add a blank equipment box after this one"
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Add equipment
-          </Button>
+            onAdd={onAddEquipment}
+          />
           {canRemove ? (
             <Button
               type="button"
@@ -131,5 +133,42 @@ function CvpEquipmentItemCard({
         onFlushSave={onFlushSave}
       />
     </div>
+  );
+}
+
+function CvpAddEquipmentMenu({
+  onAdd,
+  variant,
+  size,
+}: {
+  onAdd: (type: CvpEquipmentType) => void;
+  variant: "outline" | "ghost";
+  size?: "sm";
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant={variant}
+          size={size}
+          className={variant === "outline" ? "justify-self-start" : undefined}
+          title="Add a blank equipment box"
+        >
+          <Plus className={size === "sm" ? "size-3.5" : "size-4"} aria-hidden="true" />
+          Add equipment
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {CVP_EQUIPMENT_TYPE_OPTIONS.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onSelect={() => onAdd(option.value)}
+          >
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

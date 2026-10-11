@@ -23,14 +23,17 @@ import {
 import {
   CVP_DEFAULT_METADATA,
   CVP_FORM_NO,
+  CVP_LEGACY_SECTION_KEYS,
   CVP_SECTION_KEYS,
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
+  EMPTY_CVP_LEGACY_CONTENT,
   alignCvpMacoEquipmentHeaders,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
-  isCvpSectionKey,
+  isCvpPersistableSectionKey,
   isCvpTableSectionKey,
+  type CvpPersistableSectionKey,
   type CvpSectionKey,
 } from "./cvp/sections";
 import { checkNarrativePresent, tableValuesCheck } from "./qsr/deterministic-checks";
@@ -73,7 +76,7 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
     llm(
       "objective.product",
       "Objective names the product and train",
-      "Does the objective name the product / stage, the manufacturing equipment train, and state that three consecutive cleaning batches will demonstrate residue, nitrosamine and PGI control?"
+      "Does the objective name the product / stage, the manufacturing equipment train, and state that three consecutive cleaning batches will demonstrate residue and nitrosamine control?"
     ),
   ],
   cvp_scope: [
@@ -141,12 +144,13 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
     ),
   ],
   cvp_nitrosamine: [tableFilled("nitrosamine", "Nitrosamine limits", 7)],
-  cvp_pgi: [tableFilled("pgi", "PGI limits", 3)],
-  cvp_process_line: [tableFilled("process_line", "Process line", 4)],
   cvp_manufacturing_area: [
     tableFilled("manufacturing_area", "Manufacturing area", 9),
   ],
   cvp_overall_results: [narrativePresent("overall_results", "Overall results")],
+  cvp_recommendations: [
+    narrativePresent("recommendations", "Recommendations"),
+  ],
   cvp_testing_procedure: [tableFilled("testing_procedure", "Testing procedure", 3)],
   cvp_method_validation: [
     tableFilled("method_validation", "Method validation status", 2),
@@ -160,13 +164,22 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
   cvp_history: [],
 };
 
-function fieldFor(key: CvpSectionKey): "narrative" | "table" | "items.[]" {
+function fieldFor(
+  key: CvpPersistableSectionKey
+): "narrative" | "table" | "items.[]" {
   if (key === "cvp_equipment_sampling") return CVP_EQUIPMENT_FIELD_PATTERN;
   return isCvpTableSectionKey(key) ? "table" : "narrative";
 }
 
+function emptyContentFor(key: CvpPersistableSectionKey) {
+  if (key === "cvp_pgi" || key === "cvp_process_line") {
+    return EMPTY_CVP_LEGACY_CONTENT[key];
+  }
+  return EMPTY_CVP_CONTENT[key];
+}
+
 function mergeCvpSection(key: string, raw: unknown): unknown {
-  if (!isCvpSectionKey(key)) return raw ?? {};
+  if (!isCvpPersistableSectionKey(key)) return raw ?? {};
   if (key === "cvp_equipment_sampling") {
     const { items } = normalizeCvpEquipmentSamplingContent(raw);
     return {
@@ -179,7 +192,7 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
     };
   }
   const field = fieldFor(key);
-  const base = (EMPTY_CVP_CONTENT[key] as Record<string, unknown>)[field];
+  const base = (emptyContentFor(key) as Record<string, unknown>)[field];
   const compacted = compact3xperLitreVolumesInDoc(
     mergeStoredRichField(raw, field, base, {
       preserveHeadings: true,
@@ -221,7 +234,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   })),
   criteriaBySection: CRITERIA,
   prompts: {
-    base: `You are a senior QA reviewer evaluating 3xper Innoventure Cleaning Validation Protocols (${CVP_FORM_NO}). This is a protocol, not an executed cleaning validation report. The protocol defines how the manufacturing equipment train for one product / stage will be cleaned and sampled across three consecutive cleaning batches (visual, swab, rinse, nitrosamine, PGI). Blank execution cells (Batch 1 / Batch 2 / Batch 3 results, observations, signatures, chromatograms, pass/fail) are correct — do not mark them not_met. Judge the sampling plan, limits, methods, identity, and the three-batch acceptance rule. You evaluate using a traffic light system:
+    base: `You are a senior QA reviewer evaluating 3xper Innoventure Cleaning Validation Protocols (${CVP_FORM_NO}). This is a protocol, not an executed cleaning validation report. The protocol defines how the manufacturing equipment train for one product / stage will be cleaned and sampled across three consecutive cleaning batches (visual, swab, rinse, nitrosamine). Blank execution cells (Results / Batch 1 / Batch 2 / Batch 3, observations, signatures, chromatograms, pass/fail) are correct — do not mark them not_met. Judge the sampling plan, limits, methods, identity, and the three-batch acceptance rule. You evaluate using a traffic light system:
 
 - met: the criterion is fully satisfied
 - partially_met: some of the required content is present but incomplete
@@ -234,15 +247,13 @@ Do not invent equipment numbers, surface areas, PDE, MACO, or analytical method 
       cvp_equipment_sampling:
         "Evaluate whether each product-contact equipment from Scope has a sampling block with locations and rationale, not only an identity table. Blank Batch 1 / Batch 2 / Batch 3 result, batch, and observation cells are correct for a protocol.",
       cvp_nitrosamine:
-        "Limit NMT and equipment Name/ID rows should be present (three Batch rows per equipment after the Limit NMT row). LOD, LOQ, and per-equipment Batch 1 / 2 / 3 result cells staying blank is correct.",
-      cvp_pgi:
-        "Limit NMT and equipment Name/ID rows should be present (three Batch rows per equipment after the Limit NMT row). LOD, LOQ, and per-equipment Batch 1 / 2 / 3 result cells staying blank is correct.",
-      cvp_process_line:
-        "Process-line descriptions should be listed. Batch column may be Batch 1 / 2 / 3. Production and QA observation columns staying blank is correct.",
+        "Limit NMT (0.01 ppm) and LOD / LOQ rows should be present. Equipment Name/ID may be listed. Result cells staying blank is correct. Do not require a completed results table or a Validated conclusion.",
       cvp_manufacturing_area:
-        "Each equipment should have Production and QA verifier rows for each batch. Observation, Overall Result, and Sign & date staying blank is correct.",
+        "Area Name / sampled-area rows and a 10 ppm Limit should be present. Results columns staying blank is correct.",
       cvp_overall_results:
-        "Equipment IDs should be listed with one row per batch (Batch 1 / 2 / 3), with NA only where a test does not apply. Execution result / status / remarks cells staying blank is correct. The acceptance-criteria table should be filled, including three consecutive batches complying.",
+        "One row per equipment ID plus a Manufacturing Areas row, with NA only where a test does not apply. Execution result / status / remarks cells staying blank is correct.",
+      cvp_recommendations:
+        "The seeded shall-language that recommendations are recorded in the report is enough. Do not require executed recommendations.",
     },
     promptVersion: CVP_PROMPT_VERSION,
   },
@@ -282,6 +293,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
       "cvp_process_line",
       "cvp_manufacturing_area",
       "cvp_overall_results",
+      "cvp_recommendations",
       "cvp_testing_procedure",
       "cvp_related_documents",
     ],
@@ -306,23 +318,30 @@ You never write to the document directly — every change is a PROPOSAL the engi
       ["cvp_pgi", [/\bgenotoxic\b/i, /\bpgi\b/i]],
       ["cvp_process_line", [/\bprocess line\b/i]],
       ["cvp_manufacturing_area", [/\bmanufacturing area\b/i]],
-      ["cvp_overall_results", [/\boverall (cleaning )?results\b/i]],
+      ["cvp_overall_results", [/\boverall (cleaning )?results\b/i, /\b21\.0\b/]],
+      ["cvp_recommendations", [/\brecommendations?\b/i]],
       ["cvp_testing_procedure", [/\btesting procedure\b/i, /\b16\.0\b/]],
       ["cvp_method_validation", [/\bmethod validation\b/i, /\b17\.0\b/]],
       ["cvp_evaluation", [/\bevaluation of results\b/i, /\b18\.0\b/]],
       ["cvp_deviations", [/\bdeviations?\b/i, /\b19\.0\b/]],
       ["cvp_revalidation", [/\brevalidation\b/i, /\b20\.0\b/]],
-      ["cvp_abbreviations", [/\babbreviations?\b/i, /\b21\.0\b/]],
-      ["cvp_related_documents", [/\brelated documents?\b/i, /\b22\.0\b/]],
-      ["cvp_annexures", [/\bannexures?\b/i, /\b23\.0\b/]],
-      ["cvp_history", [/\bhistory of the document\b/i, /\brevision history\b/i, /\b24\.0\b/]],
+      ["cvp_abbreviations", [/\babbreviations?\b/i, /\b22\.0\b/]],
+      ["cvp_related_documents", [/\brelated documents?\b/i, /\b23\.0\b/]],
+      ["cvp_annexures", [/\bannexures?\b/i, /\b24\.0\b/]],
+      ["cvp_history", [/\bhistory of the document\b/i, /\brevision history\b/i, /\b25\.0\b/]],
     ],
   },
   suggestTargetFieldPatterns: Object.fromEntries(
-    CVP_SECTION_KEYS.map((key) => [key, [fieldFor(key)]])
+    [...CVP_SECTION_KEYS, ...CVP_LEGACY_SECTION_KEYS].map((key) => [
+      key,
+      [fieldFor(key)],
+    ])
   ),
   richFieldPaths: Object.fromEntries(
-    CVP_SECTION_KEYS.map((key) => [key, [fieldFor(key)]])
+    [...CVP_SECTION_KEYS, ...CVP_LEGACY_SECTION_KEYS].map((key) => [
+      key,
+      [fieldFor(key)],
+    ])
   ),
   mergeSection: mergeCvpSection,
   export: {
@@ -356,6 +375,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
         department: meta.department,
         version: meta.version,
         effectiveDate: meta.effectiveDate,
+        reportNo: meta.reportNo,
         documentTitle: cvpPrintedDocumentTitle(meta),
         formNo: CVP_FORM_NO,
         ...xml,

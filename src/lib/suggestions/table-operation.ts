@@ -15,7 +15,9 @@ import { placeCvpAnalyticalFooter } from "@/lib/document-types/cvp/cycle-upgrade
 import {
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
+  cvpEquipmentSamplingSeed,
 } from "@/lib/document-types/cvp/sections";
+import { cvpEquipmentItemIndex } from "@/lib/document-types/cvp/equipment-item-path";
 import {
   inlineMarkdownToTextNodesWithBreaks,
   tableCellContentFromText,
@@ -447,6 +449,10 @@ function emptySectionRecord(
 }
 
 function seedTableAt(location: SeedTableLocation): JSONContent | undefined {
+  if (location.section === "cvp_equipment_sampling") {
+    const index = cvpEquipmentItemIndex(location.field) ?? 0;
+    return collectTables(cvpEquipmentSamplingSeed(index + 1))[location.tableIndex];
+  }
   const empty = emptySectionRecord(location.section);
   if (!empty) return undefined;
   const path =

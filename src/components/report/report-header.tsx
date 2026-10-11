@@ -952,6 +952,14 @@ function CvpIdentityForm({
             disabled={readOnly}
             onChange={set("documentTitle")}
           />
+          <IdentityField
+            id="cvp-report-no"
+            fieldKey="reportNo"
+            label="Report No."
+            value={meta.reportNo}
+            disabled={readOnly}
+            onChange={set("reportNo")}
+          />
         </div>
       </CardContent>
     </Card>

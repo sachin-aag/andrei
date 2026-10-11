@@ -30,6 +30,7 @@ import {
   CVP_MACO_FORMULA_HEADERS,
   CVP_RESIDUE_RESULTS_HEADERS,
   EMPTY_CVP_CONTENT,
+  cvpEquipmentSamplingSeed,
 } from "@/lib/document-types/cvp/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
@@ -2396,11 +2397,11 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(cellText(result.doc, 1, 1)).toBe("NA");
     expect(cellText(result.doc, 2, 1)).toBe("");
-    expect(cellText(result.doc, 2, 2)).toBe("NMT 10 ppm");
+    expect(cellText(result.doc, 2, 2)).toBe("");
     expect(cellText(result.doc, 2, 3)).toBe("NMT 10 ppm");
     expect(cellText(result.doc, 2, 4)).toBe("NMT 10 ppm");
-    expect(cellText(result.doc, 3, 2)).toBe("5 ppm [3]");
-    expect(cellText(result.doc, 4, 2)).toBe("2 ppm");
+    expect(cellText(result.doc, 3, 3)).toBe("5 ppm [3]");
+    expect(cellText(result.doc, 4, 3)).toBe("2 ppm");
   });
 
   it("inserts a 15.2.3.2 table before the later 15.2.8 extraneous grid", () => {
@@ -3101,7 +3102,7 @@ function captionTexts(doc: JSONContent): string[] {
 function cvpNarrative(section: keyof typeof EMPTY_CVP_CONTENT): JSONContent {
   const content = EMPTY_CVP_CONTENT[section];
   if ("items" in content) {
-    return structuredClone(content.items[0]!);
+    return structuredClone(cvpEquipmentSamplingSeed(1));
   }
   if (!("narrative" in content)) {
     throw new Error(`${section} is not a narrative section`);

@@ -20,6 +20,8 @@ import {
   isStockEquipmentInstruction,
   upgradeCvpEquipmentSamplingNarrative,
 } from "@/lib/document-types/cvp/sections";
+import type { CvpEquipmentType } from "@/lib/document-types/cvp/equipment-types";
+import { applyCvpEquipmentTypeRecipe } from "@/lib/document-types/cvp/equipment-upgrade";
 import {
   chatMentionParentSection,
   cvpEquipmentItemIndex,
@@ -83,7 +85,7 @@ export function ensureCvpEquipmentFieldContent(
     Array.isArray(content.items) ? content.items : []
   ).filter((item): item is JSONContent => Boolean(item) && typeof item === "object");
   while (items.length <= index) {
-    items.push(cvpEquipmentSamplingSeed(items.length + 1));
+    items.push(cvpEquipmentSamplingSeed(items.length + 1, "other"));
   }
   const target = items[index];
   if (target) {
@@ -464,10 +466,12 @@ function normalizeItem(doc: JSONContent): JSONContent {
   // and empty outline headings back after the engineer deleted them (upgrade
   // still runs on legacy `narrative` in docsFromRaw).
   return compact3xperLitreVolumesInDoc(
-    upgradeCvpValidationDoc(
-      collapseCvpEquipmentItem(
-        splitWarpedCvpEquipmentTables(
-          normalizeRichField(doc, { preserveHeadings: true })
+    applyCvpEquipmentTypeRecipe(
+      upgradeCvpValidationDoc(
+        collapseCvpEquipmentItem(
+          splitWarpedCvpEquipmentTables(
+            normalizeRichField(doc, { preserveHeadings: true })
+          )
         )
       )
     )
@@ -483,7 +487,7 @@ function docsFromRaw(raw: unknown): JSONContent[] {
     const items = rec.items
       .filter((item) => item && typeof item === "object")
       .map((item) => item as JSONContent);
-    return items.length > 0 ? items : [emptyDoc()];
+    return items;
   }
   if (Object.prototype.hasOwnProperty.call(rec, "narrative")) {
     const narrative = upgradeCvpEquipmentSamplingNarrative(
@@ -502,7 +506,7 @@ export function normalizeCvpEquipmentSamplingContent(
   const docs = docsFromRaw(raw).map((doc, i) =>
     retitleCvpEquipmentDoc(normalizeItem(doc), i + 1)
   );
-  return { items: docs.length > 0 ? docs : [emptyDoc()] };
+  return { items: docs };
 }
 
 export function concatCvpEquipmentItems(content: unknown): JSONContent {
@@ -516,26 +520,29 @@ export function concatCvpEquipmentItems(content: unknown): JSONContent {
 /** Insert a blank 15.N seed after `afterIndex`. Never copies filled tables. */
 export function insertBlankCvpEquipmentItem(
   items: JSONContent[],
-  afterIndex: number
+  afterIndex: number,
+  type: CvpEquipmentType = "other"
 ): JSONContent[] {
   const at = Math.max(0, Math.min(afterIndex + 1, items.length));
   const next = [
     ...items.slice(0, at),
-    cvpEquipmentSamplingSeed(at + 1),
+    cvpEquipmentSamplingSeed(at + 1, type),
     ...items.slice(at),
   ];
   return next.map((doc, index) => retitleCvpEquipmentDoc(doc, index + 1));
 }
 
-export function appendCvpEquipmentItem(items: JSONContent[]): JSONContent[] {
-  return insertBlankCvpEquipmentItem(items, items.length - 1);
+export function appendCvpEquipmentItem(
+  items: JSONContent[],
+  type: CvpEquipmentType = "other"
+): JSONContent[] {
+  return insertBlankCvpEquipmentItem(items, items.length - 1, type);
 }
 
 export function removeCvpEquipmentItem(
   items: JSONContent[],
   index: number
 ): JSONContent[] {
-  if (items.length <= 1) return items;
   const next = items.filter((_, i) => i !== index);
   return next.map((doc, i) => retitleCvpEquipmentDoc(doc, i + 1));
 }
@@ -546,7 +553,7 @@ export function ensureCvpEquipmentItem(
 ): CvpEquipmentSamplingContent {
   const { items } = normalizeCvpEquipmentSamplingContent(content);
   while (items.length <= index) {
-    items.push(cvpEquipmentSamplingSeed(items.length + 1));
+    items.push(cvpEquipmentSamplingSeed(items.length + 1, "other"));
   }
   return {
     items: items.map((doc, i) => retitleCvpEquipmentDoc(doc, i + 1)),
