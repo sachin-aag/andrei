@@ -11,7 +11,7 @@ import {
   EMPTY_QSR_CONTENT,
   QSR_RTM_FAMILY_HEADERS,
 } from "@/lib/document-types/qsr/sections";
-import { placeCvpAnalyticalFooter } from "@/lib/document-types/cvp/cycle-upgrade";
+import { placeCvpAnalyticalFooter } from "@/lib/document-types/cvp/cvp-merge-helpers";
 import {
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,

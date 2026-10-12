@@ -12,7 +12,7 @@ import {
 import {
   ensureCvpBatchExecutionTable,
   ensureCvpTableSectionBoilerplate,
-} from "./cvp/cycle-upgrade";
+} from "./cvp/cvp-merge-helpers";
 import { CVP_DRAFTING_GUIDANCE } from "./cvp/drafting-guidance";
 import {
   concatCvpEquipmentItems,

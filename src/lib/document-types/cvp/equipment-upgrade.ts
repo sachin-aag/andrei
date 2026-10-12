@@ -9,7 +9,7 @@ import {
   cvpSwabRationaleRows,
   type CvpEquipmentType,
 } from "./equipment-types";
-import { expandStubCvpSwabRows } from "./cycle-upgrade";
+import { expandStubCvpSwabRows } from "./cvp-merge-helpers";
 import {
   CVP_CLEANING_OPERATION_HEADERS,
   CVP_CLEANING_OPERATION_INTRO_SEEDS,
