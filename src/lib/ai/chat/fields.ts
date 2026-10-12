@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { getDocumentType, resolveSection } from "@/lib/document-types";
 import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
+import { normalizeCvpEquipmentSamplingContent } from "@/lib/document-types/cvp/equipment-sampling";
 import {
   cvpEquipmentItemIndex,
   cvpEquipmentItemIndexFromMentionId,
@@ -322,7 +323,12 @@ export function seedFieldDoc(
   if (!isRichTargetField(section, targetField)) return undefined;
   if (section === "cvp_equipment_sampling") {
     const index = cvpEquipmentItemIndex(targetField);
-    if (index != null) return cvpEquipmentSamplingSeed(index + 1);
+    if (index != null) {
+      const items = Array.from({ length: index + 1 }, (_, i) =>
+        cvpEquipmentSamplingSeed(i + 1)
+      );
+      return normalizeCvpEquipmentSamplingContent({ items }).items[index];
+    }
   }
   const empty = emptyContentForSection(section);
   if (!empty) return undefined;
@@ -406,8 +412,21 @@ export function fieldFillState(
   if (isRichTargetField(section, targetField)) {
     const doc = getRichFieldValue(record, targetField);
     const seed = seedFieldDoc(section, targetField);
-    if (isEmptyTableScaffoldDoc(doc, seed) || isUnchangedSeedNarrative(doc, seed)) {
+    const scaffoldEmpty = (candidate: JSONContent) =>
+      isEmptyTableScaffoldDoc(candidate, seed) ||
+      isUnchangedSeedNarrative(candidate, seed);
+    if (scaffoldEmpty(doc)) {
       return "empty";
+    }
+    if (
+      section === "cvp_equipment_sampling" &&
+      cvpEquipmentItemIndex(targetField) != null
+    ) {
+      const index = cvpEquipmentItemIndex(targetField)!;
+      const upgraded = normalizeCvpEquipmentSamplingContent(record).items[index];
+      if (upgraded && scaffoldEmpty(upgraded)) {
+        return "empty";
+      }
     }
     if (
       section === "elr_system_trends" &&

@@ -230,16 +230,17 @@ export const SECTION_LABELS: Record<string, string> = {
   cvp_pgi: "Potential Genotoxic Impurities Limits in the Rinse Samples",
   cvp_process_line: "Process Line Cleaning Validation Summary",
   cvp_manufacturing_area: "Manufacturing Area Cleaning Validation",
-  cvp_overall_results: "Overall Cleaning Results Summary",
+  cvp_overall_results: "21.0 Overall Cleaning Results Summary",
+  cvp_recommendations: "Recommendations",
   cvp_testing_procedure: "16.0 Testing Procedure",
   cvp_method_validation: "17.0 Status of Cleaning Analytical Method Validation",
   cvp_evaluation: "18.0 Evaluation of Results and Reporting",
   cvp_deviations: "19.0 Deviations",
   cvp_revalidation: "20.0 Revalidation",
-  cvp_abbreviations: "21.0 Abbreviations",
-  cvp_related_documents: "22.0 Related Documents",
-  cvp_annexures: "23.0 List of Annexures",
-  cvp_history: "24.0 History of the Document",
+  cvp_abbreviations: "22.0 Abbreviations",
+  cvp_related_documents: "23.0 Related Documents",
+  cvp_annexures: "24.0 List of Annexures",
+  cvp_history: "25.0 History of the Document",
 };
 
 /** Title-case a section key so Criteria and comments never show `revision_history`. */

@@ -10,6 +10,7 @@ import { vendorQualificationDefinition } from "./vendor-qualification";
 import { failureInvestigationReportDefinition } from "./failure-investigation-report";
 import { qualificationSummaryReportDefinition } from "./qualification-summary-report";
 import { cleaningVerificationProtocolDefinition } from "./cleaning-verification-protocol";
+import { isCvpPersistableSectionKey } from "./cvp/sections";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -140,10 +141,14 @@ export function isValidSection(
   documentType: DocumentType | null | undefined,
   section: string
 ): boolean {
-  return isValidSectionForType(
-    getDocumentType(resolveDocumentType(documentType)),
-    section
-  );
+  const type = resolveDocumentType(documentType);
+  if (
+    type === "cleaning_verification_protocol" &&
+    isCvpPersistableSectionKey(section)
+  ) {
+    return true;
+  }
+  return isValidSectionForType(getDocumentType(type), section);
 }
 
 export function resolveSection(

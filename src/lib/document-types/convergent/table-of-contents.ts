@@ -2,6 +2,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { cvpEquipmentTocChildren } from "@/lib/document-types/cvp/equipment-sampling";
+import { cvpLegacySectionHasUserContent } from "@/lib/document-types/cvp/sections";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
 import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
 import { VQ_SECTION_LABELS } from "@/lib/document-types/vq/sections";
@@ -471,24 +472,12 @@ const CVP_TOC: TableOfContentsEntry[] = [
         sectionKey: "cvp_equipment_sampling",
       },
       {
-        label: "Nitrosamine Limits in the Rinse Samples",
+        label: "15.(n+1) Nitrosamine Limits in the Rinse Samples",
         sectionKey: "cvp_nitrosamine",
       },
       {
-        label: "Potential Genotoxic Impurities Limits in the Rinse Samples",
-        sectionKey: "cvp_pgi",
-      },
-      {
-        label: "Process Line Cleaning Validation Summary",
-        sectionKey: "cvp_process_line",
-      },
-      {
-        label: "Manufacturing Area Cleaning Validation",
+        label: "15.(n+2) Manufacturing Area Cleaning Validation",
         sectionKey: "cvp_manufacturing_area",
-      },
-      {
-        label: "Overall Cleaning Results Summary",
-        sectionKey: "cvp_overall_results",
       },
     ],
   },
@@ -503,10 +492,15 @@ const CVP_TOC: TableOfContentsEntry[] = [
   },
   { label: "19.0 Deviations", sectionKey: "cvp_deviations" },
   { label: "20.0 Revalidation", sectionKey: "cvp_revalidation" },
-  { label: "21.0 Abbreviations", sectionKey: "cvp_abbreviations" },
-  { label: "22.0 Related Documents", sectionKey: "cvp_related_documents" },
-  { label: "23.0 List of Annexures", sectionKey: "cvp_annexures" },
-  { label: "24.0 History of the Document", sectionKey: "cvp_history" },
+  {
+    label: "21.0 Overall Cleaning Results Summary",
+    sectionKey: "cvp_overall_results",
+  },
+  { label: "Recommendations", sectionKey: "cvp_recommendations" },
+  { label: "22.0 Abbreviations", sectionKey: "cvp_abbreviations" },
+  { label: "23.0 Related Documents", sectionKey: "cvp_related_documents" },
+  { label: "24.0 List of Annexures", sectionKey: "cvp_annexures" },
+  { label: "25.0 History of the Document", sectionKey: "cvp_history" },
 ];
 
 export function getConvergentTableOfContents(
@@ -634,18 +628,62 @@ function reportTableOfContentsRecipe(
  */
 function withLiveCvpEquipmentSampling(
   recipe: TableOfContentsEntry[],
-  equipmentContent: unknown
+  liveSectionContent?: Record<string, unknown>
 ): TableOfContentsEntry[] {
-  const live = cvpEquipmentTocChildren(equipmentContent);
-  if (live.length === 0) return recipe;
+  const live = liveSectionContent
+    ? cvpEquipmentTocChildren(liveSectionContent.cvp_equipment_sampling)
+    : [];
+  const count = live.length;
+  const nitroN = `${count + 1}`;
+  const mfgN = `${count + 2}`;
+  const extras: TableOfContentsEntry[] = [];
+  if (cvpLegacySectionHasUserContent("cvp_pgi", liveSectionContent?.cvp_pgi)) {
+    extras.push({
+      label: "Potential Genotoxic Impurities Limits in the Rinse Samples",
+      sectionKey: "cvp_pgi",
+    });
+  }
+  if (
+    cvpLegacySectionHasUserContent(
+      "cvp_process_line",
+      liveSectionContent?.cvp_process_line
+    )
+  ) {
+    extras.push({
+      label: "Process Line Cleaning Validation Summary",
+      sectionKey: "cvp_process_line",
+    });
+  }
   return recipe.map((entry) => {
     if (entry.sectionKey !== "cvp_sampling_plan" || !entry.children?.length) {
       return entry;
     }
-    const rest = entry.children.filter(
-      (child) => child.sectionKey !== "cvp_equipment_sampling"
+    const numberedChildren: TableOfContentsEntry[] = entry.children.flatMap(
+      (child): TableOfContentsEntry[] => {
+        if (child.sectionKey === "cvp_equipment_sampling") {
+          return live.length > 0 ? live : [];
+        }
+        if (child.sectionKey === "cvp_nitrosamine") {
+          return [
+            {
+              ...child,
+              label: `15.${nitroN} Nitrosamine Limits in the Rinse Samples`,
+            },
+            ...extras,
+          ];
+        }
+        if (child.sectionKey === "cvp_manufacturing_area") {
+          return [
+            {
+              ...child,
+              label: `15.${mfgN} Manufacturing Area Cleaning Validation`,
+            },
+          ];
+        }
+        return [child];
+      }
     );
-    return { ...entry, children: [...live, ...rest] };
+    return { ...entry, children: numberedChildren };
   });
 }
 
@@ -656,10 +694,7 @@ export function getReportTableOfContents(
 ): TableOfContentsEntry[] {
   const recipe = reportTableOfContentsRecipe(documentType, customerId);
   if (documentType === "cleaning_verification_protocol") {
-    const equipment = liveSectionContent?.cvp_equipment_sampling;
-    return equipment === undefined
-      ? recipe
-      : withLiveCvpEquipmentSampling(recipe, equipment);
+    return withLiveCvpEquipmentSampling(recipe, liveSectionContent);
   }
   return numberTableOfContents(recipe);
 }

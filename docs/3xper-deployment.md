@@ -42,9 +42,9 @@ Header **Document Number** on the form is always `QAD-SOP-MS-001-F04`. Andrei’
 ## Cleaning Validation Protocol (QAD-SOP-PS-003-F08-00)
 
 - **Identity** (report header card): Protocol No., Name of the product, Product Code, Stage, Plant, Department, Version, Effective Date, Document Title. They print on the cover table and every page header. Footer Format No. is always `QAD-SOP-PS-003-F08-00`.
-- **Sections** follow the form 1.0–24.0 (30 `cvp_*` keys). Equipment-specific 15.1–15.10 blocks from a filled protocol are one `cvp_equipment_sampling` narrative — do not hardcode vessel IDs. Result tables record three consecutive cleaning batches (Batch 1 / Batch 2 / Batch 3). Existing reports are widened on read.
+- **Sections** follow the form 1.0–25.0 (29 `cvp_*` keys plus unnumbered Recommendations). Equipment 15.N boxes are `{ items: JSONContent[] }` with an Add-equipment type picker — do not hardcode vessel IDs. Result tables use a grouped Results header over three blank batch columns. Existing reports reshape empty tables on read. Do not copy Stage-5 leftovers (unfinished nitrosamine, GLR-1205 two-location shortcut, RCVD).
 - **Word export** keeps the source form’s A4 chrome and header logo (`templates/3xper-cleaning-verification-protocol-template.docx`, rebuilt with `pnpm build-cvp-template`). Body figures from the example protocol are dropped; section bodies are `{@cvp_*Xml}`.
-- **Word import** is type-owned (`wordImport.kind === "cleaning_verification_protocol"`) — do **not** set pack `wordImportEnabled` (that would turn on VQ/QSR upload). Create dialog accepts a filled QAD-SOP-PS-003-F08-00 `.docx`; headings 1.0–24.0 split into `cvp_*` sections, cover/header fill identity, and the original file is stored as source DOCX. Word drawings, SmartArt, headers/footers, and yellow highlight are dropped — same limits as export.
+- **Word import** is type-owned (`wordImport.kind === "cleaning_verification_protocol"`) — do **not** set pack `wordImportEnabled` (that would turn on VQ/QSR upload). Create dialog accepts a filled QAD-SOP-PS-003-F08-00 `.docx`; headings 1.0–25.0 split into `cvp_*` sections, cover/header fill identity, and the original file is stored as source DOCX. Word drawings, SmartArt, headers/footers, and yellow highlight are dropped — same limits as export.
 
 ### What Andrei can generate vs what it cannot
 

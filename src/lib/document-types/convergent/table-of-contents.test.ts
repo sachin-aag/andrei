@@ -325,33 +325,32 @@ describe("getReportTableOfContents", () => {
     ]);
   });
 
-  it("lists the 3xper cleaning verification protocol 1.0–24.0 outline", () => {
+  it("lists the 3xper cleaning validation protocol 1.0–25.0 outline", () => {
     const toc = getReportTableOfContents("cleaning_verification_protocol", "3xper");
     expect(toc[0]).toEqual({
       label: "1.0 Approval Signatures",
       sectionKey: "cvp_approvals",
     });
     expect(toc.at(-1)?.sectionKey).toBe("cvp_history");
+    expect(toc.at(-1)?.label).toBe("25.0 History of the Document");
     expect(toc.find((e) => e.sectionKey === "cvp_methodology")?.label).toBe(
       "12.0 Cleaning Validation Methodology"
+    );
+    expect(toc.find((e) => e.sectionKey === "cvp_overall_results")?.label).toBe(
+      "21.0 Overall Cleaning Results Summary"
+    );
+    expect(toc.find((e) => e.sectionKey === "cvp_recommendations")?.label).toBe(
+      "Recommendations"
     );
     const sampling = toc.find((e) => e.sectionKey === "cvp_sampling_plan");
     expect(sampling?.label).toMatch(/^15\.0 /);
     expect(sampling?.children?.map((e) => e.label)).toEqual([
-      "15.1 Equipment name (Equipment No.)",
-      "Nitrosamine Limits in the Rinse Samples",
-      "Potential Genotoxic Impurities Limits in the Rinse Samples",
-      "Process Line Cleaning Validation Summary",
-      "Manufacturing Area Cleaning Validation",
-      "Overall Cleaning Results Summary",
+      "15.1 Nitrosamine Limits in the Rinse Samples",
+      "15.2 Manufacturing Area Cleaning Validation",
     ]);
     expect(sampling?.children?.map((e) => e.sectionKey)).toEqual([
-      "cvp_equipment_sampling",
       "cvp_nitrosamine",
-      "cvp_pgi",
-      "cvp_process_line",
       "cvp_manufacturing_area",
-      "cvp_overall_results",
     ]);
   });
 

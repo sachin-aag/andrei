@@ -10,13 +10,14 @@ import { cvpSourceColWidthsForHeaders } from "@/lib/export/cvp-table-col-widths"
 export const CVP_DOCX_HEADING_NUM_ID = 3;
 
 /** 15.x continuations — ilvl 1 so Testing stays 16.0. */
-const CVP_DOCX_ILVL1_KEYS = new Set<CvpSectionKey>([
+const CVP_DOCX_ILVL1_KEYS = new Set<string>([
   "cvp_nitrosamine",
   "cvp_pgi",
   "cvp_process_line",
   "cvp_manufacturing_area",
-  "cvp_overall_results",
 ]);
+
+const CVP_DOCX_UNNUMBERED_KEYS = new Set<string>(["cvp_recommendations"]);
 
 const OUTLINE_NUMBER_RE = /^\d+(?:\.\d+)*\.?\s+/;
 const TABLE_CAPTION_RE = /^Table\s+\d+\s*[.:]/i;
@@ -32,11 +33,15 @@ export function cvpHeadingCaps(text: string): string {
 
 export function cvpTemplateHeadingSpec(key: CvpSectionKey): {
   text: string;
-  ilvl: 0 | 1;
+  ilvl: 0 | 1 | "none";
 } {
   return {
     text: cvpHeadingCaps(CVP_SECTION_LABELS[key]),
-    ilvl: CVP_DOCX_ILVL1_KEYS.has(key) ? 1 : 0,
+    ilvl: CVP_DOCX_UNNUMBERED_KEYS.has(key)
+      ? "none"
+      : CVP_DOCX_ILVL1_KEYS.has(key)
+        ? 1
+        : 0,
   };
 }
 
@@ -78,12 +83,19 @@ export function cvpWordTocXml(): string {
   );
 }
 
-export function cvpHeadingParagraphXml(text: string, ilvl: 0 | 1): string {
+export function cvpHeadingParagraphXml(
+  text: string,
+  ilvl: 0 | 1 | "none"
+): string {
+  const numPr =
+    ilvl === "none"
+      ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>`
+      : `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${CVP_DOCX_HEADING_NUM_ID}"/></w:numPr>`;
   return (
     `<w:p><w:pPr>` +
     `<w:pStyle w:val="Heading1"/>` +
     `<w:keepNext/>` +
-    `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${CVP_DOCX_HEADING_NUM_ID}"/></w:numPr>` +
+    numPr +
     `<w:spacing w:before="23" w:line="360" w:lineRule="auto"/>` +
     `<w:jc w:val="both"/>` +
     `</w:pPr>` +

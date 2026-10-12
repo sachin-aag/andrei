@@ -9,6 +9,7 @@ import {
   CVP_FORM_NO,
   CVP_SECTION_KEYS,
   EMPTY_CVP_CONTENT,
+  cvpEquipmentSamplingSeed,
   type CvpSectionContent,
   type CvpSectionKey,
 } from "@/lib/document-types/cvp/sections";
@@ -55,7 +56,10 @@ function sectionsWith(
     id: key,
     reportId: "cvp-1",
     section: key,
-    content: (overrides[key] ?? EMPTY_CVP_CONTENT[key]) as ReportSectionRecord["content"],
+    content: (overrides[key] ??
+      (key === "cvp_equipment_sampling"
+        ? { items: [cvpEquipmentSamplingSeed(1)] }
+        : EMPTY_CVP_CONTENT[key])) as ReportSectionRecord["content"],
     updatedAt: "2026-01-01T00:00:00.000Z",
   }));
 }
@@ -158,7 +162,8 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("EQUIPMENT NAME (EQUIPMENT NO.)");
     expect(body).toContain("15.1.1 Equipment details");
     expect(body).toContain("15.1.2 Supporting Documents");
-    expect(body).not.toContain("15.1.3.1 Worst-case locations");
+    expect(body).toContain("15.1.3.1 Worst-case locations");
+    expect(body).toContain("RECOMMENDATIONS");
     expect(body).toContain("NITROSAMINE LIMITS");
     expect(body).toContain(
       "The rinse samples collected from the equipment after completion of the cleaning procedure"

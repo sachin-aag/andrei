@@ -78,9 +78,10 @@ describe("repairCvpEquipmentProseEdit", () => {
         insertText: `### 15.6.5 Cleaning validation results summary\n\n${results}`,
       },
     });
-    expect(repaired?.anchorText).toBe(
+    expect(repaired?.anchorText).toContain(
       "15.6.5 Cleaning validation results summary"
     );
+    expect(repaired?.deleteText).toContain("Upon completion of cleaning");
     expect(repaired?.insertText).toContain(results);
     expect(
       checkProposedEdit(fieldText, repaired!, fieldDoc).status
@@ -103,12 +104,12 @@ describe("repairCvpEquipmentProseEdit", () => {
       },
     });
     expect(repaired?.deleteText).toBe(
-      "15.6.5 Cleaning validation results summary"
+      "15.6.3 Swab sampling locations determination"
     );
-    expect(repaired?.insertText).toContain("15.6.3 Swab locations");
     expect(repaired?.insertText).toContain(
-      "15.6.5 Cleaning validation results summary"
+      "15.6.3 Swab sampling locations determination"
     );
+    expect(repaired?.insertText).toContain("S-1: ML tank top dish / inlet nozzle");
     expect(
       checkProposedEdit(fieldText, repaired!, fieldDoc).status
     ).toBe("ok");

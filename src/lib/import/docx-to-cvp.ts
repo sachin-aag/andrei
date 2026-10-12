@@ -5,16 +5,17 @@ import {
   CVP_DEFAULT_METADATA,
   CVP_EQUIPMENT_H3_OUTLINE,
   CVP_EQUIPMENT_H4_OUTLINE,
+  CVP_LEGACY_SECTION_KEYS,
   CVP_SECTION_KEYS,
   isCvpTableSectionKey,
   type CvpMetadata,
+  type CvpPersistableSectionKey,
   type CvpSectionContent,
-  type CvpSectionKey,
 } from "@/lib/document-types/cvp/sections";
 import { normalizeCvpEquipmentSamplingContent } from "@/lib/document-types/cvp/equipment-sampling";
 import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
 
-const FIXED_HEADINGS: Record<string, CvpSectionKey> = {
+const FIXED_HEADINGS: Record<string, CvpPersistableSectionKey> = {
   APPROVALSIGNATURES: "cvp_approvals",
   OBJECTIVE: "cvp_objective",
   SCOPE: "cvp_scope",
@@ -41,6 +42,7 @@ const FIXED_HEADINGS: Record<string, CvpSectionKey> = {
   MANUFACTURINGAREACLEANINGVERIFICATION: "cvp_manufacturing_area",
   MANUFACTURINGAREACLEANINGVALIDATION: "cvp_manufacturing_area",
   OVERALLCLEANINGRESULTSSUMMARY: "cvp_overall_results",
+  RECOMMENDATIONS: "cvp_recommendations",
   TESTINGPROCEDURE: "cvp_testing_procedure",
   STATUSOFCLEANINGANALYTICALMETHODVALIDATION: "cvp_method_validation",
   EVALUATIONOFRESULTSANDREPORTING: "cvp_evaluation",
@@ -54,13 +56,14 @@ const FIXED_HEADINGS: Record<string, CvpSectionKey> = {
 
 const EQUIPMENT_ID_RE = /\([A-Z]{2,8}-?\d{3,}/i;
 const TOC_GLUE_RE = /^\d+\.\d+[A-Z].*\d+$/i;
-const NUMBERED_EQUIPMENT_RE = /^15\.(?:[1-9]|10)\b/;
-const NITROSAMINE_OR_PGI_RE = /^15\.1[12]\b/;
+const NUMBERED_EQUIPMENT_RE = /^15\.(?:[1-9]\d?)\b/;
+const CONTINUATION_HEADING_RE =
+  /^15\.\d+\s+(nitrosamine|potential genotoxic|process line|manufacturing area)\b/i;
 
 export type ImportedCvpDocument = {
   protocolNo: string;
   metadata: CvpMetadata;
-  sections: Partial<Record<CvpSectionKey, CvpSectionContent>>;
+  sections: Partial<Record<CvpPersistableSectionKey, CvpSectionContent>>;
   warnings: string[];
 };
 
@@ -107,11 +110,13 @@ export function extractCvpHeaderFields(buffer: Buffer): CvpMetadata & {
   const headerText = xmlPlainText(headerXml);
   const compact = headerText.replace(/\s+/g, "");
   const protocolNo = protocolNoFromCompactHeader(compact);
+  const reportNoMatch = /ReportNo\.?([A-Z0-9-]+)/i.exec(compact);
+  const reportNo = reportNoMatch?.[1]?.replace(/Version.*$/i, "") ?? "";
   const versionMatch = /Version#(\d+)/i.exec(compact);
   const titleMatch =
     /Document Title:\s*(.+?)\s*Department/i.exec(headerText.replace(/\s+/g, " ")) ??
     /DocumentTitle:(.+?)Department/i.exec(compact);
-  const departmentMatch = /Department\s*([A-Za-z]+?)(?=Protocol|Page|Version|$)/i.exec(
+  const departmentMatch = /Department\s*([A-Za-z]+?)(?=Protocol|Report|Page|Version|$)/i.exec(
     headerText.replace(/\s+/g, " ")
   );
   const effectiveMatch =
@@ -121,6 +126,7 @@ export function extractCvpHeaderFields(buffer: Buffer): CvpMetadata & {
   return {
     ...CVP_DEFAULT_METADATA,
     protocolNo,
+    reportNo,
     version: versionMatch?.[1] ?? CVP_DEFAULT_METADATA.version,
     documentTitle: cleanHeaderValue(titleMatch?.[1] ?? ""),
     department:
@@ -132,13 +138,15 @@ export function extractCvpHeaderFields(buffer: Buffer): CvpMetadata & {
 
 export function splitCvpNarrativeIntoSections(narrative: JSONContent): {
   cover: Partial<CvpMetadata>;
-  sections: Partial<Record<CvpSectionKey, CvpSectionContent>>;
+  sections: Partial<Record<CvpPersistableSectionKey, CvpSectionContent>>;
 } {
   const nodes = narrative.content ?? [];
-  const buckets: Record<CvpSectionKey, JSONContent[]> = Object.fromEntries(
-    CVP_SECTION_KEYS.map((key) => [key, [] as JSONContent[]])
-  ) as Record<CvpSectionKey, JSONContent[]>;
-  let mode: CvpSectionKey | "preamble" | "toc" = "preamble";
+  const persistableKeys = [...CVP_SECTION_KEYS, ...CVP_LEGACY_SECTION_KEYS];
+  const buckets: Record<CvpPersistableSectionKey, JSONContent[]> =
+    Object.fromEntries(
+      persistableKeys.map((key) => [key, [] as JSONContent[]])
+    ) as Record<CvpPersistableSectionKey, JSONContent[]>;
+  let mode: CvpPersistableSectionKey | "preamble" | "toc" = "preamble";
 
   for (const node of nodes) {
     const text = nodeText(node);
@@ -156,8 +164,9 @@ export function splitCvpNarrativeIntoSections(narrative: JSONContent): {
     buckets[mode].push(node);
   }
 
-  const sections: Partial<Record<CvpSectionKey, CvpSectionContent>> = {};
-  for (const key of CVP_SECTION_KEYS) {
+  const sections: Partial<Record<CvpPersistableSectionKey, CvpSectionContent>> =
+    {};
+  for (const key of persistableKeys) {
     const content = contentForSection(key, buckets[key]);
     if (content) sections[key] = content;
   }
@@ -168,7 +177,7 @@ export function splitCvpNarrativeIntoSections(narrative: JSONContent): {
 }
 
 function contentForSection(
-  key: CvpSectionKey,
+  key: CvpPersistableSectionKey,
   nodes: JSONContent[]
 ): CvpSectionContent | null {
   const promoted =
@@ -193,7 +202,7 @@ function contentForSection(
 function matchCvpSectionHeading(
   node: JSONContent,
   text: string
-): { key: CvpSectionKey; keep: boolean } | null {
+): { key: CvpPersistableSectionKey; keep: boolean } | null {
   if (isCvpTocLine(text)) return null;
   if (!looksLikeHeading(node, text)) return null;
   const compact = headingKey(text);
@@ -269,7 +278,7 @@ function headingNode(level: 2 | 3 | 4, text: string): JSONContent {
 
 function numberedEquipmentTitle(text: string, ordinal: number): string {
   const trimmed = text.replace(/:$/, "").trim();
-  if (/^15\.(?:[1-9]|10)\b/.test(trimmed)) return trimmed;
+  if (/^15\.(?:[1-9]\d?)\b/.test(trimmed)) return trimmed;
   return `15.${ordinal} ${trimmed}`;
 }
 
@@ -292,7 +301,7 @@ export function promoteCvpEquipmentOutline(nodes: JSONContent[]): JSONContent[] 
     if (node.type !== "heading" && !paragraphIsBoldHeading(node) && node.type !== "paragraph") {
       return node;
     }
-    const ordinal = Math.min(Math.max(equipmentIndex, 1), 10);
+    const ordinal = Math.max(equipmentIndex, 1);
     return headingNode(inner.level, applyOutlineNumber(inner.numbered, ordinal));
   });
 }
@@ -303,7 +312,9 @@ export function isCvpTocLine(text: string): boolean {
 
 export function isEquipmentHeading(text: string): boolean {
   const normalized = normalizeHeading(text);
-  if (NITROSAMINE_OR_PGI_RE.test(normalized)) return false;
+  if (CONTINUATION_HEADING_RE.test(text.trim()) || CONTINUATION_HEADING_RE.test(normalized)) {
+    return false;
+  }
   if (matchEquipmentInnerHeading(text)) return false;
   if (/^15\.(?:[1-9]|10)\.\d/.test(text.trim())) return false;
   if (NUMBERED_EQUIPMENT_RE.test(normalized) || NUMBERED_EQUIPMENT_RE.test(text.trim())) {
@@ -424,6 +435,7 @@ function mergeCvpMetadata(
     documentTitle: pick("documentTitle"),
     version: pick("version"),
     effectiveDate: pick("effectiveDate"),
+    reportNo: pick("reportNo"),
   };
 }
 

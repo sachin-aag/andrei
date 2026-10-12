@@ -4,6 +4,7 @@ import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u
 import {
   CVP_EQUIPMENT_DETAILS_SEED,
   CVP_SHELL_CALC_HEADERS,
+  CVP_VISUAL_INSPECTION_INTRO_SEED,
   cvpEquipmentSamplingSeed,
   EMPTY_CVP_CONTENT,
 } from "@/lib/document-types/cvp/sections";
@@ -3694,7 +3695,7 @@ describe("buildChatTools propose edits", () => {
           content: [
             {
               type: "text" as const,
-              text: "The equipment details, including Material of Construction (MOC), were obtained from CPDR Annexure-2 and the applicable equipment qualification documents.",
+              text: CVP_EQUIPMENT_DETAILS_SEED,
             },
           ],
         },
@@ -3713,7 +3714,7 @@ describe("buildChatTools propose edits", () => {
           content: [
             {
               type: "text" as const,
-              text: "Visual inspection shall be performed independently by the Production Chemist, Production Shift In-charge, and QA Executive under qualified light intensity (NLT 500 Lux). The inspection verifies that all internal product-contact surfaces are visibly clean, dry, and free from particulate matter.",
+              text: CVP_VISUAL_INSPECTION_INTRO_SEED,
             },
           ],
         },
@@ -3760,11 +3761,10 @@ describe("buildChatTools propose edits", () => {
       {
         section: "cvp_equipment_sampling",
         targetField: "items.0",
-        anchorText:
-          "15.1.6 Visual inspection summary\nVisual inspection shall be performed independently by the Production Chemist, Production Shift In-charge, and QA Executive under qualified light intensity (NLT 500 Lux).",
-        deleteText: "under qualified light intensity (NLT 500 Lux)",
+        anchorText: `15.1.6 Visual inspection summary\n${CVP_VISUAL_INSPECTION_INTRO_SEED}`,
+        deleteText: "under established inspection conditions",
         insertText: "under qualified illumination conditions",
-        reasoning: "Remove 500 Lux from 15.1 visual inspection summary.",
+        reasoning: "Tighten 15.1 visual inspection summary wording.",
       },
       TEST_TOOL_OPTIONS
     );
@@ -3774,7 +3774,7 @@ describe("buildChatTools propose edits", () => {
       targetField: "items.0",
     });
     const payload = JSON.stringify(inserted);
-    expect(payload).toContain("under qualified light intensity (NLT 500 Lux)");
+    expect(payload).toContain("under established inspection conditions");
     expect(payload).toContain("under qualified illumination conditions");
     expect(payload).not.toContain("15.2.1 Equipment details");
   });

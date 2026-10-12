@@ -77,6 +77,7 @@ import {
 } from "@/lib/comments/navigate";
 import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
 import { getDocumentType, getWorkspaceSections, workspacePresentationFor } from "@/lib/document-types";
+import { cvpWorkspaceSectionDefs } from "@/lib/document-types/cvp/sections";
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack, isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import {
@@ -227,9 +228,25 @@ export function ReportWorkspace({
   const liveSectionContent = useMemo(
     () =>
       report.documentType === "cleaning_verification_protocol"
-        ? { cvp_equipment_sampling: sections.cvp_equipment_sampling }
+        ? {
+            cvp_equipment_sampling: sections.cvp_equipment_sampling,
+            cvp_pgi: sections.cvp_pgi,
+            cvp_process_line: sections.cvp_process_line,
+          }
         : undefined,
-    [report.documentType, sections.cvp_equipment_sampling]
+    [
+      report.documentType,
+      sections.cvp_equipment_sampling,
+      sections.cvp_pgi,
+      sections.cvp_process_line,
+    ]
+  );
+  const workspaceSectionList = useMemo(
+    () =>
+      report.documentType === "cleaning_verification_protocol"
+        ? cvpWorkspaceSectionDefs(sections)
+        : getWorkspaceSections(report.documentType),
+    [report.documentType, sections]
   );
   const sectionEditors = useDocumentSectionEditors(report.documentType);
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -1199,7 +1216,7 @@ export function ReportWorkspace({
                       )}
                     >
                     {editorsAllowed ? (
-                      getWorkspaceSections(report.documentType).map(
+                      workspaceSectionList.map(
                         (section, index) => {
                           const s = section.key;
                           const Editor = sectionEditors?.[s];

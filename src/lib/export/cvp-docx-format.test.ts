@@ -43,6 +43,14 @@ describe("cvp-docx-format", () => {
       text: "NITROSAMINE LIMITS IN THE RINSE SAMPLES",
       ilvl: 1,
     });
+    expect(cvpTemplateHeadingSpec("cvp_overall_results")).toEqual({
+      text: "OVERALL CLEANING RESULTS SUMMARY",
+      ilvl: 0,
+    });
+    expect(cvpTemplateHeadingSpec("cvp_recommendations")).toEqual({
+      text: "RECOMMENDATIONS",
+      ilvl: "none",
+    });
     expect(CVP_DOCX_HEADING_NUM_ID).toBe(3);
   });
 

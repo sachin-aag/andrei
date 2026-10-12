@@ -757,6 +757,7 @@ describe("/api/reports", () => {
         documentTitle: "Cleaning Verification Protocol",
         version: "00",
         effectiveDate: "",
+        reportNo: "",
       },
       sections: {
         cvp_objective: {
