@@ -56,6 +56,7 @@ describe("reviewFindingCardModel", () => {
       needle: "acceptable to the R&D Engineer",
     });
     expect(card.applyCommentId).toBe("c1");
+    expect(card.canApplyTrackedChange).toBe(true);
   });
 
   it("hides show and apply when the suggestion covers a second span", () => {
@@ -86,6 +87,7 @@ describe("reviewFindingCardModel", () => {
 
     expect(card.locate).toBeNull();
     expect(card.applyCommentId).toBeNull();
+    expect(card.canApplyTrackedChange).toBe(false);
     expect(card.replacement).toBeNull();
     expect(card.kicker).toBe("Citation supports claim");
   });
@@ -107,8 +109,53 @@ describe("reviewFindingCardModel", () => {
 
     expect(card.locate?.needle).toBe("acceptable to the R&D Engineer");
     expect(card.applyCommentId).toBeNull();
+    expect(card.canApplyTrackedChange).toBe(false);
     expect(card.replacement).toBeNull();
     expect(card.title).toBe("The limit is still subjective.");
     expect(card.kicker).toBe("Grammar & spelling");
+  });
+
+  it("offers Apply as tracked change when AI can generate a criterion fix", () => {
+    const card = reviewFindingCardModel({
+      finding: finding({
+        kind: "needs_human",
+        commentId: null,
+        metadata: { criterionKey: "TM-02", evaluationId: "e1" },
+      }),
+      check: { label: "Measure criteria" },
+      sectionLabel: "Acceptance Criteria",
+      sectionNumber: 7,
+      criterionLabel: "Subjective acceptance criterion",
+      comment: null,
+    });
+    expect(card.canApplyTrackedChange).toBe(true);
+    expect(card.applyCommentId).toBeNull();
+    expect(card.replacement).toBeNull();
+  });
+
+  it("shows a stored proposed replacement before a comment exists", () => {
+    const card = reviewFindingCardModel({
+      finding: finding({
+        checkId: "writing.grammar",
+        kind: "fixable",
+        commentId: null,
+        metadata: {
+          proposedEdit: {
+            kind: "ai_grammar",
+            anchorText: "BN100",
+            deleteText: "BN100",
+            insertText: "BN-100",
+          },
+        },
+      }),
+      check: { label: "Grammar & spelling" },
+      sectionLabel: "Define",
+      sectionNumber: 1,
+      criterionLabel: null,
+      comment: null,
+    });
+    expect(card.canApplyTrackedChange).toBe(true);
+    expect(card.replacement).toBe("BN-100");
+    expect(card.locate?.needle).toBe("BN100");
   });
 });

@@ -49,6 +49,7 @@ function ReviewProvider({ children }: ProviderProps) {
         category,
         openCheckId,
         runningCheckIds: review.runningCheckIds,
+        applyingFindingId: review.applyingFindingId,
         loading: review.loading,
         canRun: review.canRun,
       },
@@ -59,6 +60,7 @@ function ReviewProvider({ children }: ProviderProps) {
         },
         runChecks: review.runChecks,
         patchFinding: review.patchFinding,
+        applyTrackedChange: review.applyTrackedChange,
         refresh: review.refresh,
       },
     }),
@@ -327,7 +329,6 @@ function ReviewIssueRow({
   onJumpToSection: (section: SectionType) => void;
 }) {
   const {
-    isSuggesting,
     evaluations,
     promoteSuggestionToQueueHead,
     setReviewLocate,
@@ -335,8 +336,11 @@ function ReviewIssueRow({
   } = useReportEvaluations();
   const { comments } = useReportComments();
   const { report } = useReportData();
-  const { state } = useReview();
-  const check = state.checks.find((row) => row.id === finding.checkId) ?? null;
+  const {
+    state: { applyingFindingId, checks, canRun },
+    actions: { applyTrackedChange },
+  } = useReview();
+  const check = checks.find((row) => row.id === finding.checkId) ?? null;
   const workspaceSections = getWorkspaceSections(report.documentType);
   const sectionIndex = finding.section
     ? workspaceSections.findIndex((row) => row.key === finding.section)
@@ -389,27 +393,21 @@ function ReviewIssueRow({
             }
           : undefined
       }
+      applying={applyingFindingId === finding.id}
       onApplyTrackedChange={
-        card.applyCommentId
+        card.canApplyTrackedChange && canRun
           ? () => {
-              const commentId = card.applyCommentId;
-              if (!commentId) return;
-              setReviewLocate(null);
-              promoteSuggestionToQueueHead(commentId);
-              onJumpToComment(commentId);
+              void (async () => {
+                const commentId = await applyTrackedChange(finding.id);
+                if (!commentId) return;
+                setReviewLocate(null);
+                promoteSuggestionToQueueHead(commentId);
+                onJumpToComment(commentId);
+              })();
             }
           : undefined
       }
-      extra={
-        <>
-          <ReviewVerifyActions finding={finding} />
-          {finding.kind === "fixable" && !finding.commentId && isSuggesting ? (
-            <p className="mt-2 text-[10px] text-[var(--muted-foreground)]">
-              Generating a fix…
-            </p>
-          ) : null}
-        </>
-      }
+      extra={<ReviewVerifyActions finding={finding} />}
     />
   );
 }
@@ -609,7 +607,7 @@ function ReviewPanel({
         <div className="min-w-0 space-y-1.5">
           <h2 className="text-sm font-semibold">Review</h2>
           <p className="text-[11px] text-[var(--muted-foreground)]">
-            Run checks, then open a card. Show in document highlights the phrase. Apply as tracked change queues the suggestion.
+            Run checks, then open a card. Show in document highlights the phrase. Apply as tracked change is the only way a suggestion appears in the document.
           </p>
           <ReviewSeverityStats />
         </div>

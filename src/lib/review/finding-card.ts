@@ -3,6 +3,10 @@ import {
   parseAiFixCommentContent,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
+import {
+  canGenerateReviewSuggestion,
+  proposedEditFromMetadata,
+} from "./proposed-edit";
 import type { ReviewCheckDto, ReviewFindingDto } from "./ui";
 
 export type ReviewLocateTarget = {
@@ -25,6 +29,8 @@ export type ReviewFindingCardModel = {
   locate: ReviewLocateTarget | null;
   /** Open single-span AI suggestion to promote into the tracked-change queue. */
   applyCommentId: string | null;
+  /** Finding can persist or generate a tracked-change suggestion. */
+  canApplyTrackedChange: boolean;
 };
 
 type CardComment = {
@@ -126,11 +132,15 @@ export function reviewFindingCardModel(args: {
       ? args.check.label
       : null;
 
+  const proposed = proposedEditFromMetadata(args.finding.metadata);
   const span = args.comment ? singleSpanSuggestion(args.comment) : null;
   const section = args.finding.section;
   const contentPath =
     args.comment?.contentPath ?? args.finding.contentPath ?? null;
-  const fallbackNeedle = args.finding.anchorText.trim();
+  const fallbackNeedle =
+    proposed?.deleteText.trim() ||
+    proposed?.anchorText.trim() ||
+    args.finding.anchorText.trim();
   const locate =
     section && contentPath
       ? span
@@ -139,14 +149,21 @@ export function reviewFindingCardModel(args: {
           ? { section, contentPath, needle: fallbackNeedle }
           : null
       : null;
+  const replacement =
+    span?.replacement ?? (proposed?.insertText.trim() || null);
+  const applyCommentId = span && args.comment ? args.comment.id : null;
+  const canApplyTrackedChange = args.comment
+    ? Boolean(applyCommentId)
+    : Boolean(proposed || canGenerateReviewSuggestion(args.finding));
 
   return {
     location,
     kicker,
     title,
     body,
-    replacement: span?.replacement ?? null,
+    replacement,
     locate,
-    applyCommentId: span && args.comment ? args.comment.id : null,
+    applyCommentId,
+    canApplyTrackedChange,
   };
 }

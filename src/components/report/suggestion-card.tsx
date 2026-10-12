@@ -675,8 +675,9 @@ export function SectionSuggestionCard({
     suggestionApplyTransition,
     gutterSuggestionCommentForSection,
     suggestionQueueHeadId,
+    suggestionQueueComments,
   } = useReportEvaluations();
-  const { comments, setComments, activeCommentId } = useReportComments();
+  const { setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const [pending, setPending] = useState(false);
   const [phase, setPhase] = useState<CardPhase>("steady");
@@ -690,22 +691,29 @@ export function SectionSuggestionCard({
     () =>
       sectionOrderWithOpenSuggestions(
         suggestionCardSectionKeys(report.documentType),
-        comments
+        suggestionQueueComments
       ),
-    [report.documentType, comments]
+    [report.documentType, suggestionQueueComments]
   );
 
   const queue = useMemo(
     () =>
       preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent: sections[section],
         preferredCommentId: activeCommentId,
         queueHeadCommentId: suggestionQueueHeadId,
       }),
-    [section, comments, evaluations, sections, activeCommentId, suggestionQueueHeadId]
+    [
+      section,
+      suggestionQueueComments,
+      evaluations,
+      sections,
+      activeCommentId,
+      suggestionQueueHeadId,
+    ]
   );
 
   const active = queue.active;
@@ -725,10 +733,12 @@ export function SectionSuggestionCard({
     if (!content) return [];
     return suggestionsSupersededBy(liveCard.comment, {
       section,
-      comments: comments.filter((c) => c.status === "open" && !c.parentId),
+      comments: suggestionQueueComments.filter(
+        (c) => c.status === "open" && !c.parentId
+      ),
       sectionContent: content as Record<string, unknown>,
     });
-  }, [liveCard, section, comments, sections]);
+  }, [liveCard, section, suggestionQueueComments, sections]);
   const persistedReplacedCount = liveCard
     ? supersededSuggestionIdsFromContent(liveCard.comment.content).length
     : 0;
@@ -748,22 +758,22 @@ export function SectionSuggestionCard({
   const queueStaleHint = useMemo(() => {
     const { total: openTotal, stale } = countStaleOpenSuggestions(
       section,
-      comments,
+      suggestionQueueComments,
       evaluations,
       sectionContent
     );
     if (openTotal <= 1 || stale === 0) return null;
     return `${stale} of ${openTotal} suggestions in this section may no longer apply after recent edits.`;
-  }, [section, comments, evaluations, sectionContent]);
+  }, [section, suggestionQueueComments, evaluations, sectionContent]);
 
   const bridge = suggestionApplyTransition[section]?.bridge;
   const bridgeNext = useMemo(() => {
     if (!bridge) return null;
-    const next = comments.find(
+    const next = suggestionQueueComments.find(
       (c) => c.id === bridge.nextCommentId && c.status === "open" && !c.parentId
     );
     return next ?? null;
-  }, [bridge, comments]);
+  }, [bridge, suggestionQueueComments]);
   const showBridge = bridgeNext != null;
 
   // Queue changed under a parked bridge (regen, external resolve) — drop the hold.
@@ -888,7 +898,7 @@ export function SectionSuggestionCard({
     const nextTarget = nextOpenSuggestionAfterResolve(
       commentId,
       section,
-      comments,
+      suggestionQueueComments,
       evaluations,
       sectionOrder
     );
@@ -914,7 +924,9 @@ export function SectionSuggestionCard({
         comment: snapshot.comment,
         sectionContent: (sections[section] as Record<string, unknown>) ?? {},
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
-        openComments: comments.filter((c) => c.status === "open" && !c.parentId),
+        openComments: suggestionQueueComments.filter(
+          (c) => c.status === "open" && !c.parentId
+        ),
         documentType: report.documentType,
         reportSections: sections,
         identityCurrent: identityCurrentFromReport(report),
@@ -1016,7 +1028,7 @@ export function SectionSuggestionCard({
     canResolve,
     section,
     sections,
-    comments,
+    suggestionQueueComments,
     evaluations,
     sectionOrder,
     report,
@@ -1040,7 +1052,7 @@ export function SectionSuggestionCard({
     const nextTarget = nextOpenSuggestionAfterResolve(
       commentId,
       section,
-      comments,
+      suggestionQueueComments,
       evaluations,
       sectionOrder
     );
@@ -1129,7 +1141,7 @@ export function SectionSuggestionCard({
     canResolve,
     section,
     sections,
-    comments,
+    suggestionQueueComments,
     evaluations,
     sectionOrder,
     report.id,
@@ -1160,7 +1172,7 @@ export function SectionSuggestionCard({
       nextSection && nextSection !== section
         ? (resolveSection(report.documentType, nextSection)?.label ?? null)
         : null;
-    const remainingTotal = countOpenAiSuggestions(comments);
+    const remainingTotal = countOpenAiSuggestions(suggestionQueueComments);
     const nextEval = bridgeNext.evaluationId
       ? evaluations.find((e) => e.id === bridgeNext.evaluationId)
       : undefined;

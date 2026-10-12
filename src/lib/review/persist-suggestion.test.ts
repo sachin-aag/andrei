@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { insert, insertValues } = vi.hoisted(() => {
+const { insert, insertValues, select, update } = vi.hoisted(() => {
   const insertValues = vi.fn().mockResolvedValue(undefined);
   const insert = vi.fn(() => ({ values: insertValues }));
-  return { insert, insertValues };
+  const select = vi.fn();
+  const update = vi.fn();
+  return { insert, insertValues, select, update };
 });
 
-vi.mock("@/db", () => ({ db: { insert } }));
+vi.mock("@/db", () => ({ db: { insert, select, update } }));
 
-import { persistLocatedEdit } from "@/lib/review/persist-suggestion";
+import {
+  dismissReviewCreatedComments,
+  locateProposedEdit,
+  persistLocatedEdit,
+} from "@/lib/review/persist-suggestion";
+import { commentReleasedToQueue } from "@/lib/review/proposed-edit";
 import type { ReviewRunContext } from "@/lib/review/types";
 
 const narrative = {
@@ -36,14 +43,14 @@ function ctx(): ReviewRunContext {
   };
 }
 
-describe("persistLocatedEdit", () => {
+describe("locateProposedEdit", () => {
   beforeEach(() => {
     insert.mockClear();
     insertValues.mockClear();
   });
 
-  it("stores an ai_grammar comment and returns a fixable finding with commentId", async () => {
-    const finding = await persistLocatedEdit({
+  it("returns a fixable finding with proposedEdit and does not insert a comment", () => {
+    const finding = locateProposedEdit({
       ctx: ctx(),
       section: "define",
       contentPath: "narrative",
@@ -56,27 +63,85 @@ describe("persistLocatedEdit", () => {
       kind: "ai_grammar",
     });
     expect(finding?.kind).toBe("fixable");
-    expect(finding?.severity).toBe("minor");
-    expect(finding?.commentId).toEqual(expect.any(String));
-    expect(insert).toHaveBeenCalled();
-    const values = insertValues.mock.calls[0]?.[0] as { kind: string };
-    expect(values.kind).toBe("ai_grammar");
+    expect(finding?.commentId).toBeNull();
+    expect(finding?.metadata).toEqual({
+      proposedEdit: {
+        kind: "ai_grammar",
+        anchorText: "BN100",
+        deleteText: "BN100",
+        insertText: "BN-100",
+      },
+    });
+    expect(insert).not.toHaveBeenCalled();
   });
 
-  it("returns null when the span is not locatable", async () => {
+  it("returns null when the span is not locatable", () => {
+    expect(
+      locateProposedEdit({
+        ctx: ctx(),
+        section: "define",
+        contentPath: "narrative",
+        edit: {
+          anchorText: "does-not-exist",
+          deleteText: "does-not-exist",
+          insertText: "x",
+        },
+        reasoning: "Missing span.",
+        kind: "ai_fix",
+      })
+    ).toBeNull();
+  });
+});
+
+describe("persistLocatedEdit", () => {
+  beforeEach(() => {
+    insert.mockClear();
+    insertValues.mockClear();
+  });
+
+  it("inserts an open comment released to the suggestion queue", async () => {
     const finding = await persistLocatedEdit({
       ctx: ctx(),
       section: "define",
       contentPath: "narrative",
       edit: {
-        anchorText: "does-not-exist",
-        deleteText: "does-not-exist",
-        insertText: "x",
+        anchorText: "BN100",
+        deleteText: "BN100",
+        insertText: "BN-100",
       },
-      reasoning: "Missing span.",
-      kind: "ai_fix",
+      reasoning: "Normalize the batch number.",
+      kind: "ai_grammar",
     });
-    expect(finding).toBeNull();
-    expect(insertValues).not.toHaveBeenCalled();
+    expect(finding?.commentId).toEqual(expect.any(String));
+    expect(insert).toHaveBeenCalled();
+    const values = insertValues.mock.calls[0]?.[0] as {
+      kind: string;
+      content: string;
+    };
+    expect(values.kind).toBe("ai_grammar");
+    expect(commentReleasedToQueue(values.content)).toBe(true);
+  });
+});
+
+describe("dismissReviewCreatedComments", () => {
+  beforeEach(() => {
+    select.mockReset();
+    update.mockReset();
+  });
+
+  it("dismisses open comments that have no evaluationId", async () => {
+    const from = vi.fn(() => ({
+      where: vi.fn().mockResolvedValue([
+        { id: "c1", content: '{"insertText":"BN-100"}' },
+      ]),
+    }));
+    select.mockReturnValue({ from });
+    const set = vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) }));
+    update.mockReturnValue({ set });
+
+    await dismissReviewCreatedComments(["c1", "c1"]);
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "dismissed" })
+    );
   });
 });

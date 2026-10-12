@@ -51,10 +51,11 @@ export function ReportBulkSuggestionActions() {
     markSectionPersisted,
   } = useReportData();
   const { getUser } = useUserDirectory();
-  const { comments, setComments } = useReportComments();
+  const { setComments } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const {
     evaluations,
+    suggestionQueueComments,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   } = useReportEvaluations();
@@ -69,12 +70,12 @@ export function ReportBulkSuggestionActions() {
     () =>
       sectionOrderWithOpenSuggestions(
         suggestionCardSectionKeys(report.documentType),
-        comments
+        suggestionQueueComments
       ),
-    [report.documentType, comments]
+    [report.documentType, suggestionQueueComments]
   );
 
-  const openTotal = countOpenAiSuggestions(comments);
+  const openTotal = countOpenAiSuggestions(suggestionQueueComments);
 
   const releaseBulkHolds = useCallback(() => {
     // Release after comments are updated so TipTap does not re-inject a
@@ -88,7 +89,7 @@ export function ReportBulkSuggestionActions() {
     (holdMode: "bulk" | "dismiss") => ({
       reportId: report.id,
       sectionOrder,
-      comments,
+      comments: suggestionQueueComments,
       evaluations,
       documentType: report.documentType,
       sectionContentFor: (section: SectionType) =>
@@ -114,7 +115,7 @@ export function ReportBulkSuggestionActions() {
     [
       report,
       sectionOrder,
-      comments,
+      suggestionQueueComments,
       evaluations,
       sections,
       replaceSection,
@@ -126,7 +127,7 @@ export function ReportBulkSuggestionActions() {
   const handleAcceptAll = useCallback(async () => {
     if (running || !canResolve) return;
     setRunning("accept");
-    const openIds = openAiSuggestionIds(comments);
+    const openIds = openAiSuggestionIds(suggestionQueueComments);
     closeSuggestionComments(openIds);
     try {
       const result = await acceptAllSuggestionsInReport({
@@ -178,7 +179,7 @@ export function ReportBulkSuggestionActions() {
   }, [
     running,
     canResolve,
-    comments,
+    suggestionQueueComments,
     closeSuggestionComments,
     releaseSuggestionComments,
     markSectionPersisted,
@@ -192,7 +193,7 @@ export function ReportBulkSuggestionActions() {
   const handleDismissAll = useCallback(async () => {
     if (running || !canResolve) return;
     setRunning("dismiss");
-    const openIds = openAiSuggestionIds(comments);
+    const openIds = openAiSuggestionIds(suggestionQueueComments);
     closeSuggestionComments(openIds);
     try {
       const result = await dismissAllSuggestionsInReport(buildBulkArgs("dismiss"));
@@ -229,7 +230,7 @@ export function ReportBulkSuggestionActions() {
   }, [
     running,
     canResolve,
-    comments,
+    suggestionQueueComments,
     closeSuggestionComments,
     releaseSuggestionComments,
     markSectionPersisted,

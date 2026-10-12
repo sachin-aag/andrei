@@ -17,6 +17,7 @@ export type ReviewContextValue = {
     category: ReviewCategoryFilter;
     openCheckId: ReviewCheckId | null;
     runningCheckIds: string[];
+    applyingFindingId: string | null;
     loading: boolean;
     canRun: boolean;
   };
@@ -25,6 +26,7 @@ export type ReviewContextValue = {
     toggleCheck: (checkId: ReviewCheckId) => void;
     runChecks: (checkIds?: string[], category?: ReviewCategory) => Promise<void>;
     patchFinding: (findingId: string, status: "verified" | "dismissed") => Promise<void>;
+    applyTrackedChange: (findingId: string) => Promise<string | null>;
     refresh: () => Promise<void>;
   };
 };

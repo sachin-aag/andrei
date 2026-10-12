@@ -16,7 +16,7 @@ import {
   readDocumentPage,
   searchReportDocuments,
 } from "@/lib/attachments/retrieval";
-import { persistLocatedEdit } from "../persist-suggestion";
+import { locateProposedEdit } from "../persist-suggestion";
 import { iterReportFields } from "../fields";
 import { REVIEW_CITATION_PROMPT_VERSION } from "../prompts";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
@@ -252,7 +252,7 @@ export async function runCitationSupportsCheck(
         const replacement = canonicalizeSourceCitationBracket(
           `[${better.filename}, p. ${better.pageNumber}]`
         );
-        const persisted = await persistLocatedEdit({
+        const persisted = locateProposedEdit({
           ctx,
           section: row.job.section,
           contentPath: row.job.contentPath,

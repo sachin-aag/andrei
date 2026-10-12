@@ -26,6 +26,7 @@ export function ReviewFindingCard({
   severity,
   card,
   located,
+  applying,
   onShowInDocument,
   onApplyTrackedChange,
   extra,
@@ -33,6 +34,7 @@ export function ReviewFindingCard({
   severity: string;
   card: ReviewFindingCardModel;
   located?: boolean;
+  applying?: boolean;
   onShowInDocument?: () => void;
   onApplyTrackedChange?: () => void;
   extra?: ReactNode;
@@ -85,7 +87,7 @@ export function ReviewFindingCard({
           </p>
         </div>
       ) : null}
-      {card.locate || card.applyCommentId ? (
+      {card.locate || card.canApplyTrackedChange ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {card.locate && onShowInDocument ? (
             <Button
@@ -98,14 +100,15 @@ export function ReviewFindingCard({
               Show in document
             </Button>
           ) : null}
-          {card.applyCommentId && onApplyTrackedChange ? (
+          {card.canApplyTrackedChange && onApplyTrackedChange ? (
             <Button
               type="button"
               size="sm"
               variant="success"
               onClick={onApplyTrackedChange}
+              disabled={applying}
             >
-              Apply as tracked change
+              {applying ? "Applying…" : "Apply as tracked change"}
             </Button>
           ) : null}
         </div>

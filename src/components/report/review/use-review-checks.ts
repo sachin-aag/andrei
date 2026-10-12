@@ -19,11 +19,14 @@ import {
 export function useReviewChecks() {
   const { report, workspaceMode } = useReportData();
   const { setComments } = useReportComments();
-  const { setEvaluations } = useReportEvaluations();
+  const { setEvaluations, setReviewFindings } = useReportEvaluations();
   const [checks, setChecks] = useState<ReviewCheckDto[]>([]);
   const [findings, setFindings] = useState<ReviewFindingDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningCheckIds, setRunningCheckIds] = useState<string[]>([]);
+  const [applyingFindingId, setApplyingFindingId] = useState<string | null>(
+    null
+  );
 
   const applySnapshot = useCallback(
     (data: {
@@ -33,7 +36,10 @@ export function useReviewChecks() {
       evaluations?: EvaluationRecord[];
     }) => {
       if (data.checks) setChecks(data.checks);
-      if (data.findings) setFindings(data.findings);
+      if (data.findings) {
+        setFindings(data.findings);
+        setReviewFindings(data.findings);
+      }
       if (Array.isArray(data.comments)) {
         setComments(
           data.comments.map((row) =>
@@ -45,7 +51,7 @@ export function useReviewChecks() {
         setEvaluations(data.evaluations);
       }
     },
-    [setComments, setEvaluations]
+    [setComments, setEvaluations, setReviewFindings]
   );
 
   const refresh = useCallback(async () => {
@@ -135,6 +141,67 @@ export function useReviewChecks() {
     [applySnapshot, checks, report.id]
   );
 
+  const applyTrackedChange = useCallback(
+    async (findingId: string): Promise<string | null> => {
+      setApplyingFindingId(findingId);
+      try {
+        const res = await fetch(
+          `/api/reports/${report.id}/review/findings/${encodeURIComponent(findingId)}/apply`,
+          { method: "POST" }
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          commentId?: string;
+          finding?: ReviewFindingDto;
+          comments?: unknown[];
+          error?: string;
+        };
+        if (!res.ok) {
+          toast.error(
+            typeof data.error === "string"
+              ? data.error
+              : "Could not apply that suggestion."
+          );
+          return null;
+        }
+        if (Array.isArray(data.comments)) {
+          setComments(
+            data.comments.map((row) =>
+              normalizeCommentRecord(row as Record<string, unknown>)
+            ) as CommentRecord[]
+          );
+        }
+        const nextCommentId =
+          typeof data.commentId === "string" ? data.commentId : null;
+        if (data.finding) {
+          const updated = data.finding;
+          setFindings((prev) =>
+            prev.map((row) => (row.id === updated.id ? updated : row))
+          );
+          setReviewFindings((prev) => {
+            const exists = prev.some((row) => row.id === updated.id);
+            if (exists) {
+              return prev.map((row) =>
+                row.id === updated.id ? updated : row
+              );
+            }
+            return [...prev, updated];
+          });
+        } else if (nextCommentId) {
+          const patch = (row: ReviewFindingDto): ReviewFindingDto =>
+            row.id === findingId
+              ? { ...row, commentId: nextCommentId, kind: "fixable" }
+              : row;
+          setFindings((prev) => prev.map(patch));
+          setReviewFindings((prev) => prev.map(patch));
+        }
+        return nextCommentId;
+      } finally {
+        setApplyingFindingId(null);
+      }
+    },
+    [report.id, setComments, setReviewFindings]
+  );
+
   const patchFinding = useCallback(
     async (findingId: string, status: "verified" | "dismissed") => {
       const res = await fetch(
@@ -150,6 +217,7 @@ export function useReviewChecks() {
         return;
       }
       setFindings((prev) => prev.filter((row) => row.id !== findingId));
+      setReviewFindings((prev) => prev.filter((row) => row.id !== findingId));
       setChecks((prev) =>
         prev.map((check) => {
           const remaining = findings.filter(
@@ -166,7 +234,7 @@ export function useReviewChecks() {
         })
       );
     },
-    [findings, report.id]
+    [findings, report.id, setReviewFindings]
   );
 
   return {
@@ -174,9 +242,11 @@ export function useReviewChecks() {
     findings,
     loading,
     runningCheckIds,
+    applyingFindingId,
     canRun: workspaceMode !== "view",
     runChecks,
     patchFinding,
+    applyTrackedChange,
     refresh,
   };
 }

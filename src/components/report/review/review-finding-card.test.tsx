@@ -18,6 +18,7 @@ const card: ReviewFindingCardModel = {
     needle: "acceptable to the R&D Engineer",
   },
   applyCommentId: "c1",
+  canApplyTrackedChange: true,
 };
 
 describe("ReviewFindingCard", () => {

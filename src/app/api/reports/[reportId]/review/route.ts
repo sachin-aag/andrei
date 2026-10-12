@@ -21,5 +21,8 @@ async function handleGet(
     user: access.user,
   });
   const snapshot = await buildReviewSnapshot(ctx);
-  return NextResponse.json(snapshot);
+  return NextResponse.json({
+    ...snapshot,
+    comments: ctx.comments,
+  });
 }

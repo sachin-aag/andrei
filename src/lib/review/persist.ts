@@ -7,6 +7,7 @@ import {
   reviewFindings,
 } from "@/db/schema";
 import type { CriterionEvaluationResult } from "@/lib/ai/evaluate";
+import { dismissReviewCreatedComments } from "./persist-suggestion";
 import type { ReviewFindingDraft } from "./types";
 
 export async function startReviewRun(args: {
@@ -49,7 +50,10 @@ export async function finishReviewRun(args: {
   }
 
   const previousOpen = await db
-    .select({ id: reviewFindings.id })
+    .select({
+      id: reviewFindings.id,
+      commentId: reviewFindings.commentId,
+    })
     .from(reviewFindings)
     .where(
       and(
@@ -59,6 +63,9 @@ export async function finishReviewRun(args: {
       )
     );
   if (previousOpen.length > 0) {
+    await dismissReviewCreatedComments(
+      previousOpen.flatMap((row) => (row.commentId ? [row.commentId] : []))
+    );
     await db
       .update(reviewFindings)
       .set({ status: "resolved" })

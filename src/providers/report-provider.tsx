@@ -38,6 +38,11 @@ import {
 } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import type { ReviewLocateHighlight } from "@/lib/review/finding-card";
+import type { ReviewFindingDto } from "@/lib/review/ui";
+import {
+  heldReviewSuggestionIds,
+  withoutHeldReviewSuggestions,
+} from "@/lib/review/proposed-edit";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import { planPendingSectionFlush } from "@/lib/reports/pending-section-flush";
@@ -184,6 +189,10 @@ type ReportContextValue = {
   /** Open suggestion pinned to the front of its section queue by review apply. */
   suggestionQueueHeadId: string | null;
   promoteSuggestionToQueueHead: (commentId: string) => void;
+  reviewFindings: ReviewFindingDto[];
+  setReviewFindings: React.Dispatch<React.SetStateAction<ReviewFindingDto[]>>;
+  /** Open AI comments that are allowed to preview in the document. */
+  suggestionQueueComments: CommentRecord[];
   /** Yellow highlight of one phrase. Does not open the suggestion preview. */
   reviewLocate: ReviewLocateHighlight | null;
   setReviewLocate: (next: ReviewLocateHighlight | null) => void;
@@ -354,6 +363,9 @@ type ReportEvaluationContextValue = Pick<
   | "endSuggestionApplyTransition"
   | "suggestionQueueHeadId"
   | "promoteSuggestionToQueueHead"
+  | "reviewFindings"
+  | "setReviewFindings"
+  | "suggestionQueueComments"
   | "reviewLocate"
   | "setReviewLocate"
   | "suggestionApplyTransition"
@@ -531,6 +543,7 @@ export function ReportProvider({
   const [suggestionQueueHeadId, setSuggestionQueueHeadId] = useState<
     string | null
   >(null);
+  const [reviewFindings, setReviewFindings] = useState<ReviewFindingDto[]>([]);
   const [reviewLocate, setReviewLocate] = useState<ReviewLocateHighlight | null>(
     null
   );
@@ -1044,6 +1057,15 @@ export function ReportProvider({
     });
   }, []);
 
+  const suggestionQueueComments = useMemo(
+    () =>
+      withoutHeldReviewSuggestions(
+        comments,
+        heldReviewSuggestionIds(reviewFindings, comments)
+      ),
+    [comments, reviewFindings]
+  );
+
   const promoteSuggestionToQueueHead = useCallback(
     (commentId: string) => {
       setSuggestionQueueHeadId(commentId);
@@ -1078,7 +1100,7 @@ export function ReportProvider({
       }
       return preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent: sections[section as keyof SectionContentMap],
         preferredCommentId: activeCommentId,
@@ -1088,6 +1110,7 @@ export function ReportProvider({
     [
       activeCommentId,
       comments,
+      suggestionQueueComments,
       evaluations,
       sections,
       suggestionApplyTransition,
@@ -1101,7 +1124,7 @@ export function ReportProvider({
       const sectionContent = sections[section as keyof SectionContentMap];
       const preferred = preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent,
         preferredCommentId: activeCommentId,
@@ -1117,7 +1140,7 @@ export function ReportProvider({
       }
       const fallback = preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent,
       }).active;
@@ -1131,7 +1154,7 @@ export function ReportProvider({
     },
     [
       activeCommentId,
-      comments,
+      suggestionQueueComments,
       evaluations,
       isSuggestionPreviewHeld,
       sections,
@@ -1340,6 +1363,9 @@ export function ReportProvider({
       endSuggestionApplyTransition,
       suggestionQueueHeadId,
       promoteSuggestionToQueueHead,
+      reviewFindings,
+      setReviewFindings,
+      suggestionQueueComments,
       reviewLocate,
       setReviewLocate,
       suggestionApplyTransition,
@@ -1364,6 +1390,9 @@ export function ReportProvider({
       endSuggestionApplyTransition,
       suggestionQueueHeadId,
       promoteSuggestionToQueueHead,
+      reviewFindings,
+      setReviewFindings,
+      suggestionQueueComments,
       reviewLocate,
       suggestionApplyTransition,
       suggestionsFocus,

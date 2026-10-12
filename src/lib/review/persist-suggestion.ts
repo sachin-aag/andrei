@@ -1,9 +1,11 @@
 import { createId } from "@paralleldrive/cuid2";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { comments } from "@/db/schema";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   serializeAiFixCommentContent,
+  serializeAiRedraftCommentContent,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
@@ -20,9 +22,99 @@ import {
   withSuggestionRecord,
 } from "@/lib/suggestions/suggestion-record";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { withResolutionReason } from "@/lib/suggestions/supersession";
 import type { ReviewFindingDraft } from "./types";
 import type { ReviewRunContext } from "./types";
 import type { ReviewSeverity } from "./severity";
+import {
+  withReleasedToQueue,
+  type ProposedReviewEdit,
+} from "./proposed-edit";
+
+function locatableEdit(args: {
+  ctx: ReviewRunContext;
+  section: string;
+  contentPath: string;
+  edit: SuggestionEdit;
+}): { record: Record<string, unknown>; edit: SuggestionEdit } | null {
+  const insertText = normalizeSuggestionInsertText(args.edit.insertText);
+  const edit: SuggestionEdit = { ...args.edit, insertText };
+  const content = args.ctx.sections[args.section];
+  if (!content || typeof content !== "object") return null;
+  const record = content as Record<string, unknown>;
+  if (isRichTargetField(args.section, args.contentPath)) {
+    const doc = getRichFieldValue(record, args.contentPath);
+    if (!isApplyableStatus(probeRichEdit(doc, edit))) return null;
+  } else {
+    const plain = getPlainTextFieldValue(record, args.contentPath);
+    if (!isApplyableStatus(probePlainEdit(plain, edit))) return null;
+  }
+  return { record, edit };
+}
+
+function locatedPayload(args: {
+  ctx: ReviewRunContext;
+  section: string;
+  contentPath: string;
+  record: Record<string, unknown>;
+  edit: SuggestionEdit;
+  reasoning: string;
+}): ParsedAiFixPayload {
+  return withSuggestionRecord(
+    {
+      deleteText: args.edit.deleteText,
+      insertText: args.edit.insertText,
+      reasoning: args.reasoning,
+      second: args.edit.second,
+    },
+    buildSuggestionRecord({
+      sectionContent: args.record,
+      section: args.section,
+      targetField: args.contentPath,
+      documentType: args.ctx.documentType,
+      input: {
+        kind: "located",
+        edit: {
+          anchorText: args.edit.anchorText,
+          deleteText: args.edit.deleteText,
+          insertText: args.edit.insertText,
+          second: args.edit.second,
+        },
+      },
+    })
+  );
+}
+
+/** Probe a span and stash it on the finding. Does not open a suggestion comment. */
+export function locateProposedEdit(args: {
+  ctx: ReviewRunContext;
+  section: string;
+  contentPath: string;
+  edit: SuggestionEdit;
+  reasoning: string;
+  kind: ProposedReviewEdit["kind"];
+  severity?: ReviewSeverity;
+}): ReviewFindingDraft | null {
+  const located = locatableEdit(args);
+  if (!located) return null;
+  return {
+    section: args.section,
+    contentPath: args.contentPath,
+    anchorText: located.edit.anchorText,
+    message: args.reasoning,
+    severity: args.severity ?? (args.kind === "ai_grammar" ? "minor" : "major"),
+    kind: "fixable",
+    commentId: null,
+    metadata: {
+      proposedEdit: {
+        kind: args.kind,
+        anchorText: located.edit.anchorText,
+        deleteText: located.edit.deleteText,
+        insertText: located.edit.insertText,
+      } satisfies ProposedReviewEdit,
+    },
+  };
+}
 
 export async function persistLocatedEdit(args: {
   ctx: ReviewRunContext;
@@ -32,47 +124,28 @@ export async function persistLocatedEdit(args: {
   reasoning: string;
   kind: "ai_fix" | "ai_grammar";
   severity?: ReviewSeverity;
+  evaluationId?: string | null;
+  releasedToQueue?: boolean;
 }): Promise<ReviewFindingDraft | null> {
   const { ctx, section, contentPath, reasoning, kind } = args;
-  const insertText = normalizeSuggestionInsertText(args.edit.insertText);
-  const edit: SuggestionEdit = { ...args.edit, insertText };
-  const content = ctx.sections[section];
-  if (!content || typeof content !== "object") return null;
-  const record = content as Record<string, unknown>;
+  const located = locatableEdit(args);
+  if (!located) return null;
   const sectionRow = ctx.sectionRows.find((row) => row.section === section);
   if (!sectionRow) return null;
 
-  if (isRichTargetField(section, contentPath)) {
-    const doc = getRichFieldValue(record, contentPath);
-    if (!isApplyableStatus(probeRichEdit(doc, edit))) return null;
-  } else {
-    const plain = getPlainTextFieldValue(record, contentPath);
-    if (!isApplyableStatus(probePlainEdit(plain, edit))) return null;
-  }
-
-  const payload: ParsedAiFixPayload = withSuggestionRecord(
-    {
-      deleteText: edit.deleteText,
-      insertText,
-      reasoning,
-      second: edit.second,
-    },
-    buildSuggestionRecord({
-      sectionContent: record,
-      section,
-      targetField: contentPath,
-      documentType: ctx.documentType,
-      input: {
-        kind: "located",
-        edit: {
-          anchorText: edit.anchorText,
-          deleteText: edit.deleteText,
-          insertText,
-          second: edit.second,
-        },
-      },
-    })
-  );
+  const payload = locatedPayload({
+    ctx,
+    section,
+    contentPath,
+    record: located.record,
+    edit: located.edit,
+    reasoning,
+  });
+  const serialized = serializeAiFixCommentContent(payload);
+  const content =
+    args.releasedToQueue === false
+      ? serialized
+      : withReleasedToQueue(serialized, true);
 
   const commentId = createId();
   await db.insert(comments).values({
@@ -81,22 +154,112 @@ export async function persistLocatedEdit(args: {
     sectionId: sectionRow.id,
     section,
     authorId: AI_AUTHOR_ID,
-    content: serializeAiFixCommentContent(payload),
-    anchorText: edit.anchorText,
+    content,
+    anchorText: located.edit.anchorText,
     contentPath,
     fromPos: null,
     toPos: null,
     status: "open",
     kind,
+    evaluationId: args.evaluationId ?? null,
   });
 
   return {
     section,
     contentPath,
-    anchorText: edit.anchorText,
+    anchorText: located.edit.anchorText,
     message: reasoning,
     severity: args.severity ?? (kind === "ai_grammar" ? "minor" : "major"),
     kind: "fixable",
     commentId,
   };
+}
+
+export async function persistRedraftComment(args: {
+  ctx: ReviewRunContext;
+  section: string;
+  contentPath: string;
+  markdown: string;
+  reasoning: string;
+  evaluationId?: string | null;
+}): Promise<string | null> {
+  const sectionRow = args.ctx.sectionRows.find(
+    (row) => row.section === args.section
+  );
+  if (!sectionRow) return null;
+  const content = args.ctx.sections[args.section];
+  if (!content || typeof content !== "object") return null;
+  const record = content as Record<string, unknown>;
+  const payload = withSuggestionRecord(
+    { markdown: args.markdown, reasoning: args.reasoning },
+    buildSuggestionRecord({
+      sectionContent: record,
+      section: args.section,
+      targetField: args.contentPath,
+      documentType: args.ctx.documentType,
+      input: { kind: "redraft", markdown: args.markdown },
+    })
+  );
+  const commentId = createId();
+  await db.insert(comments).values({
+    id: commentId,
+    reportId: args.ctx.report.id,
+    sectionId: sectionRow.id,
+    section: args.section,
+    authorId: AI_AUTHOR_ID,
+    content: withReleasedToQueue(
+      serializeAiRedraftCommentContent(payload),
+      true
+    ),
+    anchorText: "",
+    contentPath: args.contentPath,
+    fromPos: null,
+    toPos: null,
+    status: "open",
+    kind: "ai_redraft",
+    evaluationId: args.evaluationId ?? null,
+  });
+  return commentId;
+}
+
+export async function releaseCommentToQueue(commentId: string): Promise<void> {
+  const [row] = await db
+    .select({ id: comments.id, content: comments.content })
+    .from(comments)
+    .where(eq(comments.id, commentId));
+  if (!row) return;
+  await db
+    .update(comments)
+    .set({ content: withReleasedToQueue(row.content, true) })
+    .where(eq(comments.id, commentId));
+}
+
+/** Drop review-created suggestion comments when that check is re-run. */
+export async function dismissReviewCreatedComments(
+  commentIds: string[]
+): Promise<void> {
+  const ids = [...new Set(commentIds.filter(Boolean))];
+  if (ids.length === 0) return;
+  const rows = await db
+    .select({
+      id: comments.id,
+      content: comments.content,
+    })
+    .from(comments)
+    .where(
+      and(
+        inArray(comments.id, ids),
+        eq(comments.status, "open"),
+        isNull(comments.evaluationId)
+      )
+    );
+  for (const row of rows) {
+    await db
+      .update(comments)
+      .set({
+        status: "dismissed",
+        content: withResolutionReason(row.content, "review_rerun"),
+      })
+      .where(eq(comments.id, row.id));
+  }
 }
