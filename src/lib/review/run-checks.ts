@@ -7,6 +7,7 @@ import {
   reportAttachments,
   reportSections,
 } from "@/db/schema";
+import { reportAttachmentPageJoin } from "@/lib/attachments/evidence-join";
 import type { DocumentType } from "@/db/schema";
 import { mergeSectionForType } from "@/lib/document-types";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
@@ -69,6 +70,18 @@ export function reviewRunJobs(args: {
   return [...singles, ...fdaJobs];
 }
 
+/**
+ * Ready extracted pages for a report attachment. Vault links share pages
+ * by asset id; eval/legacy rows still match on attachment id. Pin the
+ * active ingest run so a superseded extract cannot resolve a cite.
+ */
+export function reviewAttachmentPageJoin() {
+  return and(
+    reportAttachmentPageJoin(),
+    eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
+  );
+}
+
 async function mapPool<T>(
   items: T[],
   limit: number,
@@ -113,13 +126,7 @@ export async function loadReviewRunContext(args: {
           pageNumber: documentPages.pageNumber,
         })
         .from(reportAttachments)
-        .leftJoin(
-          documentPages,
-          and(
-            eq(documentPages.attachmentId, reportAttachments.id),
-            eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
-          )
-        )
+        .leftJoin(documentPages, reviewAttachmentPageJoin())
         .where(
           and(
             eq(reportAttachments.reportId, report.id),

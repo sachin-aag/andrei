@@ -45,6 +45,10 @@ import {
   planSearchQuery,
 } from "@/lib/attachments/search-query";
 import {
+  reportAttachmentChunkJoin,
+  reportAttachmentPageJoin,
+} from "@/lib/attachments/evidence-join";
+import {
   routeSearchTargets,
   routedAttachmentIds,
   type RouteableDocument,
@@ -476,35 +480,7 @@ function pageRowToCandidate(row: {
   };
 }
 
-/**
- * Library links share pages/chunks by `assetId`. Eval ingest and legacy
- * report rows have null `assetId` — those still join on `attachmentId`.
- * `NULL = NULL` is unknown in SQL, so an asset-only join returns nothing.
- */
-function reportAttachmentEvidenceJoin(
-  evidence: typeof documentChunks | typeof documentPages
-) {
-  const join = or(
-    and(
-      isNotNull(reportAttachments.assetId),
-      isNotNull(evidence.assetId),
-      eq(evidence.assetId, reportAttachments.assetId)
-    ),
-    eq(evidence.attachmentId, reportAttachments.id)
-  );
-  if (!join) {
-    throw new Error("report attachment evidence join is empty");
-  }
-  return join;
-}
-
-export function reportAttachmentChunkJoin() {
-  return reportAttachmentEvidenceJoin(documentChunks);
-}
-
-function reportAttachmentPageJoin() {
-  return reportAttachmentEvidenceJoin(documentPages);
-}
+export { reportAttachmentChunkJoin, reportAttachmentPageJoin };
 
 /** Dedupe + drop blanks so an all-empty input behaves like "no filter". */
 export function normalizeAttachmentIdFilter(

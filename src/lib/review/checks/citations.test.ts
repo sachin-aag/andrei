@@ -51,6 +51,52 @@ describe("citation review checks", () => {
     expect(findings).toEqual([]);
   });
 
+  it("treats a vault filename's extracted page as ready regardless of case", () => {
+    const findings = citationResolveFindings(
+      {
+        documentType: "investigation_report",
+        sections: {
+          define: {
+            narrative: {
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "The report covers qualification of GLR-1301 [1].",
+                    },
+                  ],
+                },
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Citations:" }],
+                },
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "1. [User Requirement Specification.PDF, p. 5]",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      attachmentIndexFrom([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 5,
+        },
+      ])
+    );
+    expect(findings).toEqual([]);
+  });
+
   it("flags uncited hard facts", () => {
     const findings = uncitedFactFindings({
       documentType: "investigation_report",

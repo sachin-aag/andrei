@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db", () => ({ db: {} }));
 
-import { reviewRunJobs, shouldSkipFreshCheck } from "@/lib/review/run-checks";
+import {
+  reviewAttachmentPageJoin,
+  reviewRunJobs,
+  shouldSkipFreshCheck,
+} from "@/lib/review/run-checks";
 import type { FdaCriterion } from "@/lib/review/fda-criteria";
 
 const fda: FdaCriterion[] = [
@@ -31,6 +35,26 @@ const fda: FdaCriterion[] = [
     contextSections: ["analyze"],
   },
 ];
+
+describe("reviewAttachmentPageJoin", () => {
+  it("pins extracted pages to the active ingest and matches vault files by asset", () => {
+    const names: string[] = [];
+    const seen = new Set<unknown>();
+    const walk = (value: unknown) => {
+      if (value == null || typeof value !== "object" || seen.has(value)) return;
+      seen.add(value);
+      if ("name" in value && typeof value.name === "string") {
+        names.push(value.name);
+      }
+      for (const child of Object.values(value)) walk(child);
+    };
+    walk(reviewAttachmentPageJoin());
+    expect(names).toContain("asset_id");
+    expect(names).toContain("attachment_id");
+    expect(names).toContain("ingest_run_id");
+    expect(names).toContain("active_ingest_run_id");
+  });
+});
 
 describe("shouldSkipFreshCheck", () => {
   it("skips a completed run whose hash still matches", () => {
