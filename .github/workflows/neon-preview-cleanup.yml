@@ -1,53 +1,48 @@
-# Delete Neon preview DB branches when a PR closes (merge or close).
+# Delete Neon preview DB branches when a PR closes or a git branch is deleted.
 # Native Neon/Vercel cleanup is often delayed (Vercel keeps preview deployments;
 # Neon-managed cleanup may wait until the next preview deploy). See docs/neon-vercel-setup.md.
+#
+# Project ids live in src/lib/db/neon-preview-projects.ts (hardcoded fallbacks).
+# GitHub NEON_PROJECT_ID_* vars are optional overrides — do not skip a pack
+# when they are unset (that left 3xper preview branches behind).
 name: Cleanup Neon preview branch
 
 on:
   pull_request:
     types: [closed]
+  delete:
 
 jobs:
   delete-branch:
     if: >-
-      github.event.pull_request.head.ref != 'main' &&
-      github.event.pull_request.head.ref != 'master'
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.ref != 'main' &&
+       github.event.pull_request.head.ref != 'master') ||
+      (github.event_name == 'delete' &&
+       github.event.ref_type == 'branch' &&
+       github.event.ref != 'main' &&
+       github.event.ref != 'master')
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_MJ }}
-            label: mj
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_DEMO }}
-            label: demo
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
-            label: convergent
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_3XPER }}
-            label: 3xper
-          # Back-compat: older repos only set NEON_PROJECT_ID (MJ / Andrei V2).
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID }}
-            label: mj-legacy
     steps:
-      - name: Skip when project id is unset
-        if: matrix.neon_project_id == ''
-        run: echo "NEON project id not configured for ${{ matrix.label }}; skipping."
+      - uses: actions/checkout@v4
 
-      - name: Delete preview branch (preview/<git-branch>)
-        id: delete-by-ref
-        if: matrix.neon_project_id != ''
-        continue-on-error: true
-        uses: neondatabase/delete-branch-action@v3
-        with:
-          project_id: ${{ matrix.neon_project_id }}
-          branch: preview/${{ github.event.pull_request.head.ref }}
-          api_key: ${{ secrets.NEON_API_KEY }}
+      - uses: pnpm/action-setup@v4
 
-      - name: Delete preview branch (preview/pr-<n>-<git-branch>)
-        if: matrix.neon_project_id != '' && steps.delete-by-ref.outcome == 'failure'
-        continue-on-error: true
-        uses: neondatabase/delete-branch-action@v3
+      - uses: actions/setup-node@v4
         with:
-          project_id: ${{ matrix.neon_project_id }}
-          branch: preview/pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}
-          api_key: ${{ secrets.NEON_API_KEY }}
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Delete preview branches for this git ref
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          GIT_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.event.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          NEON_PROJECT_ID_MJ: ${{ vars.NEON_PROJECT_ID_MJ }}
+          NEON_PROJECT_ID_DEMO: ${{ vars.NEON_PROJECT_ID_DEMO }}
+          NEON_PROJECT_ID_CONVERGENT: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
+          NEON_PROJECT_ID_3XPER: ${{ vars.NEON_PROJECT_ID_3XPER }}
+        run: pnpm tsx scripts/cleanup-neon-preview-branch-for-ref.ts

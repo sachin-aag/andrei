@@ -42,6 +42,7 @@ import {
   suggestionApplyModeFor,
 } from "@/lib/document-types";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
+import { drawingPreviewSummary } from "@/lib/drawings/overlay";
 import {
   afterPaint,
   delay,
@@ -160,9 +161,13 @@ function SuggestionTraceability({
   // the analysis so the reader can check the derivation, not just the paper.
   const computedTitles = [
     ...new Set(
-      provenance.claims
-        .map((claim) => claim.analysis?.title?.trim())
-        .filter((title): title is string => Boolean(title))
+      provenance.claims.flatMap((claim) => {
+        const analysis = claim.analysis?.title?.trim();
+        if (analysis) return [analysis];
+        const expression = claim.calculation?.expression?.trim();
+        if (expression) return [`calculate (${expression})`];
+        return [];
+      })
     ),
   ];
   return (
@@ -188,6 +193,9 @@ function SuggestionTraceability({
 }
 
 function figureChangeSummary(payload: ParsedAiFixPayload): string | null {
+  if (payload.drawingOperation) {
+    return drawingPreviewSummary(payload.drawingOperation.drawing);
+  }
   const insert = payload.insertImage;
   const remove = payload.removeImage;
   if (!insert && !remove) return null;
@@ -272,6 +280,8 @@ export function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
+            : card.kind === "fix" && card.payload.drawingOperation
+              ? "Figure annotation"
             : card.kind === "fix" &&
                 card.payload.insertImage &&
                 card.payload.removeImage &&
@@ -642,7 +652,16 @@ export function SectionSuggestionCard({
   hideWhenEmpty?: boolean;
 }) {
   const gutterColumnPainted = useReviewGutterColumnPainted();
-  const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
+  const {
+    report,
+    setReport,
+    readOnly,
+    currentUserId,
+    refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
+  } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
     !readOnly &&
@@ -883,6 +902,7 @@ export function SectionSuggestionCard({
     setPhase("applying");
 
     let retainHold = false;
+    closeSuggestionComments([commentId]);
     try {
       beginSuggestionApplyTransition(section, commentId, "accept", {
         parkCenterY: parkCenterY ?? undefined,
@@ -932,6 +952,15 @@ export function SectionSuggestionCard({
         replaceSection(section, result.nextSection as unknown);
         applyRelatedSectionUpdates(replaceSection, result.nextRelatedSections);
       }
+      closeSuggestionComments(result.dismissed.map((row) => row.id));
+      if (!result.nextIdentity) {
+        markSectionPersisted(section, result.nextSection);
+        for (const [related, content] of Object.entries(
+          result.nextRelatedSections ?? {}
+        )) {
+          if (content) markSectionPersisted(related, content);
+        }
+      }
 
       setComments((prev) =>
         prev
@@ -958,6 +987,7 @@ export function SectionSuggestionCard({
       toast.success("Suggestion applied");
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments([commentId]);
       toast.error(
         err instanceof IdentityDuplicateError
           ? err.message
@@ -995,6 +1025,9 @@ export function SectionSuggestionCard({
     animateQueueTransition,
     setComments,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
@@ -1020,6 +1053,7 @@ export function SectionSuggestionCard({
     setPhase("applying");
 
     let retainHold = false;
+    closeSuggestionComments([commentId]);
     try {
       beginSuggestionApplyTransition(section, commentId, "dismiss", {
         parkCenterY: parkCenterY ?? undefined,
@@ -1053,6 +1087,7 @@ export function SectionSuggestionCard({
           section,
           result.nextSection as unknown
         );
+        markSectionPersisted(section, result.nextSection);
       }
       setComments((prev) => prev.filter((c) => c.id !== commentId));
 
@@ -1071,6 +1106,7 @@ export function SectionSuggestionCard({
       toast.success("Suggestion dismissed");
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments([commentId]);
       toast.error(
         err instanceof CommentPersistError || err instanceof SectionPersistError
           ? err.message
@@ -1101,6 +1137,9 @@ export function SectionSuggestionCard({
     animateQueueTransition,
     setComments,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);

@@ -73,6 +73,7 @@ export function assembleChatTurnPlan(
     sectionScope: input.sectionScope,
     documentType,
     sections: input.sections ?? {},
+    recentUserTexts: input.recentUserTexts,
   });
   const reviewObjective = planCoverageObjective(null, input.userText, {
     sectionScope: input.sectionScope,

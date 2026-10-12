@@ -7,6 +7,7 @@ import {
   atxHeadingParagraph,
   hydrateLiteralMarkdownInDoc,
   inlineMarkdownToTextNodesWithBreaks,
+  textHasLiteralEscapedNewlines,
 } from "@/lib/tiptap/markdown-to-doc";
 import { tableRefDisplayText } from "@/lib/tiptap/table-ref-markdown";
 import {
@@ -210,6 +211,15 @@ function expandPhraseItalicText(
  * to a bold paragraph unless `preserveHeadings` is set (generic documents).
  */
 const LITERAL_HTML_BR_RE = /<br\s*\/?>/i;
+const LITERAL_INLINE_MARKDOWN_RE = /\*\*[^*]+\*\*/;
+
+function paragraphNeedsInlineRepair(text: string): boolean {
+  return (
+    LITERAL_HTML_BR_RE.test(text) ||
+    textHasLiteralEscapedNewlines(text) ||
+    LITERAL_INLINE_MARKDOWN_RE.test(text)
+  );
+}
 
 function repairLiteralBrInParagraph(paragraph: JSONContent): JSONContent {
   if (paragraph.type !== "paragraph" || !paragraph.content?.length) return paragraph;
@@ -219,7 +229,7 @@ function repairLiteralBrInParagraph(paragraph: JSONContent): JSONContent {
     if (
       child.type === "text" &&
       child.text &&
-      LITERAL_HTML_BR_RE.test(child.text)
+      paragraphNeedsInlineRepair(child.text)
     ) {
       changed = true;
       content.push(...inlineMarkdownToTextNodesWithBreaks(child.text, child.marks));
@@ -294,6 +304,27 @@ export function normalizeRichField(
     return coerceUnsupportedNodes(legacyStringToDoc(v), preserveHeadings);
   }
   return emptyDoc();
+}
+
+/**
+ * Merge a stored rich field. An explicit empty doc (cleared editor) stays
+ * empty — only a *missing* key falls back to the section seed. `value ?? seed`
+ * treated `null` the same as missing and put instructional template text back.
+ */
+export function mergeStoredRichField(
+  raw: unknown,
+  field: string,
+  seed: unknown,
+  options?: NormalizeRichFieldOptions
+): JSONContent {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return normalizeRichField(seed, options);
+  }
+  const rec = raw as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(rec, field)) {
+    return normalizeRichField(seed, options);
+  }
+  return normalizeRichField(rec[field], options);
 }
 
 /**

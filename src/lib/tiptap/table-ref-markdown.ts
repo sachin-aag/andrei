@@ -104,7 +104,9 @@ export type TableRefAttrs = {
 export function defaultTableFieldForSection(section: string): string {
   const paths = RICH_FIELD_PATHS[section];
   if (paths?.includes("table")) return "table";
-  if (paths?.[0]) return paths[0];
+  const first = paths?.[0];
+  if (first?.includes("[]")) return first.replace("[]", "0");
+  if (first) return first;
   return "narrative";
 }
 

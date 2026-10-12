@@ -118,6 +118,26 @@ describe("filterMentionCandidates", () => {
     expect(filterMentionCandidates(many, "section")).toHaveLength(12);
   });
 
+  it("matches a 15.2 equipment-box label by prefix", () => {
+    const equipment: MentionCandidate[] = [
+      {
+        type: "section",
+        id: "cvp_equipment_sampling:items.0",
+        label: "15.1 Equipment name (Equipment No.)",
+        keywords: "equipment sampling",
+      },
+      {
+        type: "section",
+        id: "cvp_equipment_sampling:items.1",
+        label: "15.2 Equipment name (Equipment No.)",
+        keywords: "equipment sampling",
+      },
+    ];
+    expect(filterMentionCandidates(equipment, "15.2").map((c) => c.id)).toEqual([
+      "cvp_equipment_sampling:items.1",
+    ]);
+  });
+
   it("matches folder-path keywords so nested files stay searchable", () => {
     const nested: MentionCandidate[] = [
       {

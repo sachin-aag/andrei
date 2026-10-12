@@ -56,6 +56,13 @@ export function liveTableHeadersMismatch(args: {
   if (live.length === 0) return null;
   const drafted = summarizeTablesInDoc(markdownToDoc(args.markdown));
   if (drafted.length === 0) return null;
+  if (drafted.length < live.length) {
+    return (
+      `This field has ${live.length} tables. The draft has ${drafted.length}. ` +
+      `Keep every seeded table as its own GFM grid (a blank line or a new header+separator between them), ` +
+      `or fill each with edit_table using tableIndex from read_section.`
+    );
+  }
   for (let i = 0; i < Math.min(live.length, drafted.length); i++) {
     const expected = live[i]!.headers;
     const next = drafted[i]!.headers;

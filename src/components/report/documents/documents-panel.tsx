@@ -29,7 +29,8 @@ type Props = {
   collapsed: boolean;
   onToggleCollapse: () => void;
   documentType: DocumentType;
-  onJumpToSection: (section: SectionType) => void;
+  onJumpToSection: (section: SectionType, jumpId?: string) => void;
+  liveSectionContent?: Record<string, unknown>;
 };
 
 const LEFT_PANEL_TABS: {
@@ -50,11 +51,12 @@ export function DocumentsPanel({
   onToggleCollapse,
   documentType,
   onJumpToSection,
+  liveSectionContent,
 }: Props) {
   const { attachments } = useReportAttachments();
   const tableOfContents = useMemo(
-    () => getReportTableOfContents(documentType),
-    [documentType]
+    () => getReportTableOfContents(documentType, undefined, liveSectionContent),
+    [documentType, liveSectionContent]
   );
   const [activeTab, setActiveTab] = useState<LeftPanelTab>("attachments");
 
@@ -127,7 +129,7 @@ function ExpandedDocumentsPanel({
   activeTab: LeftPanelTab;
   onTabChange: (tab: LeftPanelTab) => void;
   tableOfContents: ReturnType<typeof getReportTableOfContents>;
-  onJumpToSection: (section: SectionType) => void;
+  onJumpToSection: (section: SectionType, jumpId?: string) => void;
 }) {
   const { attachments, folders, canMutateAttachments, uploadFiles, uploadProgress, linkFromLibrary, isWorkspaceAdmin } =
     useReportAttachments();

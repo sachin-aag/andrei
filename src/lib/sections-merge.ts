@@ -21,6 +21,7 @@ import {
   appendParagraphsToDoc,
   emptyDoc,
   legacyStringToDoc,
+  mergeStoredRichField,
   normalizeRichField,
   prependNodesToDoc,
   richJsonToPlainText,
@@ -33,7 +34,7 @@ export function mergeDefineSection(content: unknown): DefineSection {
   return {
     ...base,
     ...o,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 
@@ -66,7 +67,7 @@ export function mergeMeasureSection(content: unknown): MeasureSection {
   const base = EMPTY_CONTENT.measure;
   if (!content || typeof content !== "object") return base;
   const o = content as Partial<MeasureSection>;
-  const narrative = normalizeRichField(o.narrative ?? base.narrative);
+  const narrative = mergeStoredRichField(o, "narrative", base.narrative);
   const narrativeText = richJsonToPlainText(narrative);
 
   const prefix: JSONContent[] = [];
@@ -109,7 +110,7 @@ export function mergeConclusionSection(content: unknown): ConclusionSection {
   return {
     ...base,
     ...o,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 
@@ -120,7 +121,7 @@ export function mergeImproveSection(content: unknown): ImproveSection {
     correctiveActions?: unknown;
   };
 
-  const narrative = normalizeRichField(o.narrative ?? base.narrative);
+  const narrative = mergeStoredRichField(o, "narrative", base.narrative);
   let corrective = coerceCorrectiveActions(
     o.correctiveActions,
     base.correctiveActions

@@ -7,6 +7,7 @@ import {
   tableRefNode,
 } from "@/lib/tiptap/table-ref-markdown";
 import {
+  normalizeDegreeLatex,
   quantityLatexToPlainText,
   quantityLatexToTextNodes,
   shouldFlattenDollarLatex,
@@ -27,7 +28,7 @@ export type MarkdownToDocOptions = {
   headingNodes?: boolean;
 };
 
-const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
+const ATX_HEADING_RE = /^(#{1,4})\s+(.*)$/;
 
 /**
  * CommonMark-ish emphasis: no space after the opener or before the closer.
@@ -52,6 +53,31 @@ const UNDERSCORE_ITALIC_PART_RE = new RegExp(
 /** GFM table cells and DOCX import use `<br>` when a cell spans multiple lines. */
 const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
 
+/** Two-character `\n` from JSON / LLM output (not a real newline). */
+const LITERAL_ESCAPED_NEWLINE_RE = /\\r\\n|\\n|\\r/g;
+
+/**
+ * LLM and chat tools sometimes persist JSON-style escapes as literal characters
+ * (`\` + `n`) inside a single text node. Skip TeX commands such as `\neq`.
+ */
+export function unescapeLiteralNewlines(text: string): string {
+  return text
+    .replace(/\\r\\n/g, "\n")
+    // TeX commands continue with lowercase letters (`\neq`, `\newline`); `\nLine` is an escape.
+    .replace(/\\n(?![a-z])/g, "\n")
+    .replace(/\\r(?![a-z])/g, "\n");
+}
+
+export function textHasLiteralEscapedNewlines(text: string): boolean {
+  return LITERAL_ESCAPED_NEWLINE_RE.test(text);
+}
+
+/**
+ * Display `$...$` fences (`$$...$$`), including an inner span that may wrap.
+ * Currency `$100` is a single dollar and does not match.
+ */
+const DISPLAY_LATEX_DOLLAR_RE = /\$\$((?:\\\$|[^$])+?)\$\$/g;
+
 /**
  * Pandoc-style `$...$` (not `$$`). Requires a TeX-like inner span (`N_2`,
  * `\pm`) so `$100-$200` stays currency.
@@ -59,26 +85,95 @@ const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
 const INLINE_LATEX_DOLLAR_RE =
   /(?<!\$)\$(?!\$)(?!\s)((?:\\\$|[^$\n])+?)(?<!\s)\$(?!\$)/g;
 
+const LITERAL_TEX_COMMAND_RE =
+  /\\(?:text(?:rm|it|bf|sf)?|times|pm|le|ge|cdot|mathrm|operatorname|frac)\b/;
+
+function mathBlockNode(latex: string): JSONContent {
+  return {
+    type: "mathBlock",
+    attrs: { mathml: "", latex, omml: null, ommlDirty: true },
+  };
+}
+
+function latexToDisplayBlock(latex: string): JSONContent {
+  const quantity = quantityLatexToTextNodes(latex);
+  if (quantity) {
+    return { type: "paragraph", content: quantity };
+  }
+  return mathBlockNode(latex);
+}
+
+/**
+ * `$$...$$` on one line or split across following lines. Null when the opener
+ * is mixed with trailing prose (inline parser) or the fence never closes.
+ */
+function tryConsumeDisplayMath(
+  lines: readonly string[],
+  start: number
+): { latex: string; consumed: number } | null {
+  const first = lines[start]!.trim();
+  if (!first.startsWith("$$")) return null;
+
+  const afterOpen = first.slice(2);
+  const closeOnFirst = afterOpen.indexOf("$$");
+  if (closeOnFirst >= 0) {
+    const latex = afterOpen.slice(0, closeOnFirst).trim();
+    const trailing = afterOpen.slice(closeOnFirst + 2).trim();
+    if (trailing || !latex) return null;
+    return { latex, consumed: 1 };
+  }
+
+  const parts: string[] = [];
+  if (afterOpen.trim()) parts.push(afterOpen.trim());
+  for (let i = start + 1; i < lines.length; i++) {
+    const trimmed = lines[i]!.trim();
+    const close = trimmed.indexOf("$$");
+    if (close >= 0) {
+      const before = trimmed.slice(0, close).trim();
+      if (before) parts.push(before);
+      const latex = parts.join(" ").trim();
+      if (!latex) return null;
+      return { latex, consumed: i - start + 1 };
+    }
+    if (trimmed) parts.push(trimmed);
+  }
+  return null;
+}
+
+function displayMathFenceCount(text: string): number {
+  return text.match(/\$\$/g)?.length ?? 0;
+}
+
+function hasUnclosedDisplayMath(texts: readonly string[]): boolean {
+  return displayMathFenceCount(texts.join("\n")) % 2 === 1;
+}
+
 function textNode(text: string, marks: JSONContent["marks"] | undefined): JSONContent {
   return marks?.length ? { type: "text", text, marks } : { type: "text", text };
 }
 
-function mathInlineNode(latex: string): JSONContent {
-  return {
+function mathInlineNode(
+  latex: string,
+  extraMarks?: JSONContent["marks"]
+): JSONContent {
+  const node: JSONContent = {
     type: "mathInline",
     attrs: { mathml: "", latex, omml: null, ommlDirty: true },
   };
+  if (extraMarks?.length) node.marks = extraMarks;
+  return node;
 }
 
 function latexToInlineNodes(
   latex: string,
   extraMarks?: JSONContent["marks"]
 ): JSONContent[] {
-  const simple = simpleLatexToTextNodes(latex, extraMarks);
+  const normalized = normalizeDegreeLatex(latex.trim());
+  const simple = simpleLatexToTextNodes(normalized, extraMarks);
   if (simple) return simple;
-  const quantity = quantityLatexToTextNodes(latex, extraMarks);
+  const quantity = quantityLatexToTextNodes(normalized, extraMarks);
   if (quantity) return quantity;
-  return [mathInlineNode(latex)];
+  return [mathInlineNode(latex, extraMarks)];
 }
 
 function shouldConvertDollarInner(inner: string): boolean {
@@ -114,7 +209,7 @@ function appendLiteralWithMath(
   appendLiteralWithMathOnly(text, extraMarks, nodes);
 }
 
-function appendLiteralWithMathOnly(
+function appendSingleDollarMath(
   text: string,
   extraMarks: JSONContent["marks"] | undefined,
   nodes: JSONContent[]
@@ -140,7 +235,34 @@ function appendLiteralWithMathOnly(
   }
 }
 
+function appendLiteralWithMathOnly(
+  text: string,
+  extraMarks: JSONContent["marks"] | undefined,
+  nodes: JSONContent[]
+): void {
+  DISPLAY_LATEX_DOLLAR_RE.lastIndex = 0;
+  let last = 0;
+  let sawDisplay = false;
+  for (const match of text.matchAll(DISPLAY_LATEX_DOLLAR_RE)) {
+    sawDisplay = true;
+    const start = match.index ?? 0;
+    if (start > last) {
+      appendSingleDollarMath(text.slice(last, start), extraMarks, nodes);
+    }
+    nodes.push(...latexToInlineNodes(match[1]!.trim(), extraMarks));
+    last = start + match[0].length;
+  }
+  if (sawDisplay) {
+    if (last < text.length) {
+      appendSingleDollarMath(text.slice(last), extraMarks, nodes);
+    }
+    return;
+  }
+  appendSingleDollarMath(text, extraMarks, nodes);
+}
+
 export function hasInlineTexDollars(text: string): boolean {
+  if (displayMathFenceCount(text) > 0) return true;
   INLINE_LATEX_DOLLAR_RE.lastIndex = 0;
   for (const match of text.matchAll(INLINE_LATEX_DOLLAR_RE)) {
     if (shouldConvertDollarInner(match[1]!)) return true;
@@ -154,6 +276,14 @@ export function stripInlineMarkdown(text: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
     .replace(UNDERSCORE_ITALIC_RE, "$1")
+    .replace(DISPLAY_LATEX_DOLLAR_RE, (_match, inner: string) => {
+      const trimmed = inner.trim();
+      return (
+        quantityLatexToPlainText(trimmed) ??
+        simpleLatexToPlainText(trimmed) ??
+        trimmed
+      );
+    })
     .replace(INLINE_LATEX_DOLLAR_RE, (_match, inner: string) =>
       shouldConvertDollarInner(inner)
         ? (simpleLatexToPlainText(inner) ??
@@ -163,7 +293,7 @@ export function stripInlineMarkdown(text: string): string {
     );
 }
 
-/** ATX `#`–`###` line → heading node or bold paragraph. */
+/** ATX `#`–`####` line → heading node or bold paragraph. */
 export function atxHeadingParagraph(
   text: string,
   options?: MarkdownToDocOptions
@@ -172,7 +302,7 @@ export function atxHeadingParagraph(
   if (!heading) return null;
   const headingText = stripInlineMarkdown(heading[2]!);
   if (!headingText) return null;
-  const level = Math.min(3, heading[1]!.length);
+  const level = Math.min(4, heading[1]!.length);
   if (options?.headingNodes) {
     return {
       type: "heading",
@@ -203,9 +333,9 @@ function paragraphIsPlainInline(node: JSONContent): boolean {
 }
 
 /**
- * Turn persisted paragraphs that still start with `#` / `##` / `###` into the
- * same bold paragraphs `markdownToDoc` emits, so Improve/Control don't show
- * literal hashes.
+ * Turn persisted paragraphs that still start with `#` / `##` / `###` /
+ * `####` into the same bold paragraphs `markdownToDoc` emits, so
+ * Improve/Control don't show literal hashes.
  */
 export function promoteAtxHeadingsInDoc(
   doc: JSONContent,
@@ -229,12 +359,14 @@ export function promoteAtxHeadingsInDoc(
  *
  * Supported (matches what the drafting prompt allows the model to emit):
  * - paragraphs (one line = one paragraph)
- * - headings `#` … `###` → bold paragraph by default (section editors have
- *   no heading node). Pass `{ headingNodes: true }` for generic documents.
+ * - headings `#` … `####` → bold paragraph by default (most section editors
+ *   have no heading node). Pass `{ headingNodes: true }` for generic
+ *   documents and CVP 15.N.M blocks.
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
  * - `**bold**`, `*italic*`, and `_italic_` inline emphasis
  * - `$N_2$` / `$CO_2$` → text + subscript; other `$...$` TeX → mathInline
+ * - `$$...$$` quantity TeX → Unicode paragraph; `\frac` / `\sum` → mathBlock
  *
  * Anything else is kept as literal text. No HTML, no fuzziness.
  */
@@ -255,12 +387,16 @@ export function markdownToDoc(
       continue;
     }
 
+    const displayMath = tryConsumeDisplayMath(lines, i);
+    if (displayMath) {
+      content.push(latexToDisplayBlock(displayMath.latex));
+      i += displayMath.consumed;
+      continue;
+    }
+
     if (isTableRow(trimmed) && isTableSeparator(lines[i + 1]?.trim() ?? "")) {
-      const tableLines: string[] = [];
-      while (i < lines.length && isTableRow(lines[i]!.trim())) {
-        tableLines.push(lines[i]!.trim());
-        i++;
-      }
+      const tableLines = collectGfmTableLines(lines, i);
+      i += tableLines.length;
       const table = parseTable(tableLines);
       if (table) content.push(table);
       continue;
@@ -338,6 +474,104 @@ export function markdownToPlainText(markdown: string): string {
     .trim();
 }
 
+/**
+ * Cell text that is a real list (at least two `- `, `• `, `* `, or `1. ` lines
+ * of the same kind) becomes list blocks. A single marker line stays prose so
+ * an ordinary sentence is not turned into a list.
+ * Returns null when the cell should stay one paragraph.
+ */
+export function tableCellContentFromText(text: string): JSONContent[] | null {
+  const lines = unescapeLiteralNewlines(text)
+    .replace(/\r\n/g, "\n")
+    .split(HTML_BR_SPLIT_RE)
+    .flatMap((segment) => segment.split("\n"));
+
+  type Item = {
+    kind: "bullet" | "ordered";
+    text: string;
+    listStyle: "dash" | "disc";
+  };
+  type Chunk =
+    | { type: "prose"; lines: string[] }
+    | { type: "list"; items: Item[] };
+
+  const chunks: Chunk[] = [];
+  let prose: string[] = [];
+  let items: Item[] = [];
+
+  const flushProse = () => {
+    if (prose.length === 0) return;
+    chunks.push({ type: "prose", lines: prose });
+    prose = [];
+  };
+  const flushItems = () => {
+    if (items.length === 0) return;
+    if (items.length >= 2) {
+      chunks.push({ type: "list", items });
+    } else {
+      const only = items[0]!;
+      const marker =
+        only.kind === "ordered" ? "1. " : only.listStyle === "disc" ? "• " : "- ";
+      prose.push(`${marker}${only.text}`);
+    }
+    items = [];
+  };
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const parsed = parseListItemLine(trimmed);
+    if (!parsed) {
+      flushItems();
+      prose.push(trimmed);
+      continue;
+    }
+    const styleLine = parseListLine(trimmed);
+    const listStyle = styleLine?.kind === "bullet" ? styleLine.listStyle : "dash";
+    const item: Item = { kind: parsed.kind, text: parsed.text, listStyle };
+    if (items.length > 0 && items[0]!.kind !== item.kind) flushItems();
+    if (prose.length > 0 && items.length === 0) flushProse();
+    items.push(item);
+  }
+  flushItems();
+  flushProse();
+
+  if (!chunks.some((chunk) => chunk.type === "list")) return null;
+
+  const blocks: JSONContent[] = [];
+  for (const chunk of chunks) {
+    if (chunk.type === "prose") {
+      const body = chunk.lines.join("\n").trim();
+      if (!body) continue;
+      const content = inlineMarkdownToTextNodesWithBreaks(body);
+      blocks.push({
+        type: "paragraph",
+        content: content.length > 0 ? content : undefined,
+      });
+      continue;
+    }
+    const kind = chunk.items[0]!.kind;
+    const listStyle = chunk.items[0]!.listStyle;
+    blocks.push({
+      type: kind === "ordered" ? "orderedList" : "bulletList",
+      ...(kind === "bullet" ? { attrs: { listStyle } } : {}),
+      content: chunk.items.map((item) => {
+        const content = item.text ? inlineMarkdownToTextNodes(item.text) : [];
+        return {
+          type: "listItem",
+          content: [
+            {
+              type: "paragraph",
+              content: content.length > 0 ? content : undefined,
+            },
+          ],
+        };
+      }),
+    });
+  }
+  return blocks.length > 0 ? blocks : null;
+}
+
 function parseListItemLine(
   trimmed: string
 ): { kind: "ordered" | "bullet"; text: string } | null {
@@ -358,12 +592,13 @@ function paragraphHasSuggestionMarks(node: JSONContent): boolean {
   );
 }
 
-/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `, `$N_2$`). */
+/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `, `$N_2$`, `$$`). */
 export function looksLikeLiteralMarkdown(text: string): boolean {
   if (ATX_HEADING_RE.test(text.trim())) return true;
   if (/\*\*[^*]+\*\*/.test(text)) return true;
   if (/\[\[table(?::[^\]]+)?\]\]/i.test(text)) return true;
   if (hasInlineTexDollars(text)) return true;
+  if (LITERAL_TEX_COMMAND_RE.test(text)) return true;
   return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
 }
 
@@ -404,6 +639,17 @@ function hydrateBlockArray(
           i++;
           continue;
         }
+        if (
+          texts.length > 0 &&
+          hasUnclosedDisplayMath(texts) &&
+          current.type === "paragraph" &&
+          paragraphIsPlainInline(current) &&
+          !paragraphHasSuggestionMarks(current)
+        ) {
+          texts.push(paragraphPlainText(current));
+          i++;
+          continue;
+        }
         break;
       }
       while (texts.length > 0 && !texts[texts.length - 1]!.trim()) {
@@ -431,9 +677,9 @@ function hydrateNode(
 
 /**
  * Chat / import can persist a whole markdown blob as one (or a few) paragraphs
- * with literal `###`, `**bold**`, `1. `, and `$N_2$` markers. Turn those into
- * the same TipTap nodes `markdownToDoc` emits so Improve/Control render
- * instead of showing hashes, asterisks, or dollar latex.
+ * with literal `###`, `**bold**`, `1. `, `$N_2$`, and `$$...$$` markers. Turn
+ * those into the same TipTap nodes `markdownToDoc` emits so Improve/Control
+ * render instead of showing hashes, asterisks, or dollar latex.
  */
 export function hydrateLiteralMarkdownInDoc(
   doc: JSONContent,
@@ -508,7 +754,7 @@ export function inlineMarkdownToTextNodesWithBreaks(
   text: string,
   extraMarks?: JSONContent["marks"]
 ): JSONContent[] {
-  const segments = text.split(HTML_BR_SPLIT_RE);
+  const segments = unescapeLiteralNewlines(text).split(HTML_BR_SPLIT_RE);
   const nodes: JSONContent[] = [];
   for (let i = 0; i < segments.length; i++) {
     if (i > 0) nodes.push({ type: "hardBreak" });
@@ -536,6 +782,24 @@ function isTableSeparator(trimmed: string): boolean {
   if (!isTableRow(trimmed)) return false;
   const cells = splitTableRow(trimmed);
   return cells.length > 0 && cells.every((c) => /^:?-{3,}:?$/.test(c.trim()));
+}
+
+/**
+ * Consecutive GFM tables with no blank line between them are still separate
+ * grids. Stop at the next header+separator so MACO formula tables are not
+ * swallowed as extra rows of the equipment list.
+ */
+function collectGfmTableLines(lines: readonly string[], start: number): string[] {
+  const header = lines[start]!.trim();
+  const separator = lines[start + 1]!.trim();
+  const tableLines = [header, separator];
+  let i = start + 2;
+  while (i < lines.length && isTableRow(lines[i]!.trim())) {
+    if (isTableSeparator(lines[i + 1]?.trim() ?? "")) break;
+    tableLines.push(lines[i]!.trim());
+    i++;
+  }
+  return tableLines;
 }
 
 function splitTableRow(trimmed: string): string[] {

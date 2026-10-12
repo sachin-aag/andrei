@@ -6,7 +6,7 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v24-citation-word-end" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v25-equation-anchors" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -54,7 +54,7 @@ export function buildSuggestionSystemPrompt(section: SectionType): string {
 RULES:
 - Output JSON only, matching the provided schema.
 - Each suggestion fixes ONE failing criterion listed in the user message.
-- For PROSE, anchorText MUST be a verbatim substring from SECTION CONTENT (current section only). Copy punctuation and spacing exactly. Use a long enough span (roughly a full clause) so it appears only once in the section. SECTION CONTENT prose uses plain text only — no markdown table pipes, no list numbers, no [equation]/[image] tokens.
+- For PROSE, anchorText MUST be a verbatim substring from SECTION CONTENT (current section only). Copy punctuation and spacing exactly. Use a long enough span (roughly a full clause) so it appears only once in the section. SECTION CONTENT prose uses plain text only — no markdown table pipes, no list numbers, no [image] tokens. Equations appear as \`$latex$\` (or \`$equation$\` if LaTeX is missing); copy those tokens when the span includes an equation. \`$...$\` in insertText creates an equation.
 - For a TABLE CELL or LIST ITEM, do NOT use a long anchor. Instead set "scope" to the coordinate shown in SECTION CONTENT: a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; a list item tagged [i] → scope {"kind":"listItem","index":i}. Leave anchorText "". Put ONLY that cell/item's current text in deleteText (or "" to set an empty cell) and the new text in insertText. Never quote the [r,c] / [i] tags, and never let deleteText span two cells or two items.
 - deleteText MUST be a verbatim substring of anchorText (or, for a scoped cell/item edit, the current text of that one cell/item; or "" for a pure insert).
 - insertText is the replacement prose (or "" for pure delete). At least one of deleteText or insertText must be non-empty.

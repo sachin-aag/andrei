@@ -1,4 +1,15 @@
+import {
+  isEmptyImageDrawing,
+  parseImageDrawing,
+  type ImageDrawing,
+} from "@/lib/drawings/overlay";
 import type { ListNumberingBases } from "@/lib/export/docx-numbering";
+import {
+  annotatedAlternateContentXml,
+  annotatedGroupInlineXml,
+  overlayLayoutFromPhoto,
+  pictureInlineXml,
+} from "@/lib/export/docx-annotated-image";
 import {
   DEFAULT_A4_PAGE_SETUP,
   type DocxPageSetup,
@@ -30,6 +41,11 @@ const MIN_INLINE_EXPORT_WIDTH_PX = 96;
 const MAX_INLINE_EXPORT_WIDTH_PX = 600;
 const EMU_PER_PX = 9525;
 
+export type InlineImageExportOptions = {
+  drawing?: ImageDrawing | null;
+  flattenedSrc?: string | null;
+};
+
 export type DocxParagraphAlign = "left" | "center" | "right" | "both";
 
 export type DocxRunStyle = {
@@ -49,6 +65,26 @@ export type DocxRunStyle = {
   tableCellVAlign?: "center";
   tableHeaderAlign?: "center";
   tableBorderColor?: string;
+  /** When false, body rows may split across pages (3xper source tables). Default true. */
+  tableRowCantSplit?: boolean;
+  /** Widow/orphan control on body paragraphs, not table cells. */
+  widowControl?: boolean;
+  /** Emit Word TableGrid cell margins (0 / 108 / 0 / 108 dxa). */
+  tableCellMar?: boolean;
+  /** Skip explicit tblBorders and let the TableGrid style draw hairlines. */
+  tableUseStyleBorders?: boolean;
+  paragraphLine?: string;
+  paragraphLineRule?: "auto";
+  bodyParagraphStyle?: string;
+  inTableListParagraphStyle?: string;
+  tableListIndentLeft?: string;
+  tableListIndentHanging?: string;
+  headingOutline?: "cvp";
+  stripTableCaptions?: boolean;
+  stripInTextCitationMarkers?: boolean;
+  mergeEmptyFirstColumn?: boolean;
+  tableCellKeepNext?: boolean;
+  pageBreakBeforeHeading2?: boolean;
 };
 
 export type DocxExportContext = {
@@ -77,11 +113,27 @@ export type DocxExportContext = {
   tableCellVAlign: "center" | null;
   tableHeaderAlign: "center" | null;
   tableBorderColor: string | null;
+  tableRowCantSplit: boolean;
+  widowControl: boolean;
+  tableCellMar: boolean;
+  tableUseStyleBorders: boolean;
+  paragraphLine: string | null;
+  paragraphLineRule: "auto" | null;
+  bodyParagraphStyle: string | null;
+  inTableListParagraphStyle: string | null;
+  tableListIndentLeft: string | null;
+  tableListIndentHanging: string | null;
+  headingOutline: "cvp" | null;
+  stripTableCaptions: boolean;
+  stripInTextCitationMarkers: boolean;
+  mergeEmptyFirstColumn: boolean;
+  tableCellKeepNext: boolean;
+  pageBreakBeforeHeading2: boolean;
   pageSetup: DocxPageSetup;
   /** Numeric citation markers in the field currently being converted. */
   citationNumbers?: ReadonlySet<number>;
   /**
-   * Emit Word Heading1–3 paragraph styles for TipTap heading nodes.
+   * Emit Word Heading1–4 paragraph styles for TipTap heading nodes.
    * Investigation/DV keep headings as bold body paragraphs.
    */
   useHeadingStyles: boolean;
@@ -130,6 +182,20 @@ export const MJ_FIR_DOCX_RUN_STYLE: DocxRunStyle = {
 };
 
 /**
+ * Compact 3xper narrative tables: center on the page, inherit TableGrid
+ * hairlines/padding, and let rows split at a page break the way the source
+ * protocols do. Citations styles override these so the appendix stays put.
+ */
+const THREE_XPER_NARRATIVE_TABLE_CHROME = {
+  tableKeepTogetherWrapper: false,
+  tableJustify: "center",
+  tableRowCantSplit: false,
+  widowControl: true,
+  tableCellMar: true,
+  tableUseStyleBorders: true,
+} as const satisfies Partial<DocxRunStyle>;
+
+/**
  * 3xper QAD/016/F06-00: Times New Roman 12pt, black text, gold table headers.
  * Used only for content the QSR slot renderer hands back to the generic
  * converter (lists, images, tables that do not fit the form grid).
@@ -141,9 +207,51 @@ export const QSR_DOCX_RUN_STYLE: DocxRunStyle = {
   tableHeaderFill: "FFD966",
   paragraphAlign: "both",
   listParagraphStyle: true,
-  tableKeepTogetherWrapper: false,
   tableWidthPct: "5000",
-  tableBorderColor: "000000",
+  ...THREE_XPER_NARRATIVE_TABLE_CHROME,
+};
+
+/**
+ * 3xper QAD-SOP-PS-003-F08-00: Times New Roman 12pt, black text, yellow
+ * header cells (source highlight, not grey TableGrid first-row fill).
+ * Source protocol: Heading1 + numId 3, 1.5 body leading, TableParagraph bullets.
+ */
+export const CVP_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Times New Roman",
+  sizeHalfPoints: "24",
+  forceBlackText: true,
+  tableHeaderFill: "FFFF00",
+  paragraphAlign: "both",
+  listParagraphStyle: false,
+  tableCellVAlign: "center",
+  tableHeaderAlign: "center",
+  paragraphLine: "360",
+  paragraphLineRule: "auto",
+  bodyParagraphStyle: "BodyText",
+  inTableListParagraphStyle: "TableParagraph",
+  tableListIndentLeft: "429",
+  tableListIndentHanging: "283",
+  headingOutline: "cvp",
+  stripTableCaptions: true,
+  stripInTextCitationMarkers: true,
+  mergeEmptyFirstColumn: true,
+  tableCellKeepNext: false,
+  pageBreakBeforeHeading2: true,
+  ...THREE_XPER_NARRATIVE_TABLE_CHROME,
+};
+
+/**
+ * 3xper QAD-SOP-MS-001-F04: Times New Roman 12pt for rich overflow tables
+ * in VQ section bodies. Form grids are centered in export-xml separately.
+ */
+export const VQ_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Times New Roman",
+  sizeHalfPoints: "24",
+  forceBlackText: true,
+  tableHeaderFill: "D9D9D9",
+  paragraphAlign: "both",
+  listParagraphStyle: true,
+  ...THREE_XPER_NARRATIVE_TABLE_CHROME,
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -157,14 +265,42 @@ const DEFAULT_RUN_FONT = "Times New Roman";
 const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 const DEFAULT_TABLE_HEADER_FILL = "D9E2F3";
 
+const TEMPLATE_IMAGE_INDEX = /(?:^|\/)image(\d+)\.[^/]+$/i;
+
+/**
+ * Next `imageN` index that does not collide with template media. CVP keeps the
+ * header logo at `image9.png`; VQ / QSR / investigation keep theirs at
+ * `image1.png` / `image3.png`. Export used to start at 1 and overwrite the logo
+ * once a report had that many figures.
+ */
+export function nextUnusedImageIndex(mediaPaths: readonly string[]): number {
+  let max = 0;
+  for (const path of mediaPaths) {
+    const match = TEMPLATE_IMAGE_INDEX.exec(path);
+    if (!match) continue;
+    max = Math.max(max, Number(match[1]));
+  }
+  return max + 1;
+}
+
+export function nextUnusedImageIndexFromZip(zip: {
+  files: Record<string, unknown>;
+}): number {
+  return nextUnusedImageIndex(Object.keys(zip.files));
+}
+
 export function createDocxExportContext(
   numberingBases: ListNumberingBases = EMPTY_NUMBERING_BASES,
   runStyle?: DocxRunStyle,
-  options?: { useHeadingStyles?: boolean; pageSetup?: DocxPageSetup }
+  options?: {
+    useHeadingStyles?: boolean;
+    pageSetup?: DocxPageSetup;
+    nextImageIndex?: number;
+  }
 ): DocxExportContext {
   return {
     media: [],
-    nextImageIndex: 1,
+    nextImageIndex: options?.nextImageIndex ?? 1,
     nextRelNum: 100,
     numberingBases,
     nextNumId: numberingBases.maxNumId + 1,
@@ -188,6 +324,22 @@ export function createDocxExportContext(
     tableCellVAlign: runStyle?.tableCellVAlign ?? null,
     tableHeaderAlign: runStyle?.tableHeaderAlign ?? null,
     tableBorderColor: runStyle?.tableBorderColor ?? null,
+    tableRowCantSplit: runStyle?.tableRowCantSplit !== false,
+    widowControl: runStyle?.widowControl === true,
+    tableCellMar: runStyle?.tableCellMar === true,
+    tableUseStyleBorders: runStyle?.tableUseStyleBorders === true,
+    paragraphLine: runStyle?.paragraphLine ?? null,
+    paragraphLineRule: runStyle?.paragraphLineRule ?? null,
+    bodyParagraphStyle: runStyle?.bodyParagraphStyle ?? null,
+    inTableListParagraphStyle: runStyle?.inTableListParagraphStyle ?? null,
+    tableListIndentLeft: runStyle?.tableListIndentLeft ?? null,
+    tableListIndentHanging: runStyle?.tableListIndentHanging ?? null,
+    headingOutline: runStyle?.headingOutline ?? null,
+    stripTableCaptions: runStyle?.stripTableCaptions === true,
+    stripInTextCitationMarkers: runStyle?.stripInTextCitationMarkers === true,
+    mergeEmptyFirstColumn: runStyle?.mergeEmptyFirstColumn === true,
+    tableCellKeepNext: runStyle?.tableCellKeepNext !== false,
+    pageBreakBeforeHeading2: runStyle?.pageBreakBeforeHeading2 === true,
     useHeadingStyles: options?.useHeadingStyles === true,
     pageSetup: options?.pageSetup ?? DEFAULT_A4_PAGE_SETUP,
   };
@@ -224,14 +376,45 @@ export function extensionForMime(mimeType: string): string {
   }
 }
 
-/** Register an inline image and return OOXML drawing markup for a w:r. */
-export function registerInlineImage(
+type RegisteredImage = {
+  relId: string;
+  fileName: string;
+  intrinsicWidth: number | null;
+  intrinsicHeight: number | null;
+  cx: number;
+  cy: number;
+  docPrId: number;
+};
+
+function displaySize(
+  intrinsicWidth: number | null,
+  intrinsicHeight: number | null,
+  widthPx?: number | null
+): { width: number; height: number; cx: number; cy: number } {
+  let width = widthPx ?? intrinsicWidth ?? 400;
+  if (intrinsicWidth && width < MIN_INLINE_EXPORT_WIDTH_PX) {
+    width = Math.min(intrinsicWidth, MAX_INLINE_EXPORT_WIDTH_PX);
+  }
+  width = Math.max(1, Math.min(width, MAX_INLINE_EXPORT_WIDTH_PX));
+  const height =
+    intrinsicWidth && intrinsicHeight
+      ? Math.max(1, Math.round((width * intrinsicHeight) / intrinsicWidth))
+      : Math.round(width * 0.75);
+  return {
+    width,
+    height,
+    cx: Math.round(width * EMU_PER_PX),
+    cy: Math.round(height * EMU_PER_PX),
+  };
+}
+
+function pushImageMedia(
   ctx: DocxExportContext,
   dataUrl: string,
-  widthPx?: number | null
-): string {
+  displayWidthPx?: number | null
+): RegisteredImage | null {
   const parsed = parseDataUrl(dataUrl);
-  if (!parsed) return "";
+  if (!parsed) return null;
 
   const ext = extensionForMime(parsed.mimeType);
   const fileName = `image${ctx.nextImageIndex}.${ext}`;
@@ -244,61 +427,93 @@ export function registerInlineImage(
   const dims = readRasterDimensions(parsed.bytes, parsed.mimeType);
   const intrinsicWidth = dims?.width ?? null;
   const intrinsicHeight = dims?.height ?? null;
-
-  let width = widthPx ?? intrinsicWidth ?? 400;
-  if (intrinsicWidth && width < MIN_INLINE_EXPORT_WIDTH_PX) {
-    width = Math.min(intrinsicWidth, MAX_INLINE_EXPORT_WIDTH_PX);
-  }
-  width = Math.max(1, Math.min(width, MAX_INLINE_EXPORT_WIDTH_PX));
-
-  const height =
-    intrinsicWidth && intrinsicHeight
-      ? Math.max(1, Math.round((width * intrinsicHeight) / intrinsicWidth))
-      : Math.round(width * 0.75);
-
-  const cx = Math.round(width * EMU_PER_PX);
-  const cy = Math.round(height * EMU_PER_PX);
+  const size = displaySize(intrinsicWidth, intrinsicHeight, displayWidthPx);
 
   ctx.media.push({
     relId,
     fileName,
     bytes: parsed.bytes,
     contentType: parsed.mimeType,
-    widthPx: width,
-    heightPx: height,
+    widthPx: size.width,
+    heightPx: size.height,
   });
 
-  const docPrId = relNum;
+  return {
+    relId,
+    fileName,
+    intrinsicWidth,
+    intrinsicHeight,
+    cx: size.cx,
+    cy: size.cy,
+    docPrId: relNum,
+  };
+}
+
+/** Register an inline image and return OOXML drawing markup for a w:r. */
+export function registerInlineImage(
+  ctx: DocxExportContext,
+  dataUrl: string,
+  widthPx?: number | null,
+  options?: InlineImageExportOptions
+): string {
+  const drawing = parseImageDrawing(options?.drawing);
+  if (!drawing || isEmptyImageDrawing(drawing)) {
+    const media = pushImageMedia(ctx, dataUrl, widthPx);
+    if (!media) return "";
+    return (
+      `<w:r>${runProperties(ctx)}` +
+      pictureInlineXml({
+        relId: media.relId,
+        fileName: media.fileName,
+        cx: media.cx,
+        cy: media.cy,
+        docPrId: media.docPrId,
+      }) +
+      `</w:r>`
+    );
+  }
+
+  const flattenedSrc =
+    typeof options?.flattenedSrc === "string" && options.flattenedSrc.length > 0
+      ? options.flattenedSrc
+      : null;
+  const fallback = pushImageMedia(ctx, flattenedSrc ?? dataUrl, widthPx);
+  if (!fallback) return "";
+  const original =
+    flattenedSrc && flattenedSrc !== dataUrl
+      ? pushImageMedia(ctx, dataUrl, widthPx)
+      : fallback;
+  if (!original) return "";
+
+  const photoW = original.intrinsicWidth ?? 400;
+  const photoH = original.intrinsicHeight ?? 300;
+  const layout = overlayLayoutFromPhoto(
+    photoW,
+    photoH,
+    drawing,
+    fallback.cx,
+    fallback.cy
+  );
 
   return (
     `<w:r>${runProperties(ctx)}` +
-    `<w:drawing>` +
-    `<wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">` +
-    `<wp:extent cx="${cx}" cy="${cy}"/>` +
-    `<wp:docPr id="${docPrId}" name="${escapeXml(fileName)}"/>` +
-    `<wp:cNvGraphicFramePr>` +
-    `<a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>` +
-    `</wp:cNvGraphicFramePr>` +
-    `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
-    `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
-    `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
-    `<pic:nvPicPr>` +
-    `<pic:cNvPr id="${docPrId}" name="${escapeXml(fileName)}"/>` +
-    `<pic:cNvPicPr/>` +
-    `</pic:nvPicPr>` +
-    `<pic:blipFill>` +
-    `<a:blip r:embed="${relId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>` +
-    `<a:stretch><a:fillRect/></a:stretch>` +
-    `</pic:blipFill>` +
-    `<pic:spPr>` +
-    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
-    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
-    `</pic:spPr>` +
-    `</pic:pic>` +
-    `</a:graphicData>` +
-    `</a:graphic>` +
-    `</wp:inline>` +
-    `</w:drawing>` +
+    annotatedAlternateContentXml({
+      choiceXml: annotatedGroupInlineXml({
+        photoRelId: original.relId,
+        photoFileName: original.fileName,
+        drawing,
+        layout,
+        docPrId: fallback.docPrId,
+        font: ctx.runFont,
+      }),
+      fallbackXml: pictureInlineXml({
+        relId: fallback.relId,
+        fileName: fallback.fileName,
+        cx: fallback.cx,
+        cy: fallback.cy,
+        docPrId: fallback.docPrId + 50,
+      }),
+    }) +
     `</w:r>`
   );
 }
@@ -312,12 +527,4 @@ function runProperties(ctx: DocxExportContext): string {
     `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/>` +
     `</w:rPr>`
   );
-}
-
-function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

@@ -171,6 +171,9 @@ describe("GET /api/reports/[reportId]", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe(
+      "no-store, no-cache, must-revalidate"
+    );
     const body = await response.json();
     expect(body.report.id).toBe(report.id);
     expect(body.attachments).toEqual([]);

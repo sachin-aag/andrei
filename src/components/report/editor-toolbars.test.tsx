@@ -35,7 +35,10 @@ describe("InsertTableRefButton", () => {
     );
 
     await user.click(screen.getByTestId("insert-table-ref-button"));
-    expect(screen.getByTestId("insert-table-ref-menu")).toHaveTextContent(
+    const menu = screen.getByTestId("insert-table-ref-menu");
+    expect(menu).toHaveClass("overflow-y-auto");
+    expect(menu.className).toMatch(/max-h-\[min\(18rem/);
+    expect(menu).toHaveTextContent(
       /no tables to reference yet/i
     );
     expect(screen.getByTestId("insert-table-ref-menu")).toHaveTextContent(

@@ -290,9 +290,37 @@ function stableQsrCoverageObjective(normalized: string): string | null {
   return null;
 }
 
+/**
+ * Collapse verbose 15.N / LOQ / swab walk copy onto cvp_equipment_sampling
+ * so a later turn on the next equipment box can reuse the finished review.
+ */
+function stableCvpCoverageObjective(normalized: string): string | null {
+  if (!normalized) return null;
+  if (
+    normalized === "cvp_equipment_sampling" ||
+    normalized.includes("cvp_equipment_sampling")
+  ) {
+    return "cvp_equipment_sampling";
+  }
+  const namesEquipmentSampling = normalized.includes("equipment sampling");
+  const names15n = /\b15\.(?:10|[1-9])(?:\.\d+)?\b/.test(normalized);
+  const namesSamplingFact =
+    /\b(?:swab|rinse|loq|lod|fmea|vessel|reactor|filter|visual inspection)\b/.test(
+      normalized
+    );
+  if (namesEquipmentSampling || (names15n && namesSamplingFact)) {
+    return "cvp_equipment_sampling";
+  }
+  return null;
+}
+
 export function coverageObjectiveDigest(objective: string): string {
   const normalized = objective.trim().toLowerCase().replace(/\s+/g, " ");
-  return (stableQsrCoverageObjective(normalized) ?? normalized).slice(0, 80);
+  return (
+    stableQsrCoverageObjective(normalized) ??
+    stableCvpCoverageObjective(normalized) ??
+    normalized
+  ).slice(0, 80);
 }
 
 const COVERAGE_OBJECTIVE_MARKER = "|obj:";

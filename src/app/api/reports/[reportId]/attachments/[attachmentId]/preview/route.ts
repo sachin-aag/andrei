@@ -1,22 +1,19 @@
 import { NextResponse } from "next/server";
-import { docxBufferToPreviewHtml } from "@/lib/attachments/docx-preview";
-import { kindFromMime } from "@/lib/attachments/file-types";
+import { attachmentBufferToPreviewHtml } from "@/lib/attachments/html-preview";
+import { kindFromMime, usesHtmlPreview } from "@/lib/attachments/file-types";
 import { loadResolvedReportAttachment } from "@/lib/attachments/sync-asset-processing";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
-/** Reading + converting a large .docx can take a few seconds. */
+/** Reading + converting a large .docx / spreadsheet can take a few seconds. */
 export const maxDuration = 60;
 
 /**
- * Renders an uploaded `.docx` attachment as read-only HTML for inline preview.
- * Browsers can't render `.docx` natively, so we convert with mammoth on the
- * server. The response is locked down (strict CSP, no scripts) and is intended
- * to be embedded in a sandboxed iframe — it is a viewer, never an editor.
- * The iframe allows popups (and popups escaping the sandbox) so hyperlinks
- * with target=_blank open in a real new tab.
+ * Renders Word / CSV / Excel attachments as read-only HTML for inline preview.
+ * The response is locked down (strict CSP, no scripts) and is intended to be
+ * embedded in a sandboxed iframe — it is a viewer, never an editor.
  */
 export async function GET(
   req: Request,
@@ -34,9 +31,10 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const { resolved: attachment } = loaded;
-  if (kindFromMime(attachment.mimeType) !== "docx") {
+  const kind = kindFromMime(attachment.mimeType);
+  if (!usesHtmlPreview(kind) || !kind) {
     return NextResponse.json(
-      { error: "Preview is only available for Word documents" },
+      { error: "Preview is only available for Word, CSV, and Excel files" },
       { status: 400 }
     );
   }
@@ -46,10 +44,13 @@ export async function GET(
     const buffer = await getAttachmentStorage().readObjectBuffer(
       attachment.permanentObjectKey
     );
-    html = await docxBufferToPreviewHtml(buffer, { title: attachment.filename });
+    html = await attachmentBufferToPreviewHtml(kind, buffer, {
+      title: attachment.filename,
+    });
   } catch (error) {
-    console.error("[attachment-preview] docx render failed", {
+    console.error("[attachment-preview] html render failed", {
       attachmentId,
+      kind,
       error,
     });
     return NextResponse.json(
@@ -64,8 +65,6 @@ export async function GET(
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "private, max-age=60",
       "X-Content-Type-Options": "nosniff",
-      // Defense-in-depth alongside the iframe sandbox: no scripts, only inline
-      // styles and data: images (mammoth inlines images as data URIs).
       "Content-Security-Policy":
         "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
     },

@@ -21,6 +21,7 @@
     "build-elr-template": "node scripts/build-mj-elr-template.mjs",
     "build-vq-template": "node scripts/build-3xper-vq-template.mjs",
     "build-qsr-template": "tsx scripts/build-3xper-qsr-template.ts",
+    "build-cvp-template": "tsx scripts/build-3xper-cvp-template.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",

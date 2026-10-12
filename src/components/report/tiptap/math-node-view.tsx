@@ -5,6 +5,10 @@ import type { NodeViewProps } from "@tiptap/react";
 import { NodeViewWrapper } from "@tiptap/react";
 import { cn } from "@/lib/utils";
 import { MathEditorDialog } from "@/components/report/math-editor-dialog";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
 import "mathlive/static.css";
 
 type MathfieldElement = HTMLElement & {
@@ -12,12 +16,41 @@ type MathfieldElement = HTMLElement & {
   getValue: (format?: string) => string;
 };
 
+function suggestionAppearance(marks: NodeViewProps["node"]["marks"]): {
+  className?: string;
+  evalId?: string;
+} {
+  for (const mark of marks ?? []) {
+    const name = mark.type.name;
+    if (name !== suggestionInsertMarkName && name !== suggestionDeleteMarkName) {
+      continue;
+    }
+    const isAi = mark.attrs.authorId === "ai";
+    const kind =
+      typeof mark.attrs.kind === "string" ? mark.attrs.kind : "fix";
+    const evalId =
+      typeof mark.attrs.id === "string" ? mark.attrs.id : undefined;
+    const kindClass =
+      name === suggestionInsertMarkName ? "insert" : "delete";
+    return {
+      className: cn(
+        `suggestion-${kindClass}`,
+        `suggestion-${kindClass}-${kind}`,
+        isAi && `suggestion-${kindClass}-ai`
+      ),
+      evalId,
+    };
+  }
+  return {};
+}
+
 export function MathNodeView({ node, selected, updateAttributes, editor, getPos }: NodeViewProps) {
   const [open, setOpen] = useState(false);
   const fieldRef = useRef<MathfieldElement | null>(null);
   const mathml = (node.attrs.mathml as string) ?? "";
   const latex = typeof node.attrs.latex === "string" ? node.attrs.latex : null;
   const isBlock = node.type.name === "mathBlock";
+  const suggestion = suggestionAppearance(node.marks);
 
   const openEditor = useCallback(
     (event: React.MouseEvent) => {
@@ -71,9 +104,11 @@ export function MathNodeView({ node, selected, updateAttributes, editor, getPos 
         className={cn(
           "tiptap-math-node cursor-pointer rounded-sm",
           isBlock ? "tiptap-math-block my-2 block w-full" : "tiptap-math-inline inline-block align-middle",
+          suggestion.className,
           selected && "ring-2 ring-[var(--ring)]"
         )}
         contentEditable={false}
+        data-eval-id={suggestion.evalId}
         onMouseDown={openEditor}
       >
         <math-field

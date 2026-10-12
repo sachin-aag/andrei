@@ -213,7 +213,7 @@ const CORPUS: Array<{ name: string; doc: JSONContent; edits: SuggestionEdit[] }>
         insertText: " (Eq. 1)",
       },
       {
-        anchorText: "See for the assay",
+        anchorText: "See $equation$ for",
         deleteText: "",
         insertText: " (Eq. 1)",
       },

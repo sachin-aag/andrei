@@ -135,7 +135,10 @@ export async function GET(
     });
     return new NextResponse(text, {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-store, no-cache, must-revalidate",
+      },
     });
   } catch (err) {
     console.error("[report-bundle]", {

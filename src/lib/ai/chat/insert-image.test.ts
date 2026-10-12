@@ -12,6 +12,7 @@ import {
   resolveSectionImageLocator,
   sectionImageNotFoundMessage,
   tokenizePlotName,
+  pickDocumentFigure,
 } from "./insert-image";
 import type { StatisticalAnalysisSummary } from "@/lib/statistical-analysis/types";
 
@@ -494,3 +495,75 @@ describe("resolveAnalyticsImage without a captured preview", () => {
     expect(result.message).not.toContain("Open it in Analytics");
   });
 });
+
+describe("pickDocumentFigure", () => {
+  const swab = {
+    figure: 2,
+    page: 12,
+    nearbyText: "Swab sampling technique",
+    altText: "Swab figure",
+    letterhead: false,
+  };
+  const logo = {
+    figure: 1,
+    page: 1,
+    nearbyText: "Document header/footer",
+    altText: null,
+    letterhead: true,
+  };
+  const vessel = {
+    figure: 3,
+    page: 12,
+    nearbyText: "ISM Stage-4 vessel",
+    altText: null,
+    letterhead: false,
+  };
+
+  it("uses the only body figure on the page when figure is omitted", () => {
+    const result = pickDocumentFigure({
+      filename: "protocol.docx",
+      page: 12,
+      candidates: [logo, swab],
+    });
+    expect(result).toEqual({ ok: true, figure: 2 });
+  });
+
+  it("lists insertable figures when a page has more than one", () => {
+    const result = pickDocumentFigure({
+      filename: "protocol.docx",
+      page: 12,
+      candidates: [swab, vessel],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("Figure 2:");
+    expect(result.message).toContain("Figure 3:");
+    expect(result.message).toContain("image.figure");
+  });
+
+  it("refuses letterhead even when requested by Figure N", () => {
+    const result = pickDocumentFigure({
+      filename: "protocol.docx",
+      page: 1,
+      figure: 1,
+      candidates: [logo, swab],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("letterhead");
+  });
+
+  it("retargets a figure that lives on a different page", () => {
+    const result = pickDocumentFigure({
+      filename: "protocol.docx",
+      page: 8,
+      figure: 2,
+      candidates: [swab],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("page 12");
+    expect(result.message).toContain("page=12");
+  });
+});
+

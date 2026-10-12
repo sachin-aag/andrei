@@ -33,7 +33,9 @@ vi.mock("@/providers/report-provider", () => ({
 
 vi.mock("@/components/report/editor-toolbars", () => ({
   FontColorToolbar: () => null,
+  HeadingToolbar: () => null,
   InsertImageButton: () => null,
+  InsertDrawingButton: () => null,
   InsertTableButton: () => null,
   InsertTableRefButton: () => null,
   ListEditToolbar: () => null,

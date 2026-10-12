@@ -140,23 +140,24 @@ function citeCoreWithoutPage(core: string): string {
  * Comma or semicolon that starts another source inside one `[...]`, not extra
  * pages of the same file (`p. 4, 26` / `p. 1, p. 2` / `p. 1-3`) and not a
  * comma glued to the extension (`,.pdf`). Used for extension-less exhibits
- * (Attachment / Appendix / CUID / QMS ids). Filenames with `.pdf`/`.docx`
- * split on the extension instead, so commas in the title stay in the filename.
+ * (Attachment / Appendix / CUID / QMS ids). Filenames with a supported
+ * attachment extension split on the extension instead, so commas in the
+ * title stay in the filename.
  */
 const NEW_SOURCE_COMMA_RE =
-  /[;,]\s+(?=(?:(?!p\.\s*\d)[^[\]])*?\.(?:pdf|docx)\b|Attachment[_\s-]?(?:[IVXLCDM]+|\d+)\b|Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b|[a-z0-9]{24}\b|\d{3,}-\d{4,})/i;
+  /[;,]\s+(?=(?:(?!p\.\s*\d)[^[\]])*?\.(?:pdf|docx|csv|xlsx)\b|Attachment[_\s-]?(?:[IVXLCDM]+|\d+)\b|Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b|[a-z0-9]{24}\b|\d{3,}-\d{4,})/i;
 
 const PAGE_GROUP_RE = new RegExp(PAGE_LIST_BODY, "i");
-const FILE_EXT_RE = /\.(?:pdf|docx)\b/gi;
+const FILE_EXT_RE = /\.(?:pdf|docx|csv|xlsx)\b/gi;
 /** Comma or semicolon between sources — not another `p. N` of this file. */
 const SOURCE_SEPARATOR_RE = /^\s*[;,]\s+(?!p\.\s*\d)/;
 const LEFTOVER_SOURCE_SEP_RE = /^\s*[;,]\s*/;
 
 /**
  * Hyphenated / slashed exhibit ids (`E-PR-068`, `SOP/DP/QA/014`) that sit
- * beside a `.pdf`/`.docx` in an `and`-combined cite. Not a batch code
- * (`B-2024-117`) — those stay placeholders unless they already pass
- * `isCitationShapedCore`.
+ * beside a supported attachment extension in an `and`-combined cite. Not a
+ * batch code (`B-2024-117`) — those stay placeholders unless they already
+ * pass `isCitationShapedCore`.
  */
 const SOURCE_STEM_RE =
   /^(?:[A-Z]{1,8}(?:[-_/][A-Z0-9]{2,})+|[A-Z]{1,8}(?:\/[A-Z0-9]+)+)$/i;
@@ -173,9 +174,9 @@ function looksLikeSourceStem(text: string): boolean {
 const AND_SOURCE_SEP_RE = /^\s*and\s+/i;
 
 /**
- * Consume `,` / `;` / `and` between two `.pdf`/`.docx` anchors. Called only
- * when a later extension already exists, so `and` is structural here — not a
- * guess about exhibit ids.
+ * Consume `,` / `;` / `and` between two supported-extension anchors. Called
+ * only when a later extension already exists, so `and` is structural here —
+ * not a guess about exhibit ids.
  */
 function skipSourceSeparator(inner: string, cursor: number): number {
   let i = cursor;
@@ -207,7 +208,7 @@ function knownFilenameKeys(knownFilenames: readonly string[]): Set<string> {
 function citedFilenameKeys(cited: string): string[] {
   const base = citationBasename(citationDisplayFilename(cited));
   if (!base) return [];
-  if (/\.(?:pdf|docx)$/i.test(base)) return [base];
+  if (hasSupportedAttachmentExtension(base)) return [base];
   return [base, `${base}.pdf`, `${base}.docx`];
 }
 
@@ -255,7 +256,7 @@ function peelAndSourcePrefix(
   if (!last) return { prefix: null, start: cursor };
   const left = between.slice(0, last.index).trim();
   const right = between.slice(last.index + last.length).trim();
-  const ext = inner.slice(extIndex).match(/^\.(?:pdf|docx)\b/i)?.[0] ?? "";
+  const ext = inner.slice(extIndex).match(/^\.(?:pdf|docx|csv|xlsx)\b/i)?.[0] ?? "";
   const rightFile = `${right}${ext}`;
   if (!citedMatchesKnownFile(left, known) || !citedMatchesKnownFile(rightFile, known)) {
     return { prefix: null, start: cursor };
@@ -264,9 +265,10 @@ function peelAndSourcePrefix(
 }
 
 /**
- * Split on each `.pdf` / `.docx` so commas before the extension stay in the
- * filename. Page lists after the extension (including repeated `p.`) stay
- * with that file. Two extensions still yield two parts.
+ * Split on each supported attachment extension so commas before the
+ * extension stay in the filename. Page lists after the extension
+ * (including repeated `p.`) stay with that file. Two extensions still
+ * yield two parts.
  */
 function splitByPdfDocxAnchors(
   inner: string,

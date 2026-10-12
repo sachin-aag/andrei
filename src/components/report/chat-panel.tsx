@@ -79,13 +79,18 @@ import {
 } from "@/components/report/workspace-chrome";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
-import { useReportData } from "@/providers/report-provider";
+import { useReportData, useReportSections } from "@/providers/report-provider";
 import {
   aiSuggestionLockReason,
   canSaveReportSection,
 } from "@/lib/reports/access";
 import type { DocumentType } from "@/db/schema";
 import { chatMentionableSectionCandidates } from "@/lib/ai/chat/fields";
+import { cvpEquipmentItemIndexFromMentionId } from "@/lib/document-types/cvp/equipment-item-path";
+import {
+  cvpEquipmentItemAnchor,
+  cvpEquipmentTocChildren,
+} from "@/lib/document-types/cvp/equipment-sampling";
 import { engineerFacingChangeLines } from "@/lib/ai/chat/change-summary";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
@@ -649,6 +654,7 @@ export function ChatPanel({
     flushPendingSectionSaves,
     setAgentCommitInFlight,
   } = useReportData();
+  const { sections } = useReportSections();
   const { getUser } = useUserDirectory();
   const user = getUser(currentUserId);
   const role = user?.role;
@@ -969,13 +975,16 @@ export function ChatPanel({
         folders,
         sections: targetingAnalytics
           ? []
-          : chatMentionableSectionCandidates(report.documentType).map(
-              (section) => ({
-                type: "section" as const,
-                id: section.id,
-                label: section.label,
-              })
-            ),
+          : chatMentionableSectionCandidates(report.documentType, {
+              equipmentItems: cvpEquipmentTocChildren(
+                sections.cvp_equipment_sampling
+              ),
+            }).map((section) => ({
+              type: "section" as const,
+              id: section.id,
+              label: section.label,
+              keywords: section.keywords,
+            })),
         sheets: targetingAnalytics
           ? mentionSheets.length > 0
             ? analyticsSheetMentionCandidates(mentionSheets)
@@ -1011,6 +1020,7 @@ export function ChatPanel({
       folders,
       mentionSheets,
       report.documentType,
+      sections.cvp_equipment_sampling,
       statsEnabled,
       targetingAnalytics,
     ]
@@ -1115,6 +1125,13 @@ export function ChatPanel({
     (candidate: MentionCandidate) => {
       if (candidate.type === "sheet") onAnalyticsFocusSheet?.(candidate.id);
       if (candidate.type === "analysis") onAnalyticsFocusAnalysis?.(candidate.id);
+      if (candidate.type === "section") {
+        const itemIndex = cvpEquipmentItemIndexFromMentionId(candidate.id);
+        if (itemIndex == null) return;
+        document
+          .getElementById(cvpEquipmentItemAnchor(itemIndex))
+          ?.scrollIntoView({ behavior: "auto", block: "start" });
+      }
     },
     [onAnalyticsFocusAnalysis, onAnalyticsFocusSheet]
   );

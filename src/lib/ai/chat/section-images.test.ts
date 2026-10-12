@@ -62,6 +62,33 @@ describe("flattenDocForChat", () => {
     expect(collected[0]!.dataUrl.startsWith("data:image/png;base64,")).toBe(true);
   });
 
+  it("surfaces $latex$ in text and readingText so chat can quote equations", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            {
+              type: "mathInline",
+              attrs: { latex: String.raw`\frac{a}{b}` },
+            },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    };
+    const chat = flattenDocForChat(doc, {
+      targetField: "narrative",
+      imageIndexStart: 1,
+      collected: [],
+    });
+    expect(chat.text).toBe(String.raw`See $\frac{a}{b}$.`);
+    expect(chat.readingText).toBe(chat.text);
+    expect(chat.text).toBe(flattenForAnchor(doc).text);
+  });
+
   it("caps collected vision images but still marks extras", () => {
     const images = Array.from({ length: CHAT_SECTION_IMAGES_MAX + 2 }, () => ({
       type: "imageInline",

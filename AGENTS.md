@@ -22,7 +22,7 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper Innoventure — **nine** `documentType`s (pack-gated):
+Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper Innoventure — **ten** `documentType`s (pack-gated):
 
 | `documentType` | Noun | Packs | Sections |
 |----------------|------|-------|----------|
@@ -35,6 +35,7 @@ Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper
 | `generic_document` | document | demo | one continuous `body` section (no criteria) |
 | `vendor_qualification` | vendor qualification | 3xper | QAD-SOP-MS-001-F04 Cover + A–N + scoring (`vq_*` keys) |
 | `qualification_summary_report` | qualification summary report | 3xper | QAD/016/F06-00 sections 1–7 (`qsr_*` keys) |
+| `cleaning_verification_protocol` | cleaning validation protocol | 3xper | QAD-SOP-PS-003-F08-00 sections 1.0–25.0 (`cvp_*` keys) plus Recommendations; three consecutive batches |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
@@ -90,7 +91,7 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/lib/ai/chat/document-review.ts` (`PLAN_MODE_CHAT_TOOL_NAMES`) or they
   are silently missing in Plan. Write tools (`edit_table`, `draft_rtm_table`,
-  `draft_field`, `propose_edit`) stay off that list. Internal
+  `draft_field`, `propose_edit`, `annotate_image`) stay off that list. Internal
   `unsupported_tool` is the exception — keep it out of the allowlist and
   `activeTools`; `repairChatToolCall` remaps a hallucinated name such as
   `edit_table` onto it so `AI_NoSuchToolError` cannot fail the chat. On Agent
@@ -198,7 +199,7 @@ is still warm. Home-list Open links go straight to `/edit` or `/review`
 | Review checks (FDA / citations / writing) | Same resolver as AI Check | `ALLOW_TEST_STUB_REVIEW` |
 | Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
 | Composer voice dictation | Same Gemini resolver as chat (Vertex WIF when `GOOGLE_VERTEX_PROJECT` is set). Native-script transcripts; assistant replies in English. Not Cloud Speech-to-Text | `ALLOW_TEST_STUB_SPEECH` |
-| PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
+| PDF/DOCX/CSV/XLSX ingest + embeddings | **Vertex** for PDF/DOCX extract and all embeddings (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). CSV/XLSX parse locally. Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
 
 CRUD, editor, review, and DOCX export work without AI keys.
 
@@ -219,14 +220,31 @@ and `.claude/skills/chat-subsystem`. Grounding incidents replay
   Living plan: `docs/retrieval.md`.
 - Search-then-ask. Default retrieval is adaptive. Empty inventory tables need
   a finished matching document review before `edit_table` / `draft_rtm_table`. Hard facts in write
-  tools must match a retrieved quote (`groundDraftText`). Every pack uses
-  `unsupportedFactPolicy: block`. Analytics `write_column` is not gated.
+  tools must match a retrieved quote (`groundDraftText`). A product this-turn
+  `calculate` returned is computed evidence (operands still need a quote).
+  Every pack uses
+  `unsupportedFactPolicy: block`. Prior assistant chat is not a keep-source
+  for unsupported facts (an echo of 24.50 m² does not persist). Ask (plan)
+  replies rewrite unsourced `[filename, p. N]` on persist and replace
+  unsourced hard facts with placeholders (attachment facts need a retrieved
+  quote; report/worksheet facts need `read_section` / `read_worksheet` this
+  turn; calculated products need `calculate` this turn). Analytics
+  `write_column` is not gated.
 - Saved fields use numbered `[n]` markers plus a trailing Citations list.
   Clicking a citation opens the in-app attachment tab (not a browser tab).
 - Follow the latest user message. Ask vs Agent is per send. Greetings strip
   tools. Composer scope is `@` tags. Voice is click start / click stop
   (`ALLOW_TEST_STUB_SPEECH`). Stub chat cannot prove tool selection
   (`e2e/report-chat.spec.ts`).
+- `insert_image` `source=document` copies a cited figure from a ready PDF
+  (page raster) or Word file (embedded PNG/JPEG; letterhead skipped). Search
+  first; do not invent drawings. Word drawings that are not rasters need a
+  PDF of the same file. `annotate_image` proposes S-n / location callouts
+  (arrows + labels) on a figure already in the field. Labels sit outside
+  the photo (left stack, or nearest edge when tip coords are given). Apply
+  writes the overlay, save scales the figure so overflow callouts stay
+  visible, then the engineer can drag tips. Stay off Plan. Do not generate
+  vessel pixels.
 - A QSR RTM family-column cell persists as `{section} – {audit line}`
   from the protocol body page that prints that heading — not a
   cover/contents `Section 8` cite, and not a reused number-only `12.1`.

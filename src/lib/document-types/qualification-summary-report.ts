@@ -1,6 +1,6 @@
 import path from "node:path";
 import { QSR_PROMPT_VERSION } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   QSR_IDENTITY_FIELDS,
@@ -122,9 +122,7 @@ function mergeQsrSection(key: string, raw: unknown): unknown {
   if (!isQsrSectionKey(key)) return raw ?? {};
   const field = fieldFor(key);
   const base = (EMPTY_QSR_CONTENT[key] as Record<string, unknown>)[field];
-  const value =
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>)[field] : undefined;
-  const doc = normalizeRichField(value ?? base);
+  const doc = mergeStoredRichField(raw, field, base);
   if (key === "qsr_volumetric_details") {
     return { [field]: ensureVolumetricFormRows(doc) };
   }

@@ -22,7 +22,8 @@ export function investigationMetadataFromImport(
 export function sectionRowsForCreate(
   documentType: DocumentType,
   imported: ImportedReportContent | null,
-  genericBody?: { narrative: JSONContent } | null
+  genericBody?: { narrative: JSONContent } | null,
+  typedSections?: Record<string, unknown> | null
 ): { section: string; content: Record<string, unknown> }[] {
   const blank = seedBlankReportSections(documentType);
   return getSeedableSections(documentType).map((section) => {
@@ -33,6 +34,13 @@ export function sectionRowsForCreate(
       return {
         section: section.key,
         content: { narrative: genericBody.narrative },
+      };
+    }
+    const typed = typedSections?.[section.key];
+    if (typed && typeof typed === "object") {
+      return {
+        section: section.key,
+        content: typed as Record<string, unknown>,
       };
     }
     const importedContent =
@@ -60,11 +68,15 @@ export function sectionRowsForCreate(
  */
 export function sectionKeysToSnapshotOnCreate(
   imported: ImportedReportContent | null,
-  genericBody?: { narrative: JSONContent } | null
+  genericBody?: { narrative: JSONContent } | null,
+  typedSections?: Record<string, unknown> | null
 ): ReadonlySet<string> {
   const keys = new Set<string>();
   if (genericBody) {
     keys.add(GENERIC_DOCUMENT_SECTION);
+  }
+  if (typedSections) {
+    for (const key of Object.keys(typedSections)) keys.add(key);
   }
   if (!imported) return keys;
   for (const key of Object.keys(imported.sections)) {

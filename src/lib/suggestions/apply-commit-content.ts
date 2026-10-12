@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { DocumentType, SectionType } from "@/db/schema";
+import { getDocumentType, preservesHeadingNodes } from "@/lib/document-types";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { PlaceholderPreservationError } from "@/lib/placeholders/preservation";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
@@ -55,7 +56,7 @@ export function applyCommitToSectionContent(args: {
   | { ok: true; content: Record<string, unknown> }
   | { ok: false; status: CommitEditFailureStatus; hint?: string } {
   const { content, section, targetField, documentType, input } = args;
-  const headingNodes = documentType === "generic_document";
+  const headingNodes = preservesHeadingNodes(getDocumentType(documentType));
 
   switch (input.kind) {
     case "located": {

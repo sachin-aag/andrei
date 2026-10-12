@@ -23,6 +23,12 @@ export function resolveSuggestionFieldPath(
   fieldContentPath: string
 ): string {
   const path = commentContentPath ?? fieldContentPath;
+  if (
+    section === "cvp_equipment_sampling" &&
+    (path === "narrative" || path === "table")
+  ) {
+    return "items.0";
+  }
   if (path === "narrative" && section === "improve") return "correctiveActions";
   if (path === "narrative" && section === "control") return "preventiveActions";
   if (section === "measure" && LEGACY_MEASURE_FIELDS.has(path)) return "narrative";

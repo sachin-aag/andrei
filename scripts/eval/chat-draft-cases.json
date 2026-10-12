@@ -403,5 +403,35 @@
       "mustNotContain": ["<number>"],
       "unsupportedMustBeEmpty": true
     }
+  },
+  {
+    "id": "cvp-iq-24-50-assistant-echo-blocked",
+    "task": "ground_draft",
+    "passCriteria": "24.50 m² citing an IQ piping page does not persist because a prior assistant message invented it.",
+    "notes": "3xper CVP GLR-1302 Table 6 / Langfuse Agent turn. Piping 3.6 and 14.1 are on IQ p.24; 24.50 is not. Assistant markdown echo is not a keep-source.",
+    "input": {
+      "text": "24.50 m² [Installation Qualification.PDF, p. 24]",
+      "context": "URS-62\nHeat Transfer Area",
+      "section": "qsr_rtm_process",
+      "tableCol": 2,
+      "latestUserMessageText": "fill table 6 from the IQ",
+      "recentAssistantTexts": [
+        "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24]."
+      ],
+      "pages": [
+        {
+          "filename": "Installation Qualification.PDF",
+          "pageNumber": 24,
+          "attachmentId": "iq",
+          "quote": "Jacket piping size 3.6 inch inlet. Outlet 14.1. Coil installed."
+        }
+      ]
+    },
+    "expected": {
+      "blocked": true,
+      "mustContain": ["<number>"],
+      "mustNotContain": ["24.50"],
+      "unsupportedMustContain": ["24.50 m²"]
+    }
   }
 ]

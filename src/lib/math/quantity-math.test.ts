@@ -61,9 +61,36 @@ describe("quantityLatexToPlainText", () => {
     expect(quantityLatexToPlainText(String.raw`> 99.2\%`)).toBe("> 99.2%");
   });
 
+  it("flattens nested empty \\text{} quantity formulas from CVP rinse volume", () => {
+    expect(
+      quantityLatexToPlainText(
+        String.raw`\text{Rinse Volume (L)} = \text{Surface Area (m)^2\text{}} \times \text{Rinse Factor (L/m)^2\text{}}`
+      )
+    ).toBe("Rinse Volume (L) = Surface Area (m)² × Rinse Factor (L/m)²");
+    expect(
+      quantityLatexToPlainText(
+        String.raw`\text{Rinse Volume SAF (L)} = \text{Internal Surface Area (m)^2\text{}} \times \text{SAF (L/m)^2\text{}} \times \text{SF}`
+      )
+    ).toBe(
+      "Rinse Volume SAF (L) = Internal Surface Area (m)² × SAF (L/m)² × SF"
+    );
+    expect(quantityLatexToPlainText(String.raw`V_a = A \times SAF`)).toBe(
+      "Vₐ = A × SAF"
+    );
+    expect(quantityLatexToPlainText("A")).toBe("A");
+  });
+
   it("keeps real equations as math", () => {
     expect(quantityLatexToPlainText(String.raw`\frac{a}{b}`)).toBeNull();
     expect(quantityLatexToPlainText(String.raw`\sum_{i=1}^{n} x_i`)).toBeNull();
+  });
+
+  it("flattens degree TeX to Unicode (including LLM-broken ^circ)", () => {
+    expect(quantityLatexToPlainText(String.raw`0^\circ`)).toBe("0°");
+    expect(quantityLatexToPlainText(String.raw`0^{\circ}`)).toBe("0°");
+    expect(quantityLatexToPlainText(String.raw`90^\circ`)).toBe("90°");
+    expect(quantityLatexToPlainText("0^circ")).toBe("0°");
+    expect(quantityLatexToPlainText("90^{circ}")).toBe("90°");
   });
 });
 
@@ -73,6 +100,13 @@ describe("shouldFlattenDollarLatex", () => {
     expect(shouldFlattenDollarLatex(String.raw`<1\text{ CFU/plate}`)).toBe(
       true
     );
+    expect(shouldFlattenDollarLatex("100-$200")).toBe(false);
+  });
+
+  it("flattens letter identifiers and quantity equations, not currency", () => {
+    expect(shouldFlattenDollarLatex("A")).toBe(true);
+    expect(shouldFlattenDollarLatex("SF")).toBe(true);
+    expect(shouldFlattenDollarLatex(String.raw`A = B \times C`)).toBe(true);
     expect(shouldFlattenDollarLatex("100-$200")).toBe(false);
   });
 });
@@ -99,6 +133,14 @@ describe("flattenQuantityMathInDoc", () => {
     );
     expect(samples).toEqual([]);
     expect(doc.content?.[0]?.content?.[1]?.type).toBe("mathInline");
+  });
+
+  it("flattens circumferential degree math atoms from CVP sampling text", () => {
+    const { doc } = flattenQuantityMathInDoc(mathDoc(String.raw`0^\circ`));
+    expect(doc.content?.[0]?.content?.[1]).toEqual({
+      type: "text",
+      text: "0°",
+    });
   });
 });
 

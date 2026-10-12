@@ -31,18 +31,28 @@ import {
   rewriteCitationPagesInText,
   rewriteTableOperationCitations,
 } from "@/lib/ai/chat/citation-grounding";
-import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
+import { factSupportedByQuote } from "@/lib/ai/chat/fact-support";
 import {
   analysisSupportingFact,
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
+import {
+  calculationSupportingFact,
+  type CalculationEvidence,
+} from "@/lib/ai/chat/calculate";
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 import {
   isExemptFrameFact,
   isExplicitInsertRequest,
+  shouldKeepOperationalVolume,
   shouldKeepUnsupportedFact,
+  volumeSupportedForColumn,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
+import {
+  compact3xperLitreVolumes,
+  usesCvpKLitreStyle,
+} from "@/lib/document-types/3xper-volume-style";
 import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
 import {
   attachLiveTableRowContext,
@@ -69,10 +79,20 @@ import {
 import {
   citationNumbersFromMarker,
   formatNumericCitationMarker,
+  isSourceCitationBracket,
 } from "@/lib/placeholders/citation-bracket";
 import { collectPlaceholderSpans } from "@/lib/placeholders/find";
 
 export type { ClaimProvenance, ClaimProvenanceRecord } from "@/lib/ai/chat/claim-facts";
+
+function styleCvpDraftText(
+  text: string,
+  section: string | undefined,
+  blocked: boolean
+): string {
+  if (blocked || !usesCvpKLitreStyle(section)) return text;
+  return compact3xperLitreVolumes(text);
+}
 
 export type GroundDropReason = "fail_closed" | "unsourced_fact" | "qsr_extra";
 
@@ -149,7 +169,7 @@ function pageMatchesIdentifiers(
 ): boolean {
   return identifiers.some(
     (id) =>
-      evidenceContainsFact(page.quote, id) ||
+      factSupportedByQuote(page.quote, id) ||
       filenameMentionsIdentifier(page.filename, id)
   );
 }
@@ -171,8 +191,7 @@ function rankMoveTarget(input: {
     const sameFile = matches.filter((page) =>
       filenamesMatch(page.filename, cited.filename)
     );
-    if (sameFile.length > 0) {
-      if (fact.kind === "number" && sameFile.length > 1) return null;
+    if (sameFile.length > 0 && fact.kind !== "number") {
       return [...sameFile].sort(
         (a, b) =>
           Math.abs(a.pageNumber - cited.pageNumber) -
@@ -194,8 +213,11 @@ function rankMoveTarget(input: {
   if (fact.kind === "date" && matches.length > 1 && cited) return null;
   // Uncited / cross-file numbers must not attach a coincidental ledger page
   // (hydrated review transcripts often contain 5,000 / 0 on unrelated PQ rows).
-  // Same-file unique hit and unique identifier pin already returned above.
-  // A one-page (or small page-read) ledger may still insert a missing cite.
+  // A cited number also must not move onto another page of the same file just
+  // because the digits appear there (PFR-1301 5 L HAS is not a rinse volume).
+  // Unique identifier pin already returned above.
+  // A one-page (or small page-read) ledger may still insert a missing cite
+  // when the model omitted the bracket.
   if (fact.kind === "number") {
     if (!cited && matches.length === 1 && quotedPageCount <= NUMBER_MOVE_SMALL_LEDGER) {
       return matches[0]!;
@@ -230,10 +252,15 @@ function pageSupportsFact(
     if (labeled === true) return true;
     if (labeled === false && !presenceFallback) return false;
   }
+  if (columnLabel && fact.kind === "number") {
+    const labeled = volumeSupportedForColumn(quote, fact, columnLabel);
+    if (labeled === true) return true;
+    if (labeled === false && !presenceFallback) return false;
+  }
   if (rowKey && !factIsRowKey(fact, rowKey)) {
     return factSupportedForRowKey(quote, fact, rowKey);
   }
-  return evidenceContainsFact(quote, fact);
+  return factSupportedByQuote(quote, fact);
 }
 
 function resolveFact(
@@ -243,6 +270,7 @@ function resolveFact(
     sentence: string;
     context?: string;
     analyses?: readonly AnalysisEvidence[];
+    calculations?: readonly CalculationEvidence[];
     section?: string;
     columnLabel?: string;
     presenceFallback?: boolean;
@@ -394,6 +422,23 @@ function resolveFact(
         title: backing.title,
         pages: backing.pages,
       },
+    };
+  }
+
+  // Same argument as analyses: a product the calculate tool just returned is
+  // derivable, not invented. Operands still have to sit on a retrieved page.
+  const calculated = calculationSupportingFact(
+    fact,
+    extras.calculations ?? []
+  );
+  if (calculated) {
+    return {
+      text: fact.text,
+      kind: fact.kind,
+      status: "verified",
+      cited: cited[0] ?? null,
+      source: null,
+      calculation: { expression: calculated.expression },
     };
   }
 
@@ -558,6 +603,76 @@ function applyMovedCitations(
   return next;
 }
 
+const SOURCE_AFTER_FACT = /^\s*\[[^\]]+\]/;
+
+function removeParkedCitationLine(text: string, n: number): string {
+  const re = numberedCitationLineRe(n);
+  if (!re.test(text)) return text;
+  const stripped = text.replace(re, "$1").replace(/\n{3,}/g, "\n\n");
+  if (!citationNumbersFromText(stripped).size) {
+    return stripped
+      .replace(new RegExp(`\\n*${CITATIONS_HEADING}\\s*$`), "")
+      .replace(/\s*$/, "");
+  }
+  return stripped.replace(/\s*$/, "");
+}
+
+function stripCitationAfterFact(text: string, fact: HardFact): string {
+  const afterFact = text.slice(fact.end);
+  const marker = MARKER_AFTER_FACT.exec(afterFact);
+  if (marker) {
+    const n = Number(marker[1]);
+    const oldBracket = marker[0].trimStart();
+    const leadingWs = /^\s*/.exec(marker[0])?.[0] ?? "";
+    const remaining = citationNumbersFromMarker(oldBracket).filter(
+      (num) => num !== n
+    );
+    const neu = formatNumericCitationMarker(remaining);
+    let next =
+      text.slice(0, fact.end) +
+      (neu ? leadingWs + neu : "") +
+      afterFact.slice(marker[0].length);
+    if (!neu && !parkedNumberIsShared(text, n)) {
+      next = removeParkedCitationLine(next, n);
+    }
+    return next;
+  }
+  const source = SOURCE_AFTER_FACT.exec(afterFact);
+  if (source && isSourceCitationBracket(source[0].trim())) {
+    return (text.slice(0, fact.end) + afterFact.slice(source[0].length))
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/ +([.,;:!?])/g, "$1");
+  }
+  // Only the bracket immediately after this fact. A later cite in the same
+  // sentence may belong to a verified neighbour (E/PR/070 [PQR, p. 2]).
+  return text;
+}
+
+/** Drop a citation that does not support the nearby number/date/id. */
+function stripUnsupportedCitations(
+  text: string,
+  facts: readonly HardFact[],
+  records: readonly ClaimProvenanceRecord[]
+): string {
+  const unsourced = new Set(
+    facts.flatMap((fact, index) =>
+      records[index]?.status === "unsourced" && fact.cited.length > 0
+        ? [`${fact.kind}:${fact.normalized}`]
+        : []
+    )
+  );
+  if (unsourced.size === 0) return text;
+  let next = text;
+  const live = extractHardFacts(next);
+  for (let i = live.length - 1; i >= 0; i--) {
+    const fact = live[i]!;
+    if (!unsourced.has(`${fact.kind}:${fact.normalized}`)) continue;
+    if (fact.cited.length === 0) continue;
+    next = stripCitationAfterFact(next, fact);
+  }
+  return next;
+}
+
 /**
  * Gate hard facts against the retrieval ledger. Empty ledger or pages
  * without served quotes fail open (user-typed facts, tests without
@@ -573,6 +688,8 @@ export function groundDraftText(input: {
   context?: string;
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
+  /** This-turn `calculate` results whose products count as evidence. */
+  calculations?: readonly CalculationEvidence[];
 }): GroundDraftResult {
   const cited = rewriteCitationPagesInText(input.text, input.ledger);
   const mode = input.grounding?.mode ?? "strict";
@@ -591,17 +708,18 @@ export function groundDraftText(input: {
         ledger: input.ledger,
       });
   if (failClosed) {
+    const blocked = input.policy === "block";
     return {
-      text: cited,
+      text: styleCvpDraftText(cited, input.grounding?.section, blocked),
       provenance: { claims: [], policy: input.policy },
       unsupported: [syntheticUnsupportedFact(failClosed)],
-      blocked: input.policy === "block",
-      dropReason: input.policy === "block" ? "fail_closed" : undefined,
+      blocked,
+      dropReason: blocked ? "fail_closed" : undefined,
     };
   }
   if (!input.ledger.hasQuotedPages() || mode === "skip") {
     return {
-      text: cited,
+      text: styleCvpDraftText(cited, input.grounding?.section, false),
       provenance: { claims: [], policy: input.policy },
       unsupported: [],
       blocked: false,
@@ -632,6 +750,7 @@ export function groundDraftText(input: {
       sentence: sentenceAround(cited, fact.start, fact.end),
       context: input.context,
       analyses: input.analyses,
+      calculations: input.calculations,
       section: input.grounding?.section,
       columnLabel: resolveTableColumnLabel({
         section: input.grounding?.section,
@@ -641,20 +760,31 @@ export function groundDraftText(input: {
       presenceFallback: keepFact,
     });
   });
-  const withMoved = applyMovedCitations(
-    cited,
-    facts,
-    records,
-    Boolean(
-      rtmFamilyAtColumn(
-        input.grounding?.section,
-        input.grounding?.tableCol ?? -1
+  const withMoved = stripUnsupportedCitations(
+    applyMovedCitations(
+      cited,
+      facts,
+      records,
+      Boolean(
+        rtmFamilyAtColumn(
+          input.grounding?.section,
+          input.grounding?.tableCol ?? -1
+        )
       )
-    )
+    ),
+    facts,
+    records
   );
+  const columnLabel = resolveTableColumnLabel({
+    section: input.grounding?.section,
+    col: input.grounding?.tableCol,
+    override: input.grounding?.tableColumnLabel,
+  });
   const unsourcedFacts = facts.filter((fact, index) => {
     if (records[index]?.status !== "unsourced") return false;
-    return !(keepTurn || shouldKeepUnsupportedFact(fact, keepSource));
+    if (keepTurn || shouldKeepUnsupportedFact(fact, keepSource)) return false;
+    if (shouldKeepOperationalVolume(fact, columnLabel)) return false;
+    return true;
   });
   const extraUnsupported = extraQsrUnsupported({
     cell: cited,
@@ -688,11 +818,16 @@ export function groundDraftText(input: {
 
   // A verified fact with no source is a frame exemption — identity, a date
   // bound, something already in the report — and has nothing to trace. One
-  // backed by a saved analysis does: Traceability shows the analysis and the
-  // pages its rows came from.
+  // backed by a saved analysis or this-turn calculate does: Traceability
+  // shows the derivation.
   const provenanceClaims = records.filter(
     (record) =>
-      !(record.status === "verified" && !record.source && !record.analysis)
+      !(
+        record.status === "verified" &&
+        !record.source &&
+        !record.analysis &&
+        !record.calculation
+      )
   );
 
   const dropReason: GroundDropReason | undefined = !blocked
@@ -703,7 +838,7 @@ export function groundDraftText(input: {
         ? "qsr_extra"
         : undefined;
   return {
-    text,
+    text: styleCvpDraftText(text, input.grounding?.section, blocked),
     provenance: { claims: provenanceClaims, policy: input.policy },
     unsupported: unsupportedFacts,
     blocked,
@@ -718,6 +853,8 @@ export function groundTableOperation(input: {
   grounding?: GroundDraftGrounding;
   /** Saved analyses whose computed values count as evidence. */
   analyses?: readonly AnalysisEvidence[];
+  /** This-turn `calculate` results whose products count as evidence. */
+  calculations?: readonly CalculationEvidence[];
   /**
    * After repair, empty unsupported RTM family / Remarks cells
    * instead of blocking the URS copy.
@@ -837,6 +974,7 @@ export function groundTableOperation(input: {
       },
       context,
       analyses: input.analyses,
+      calculations: input.calculations,
     });
     const clearOptional =
       Boolean(input.clearOptionalOnBlock) &&

@@ -9,6 +9,8 @@ import { equipmentLifecycleReportDefinition } from "./equipment-lifecycle-report
 import { vendorQualificationDefinition } from "./vendor-qualification";
 import { failureInvestigationReportDefinition } from "./failure-investigation-report";
 import { qualificationSummaryReportDefinition } from "./qualification-summary-report";
+import { cleaningVerificationProtocolDefinition } from "./cleaning-verification-protocol";
+import { isCvpPersistableSectionKey } from "./cvp/sections";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -43,6 +45,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return failureInvestigationReportDefinition;
     case "qualification_summary_report":
       return qualificationSummaryReportDefinition;
+    case "cleaning_verification_protocol":
+      return cleaningVerificationProtocolDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -62,7 +66,8 @@ export function resolveDocumentType(
     type === "equipment_lifecycle_report" ||
     type === "vendor_qualification" ||
     type === "failure_investigation_report" ||
-    type === "qualification_summary_report"
+    type === "qualification_summary_report" ||
+    type === "cleaning_verification_protocol"
   ) {
     return type;
   }
@@ -71,7 +76,8 @@ export function resolveDocumentType(
 
 /**
  * Word upload at create time. Investigation import stays pack-gated.
- * Generic-body import is available whenever the type is enabled.
+ * Generic-body and cleaning-verification-protocol import are available
+ * whenever the type is enabled.
  */
 export function isWordImportAvailable(
   type: DocumentType,
@@ -85,6 +91,7 @@ export function isWordImportAvailable(
     case "investigation":
       return pack.wordImportEnabled;
     case "generic_body":
+    case "cleaning_verification_protocol":
       return true;
     default: {
       const exhaustive: never = kind;
@@ -134,10 +141,14 @@ export function isValidSection(
   documentType: DocumentType | null | undefined,
   section: string
 ): boolean {
-  return isValidSectionForType(
-    getDocumentType(resolveDocumentType(documentType)),
-    section
-  );
+  const type = resolveDocumentType(documentType);
+  if (
+    type === "cleaning_verification_protocol" &&
+    isCvpPersistableSectionKey(section)
+  ) {
+    return true;
+  }
+  return isValidSectionForType(getDocumentType(type), section);
 }
 
 export function resolveSection(
@@ -216,4 +227,6 @@ export {
   evaluationCapabilityFor,
   suggestionApplyModeFor,
   editorProfileFor,
+  preservesHeadingNodes,
+  editorHeadingLevels,
 } from "./types";

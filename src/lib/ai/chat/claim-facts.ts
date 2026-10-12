@@ -40,6 +40,13 @@ export type ClaimProvenanceRecord = {
     title: string;
     pages: CitedPage[];
   } | null;
+  /**
+   * Set when this-turn `calculate` evaluated this value. Traceability names
+   * the expression so the reader can check the arithmetic.
+   */
+  calculation?: {
+    expression: string;
+  } | null;
 };
 
 export type UnsupportedFactPolicy = "block" | "flag";
@@ -97,7 +104,7 @@ const IDENTIFIER_RE =
  * checked it.
  */
 const INSTRUMENT_UNIT =
-  "(?:mL|ml|µL|uL|(?<=\\s)L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
+  "(?:mL|ml|µL|uL|L\\/m(?:²|2)|(?<=\\s)L|CFU|cfu|units?|%|kg(?:\\/cm(?:²|2))?|g|mg|µg|ug|µbar|ubar|mbar|bar|kPa|MPa|Pa|psi|mmHg|torr|rpm|kHz|Hz|lpm|LPM|m²|m2|µm|um|mm|cm|nm|ppm|ppb|mS\\/cm|µS\\/cm|uS\\/cm)";
 
 /** −50 ± 10 RPM must stay one signed fact; `\b50` would drop the minus. */
 const PLUS_MINUS_MARK = String.raw`(?:±|\+\/-|\+\-|plus\s*\/\s*minus)`;
@@ -110,6 +117,10 @@ const NUMBER_WITH_UNIT_RE = new RegExp(
   String.raw`(?<![A-Za-z0-9])[-−–]?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*${INSTRUMENT_UNIT}?\b|(?<![A-Za-z0-9])[-−–]?\s*\d+(?:\.\d+)?\s*${INSTRUMENT_UNIT}(?!\w)`,
   "gi"
 );
+
+/** 3xper house style `10k L` is 10000 L — extract before a bare `10`. */
+const K_LITRE_RE =
+  /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?k\s+L\b/gi;
 
 const BARE_THOUSANDS_RE = /\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/g;
 /** Standalone 0, not the trailing digit of 25.0 or the leading digit of 0.5. */
@@ -292,6 +303,7 @@ export function extractHardFacts(text: string): HardFact[] {
     "number",
     sentenceCited
   );
+  collectKind(facts, taken, citeSpans, text, K_LITRE_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, NUMBER_WITH_UNIT_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_THOUSANDS_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_ZERO_RE, "number", sentenceCited);

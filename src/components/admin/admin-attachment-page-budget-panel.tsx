@@ -103,7 +103,7 @@ export function AdminAttachmentPageBudgetPanel({
         <div>
           <h2 className="text-base font-semibold">Attachment page budget</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            PDF and Word attachment processing for this deployment resets on the
+            PDF, Word, CSV, and Excel attachment processing for this deployment resets on the
             first day of each month (UTC). When the hard limit is on, new ingest
             jobs are blocked once processed pages reach the cap.
           </p>

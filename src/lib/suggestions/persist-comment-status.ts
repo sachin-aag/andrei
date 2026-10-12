@@ -67,6 +67,10 @@ export async function patchCommentStatus(
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body,
+        // Parallel Apply-all status flips must not share Chrome's keepalive
+        // budget with the section PATCH — that reject is the "Could not
+        // save section" toast after the wording already landed.
+        keepalive: false,
       }
     );
   } catch {

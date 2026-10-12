@@ -12,7 +12,13 @@ export const LIST_ATTACHMENTS_NOTE_MAX = 80;
 /** Filter value for files that sit at the Attachments tree root. */
 export const LIST_ATTACHMENTS_ROOT_FOLDER = "(root)";
 
-export const ATTACHMENT_CATALOG_FILE_KINDS = ["pdf", "docx", "other"] as const;
+export const ATTACHMENT_CATALOG_FILE_KINDS = [
+  "pdf",
+  "docx",
+  "csv",
+  "xlsx",
+  "other",
+] as const;
 
 export type AttachmentCatalogFileKind =
   (typeof ATTACHMENT_CATALOG_FILE_KINDS)[number];
@@ -220,7 +226,13 @@ function matchesStatus(
 }
 
 function emptyTypeCounts(): Record<AttachmentCatalogFileKind, number> {
-  return { pdf: 0, docx: 0, other: 0 };
+  return {
+    pdf: 0,
+    docx: 0,
+    csv: 0,
+    xlsx: 0,
+    other: 0,
+  };
 }
 
 function typeBuckets(

@@ -22,6 +22,8 @@ export function reportExportDocxFileName(
       return `Vendor_Qualification_${safe}${suffix}.docx`;
     case "qualification_summary_report":
       return `Qualification_Summary_Report_${safe}${suffix}.docx`;
+    case "cleaning_verification_protocol":
+      return `Cleaning_Verification_Protocol_${safe}${suffix}.docx`;
     case "failure_investigation_report":
       return `Investigation_Report_DS_${safe}${suffix}.docx`;
     case "investigation_report":
@@ -49,6 +51,8 @@ export function reportExportDocxArchiveName(documentType: DocumentType): string 
       return "vendor-qualification.docx";
     case "qualification_summary_report":
       return "qualification-summary-report.docx";
+    case "cleaning_verification_protocol":
+      return "cleaning-verification-protocol.docx";
     case "failure_investigation_report":
       return "investigation-report-ds.docx";
     case "investigation_report":

@@ -21,8 +21,9 @@ const emptyQsr = {
 };
 
 describe("hasChatIdentity", () => {
-  it("is on for QSR, FIR, ELR, QRA, and demo DV", () => {
+  it("is on for QSR, CVP, FIR, ELR, QRA, and demo DV", () => {
     expect(hasChatIdentity("qualification_summary_report")).toBe(true);
+    expect(hasChatIdentity("cleaning_verification_protocol")).toBe(true);
     expect(hasChatIdentity("failure_investigation_report")).toBe(true);
     expect(hasChatIdentity("equipment_lifecycle_report")).toBe(true);
     expect(hasChatIdentity("quality_risk_assessment")).toBe(true);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { docxBufferToPreviewHtml } from "@/lib/attachments/docx-preview";
-import { kindFromMime } from "@/lib/attachments/file-types";
+import { attachmentBufferToPreviewHtml } from "@/lib/attachments/html-preview";
+import { kindFromMime, usesHtmlPreview } from "@/lib/attachments/file-types";
 import { loadAccessibleAsset } from "@/lib/attachments/library-access";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
@@ -22,9 +22,10 @@ export async function GET(
   if (!asset?.gcsGeneration || !asset.permanentObjectKey) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (kindFromMime(asset.mimeType) !== "docx") {
+  const kind = kindFromMime(asset.mimeType);
+  if (!usesHtmlPreview(kind) || !kind) {
     return NextResponse.json(
-      { error: "Preview is only available for Word documents" },
+      { error: "Preview is only available for Word, CSV, and Excel files" },
       { status: 400 }
     );
   }
@@ -34,10 +35,13 @@ export async function GET(
     const buffer = await getAttachmentStorage().readObjectBuffer(
       asset.permanentObjectKey
     );
-    html = await docxBufferToPreviewHtml(buffer, { title: asset.filename });
+    html = await attachmentBufferToPreviewHtml(kind, buffer, {
+      title: asset.filename,
+    });
   } catch (error) {
-    console.error("[library-asset-preview] docx render failed", {
+    console.error("[library-asset-preview] html render failed", {
       assetId,
+      kind,
       error,
     });
     return NextResponse.json(

@@ -28,6 +28,7 @@ import {
   interiorTablePages,
   persistDocumentTablesForRun,
 } from "@/lib/attachments/persist-document-tables";
+import type { DetectedTable } from "@/lib/attachments/table-extract";
 import {
   patchLinkedProcessing,
   syncAssetProcessing,
@@ -46,7 +47,19 @@ import {
   isGapExtractedPage,
   type ExtractedPage,
 } from "@/lib/attachments/extract-batch";
-import { type AttachmentKind, kindFromMime } from "@/lib/attachments/file-types";
+import {
+  type AttachmentKind,
+  isSpreadsheetKind,
+  kindFromMime,
+} from "@/lib/attachments/file-types";
+import {
+  MAX_SPREADSHEET_SHEETS,
+  buildSpreadsheetPages,
+  parseCsvBuffer,
+  parseXlsxBuffer,
+  spreadsheetSummary,
+  spreadsheetTables,
+} from "@/lib/attachments/spreadsheet-parse";
 import {
   INGEST_BATCH_TIMEOUT_MARKER,
   IngestNeedsContinuationError,
@@ -146,6 +159,8 @@ export async function runDocumentIngest(
           });
           if (init!.kind === "docx") {
             await runDocxIngest(init!);
+          } else if (isSpreadsheetKind(init!.kind)) {
+            await runSpreadsheetIngest(init!);
           } else {
             await runPdfIngest(init!);
           }
@@ -438,6 +453,75 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
 
   await assertAttachmentCurrent(init);
   await chunkAndEmbedRun(init);
+  await assertAttachmentCurrent(init);
+  await markRunReady(init);
+}
+
+/**
+ * CSV/XLSX path: parse sheets into markdown transcripts (no Vertex extract),
+ * persist typed tables for Analytics `load_table`, then the shared chunk→embed
+ * machinery. Each row window stays searchable — do not skip interior pages.
+ */
+async function runSpreadsheetIngest(init: IngestInit): Promise<void> {
+  await assertAttachmentCurrent(init);
+  const buffer = await getAttachmentStorage().readObjectBuffer(
+    init.sourceObjectKey
+  );
+  const document =
+    init.kind === "csv"
+      ? parseCsvBuffer(buffer)
+      : await parseXlsxBuffer(buffer);
+  const pages = buildSpreadsheetPages(document);
+  if (pages.length === 0) {
+    throw new Error("Spreadsheet extraction produced no output for this document");
+  }
+  const tables = spreadsheetTables(document, pages);
+
+  await assertAttachmentCurrent(init);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(documentPages)
+      .where(eq(documentPages.ingestRunId, init.runId));
+    await tx.insert(documentPages).values(
+      pages.map((page) => ({
+        ingestRunId: init.runId,
+        attachmentId: init.attachmentId,
+        assetId: init.assetId,
+        reportId: init.reportId,
+        pageNumber: page.pageNumber,
+        printedPageLabel: null,
+        transcript: page.text,
+        visualInterpretation: "",
+        pageContext: page.sheetName,
+        confidence: null,
+        ...toDocumentPageRetrievalFields({
+          transcript: page.text,
+          hasTable: true,
+          hasFigure: false,
+        }),
+      }))
+    );
+  });
+
+  await db
+    .update(attachmentIngestRuns)
+    .set({
+      pageCount: pages.length,
+      batchCount: 0,
+      documentSummary: spreadsheetSummary(document, SUMMARY_MAX_CHARS),
+    })
+    .where(eq(attachmentIngestRuns.id, init.runId));
+  await patchLinkedProcessing(init.attachmentId, init.assetId, {
+    pageCount: Math.max(1, pages.length),
+    processingProgress: 80,
+  });
+
+  await assertAttachmentCurrent(init);
+  await chunkAndEmbedRun(init, {
+    tables,
+    skipInteriorPages: false,
+    maxTables: MAX_SPREADSHEET_SHEETS,
+  });
   await assertAttachmentCurrent(init);
   await markRunReady(init);
 }
@@ -959,13 +1043,20 @@ async function persistOutlineSpansForRun(input: IngestInit): Promise<void> {
  * stored page text rather than the PDF, so a mixed document still yields its
  * tables, and never fails the ingest: a document with no table is the norm.
  */
+type ChunkEmbedOptions = {
+  tables?: readonly DetectedTable[];
+  skipInteriorPages?: boolean;
+  maxTables?: number;
+};
+
 async function persistDetectedTablesForRun(
   input: IngestInit,
   pages: ReadonlyArray<{
     pageNumber: number;
     transcript: string;
     identifiers?: readonly string[] | null;
-  }>
+  }>,
+  options: ChunkEmbedOptions = {}
 ): Promise<Set<number>> {
   try {
     const result = await persistDocumentTablesForRun({
@@ -974,6 +1065,8 @@ async function persistDetectedTablesForRun(
       assetId: input.assetId,
       reportId: input.reportId,
       pages,
+      tables: options.tables,
+      maxTables: options.maxTables,
     });
     if (result.tableCount > 0) {
       console.info(
@@ -994,7 +1087,10 @@ async function persistDetectedTablesForRun(
   }
 }
 
-async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number }> {
+async function chunkAndEmbedRun(
+  input: IngestInit,
+  options: ChunkEmbedOptions = {}
+): Promise<{ chunkCount: number }> {
   await persistOutlineSpansForRun(input);
   const pages = await db
     .select({
@@ -1011,10 +1107,11 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
 
   // Interior pages of a long instrument table are skipped: they all embed to
   // the same point, their rows are already stored verbatim in document_tables,
-  // and read_document_page still serves them.
-  const skipPages = await persistDetectedTablesForRun(input, pages);
+  // and read_document_page still serves them. Native CSV/XLSX windows stay
+  // chunked so batch/result lookups still hit FTS.
+  const skipPages = await persistDetectedTablesForRun(input, pages, options);
   const chunkablePages =
-    skipPages.size === 0
+    options.skipInteriorPages === false || skipPages.size === 0
       ? pages
       : pages.filter((page) => !skipPages.has(page.pageNumber));
 

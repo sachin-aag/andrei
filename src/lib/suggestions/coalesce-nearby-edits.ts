@@ -60,6 +60,7 @@ export function unionRange(
 export function nearbyCoalesceSkipReason(args: {
   leadIn?: boolean;
   tableOperation?: unknown;
+  drawingOperation?: unknown;
   insertImage?: unknown;
   removeImage?: unknown;
   second?: unknown;
@@ -67,6 +68,7 @@ export function nearbyCoalesceSkipReason(args: {
 }): NearbyCoalesceSkipReason | null {
   if (args.leadIn) return "lead_in";
   if (args.tableOperation) return "table";
+  if (args.drawingOperation) return "image";
   if (args.insertImage || args.removeImage) return "image";
   if (args.second) return "second";
   if (args.scope?.kind === "cell") return "cell_scope";

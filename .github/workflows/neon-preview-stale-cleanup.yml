@@ -1,5 +1,6 @@
 # Weekly cleanup of stale Neon preview/* branches across customer Neon projects.
-# Complements PR-close cleanup and Vercel preview-branch retention.
+# Complements PR-close / git-branch-delete cleanup and Vercel preview-branch retention.
+# Project ids: src/lib/db/neon-preview-projects.ts (GitHub vars optional override).
 name: Cleanup stale Neon preview branches
 
 on:
@@ -15,20 +16,6 @@ on:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_MJ }}
-            label: mj
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_DEMO }}
-            label: demo
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
-            label: convergent
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID_3XPER }}
-            label: 3xper
-          - neon_project_id: ${{ vars.NEON_PROJECT_ID }}
-            label: mj-legacy
     steps:
       - uses: actions/checkout@v4
 
@@ -42,14 +29,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Skip when project id is unset
-        if: matrix.neon_project_id == ''
-        run: echo "NEON project id not configured for ${{ matrix.label }}; skipping."
-
       - name: Delete stale preview branches
-        if: matrix.neon_project_id != ''
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_PROJECT_ID: ${{ matrix.neon_project_id }}
           NEON_STALE_PREVIEW_BRANCH_MAX_AGE_DAYS: ${{ github.event.inputs.max_age_days || '14' }}
+          NEON_PROJECT_ID_MJ: ${{ vars.NEON_PROJECT_ID_MJ }}
+          NEON_PROJECT_ID_DEMO: ${{ vars.NEON_PROJECT_ID_DEMO }}
+          NEON_PROJECT_ID_CONVERGENT: ${{ vars.NEON_PROJECT_ID_CONVERGENT }}
+          NEON_PROJECT_ID_3XPER: ${{ vars.NEON_PROJECT_ID_3XPER }}
         run: pnpm tsx scripts/cleanup-stale-neon-preview-branches.ts

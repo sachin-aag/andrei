@@ -27,6 +27,9 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import type { SuggestionApplyMode } from "@/lib/document-types";
+import { isCvpSectionKey } from "@/lib/document-types/cvp/sections";
+import { ensureCvpEquipmentFieldContent } from "@/lib/document-types/cvp/equipment-sampling";
+import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
 import {
   isApplyableStatus,
   type LocateStatus,
@@ -41,7 +44,11 @@ import {
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
-import { applyTableOperation, type DocumentTableContent } from "@/lib/suggestions/table-operation";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
+import {
+  applyTableOperationForPersist,
+  type DocumentTableContent,
+} from "@/lib/suggestions/table-operation";
 import {
   cascadeFilledTableCaptionsInSections,
   documentContentsFromReportState,
@@ -153,17 +160,24 @@ export function applySuggestionToContent(
   const {
     section,
     comment,
-    sectionContent,
     fieldContentPath,
     applyMode = "final",
     ignorePlaceBeforePairedBlock = false,
   } = args;
   const persistAsTrackedChange = applyMode === "tracked_change";
+  const headingNodes =
+    persistAsTrackedChange ||
+    isCvpSectionKey(section) ||
+    section === GENERIC_DOCUMENT_SECTION;
   const path = resolveSuggestionFieldPath(
     section,
     comment.contentPath,
     fieldContentPath ?? comment.contentPath ?? "narrative"
   );
+  const sectionContent =
+    section === "cvp_equipment_sampling"
+      ? ensureCvpEquipmentFieldContent(args.sectionContent, path)
+      : args.sectionContent;
 
   const resolved = resolveSuggestionMerge({
     section,
@@ -245,7 +259,7 @@ export function applySuggestionToContent(
               section,
               path,
               redraft.markdown,
-              { headingNodes: persistAsTrackedChange }
+              { headingNodes }
             );
       return { ok: true, nextSection };
     } catch (error) {
@@ -278,7 +292,7 @@ export function applySuggestionToContent(
         nextSection: setRichFieldValue(sectionContent, path, nextDoc),
       };
     }
-    const result = applyTableOperation(doc, payload.tableOperation, {
+    const result = applyTableOperationForPersist(doc, payload.tableOperation, {
       section,
       targetField: path,
       documentContents: args.documentContents,
@@ -310,6 +324,24 @@ export function applySuggestionToContent(
       nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
     }
     return { ok: true, nextSection: setRichFieldValue(sectionContent, path, nextDoc) };
+  }
+
+  if (payload.drawingOperation) {
+    if (!isRichTargetField(section, path)) {
+      return { ok: false, reason: "not_found" };
+    }
+    const doc = getRichFieldValue(sectionContent, path);
+    const result = applyDrawingOperationToDoc(doc, payload.drawingOperation);
+    if (!result.ok) {
+      return { ok: false, reason: "not_found" };
+    }
+    if (result.status === "already_present") {
+      return { ok: false, reason: "noop" };
+    }
+    return {
+      ok: true,
+      nextSection: setRichFieldValue(sectionContent, path, result.doc),
+    };
   }
 
   const edit = suggestionEditFromComment(comment);
@@ -675,14 +707,16 @@ export async function acceptSuggestion(args: {
       continue;
     }
     content = next.nextSection;
-    if (next.remainder === "conflict") {
-      if (item.id === args.comment.id) remainder = "conflict";
-      continue;
+    if (next.remainder === "conflict" && item.id === args.comment.id) {
+      remainder = "conflict";
     }
+    // Conflict still wrote the compatible operations. Resolving avoids
+    // re-injecting the original card onto already-merged text (the leftover
+    // Apply-all loop on cleaning-protocol queues).
     resolved.push(item);
     if (next.operations) operationsById.set(item.id, next.operations);
   }
-  if (resolved.length === 0 && remainder !== "conflict") {
+  if (resolved.length === 0) {
     return { ok: false, reason: "not_found" };
   }
   const cascaded = applyCaptionCascadeToAppliedSection({
@@ -708,26 +742,14 @@ export async function acceptSuggestion(args: {
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
-  const dismissed =
-    remainder === "conflict" && resolved.length === 0
-      ? []
-      : superseded.map((sibling) => ({
-          ...sibling,
-          status: "dismissed" as const,
-          content: withResolutionReason(
-            sibling.content,
-            resolutionReasonSupersededBy(args.comment.id)
-          ),
-        }));
-  if (remainder === "conflict" && resolved.length === 0) {
-    return {
-      ok: true,
-      nextSection: content,
-      nextRelatedSections: cascaded.related,
-      remainder: "conflict",
-      dismissed,
-    };
-  }
+  const dismissed = superseded.map((sibling) => ({
+    ...sibling,
+    status: "dismissed" as const,
+    content: withResolutionReason(
+      sibling.content,
+      resolutionReasonSupersededBy(args.comment.id)
+    ),
+  }));
   try {
     for (const item of resolved) {
       const operations = operationsById.get(item.id);

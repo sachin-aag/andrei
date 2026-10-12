@@ -12,6 +12,9 @@ export const DEFAULT_PAGE_MARGIN_RIGHT_DXA = 720;
 /** Half-inch floor: below this, equal-width portrait columns are too cramped. */
 export const TABLE_GRID_MIN_COMFORTABLE_COL_DXA = 720;
 
+/** Tables this wide (or wider) always export on a landscape section. */
+export const TABLE_LANDSCAPE_MIN_COLUMNS = 8;
+
 export type DocxPageSetup = {
   /** Full `<w:sectPr>…</w:sectPr>` cloned from the template (portrait). */
   portraitSectPr: string;
@@ -64,12 +67,16 @@ function pageSetupFromParts(parts: {
   };
 }
 
-/** True when equal-width portrait columns would be narrower than 0.5". */
+/**
+ * True when the table has 8+ columns, or when equal-width portrait
+ * columns would be narrower than 0.5" on a cramped page.
+ */
 export function tableNeedsLandscapePage(
   columnCount: number,
   portraitContentWidthDxa: number
 ): boolean {
   if (columnCount < 2) return false;
+  if (columnCount >= TABLE_LANDSCAPE_MIN_COLUMNS) return true;
   return (
     columnCount * TABLE_GRID_MIN_COMFORTABLE_COL_DXA > portraitContentWidthDxa
   );

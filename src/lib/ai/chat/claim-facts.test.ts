@@ -110,6 +110,11 @@ describe("instrument quantities", () => {
     expect(kinds("2 hours later")).toContainEqual(["duration", "2 hours"]);
   });
 
+  it("keeps L/m² as a compound unit instead of bare L", () => {
+    expect(kinds("WAF 5 L/m²")).toContainEqual(["number", "5 L/m²"]);
+    expect(kinds("WAF 5 L/m²").map((row) => row[1])).not.toContain("5 L");
+  });
+
   it("sees a kg/cm² operating-range pressure", () => {
     expect(kinds("Full Vacuum to 3.5 kg/cm²")).toContainEqual([
       "number",
@@ -119,6 +124,9 @@ describe("instrument quantities", () => {
   });
 
   it("does not treat the trailing 0 in 25.0 as a measured zero", () => {
+    expect(extractHardFacts("NLT 25.0 m²").map((fact) => fact.text)).toContain(
+      "25.0 m²"
+    );
     expect(extractHardFacts("NLT 25.0 m²").map((fact) => fact.text)).not.toContain(
       "0"
     );
@@ -126,6 +134,13 @@ describe("instrument quantities", () => {
     expect(
       extractHardFacts("contaminated units 0").map((fact) => `${fact.kind}:${fact.text}`)
     ).toContain("number:0");
+  });
+
+  it("sees heat-transfer area as a gated quantity", () => {
+    expect(kinds("Heat transfer area 24.50 m²")).toContainEqual([
+      "number",
+      "24.50 m²",
+    ]);
   });
 
   it("keeps the leading minus on a URS operating-range temperature", () => {
@@ -174,5 +189,14 @@ describe("instrument quantities", () => {
       "316L"
     );
     expect(extractHardFacts("Capacity 8000 L").map((fact) => fact.text)).toContain("8000 L");
+  });
+
+  it("extracts 3xper 10k L as one litre quantity", () => {
+    expect(extractHardFacts("Capacity 10k L").map((fact) => fact.text)).toContain(
+      "10k L"
+    );
+    expect(extractHardFacts("Capacity 10k L").map((fact) => fact.normalized)).toContain(
+      "10kl"
+    );
   });
 });

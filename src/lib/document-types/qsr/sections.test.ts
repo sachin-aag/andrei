@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { qualificationSummaryReportDefinition } from "@/lib/document-types/qualification-summary-report";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
   QSR_AUXILIARY_VOLUMETRIC_ROWS,
   QSR_CONTROL_HEADERS,
@@ -273,6 +274,15 @@ describe("ensureRtmFamilyColumns", () => {
       "",
       "Complies",
     ]);
+  });
+});
+
+describe("QSR merge", () => {
+  it("keeps a cleared Scope narrative empty instead of restoring the seed paragraph", () => {
+    const merged = qualificationSummaryReportDefinition.mergeSection("qsr_scope", {
+      narrative: { type: "doc", content: [{ type: "paragraph" }] },
+    }) as { narrative: JSONContent };
+    expect(richJsonToPlainText(merged.narrative).trim()).toBe("");
   });
 });
 

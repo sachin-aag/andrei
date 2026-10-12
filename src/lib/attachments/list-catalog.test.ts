@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOCX_MIME_TYPE } from "./file-types";
+import { CSV_MIME_TYPE, DOCX_MIME_TYPE, XLSX_MIME_TYPE } from "./file-types";
 import {
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
@@ -93,6 +93,8 @@ describe("buildAttachmentCatalog", () => {
     expect(catalog.fileTypes).toEqual([
       { kind: "pdf", count: 3 },
       { kind: "docx", count: 0 },
+      { kind: "csv", count: 0 },
+      { kind: "xlsx", count: 0 },
       { kind: "other", count: 0 },
     ]);
   });
@@ -199,6 +201,8 @@ describe("buildAttachmentCatalog", () => {
     expect(catalog.fileTypes).toEqual([
       { kind: "pdf", count: 1 },
       { kind: "docx", count: 1 },
+      { kind: "csv", count: 0 },
+      { kind: "xlsx", count: 0 },
       { kind: "other", count: 0 },
     ]);
     expect(catalog.folders).toEqual([
@@ -226,6 +230,29 @@ describe("buildAttachmentCatalog", () => {
     );
     expect(onlyWord.folders).toEqual([
       { path: "", fileCount: 1, ready: 1, notReady: 0 },
+    ]);
+
+    const spreadsheets = buildAttachmentCatalog({
+      folders: [],
+      attachments: [
+        file({
+          id: "csv",
+          filename: "results.csv",
+          mimeType: CSV_MIME_TYPE,
+        }),
+        file({
+          id: "xlsx",
+          filename: "book.xlsx",
+          mimeType: XLSX_MIME_TYPE,
+        }),
+      ],
+    });
+    expect(spreadsheets.fileTypes).toEqual([
+      { kind: "pdf", count: 0 },
+      { kind: "docx", count: 0 },
+      { kind: "csv", count: 1 },
+      { kind: "xlsx", count: 1 },
+      { kind: "other", count: 0 },
     ]);
 
     const inSops = buildAttachmentCatalog({

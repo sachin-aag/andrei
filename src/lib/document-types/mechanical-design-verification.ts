@@ -10,7 +10,7 @@ import {
   checkEquipmentTablePresent,
 } from "@/lib/document-types/convergent/deterministic-checks";
 import { placeRequirementsVerifiedFootnotes, placeUutTableFootnotes } from "@/lib/export/mechanical-table-footnotes";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   checkResultsFootnotePlacement,
@@ -623,14 +623,14 @@ function mergeNarrative(raw: unknown) {
   const base = EMPTY_MECHANICAL_DV_CONTENT.purpose.narrative;
   if (!raw || typeof raw !== "object") return { narrative: base };
   const o = raw as { narrative?: unknown };
-  return { narrative: normalizeRichField(o.narrative ?? base) };
+  return { narrative: mergeStoredRichField(o, "narrative", base) };
 }
 
 function mergeTesters(raw: unknown) {
   const base = EMPTY_MECHANICAL_DV_CONTENT.testers_dates.testers;
   if (!raw || typeof raw !== "object") return { testers: base };
   const o = raw as { testers?: unknown };
-  return { testers: normalizeRichField(o.testers ?? base) };
+  return { testers: mergeStoredRichField(o, "testers", base) };
 }
 
 function mergeNarrativeTable(
@@ -641,8 +641,8 @@ function mergeNarrativeTable(
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown; table?: unknown };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
   };
 }
 
@@ -655,9 +655,9 @@ function mergeRequirementsVerified(raw: unknown) {
     systemTable?: unknown;
   };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    hardwareTable: normalizeRichField(o.hardwareTable ?? base.hardwareTable),
-    systemTable: normalizeRichField(o.systemTable ?? base.systemTable),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    hardwareTable: mergeStoredRichField(o, "hardwareTable", base.hardwareTable),
+    systemTable: mergeStoredRichField(o, "systemTable", base.systemTable),
   };
 }
 
@@ -665,7 +665,7 @@ function mergeRevisionHistory(raw: unknown) {
   const base = EMPTY_MECHANICAL_DV_CONTENT.revision_history;
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { table?: unknown };
-  return { table: normalizeRichField(o.table ?? base.table) };
+  return { table: mergeStoredRichField(o, "table", base.table) };
 }
 
 function mergeMechanicalDvSection(key: string, raw: unknown): unknown {

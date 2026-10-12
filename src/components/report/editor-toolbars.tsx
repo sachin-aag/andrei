@@ -8,6 +8,7 @@ import {
   List,
   ListOrdered,
   Palette,
+  PenLine,
   TableIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,9 @@ import {
 import { toast } from "sonner";
 import { TableRefNumbersContext } from "@/providers/table-ref-numbers";
 import { cn } from "@/lib/utils";
+import { DrawingEditorDialog } from "@/components/report/drawing-editor-dialog";
+import { createBlankDrawingDataUrl } from "@/lib/drawings/blank-canvas";
+import { isEmptyImageDrawing } from "@/lib/drawings/overlay";
 
 /** Re-render toolbar when selection or doc changes so active states stay in sync. */
 export function useEditorToolbarState(editor: Editor | null) {
@@ -89,10 +93,16 @@ export function TextFormatToolbar({ editor }: { editor: Editor }) {
   );
 }
 
-export function HeadingToolbar({ editor }: { editor: Editor }) {
+export function HeadingToolbar({
+  editor,
+  levels = [1, 2, 3],
+}: {
+  editor: Editor;
+  levels?: readonly (1 | 2 | 3 | 4)[];
+}) {
   return (
     <div className="flex items-center gap-0.5">
-      {([1, 2, 3] as const).map((level) => (
+      {levels.map((level) => (
         <Button
           key={level}
           type="button"
@@ -338,7 +348,7 @@ export function InsertTableRefButton({ editor }: { editor: Editor }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="max-h-72 overflow-y-auto"
+        className="max-h-[min(18rem,var(--radix-dropdown-menu-content-available-height,calc(100vh-2rem)))] overflow-x-hidden overflow-y-auto"
         data-testid="insert-table-ref-menu"
       >
         {insertable.length === 0 ? (
@@ -416,6 +426,59 @@ export function InsertImageButton({ editor }: { editor: Editor }) {
         className="hidden"
         onChange={(e) => void handleImagePick(e.target.files?.[0])}
       />
+    </>
+  );
+}
+
+export function InsertDrawingButton({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const [src, setSrc] = useState("");
+
+  const handleOpen = () => {
+    const doc = editor.getJSON();
+    if (countImagesInDoc(doc) >= MAX_IMAGES_PER_SECTION) {
+      toast.error(`Maximum ${MAX_IMAGES_PER_SECTION} images per section.`);
+      return;
+    }
+    setSrc(createBlankDrawingDataUrl());
+    setOpen(true);
+  };
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1 text-[var(--muted-foreground)]"
+        data-testid="insert-drawing"
+        title="Insert drawing"
+        onClick={handleOpen}
+      >
+        <PenLine className="size-3.5" />
+        Drawing
+      </Button>
+      {src ? (
+        <DrawingEditorDialog
+          open={open}
+          src={src}
+          alt="Drawing"
+          initialDrawing={null}
+          onOpenChange={setOpen}
+          onSave={(drawing) => {
+            editor
+              .chain()
+              .focus()
+              .insertImageInline({
+                src,
+                alt: "Drawing",
+                width: 640,
+                drawing: isEmptyImageDrawing(drawing) ? null : drawing,
+              })
+              .run();
+          }}
+        />
+      ) : null}
     </>
   );
 }

@@ -27,6 +27,8 @@ describe("classifyRetrievalQuery", () => {
     expect(
       classifyRetrievalQuery("appendix-b-790-00134r-revu.pdf page 31").kind
     ).toBe("locator");
+    expect(classifyRetrievalQuery("look in results.csv").kind).toBe("locator");
+    expect(classifyRetrievalQuery("open batch.xlsx").kind).toBe("locator");
   });
 
   it("does not treat dissolution prose as an identifier", () => {

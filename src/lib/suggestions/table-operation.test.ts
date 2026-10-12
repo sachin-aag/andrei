@@ -7,12 +7,15 @@ import {
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
+  applyTableOperationForPersist,
   captureTableOperationSnapshots,
+  summarizeTablesInDoc,
   existingTableCountFromContents,
   filledTableNumberInDocument,
   isBannerTableRow,
   parseTableOperation,
   prefixTableCaptionMarkdown,
+  defaultTableCaptionTitle,
   renumberFilledTableCaptions,
   dropLeftoverPlaceholderCells,
   resolveEditCells,
@@ -20,7 +23,15 @@ import {
   tableOperationInvalidHint,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { QSR_RTM_HEADERS } from "@/lib/document-types/qsr/sections";
+import {
+  CVP_MACO_EQUIPMENT_HEADERS,
+  CVP_MACO_FORMULA_HEADERS,
+  CVP_RESIDUE_RESULTS_HEADERS,
+  EMPTY_CVP_CONTENT,
+  cvpEquipmentSamplingSeed,
+} from "@/lib/document-types/cvp/sections";
 import {
   ELR_MEDIA_FILL_HEADERS,
   ELR_MONITORING_HEADERS,
@@ -81,6 +92,33 @@ function twoTablesDoc(): JSONContent {
     content: [
       tableDoc(["A", "B"], [["a1", "b1"]]).content![0]!,
       tableDoc(["X", "Y"], [["x1", "y1"]]).content![0]!,
+    ],
+  };
+}
+
+function macoSeedDoc(): JSONContent {
+  const emptyEquipment = CVP_MACO_EQUIPMENT_HEADERS.map(() => "");
+  return {
+    type: "doc",
+    content: [
+      tableDoc([...CVP_MACO_EQUIPMENT_HEADERS], [emptyEquipment]).content![0]!,
+      tableDoc(
+        [...CVP_MACO_FORMULA_HEADERS],
+        [
+          ["PDE", "PDE value of the previous / worst-case residue (mg/day)", ""],
+          ["MBS", "Minimum batch size of the subsequent product (mg)", ""],
+          ["TDD", "Therapeutic daily dose of the subsequent product (mg)", ""],
+          ["MACO", "PDE × MBS / TDD", ""],
+        ]
+      ).content![0]!,
+      tableDoc(
+        [...CVP_MACO_FORMULA_HEADERS],
+        [
+          ["MAXCONC", "Allowable carryover limit (ppm or mg/kg)", ""],
+          ["MBS", "Minimum batch size considered (kg)", ""],
+          ["MACO", "MBS × MAXCONC", ""],
+        ]
+      ).content![0]!,
     ],
   };
 }
@@ -199,6 +237,101 @@ describe("applyTableOperation", () => {
     ).content![1] as JSONContent;
     const textNode = manufacturerCell.content![0]!.content![0]!;
     expect(textNode.marks).toEqual([{ type: "bold" }]);
+  });
+
+  it("stores two or more list lines in a cell as a real list", () => {
+    const result = applyTableOperation(
+      tableDoc(["Department", "Responsibility"], [["Quality Assurance", ""]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: "",
+            insertText:
+              "- Preparation and review of the protocol.\n- Collection of swab samples.",
+          },
+        ],
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cell = (
+      result.doc.content!.find((node) => node.type === "table")!.content![1] as JSONContent
+    ).content![1] as JSONContent;
+    expect(cell.content?.[0]?.type).toBe("bulletList");
+    expect(cell.content?.[0]?.content).toHaveLength(2);
+    expect(cellText(result.doc, 1, 1)).toBe(
+      "Preparation and review of the protocol. Collection of swab samples."
+    );
+    expect(summarizeTablesInDoc(result.doc)[0]?.cells[3]?.text).toBe(
+      "- Preparation and review of the protocol.\n- Collection of swab samples."
+    );
+
+    const again = applyTableOperation(result.doc, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          expectedText: "",
+          insertText:
+            "- Preparation and review of the protocol.\n- Collection of swab samples.",
+        },
+      ],
+    });
+    expect(again).toMatchObject({ ok: false, status: "already_present" });
+  });
+
+  it("stores numbered cell lines as an ordered list and leaves one dash as prose", () => {
+    const numbered = applyTableOperation(
+      tableDoc(["Department", "Responsibility"], [["Production", ""]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: "",
+            insertText:
+              "1. Execution of the cleaning activity\n2. Collection of rinse samples.",
+          },
+        ],
+      }
+    );
+    expect(numbered.ok).toBe(true);
+    if (!numbered.ok) return;
+    const numberedCell = (
+      numbered.doc.content!.find((node) => node.type === "table")!.content![1] as JSONContent
+    ).content![1] as JSONContent;
+    expect(numberedCell.content?.[0]?.type).toBe("orderedList");
+
+    const single = applyTableOperation(
+      tableDoc(["Department", "Responsibility"], [["Production", ""]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: "",
+            insertText: "- Not a list",
+          },
+        ],
+      }
+    );
+    expect(single.ok).toBe(true);
+    if (!single.ok) return;
+    const singleCell = (
+      single.doc.content!.find((node) => node.type === "table")!.content![1] as JSONContent
+    ).content![1] as JSONContent;
+    expect(singleCell.content?.[0]?.type).toBe("paragraph");
+    expect(cellText(single.doc, 1, 1)).toBe("- Not a list");
   });
 
   it("edits several cells atomically without touching others", () => {
@@ -432,6 +565,65 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 0, 0, 0)).toBe("X");
   });
 
+  it("retargets PDE/TDD edits from MACO table 0 onto the health-based formula grid", () => {
+    const result = applyTableOperation(macoSeedDoc(), {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 1, col: 2, rowKey: "PDE", insertText: "0.1", expectedText: "" },
+        { row: 3, col: 2, rowKey: "TDD", insertText: "200", expectedText: "" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 2, 1)).toBe("0.1");
+    expect(cellText(result.doc, 3, 2, 1)).toBe("200");
+    expect(cellText(result.doc, 1, 0, 0)).toBe("");
+  });
+
+  it("refuses inserting formula headers as a data row of the MACO equipment table", () => {
+    const result = applyTableOperation(macoSeedDoc(), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      rows: [[
+        "Attribute",
+        "Description of Attribute",
+        "Value / Calculation",
+        ...CVP_MACO_EQUIPMENT_HEADERS.slice(3).map(() => ""),
+      ]],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("bad_scope");
+    expect(result.hint).toMatch(/tableIndex 1/);
+  });
+
+  it("refuses inserting a PDE row into the MACO equipment table", () => {
+    const result = applyTableOperation(macoSeedDoc(), {
+      kind: "insert_rows",
+      tableIndex: 0,
+      rows: [[
+        "PDE",
+        "PDE value of the previous / worst-case residue (mg/day)",
+        "0.1",
+        ...CVP_MACO_EQUIPMENT_HEADERS.slice(3).map(() => ""),
+      ]],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("bad_scope");
+    expect(result.hint).toMatch(/PDE/);
+  });
+
+  it("titles CVP table captions from the section label, not Cvp Maco", () => {
+    expect(defaultTableCaptionTitle("cvp_maco")).toBe(
+      "Maximum Allowable Carryover (MACO)"
+    );
+    expect(defaultTableCaptionTitle("cvp_equipment_sampling")).toBe(
+      "Equipment sampling"
+    );
+  });
+
   it("upgrades a delete of every data row into delete_table", () => {
     const doc = tableDoc(["H"], [["a"], ["b"], ["c"]]);
     const captured = captureTableOperationSnapshots(doc, {
@@ -546,7 +738,7 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 2, 1)).toBe("Engineering");
   });
 
-  it("still rejects insert_rows when a filled snapshot cell changed", () => {
+  it("still rejects insert_rows when the identity snapshot cell changed", () => {
     const result = applyTableOperation(
       tableDoc(["H1", "H2"], [["changed", "row"]]),
       {
@@ -560,6 +752,77 @@ describe("applyTableOperation", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.status).toBe("stale");
+  });
+
+  it("still inserts when a sibling edit_cells rewrote a non-identity cell", () => {
+    const original = tableDoc(["H1", "H2"], [["Existing Qualification", "EQ-1"]]);
+    const modified = applyTableOperation(original, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          rowKey: "Existing Qualification",
+          expectedText: "EQ-1",
+          insertText: "EQ-1-REV",
+        },
+      ],
+    });
+    expect(modified.ok).toBe(true);
+    if (!modified.ok) return;
+
+    const inserted = applyTableOperation(modified.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "Existing Qualification",
+      rows: [["Design Qualification", "DQP-1"]],
+      expectedRowAtAfter: ["Existing Qualification", "EQ-1"],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(cellText(inserted.doc, 1, 1)).toBe("EQ-1-REV");
+    expect(cellText(inserted.doc, 2, 0)).toBe("Design Qualification");
+    expect(cellText(inserted.doc, 2, 1)).toBe("DQP-1");
+  });
+
+  it("still inserts after a painted filled-row modify preview", () => {
+    const original = tableDoc(["H1", "H2"], [["Existing Qualification", "EQ-1"]]);
+    const modify = {
+      kind: "edit_cells" as const,
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          rowKey: "Existing Qualification",
+          expectedText: "EQ-1",
+          insertText: "EQ-1-REV",
+        },
+      ],
+    };
+    const preview = buildTableOperationPreviewDoc(original, modify, {
+      id: "modify-1",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      kind: "fix",
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const inserted = applyTableOperation(preview.doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      afterRowKey: "Existing Qualification",
+      rows: [["Design Qualification", "DQP-1"]],
+      expectedRowAtAfter: ["Existing Qualification", "EQ-1"],
+    });
+    expect(inserted.ok).toBe(true);
+    if (!inserted.ok) return;
+    expect(cellText(inserted.doc, 2, 0)).toBe("Design Qualification");
   });
 
   it("does not copy a banner colspan onto inserted data rows", () => {
@@ -744,6 +1007,32 @@ describe("applyTableOperation", () => {
     if (!result.ok) return;
     expect(cellText(result.doc, 1, 3)).toBe("");
     expect(cellText(result.doc, 5, 3)).toBe("PQ");
+  });
+
+  it("rematches edit_cells when row is omitted and rowKey is set", () => {
+    const doc = rtmDoc(["URS-1", "URS-13"]);
+    const parsed = parseTableOperation({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [{ rowKey: "URS-13", col: 3, insertText: "PQ" }],
+    });
+    expect(parsed).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 3,
+          insertText: "PQ",
+          rowKey: "URS-13",
+        },
+      ],
+    });
+    const result = applyTableOperation(doc, parsed!);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 3)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("PQ");
   });
 
   it("rematches edit_cells from a URS-N in rowContext when rowKey is omitted", () => {
@@ -2088,6 +2377,91 @@ describe("applyTableOperation", () => {
     ]);
   });
 
+  it("writes a Limit criterion into the last column when the draft puts it in Sample ID", () => {
+    const before = tableDoc([...CVP_RESIDUE_RESULTS_HEADERS], [
+      ["Final Rinse Sample (Acetone)", "NA", "", "", ""],
+      ["Limit", "", "", "", ""],
+      ["LOQ", "", "", "", ""],
+      ["LOD", "", "", "", ""],
+    ]);
+    const result = applyTableOperation(before, {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        { row: 2, col: 1, rowKey: "Limit", insertText: "NMT 10 ppm" },
+        { row: 3, col: 1, rowKey: "LOQ", insertText: "5 ppm [3]" },
+        { row: 4, col: 1, rowKey: "LOD", insertText: "2 ppm" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 1)).toBe("NA");
+    expect(cellText(result.doc, 2, 1)).toBe("");
+    expect(cellText(result.doc, 2, 2)).toBe("");
+    expect(cellText(result.doc, 2, 3)).toBe("NMT 10 ppm");
+    expect(cellText(result.doc, 2, 4)).toBe("NMT 10 ppm");
+    expect(cellText(result.doc, 3, 3)).toBe("5 ppm [3]");
+    expect(cellText(result.doc, 4, 3)).toBe("2 ppm");
+  });
+
+  it("inserts a 15.2.3.2 table before the later 15.2.8 extraneous grid", () => {
+    const heading = "15.2.3.2 Calculation for shell wall swab locations";
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 4 },
+          content: [{ type: "text", text: heading }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The number of shell wall swab sampling locations shall be determined from the vessel.",
+            },
+          ],
+        },
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [
+            {
+              type: "text",
+              text: "15.2.8 Rinse samples analysis results summary (Extraneous matter)",
+            },
+          ],
+        },
+        tableDoc(
+          ["Sample description / location", "Sample ID", "Results (Extraneous matter)"],
+          [
+            ["Rinse Sample", "NA", ""],
+            ["Limit", "Black and fiber particles should be absent", ""],
+          ]
+        ).content![0]!,
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["Parameter", "Calculation", "Value", "Remarks"],
+      rows: [["H", "NA", "3.9 m", "Shell height"]],
+      afterAnchor: heading,
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "heading",
+      "table",
+      "paragraph",
+      "heading",
+      "table",
+    ]);
+    expect(cellText(result.doc, 0, 0, 0)).toBe("Parameter");
+    expect(cellText(result.doc, 1, 2, 0)).toBe("3.9 m");
+    expect(cellText(result.doc, 1, 0, 1)).toBe("Rinse Sample");
+  });
+
   it("refuses a missing or ambiguous afterAnchor", () => {
     const before: JSONContent = {
       type: "doc",
@@ -2116,6 +2490,35 @@ describe("applyTableOperation", () => {
         afterAnchor: "The assay failed",
       }).status
     ).toBe("bad_scope");
+  });
+
+  it("still persists create_table when afterAnchor is missing", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "15.3 Equipment sampling." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+      ],
+    };
+    const result = applyTableOperationForPersist(before, {
+      kind: "create_table",
+      headers: ["A"],
+      rows: [["1"]],
+      afterAnchor: "15.3.6 Visual inspection",
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual([
+      "paragraph",
+      "table",
+      "paragraph",
+    ]);
   });
 
   it("refuses create_table on a seeded DV matrix field", () => {
@@ -2303,6 +2706,73 @@ describe("parseTableOperation", () => {
           insertText: "Major release number (e.g., 04)",
         },
       ],
+    });
+  });
+
+  it("infers edit_cells from rowKey+col cells when kind and row are omitted", () => {
+    expect(
+      parseTableOperation({
+        tableIndex: 0,
+        cells: [
+          {
+            rowKey: "Quality Assurance",
+            col: 1,
+            insertText: "Preparation and review of the protocol.",
+          },
+          {
+            col: 1,
+            rowKey: "Production",
+            insertText: "Execution of equipment cleaning.",
+          },
+        ],
+      })
+    ).toEqual({
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [
+        {
+          row: 1,
+          col: 1,
+          insertText: "Preparation and review of the protocol.",
+          rowKey: "Quality Assurance",
+        },
+        {
+          row: 1,
+          col: 1,
+          insertText: "Execution of equipment cleaning.",
+          rowKey: "Production",
+        },
+      ],
+    });
+  });
+
+  it("wraps a flat string array as one insert_rows row when kind is omitted", () => {
+    expect(
+      parseTableOperation({
+        rows: [
+          "Design Specification",
+          "DS/GLR-1301",
+          "00",
+          "Approved",
+          "<date>",
+          "New Document",
+        ],
+      })
+    ).toEqual({
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: undefined,
+      rows: [
+        [
+          "Design Specification",
+          "DS/GLR-1301",
+          "00",
+          "Approved",
+          "<date>",
+          "New Document",
+        ],
+      ],
+      expectedRowAtAfter: undefined,
     });
   });
 
@@ -2619,5 +3089,135 @@ describe("applyEditCells appliedOperation", () => {
     expect(cellText(result.doc, 2, 4)).toBe(
       "8.2.4 – Operational verification of agitator"
     );
+  });
+});
+
+function captionTexts(doc: JSONContent): string[] {
+  return (doc.content ?? [])
+    .filter((node) => node.type === "paragraph")
+    .map((node) => flattenForAnchor(node).text.trim())
+    .filter((text) => /^Table\s+\d+\./i.test(text));
+}
+
+function cvpNarrative(section: keyof typeof EMPTY_CVP_CONTENT): JSONContent {
+  const content = EMPTY_CVP_CONTENT[section];
+  if ("items" in content) {
+    return structuredClone(cvpEquipmentSamplingSeed(1));
+  }
+  if (!("narrative" in content)) {
+    throw new Error(`${section} is not a narrative section`);
+  }
+  return structuredClone(content.narrative);
+}
+
+function cvpTable(section: keyof typeof EMPTY_CVP_CONTENT): JSONContent {
+  const content = EMPTY_CVP_CONTENT[section];
+  if (!("table" in content)) {
+    throw new Error(`${section} is not a table section`);
+  }
+  return structuredClone(content.table);
+}
+
+describe("CVP seed-aware table numbering", () => {
+  it("does not caption the unused 15.1 identity shell", () => {
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "cvp_equipment_sampling",
+        content: { items: [cvpNarrative("cvp_equipment_sampling")] },
+      },
+    ]);
+    const doc = (contents[0]?.content as { items: JSONContent[] }).items[0]!;
+    expect(captionTexts(doc)).toEqual([]);
+  });
+
+  it("strips a leftover Table 15. Cvp Equipment Sampling caption on the seed identity grid", () => {
+    const seed = cvpNarrative("cvp_equipment_sampling");
+    const tableIndex = seed.content?.findIndex((node) => node.type === "table") ?? -1;
+    seed.content?.splice(tableIndex, 0, {
+      type: "paragraph",
+      content: [{ type: "text", text: "Table 15. Cvp Equipment Sampling" }],
+    });
+    const { contents } = renumberFilledTableCaptions([
+      { section: "cvp_equipment_sampling", content: { items: [seed] } },
+    ]);
+    const doc = (contents[0]?.content as { items: JSONContent[] }).items[0]!;
+    expect(flattenForAnchor(doc).text).not.toMatch(/Table\s+15\./i);
+    expect(flattenForAnchor(doc).text).not.toMatch(/Cvp Equipment Sampling/i);
+  });
+
+  it("captions identity once Details are filled, and upgrades a stale Cvp title", () => {
+    const filled = applyTableOperation(
+      cvpNarrative("cvp_equipment_sampling"),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, insertText: "20 KL" }],
+      },
+      { section: "cvp_equipment_sampling", targetField: "items.0" }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    expect(captionTexts(filled.doc)).toEqual([
+      "Table 1. Equipment sampling",
+    ]);
+
+    const stale: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 1. Cvp Equipment Sampling" }],
+        },
+        ...(filled.doc.content ?? []).filter((node) => node.type === "table"),
+      ],
+    };
+    const { contents } = renumberFilledTableCaptions([
+      { section: "cvp_equipment_sampling", content: { items: [stale] } },
+    ]);
+    const doc = (contents[0]?.content as { items: JSONContent[] }).items[0]!;
+    expect(captionTexts(doc)).toEqual(["Table 1. Equipment sampling"]);
+  });
+
+  it("captions complete WAF seed rows and leaves the empty rinse-calc shell unnumbered", () => {
+    const { contents } = renumberFilledTableCaptions([
+      {
+        section: "cvp_rinse_volume",
+        content: { narrative: cvpNarrative("cvp_rinse_volume") },
+      },
+    ]);
+    const doc = (contents[0]?.content as { narrative: JSONContent }).narrative;
+    expect(captionTexts(doc)).toEqual(["Table 1. Rinse Volume Calculation"]);
+  });
+
+  it("does not caption MACO PDE or equipment shells until a value is filled", () => {
+    const { contents: seedCaptioned } = renumberFilledTableCaptions([
+      { section: "cvp_maco", content: { narrative: cvpNarrative("cvp_maco") } },
+    ]);
+    const seedDoc = (seedCaptioned[0]?.content as { narrative: JSONContent })
+      .narrative;
+    expect(captionTexts(seedDoc)).toEqual([]);
+
+    const filled = applyTableOperation(
+      cvpNarrative("cvp_maco"),
+      {
+        kind: "edit_cells",
+        tableIndex: 1,
+        cells: [{ row: 1, col: 2, insertText: "0.1 mg/day" }],
+      },
+      { section: "cvp_maco", targetField: "narrative" }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+    expect(captionTexts(filled.doc)).toEqual([
+      "Table 1. Maximum Allowable Carryover (MACO)",
+    ]);
+  });
+
+  it("still captions complete abbreviation seed rows as Table 1", () => {
+    const { contents } = renumberFilledTableCaptions([
+      { section: "cvp_abbreviations", content: { table: cvpTable("cvp_abbreviations") } },
+    ]);
+    const doc = (contents[0]?.content as { table: JSONContent }).table;
+    expect(captionTexts(doc)).toEqual(["Table 1. Abbreviations"]);
   });
 });

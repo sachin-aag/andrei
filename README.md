@@ -71,7 +71,7 @@ cp .env.example .env.local
 #   AUTH_SECRET=          # openssl rand -base64 32
 # Optional for AI Check / suggestions / chat:
 #   AI_GATEWAY_API_KEY=   # or GOOGLE_GENERATIVE_AI_API_KEY
-# Optional for PDF/DOCX ingest + embeddings (Vertex only — gateway is not a fallback):
+# Optional for PDF/DOCX/CSV/XLSX ingest + embeddings (Vertex for PDF/DOCX extract and all embeddings — gateway is not a fallback):
 #   GOOGLE_VERTEX_PROJECT=
 # Local attachment files (never on Vercel production):
 #   ATTACHMENT_STORAGE_BACKEND=local
@@ -131,7 +131,7 @@ Copy `.env.example` and fill `.env.local`. The important ones:
 | `AUTH_RESEND_KEY` / `AUTH_EMAIL_FROM` | Magic-link and password-reset email. See [docs/email-deliverability.md](docs/email-deliverability.md). |
 | `AUTH_URL` | Public origin users actually open. A leftover `*.vercel.app` value after a custom-domain cutover breaks sessions. |
 | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | AI Check, suggestions, chat. |
-| `GOOGLE_VERTEX_PROJECT` | **Required** for PDF/DOCX ingest + embeddings. Pair with WIF on Vercel. |
+| `GOOGLE_VERTEX_PROJECT` | **Required** for PDF/DOCX extract and ingest embeddings (CSV/XLSX parse locally). Pair with WIF on Vercel. |
 | `GCS_BUCKET` | Production attachment bytes (one bucket per pack on Vercel; see [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer)). |
 | `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo`, `mj`, `convergent`, or `3xper`). |
 | `SITE_ACCESS_PASSWORD` | Optional site-wide gate at `/unlock`. Unset = disabled. |

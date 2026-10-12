@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   entries: TableOfContentsEntry[];
-  onJumpToSection: (section: SectionType) => void;
+  onJumpToSection: (section: SectionType, jumpId?: string) => void;
 };
 
 const INDENT_STEP_PX = 14;
@@ -23,7 +23,7 @@ export function TableOfContentsPanel({ entries, onJumpToSection }: Props) {
         <ul className="space-y-0.5">
           {entries.map((entry) => (
             <TocEntryRow
-              key={entry.label}
+              key={entry.jumpId ?? entry.label}
               entry={entry}
               depth={0}
               onJumpToSection={onJumpToSection}
@@ -42,7 +42,7 @@ function TocEntryRow({
 }: {
   entry: TableOfContentsEntry;
   depth: number;
-  onJumpToSection: (section: SectionType) => void;
+  onJumpToSection: (section: SectionType, jumpId?: string) => void;
 }) {
   const hasChildren = (entry.children?.length ?? 0) > 0;
   const isJumpTarget = entry.sectionKey != null;
@@ -53,7 +53,11 @@ function TocEntryRow({
       {isJumpTarget ? (
         <button
           type="button"
-          onClick={() => onJumpToSection(entry.sectionKey!)}
+          onClick={() =>
+            entry.jumpId
+              ? onJumpToSection(entry.sectionKey!, entry.jumpId)
+              : onJumpToSection(entry.sectionKey!)
+          }
           title={`Jump to ${entry.label}`}
           className={cn(
             "group flex w-full items-center gap-1.5 rounded-md border-l-2 border-transparent py-1.5 pr-2 text-left transition-colors",
@@ -91,7 +95,7 @@ function TocEntryRow({
         >
           {entry.children!.map((child) => (
             <TocEntryRow
-              key={child.label}
+              key={child.jumpId ?? child.label}
               entry={child}
               depth={depth + 1}
               onJumpToSection={onJumpToSection}

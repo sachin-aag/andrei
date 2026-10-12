@@ -30,6 +30,7 @@ import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections"
 import { getUser } from "@/lib/auth/user-directory";
 import { isHiddenExpertReviewerEmail } from "@/lib/reports/hidden-expert-reviewer";
 import { formatCalendarDate } from "@/lib/utils";
+import { flattenDrawingsInValue } from "@/lib/drawings/flatten";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
 import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
@@ -38,7 +39,10 @@ import {
   CONVERGENT_DOCX_RUN_STYLE,
   MJ_FIR_DOCX_RUN_STYLE,
   QSR_DOCX_RUN_STYLE,
+  CVP_DOCX_RUN_STYLE,
+  VQ_DOCX_RUN_STYLE,
   createDocxExportContext,
+  nextUnusedImageIndexFromZip,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
 import {
@@ -99,6 +103,7 @@ import {
 import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 import { applyQsrSlotsToDocxZip } from "@/lib/export/qsr/render";
 import { QSR_SECTION_KEYS, qsrMetadataFrom } from "@/lib/document-types/qsr/sections";
+import { CVP_SECTION_KEYS } from "@/lib/document-types/cvp/sections";
 import { VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -148,7 +153,10 @@ const ELR_LANDSCAPE_TABLE_KEYS = new Set([
 function stringifyDvTemplateValue(
   value: unknown,
   ctx: DocxExportContext,
-  options?: NarrativeToDocxOptions & { resultsColWidths?: boolean }
+  options?: NarrativeToDocxOptions & {
+    resultsColWidths?: boolean;
+    preserveHeadings?: boolean;
+  }
 ): string {
   if (value == null) return "";
   if (typeof value === "string") return value;
@@ -156,8 +164,10 @@ function stringifyDvTemplateValue(
     return String(value);
   }
   if (isTiptapDoc(value)) {
-    const { resultsColWidths, ...docxOptions } = options ?? {};
-    const normalized = normalizeRichField(value);
+    const { resultsColWidths, preserveHeadings, ...docxOptions } = options ?? {};
+    const normalized = normalizeRichField(value, {
+      preserveHeadings: preserveHeadings === true,
+    });
     const doc = resultsColWidths
       ? applyMechanicalResultsColWidths(
           normalized,
@@ -566,12 +576,15 @@ export async function generateReportDocx({
   if (
     !omitCitations &&
     (report.documentType === "vendor_qualification" ||
-      report.documentType === "qualification_summary_report")
+      report.documentType === "qualification_summary_report" ||
+      report.documentType === "cleaning_verification_protocol")
   ) {
     const sectionKeys =
       report.documentType === "vendor_qualification"
         ? VQ_SECTION_KEYS
-        : QSR_SECTION_KEYS;
+        : report.documentType === "cleaning_verification_protocol"
+          ? CVP_SECTION_KEYS
+          : QSR_SECTION_KEYS;
     const unified = unifyReportCitationsForExport(exportSections, sectionKeys, {
       sourceIdentity: (source) =>
         threeXperCitationIdentityKey(source, exportSections),
@@ -580,9 +593,19 @@ export async function generateReportDocx({
     citationsAppendixXml = threeXperCitationsAppendixXml(unified.bibliography, {
       sections: exportSections,
       variant:
-        report.documentType === "vendor_qualification" ? "vq" : "qsr",
+        report.documentType === "vendor_qualification"
+          ? "vq"
+          : report.documentType === "cleaning_verification_protocol"
+            ? "cvp"
+            : "qsr",
     });
   }
+  exportSections = await Promise.all(
+    exportSections.map(async (row) => ({
+      ...row,
+      content: await flattenDrawingsInValue(row.content),
+    }))
+  );
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
       report,
@@ -598,7 +621,8 @@ export async function generateReportDocx({
     report.documentType === "equipment_lifecycle_report" ||
     report.documentType === "vendor_qualification" ||
     report.documentType === "failure_investigation_report" ||
-    report.documentType === "qualification_summary_report"
+    report.documentType === "qualification_summary_report" ||
+    report.documentType === "cleaning_verification_protocol"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,
@@ -622,7 +646,10 @@ export async function generateReportDocx({
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const pageSetup = loadDocxPageSetupFromZip(zip);
-  const ctx = createDocxExportContext(numberingBases, undefined, { pageSetup });
+  const ctx = createDocxExportContext(numberingBases, undefined, {
+    pageSetup,
+    nextImageIndex: nextUnusedImageIndexFromZip(zip),
+  });
   const data = buildTemplateData(report, exportSections, ctx, comments);
   const signatureSnapshot = signatureSnapshotFromSection(
     data._signatureApprovals as SignatureApprovalsSection
@@ -687,6 +714,7 @@ async function generateGenericDocumentDocx({
   const ctx = createDocxExportContext(numberingBases, undefined, {
     useHeadingStyles: true,
     pageSetup,
+    nextImageIndex: nextUnusedImageIndexFromZip(zip),
   });
   const bodyRow = sections.find((row) => row.section === GENERIC_DOCUMENT_SECTION);
   const merged = mergeSectionForType(
@@ -757,10 +785,18 @@ async function generateDesignVerificationDocx({
       ? MJ_FIR_DOCX_RUN_STYLE
       : documentType === "qualification_summary_report"
         ? QSR_DOCX_RUN_STYLE
-        : pack.id === "convergent"
-        ? CONVERGENT_DOCX_RUN_STYLE
-        : undefined,
-    { pageSetup }
+        : documentType === "cleaning_verification_protocol"
+          ? CVP_DOCX_RUN_STYLE
+          : documentType === "vendor_qualification"
+            ? VQ_DOCX_RUN_STYLE
+            : pack.id === "convergent"
+              ? CONVERGENT_DOCX_RUN_STYLE
+              : undefined,
+    {
+      pageSetup,
+      useHeadingStyles: documentType === "cleaning_verification_protocol",
+      nextImageIndex: nextUnusedImageIndexFromZip(zip),
+    }
   );
   const def = getDocumentType(documentType);
   const mergedSections = sections.map((row) => ({
@@ -803,7 +839,9 @@ async function generateDesignVerificationDocx({
           }
         : isElrLandscapeTable
           ? { forceLandscapeTables: true }
-          : undefined
+          : documentType === "cleaning_verification_protocol"
+            ? { preserveHeadings: true }
+            : undefined
     );
   }
 

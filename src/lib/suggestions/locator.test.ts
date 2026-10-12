@@ -42,8 +42,7 @@ describe("locator — flattenForAnchor", () => {
     const { text } = flattenForAnchor(doc);
     expect(text).not.toContain("[equation]");
     expect(text).not.toContain("[image]");
-    // Atom contributes one space; surrounding text may already have spaces.
-    expect(text.replace(/\s+/g, " ").trim()).toBe("See for the assay.");
+    expect(text).toBe("See $x=1$ for the assay.");
   });
 
   it("emits no markdown pipes for tables", () => {
@@ -177,10 +176,9 @@ describe("locator — locateEdit / probe", () => {
       insertText: " (Eq. 1)",
     };
     expect(probeRichEdit(doc, edit)).toBe("not_found");
-    // Canonical anchor (whitespace for atom) does locate:
     expect(
       probeRichEdit(doc, {
-        anchorText: "See  for",
+        anchorText: "See $equation$ for",
         deleteText: "",
         insertText: " (Eq. 1)",
       })
@@ -632,6 +630,33 @@ describe("locator — scoped edits", () => {
     expect(heading?.content?.[0]?.text).toBe("Methods");
     expect(heading?.content?.[0]?.marks?.some((m) => m.type === "bold")).toBe(true);
     expect(flattenForAnchor(out).text).not.toContain("##");
+  });
+
+  it("replaces heading text when insert is an ATX line inside that heading", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 Equipment name (Equipment No.)" }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyAndAcceptRichEdit(
+      doc,
+      ATTRS.id,
+      {
+        anchorText: "15.1 Equipment name (Equipment No.)",
+        deleteText: "15.1 Equipment name (Equipment No.)",
+        insertText: "## 15.1 Glass Lined Reactor (GLR-1302)",
+      }
+    );
+    expect(status).toBe("located");
+    expect(out.content?.[0]?.type).toBe("heading");
+    expect(flattenForAnchor(out).text.trim()).toBe(
+      "15.1 Glass Lined Reactor (GLR-1302)"
+    );
   });
 
   it("adds a bullet onto an existing list of the same kind", () => {

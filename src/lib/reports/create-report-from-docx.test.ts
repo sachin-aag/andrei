@@ -65,4 +65,20 @@ describe("create-report-from-docx", () => {
       })
     ).toEqual(new Set(["body"]));
   });
+
+  it("seeds CVP Word sections and snapshots only those keys", () => {
+    const objective = {
+      narrative: { type: "doc", content: [{ type: "paragraph" }] },
+    };
+    const rows = sectionRowsForCreate("cleaning_verification_protocol", null, null, {
+      cvp_objective: objective,
+    });
+    expect(rows.find((row) => row.section === "cvp_objective")?.content).toEqual(
+      objective
+    );
+    expect(rows.find((row) => row.section === "cvp_scope")?.content).toBeDefined();
+    expect(
+      sectionKeysToSnapshotOnCreate(null, null, { cvp_objective: objective })
+    ).toEqual(new Set(["cvp_objective"]));
+  });
 });

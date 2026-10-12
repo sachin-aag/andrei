@@ -7,6 +7,9 @@ import { reports } from "@/db/schema";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import {
   CONVERGENT_DOCX_RUN_STYLE,
+  CVP_DOCX_RUN_STYLE,
+  QSR_DOCX_RUN_STYLE,
+  VQ_DOCX_RUN_STYLE,
   createDocxExportContext,
 } from "@/lib/export/docx-export-context";
 import { generateReportDocx } from "@/lib/export/generate-docx";
@@ -34,6 +37,13 @@ function exportCtx() {
   return createDocxExportContext(loadListNumberingBasesFromZip(zip));
 }
 
+function listItem(text: string): JSONContent {
+  return {
+    type: "listItem",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  };
+}
+
 function textCell(
   type: "tableCell" | "tableHeader",
   text: string,
@@ -46,9 +56,10 @@ function textCell(
   };
 }
 
-function nColTable(columnCount: number): JSONContent {
+function nColTable(columnCount: number, colWidths?: number[]): JSONContent {
   return {
     type: "table",
+    attrs: colWidths ? { colWidths } : undefined,
     content: [
       {
         type: "tableRow",
@@ -62,6 +73,10 @@ function nColTable(columnCount: number): JSONContent {
 
 function tableRows(xml: string): string[] {
   return [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((match) => match[0]);
+}
+
+function firstTblPr(xml: string): string {
+  return xml.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
 }
 
 /**
@@ -653,6 +668,7 @@ describe("narrativeToDocxXml tables", () => {
 
     const xml = narrativeToDocxXml(doc);
     expect(xml).toContain('<w:tblW w:w="2000" w:type="dxa"/>');
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
     expect(xml).toContain('<w:gridCol w:w="800"/>');
     expect(xml).toContain('<w:gridCol w:w="1200"/>');
   });
@@ -771,6 +787,14 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).not.toContain('w:orient="landscape"');
   });
 
+  it("does not rotate a 7-column table onto a landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [nColTable(7)],
+    });
+    expect(xml).not.toContain('w:orient="landscape"');
+  });
+
   it("forceLandscapeTables rotates a 4-column table onto a landscape page", () => {
     const xml = narrativeToDocxXml(
       {
@@ -820,10 +844,10 @@ describe("narrativeToDocxXml tables", () => {
     expect(landscapeAt).toBeGreaterThan(footnoteAt);
   });
 
-  it("puts a many-column table on a landscape section and uses the landscape content band", () => {
+  it("puts an 8-column table on a landscape section and uses the landscape content band", () => {
     const xml = narrativeToDocxXml({
       type: "doc",
-      content: [nColTable(19)],
+      content: [nColTable(8)],
     });
 
     expect(xml).toContain('w:orient="landscape"');
@@ -837,21 +861,103 @@ describe("narrativeToDocxXml tables", () => {
     const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
       parseInt(m[1]!, 10)
     );
-    expect(cols).toHaveLength(19);
+    expect(cols).toHaveLength(8);
     const sum = cols.reduce((a, b) => a + b, 0);
     expect(sum).toBeGreaterThan(10469);
     expect(sum).toBeLessThanOrEqual(15394);
   });
 
+  it("stretches stored 8-column widths to the landscape content band", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        nColTable(8, [460, 1172, 1172, 983, 915, 1407, 1595, 2178]),
+      ],
+    });
+    expect(xml).toContain('w:orient="landscape"');
+    const innerMatch = xml.match(/<w:tbl>[\s\S]*?(<w:tbl>[\s\S]*?<\/w:tbl>)/);
+    const innerXml = innerMatch?.[1] ?? "";
+    const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    expect(cols).toHaveLength(8);
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(sum).toBe(15394);
+  });
+
   it("keeps consecutive wide tables in one landscape section", () => {
     const xml = narrativeToDocxXml({
       type: "doc",
-      content: [nColTable(15), nColTable(16)],
+      content: [nColTable(8), nColTable(9)],
     });
     const landscapeBreaks = xml.match(/w:orient="landscape"/g) ?? [];
     expect(landscapeBreaks).toHaveLength(1);
     expect(xml).toContain("C1");
-    expect(xml).toContain("C16");
+    expect(xml).toContain("C9");
+  });
+
+  it("inserts a paragraph between consecutive tables so Word does not join them", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE);
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [nColTable(3), nColTable(6)],
+      },
+      ctx
+    ).xml;
+    expect(xml).toMatch(/<\/w:tbl><w:p>[\s\S]*?<\/w:p><w:tbl>/);
+    expect(xml.match(/<w:tbl>/g)).toHaveLength(2);
+  });
+
+  it("keeps an all-empty table row instead of vMerging it into the location above", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE);
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "Location"),
+                  textCell("tableHeader", "ID"),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", "Shell wall Level 3 (S-10d)"),
+                  textCell("tableCell", "S-10d"),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", ""),
+                  textCell("tableCell", ""),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", "Limit"),
+                  textCell("tableCell", ""),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    expect(xml).not.toContain("<w:vMerge");
+    const shellAt = xml.indexOf("Shell wall Level 3");
+    const limitAt = xml.indexOf("Limit");
+    expect(shellAt).toBeGreaterThan(-1);
+    expect(limitAt).toBeGreaterThan(shellAt);
+    expect(xml.slice(shellAt, limitAt)).toMatch(/<\/w:tr><w:tr>/);
   });
 
   it("returns to portrait after a wide table so following paragraphs stay upright", () => {
@@ -859,7 +965,7 @@ describe("narrativeToDocxXml tables", () => {
       type: "doc",
       content: [
         { type: "paragraph", content: [{ type: "text", text: "Before" }] },
-        nColTable(15),
+        nColTable(8),
         { type: "paragraph", content: [{ type: "text", text: "After" }] },
       ],
     });
@@ -888,7 +994,7 @@ describe("narrativeToDocxXml tables", () => {
             },
           ],
         },
-        nColTable(15),
+        nColTable(8),
       ],
     });
     const assessmentAt = xml.indexOf("Assessment stays portrait");
@@ -917,7 +1023,7 @@ describe("narrativeToDocxXml tables", () => {
           type: "paragraph",
           content: [{ type: "text", text: "Associated instruments" }],
         },
-        nColTable(16),
+        nColTable(8),
       ],
     });
     const breakAt = xml.indexOf("<w:sectPr>");
@@ -942,7 +1048,7 @@ describe("narrativeToDocxXml tables", () => {
             },
           ],
         },
-        nColTable(15),
+        nColTable(8),
       ],
     });
     const assessmentAt = xml.indexOf("Nine qualification stages");
@@ -996,6 +1102,100 @@ describe("narrativeToDocxXml tables", () => {
     expect(narrativeToDocxXml(doc)).toContain('<w:gridSpan w:val="2"/>');
   });
 
+  it("exports bullet and ordered lists inside a table cell", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Department"),
+                textCell("tableHeader", "Responsibility"),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableCell", "Quality Assurance"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      attrs: { listStyle: "dash" },
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                {
+                                  type: "text",
+                                  text: "Preparation and review of the protocol.",
+                                },
+                              ],
+                            },
+                          ],
+                        },
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Collection of swab samples." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      type: "orderedList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Submit the samples to QC." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const bulletNumId = ctx.allocatedNumIds[0];
+    const orderedNumId = ctx.allocatedNumIds[1];
+    const cellStart = xml.indexOf("Preparation and review of the protocol.");
+    const cellXml = xml.slice(
+      xml.lastIndexOf("<w:tc>", cellStart),
+      xml.indexOf("</w:tc>", cellStart)
+    );
+
+    expect(cellXml).toContain("Preparation and review of the protocol.");
+    expect(cellXml).toContain("Collection of swab samples.");
+    expect(cellXml).toContain("Submit the samples to QC.");
+    expect(cellXml.match(new RegExp(`<w:numId w:val="${bulletNumId}"/>`, "g"))).toHaveLength(2);
+    expect(cellXml).toContain(`<w:numId w:val="${orderedNumId}"/>`);
+  });
+
   it("emits Word numbering for dash and ordered lists", () => {
     const ctx = exportCtx();
     const doc: JSONContent = {
@@ -1043,7 +1243,121 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("Numbered item");
   });
 
-  it("allocates a fresh numId per ordered list block", () => {
+  it("reuses one numId so a split ordered list continues 3 after 2", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          content: [
+            listItem("Execution of Cleaning"),
+            listItem("Drying & Visual Inspection"),
+          ],
+        },
+        {
+          type: "bulletList",
+          content: [
+            listItem("Dry the equipment."),
+            listItem("Visually inspect the interior."),
+          ],
+        },
+        {
+          type: "orderedList",
+          content: [
+            listItem("Swabable Sampling"),
+            listItem("Final Rinse Sampling"),
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const orderedNumId = ctx.allocatedNumIds[0];
+    expect(orderedNumId).toBeDefined();
+    expect(xml.match(new RegExp(`<w:numId w:val="${orderedNumId}"/>`, "g"))).toHaveLength(4);
+    expect(ctx.numberingPatches.filter((patch) => patch.includes(`w:numId="${orderedNumId}"`))).toHaveLength(1);
+    expect(xml).toContain("Swabable Sampling");
+  });
+
+  it("continues numbering across body paragraphs and nested bullets", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Calculation Methodology:" }],
+        },
+        {
+          type: "orderedList",
+          content: [listItem("Calculation based on Rinse Factor (RF):")],
+        },
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The Rinse Factor (RF) typically ranges between 1–10 L/m².",
+            },
+          ],
+        },
+        {
+          type: "bulletList",
+          content: [
+            listItem("1–3 L/m² for easily soluble residues"),
+            listItem("3–5 L/m² for moderately soluble residues"),
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "An RF of 3 L/m² is applied." }],
+        },
+        {
+          type: "orderedList",
+          content: [listItem("Calculation based on Solvent Adherence Factor (SAF):")],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const orderedNumId = ctx.allocatedNumIds[0];
+    expect(orderedNumId).toBeDefined();
+    expect(xml.match(new RegExp(`<w:numId w:val="${orderedNumId}"/>`, "g"))).toHaveLength(2);
+    expect(xml).toContain("Calculation based on Solvent Adherence Factor (SAF):");
+  });
+
+  it("allocates a fresh numId after a heading so a new list restarts at 1", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          content: [listItem("Define one")],
+        },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Measure" }],
+        },
+        {
+          type: "orderedList",
+          content: [listItem("Measure one")],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const [defineNumId, measureNumId] = ctx.allocatedNumIds;
+    expect(defineNumId).toBeDefined();
+    expect(measureNumId).toBeDefined();
+    expect(defineNumId).not.toBe(measureNumId);
+    expect(xml).toContain(`<w:numId w:val="${defineNumId}"/>`);
+    expect(xml).toContain(`<w:numId w:val="${measureNumId}"/>`);
+  });
+
+  it("nests a same-type ordered list at the next numbering level", () => {
     const ctx = exportCtx();
     const doc: JSONContent = {
       type: "doc",
@@ -1056,21 +1370,21 @@ describe("narrativeToDocxXml tables", () => {
               content: [
                 {
                   type: "paragraph",
-                  content: [{ type: "text", text: "Define one" }],
+                  content: [{ type: "text", text: "Parent" }],
                 },
-              ],
-            },
-          ],
-        },
-        {
-          type: "orderedList",
-          content: [
-            {
-              type: "listItem",
-              content: [
                 {
-                  type: "paragraph",
-                  content: [{ type: "text", text: "Measure one" }],
+                  type: "orderedList",
+                  content: [
+                    {
+                      type: "listItem",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "Child" }],
+                        },
+                      ],
+                    },
+                  ],
                 },
               ],
             },
@@ -1078,14 +1392,238 @@ describe("narrativeToDocxXml tables", () => {
         },
       ],
     };
-
     const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
-    const [defineNumId, measureNumId] = ctx.allocatedNumIds;
-    expect(defineNumId).toBeDefined();
-    expect(measureNumId).toBeDefined();
-    expect(defineNumId).not.toBe(measureNumId);
-    expect(xml).toContain(`<w:numId w:val="${defineNumId}"/>`);
-    expect(xml).toContain(`<w:numId w:val="${measureNumId}"/>`);
+    expect(ctx.allocatedNumIds).toHaveLength(1);
+    const numId = ctx.allocatedNumIds[0]!;
+    expect(xml).toContain(
+      `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>`
+    );
+    expect(xml).toContain(
+      `<w:numPr><w:ilvl w:val="1"/><w:numId w:val="${numId}"/></w:numPr>`
+    );
+  });
+
+  it("uses TableParagraph bullets and drops Table N. captions for CVP", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Table 2. Responsibilities" }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "15.1 Mixed Vessel (MV-1304)" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Sampling follows the cited pages [1]." }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Department"),
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "bulletList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [
+                                { type: "text", text: "Prepare the protocol." },
+                              ],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    expect(xml).not.toContain("Table 2. Responsibilities");
+    expect(xml).toContain("MIXED VESSEL (MV-1304)");
+    expect(xml).toContain('<w:pStyle w:val="Heading1"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(xml).toContain('<w:pStyle w:val="TableParagraph"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="ListParagraph"/>');
+    expect(xml).toContain("Sampling follows the cited pages.");
+    expect(xml).not.toContain("[1]");
+    expect(xml).toContain('<w:pStyle w:val="BodyText"/>');
+    expect(xml).toContain('w:line="360"');
+    expect(xml).toContain("<w:widowControl/>");
+  });
+
+  it("uses source protocol column widths and dxa table width for CVP", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "Function"),
+                  textCell("tableHeader", "Department"),
+                  textCell("tableHeader", "Name"),
+                  textCell("tableHeader", "Designation"),
+                  textCell("tableHeader", "Sign & date"),
+                ],
+              },
+            ],
+          },
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "S. No"),
+                  textCell("tableHeader", "Surface Type"),
+                  textCell("tableHeader", "WAF (L/m²)"),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
+    expect(xml).toContain('<w:gridCol w:w="1524"/>');
+    expect(xml).toContain('<w:gridCol w:w="2340"/>');
+    expect(xml).toContain('<w:gridCol w:w="2225"/>');
+    expect(xml).toContain('<w:gridCol w:w="2020"/>');
+    expect(xml).toContain('<w:gridCol w:w="1773"/>');
+    expect(xml).toContain('<w:tblW w:w="9882" w:type="dxa"/>');
+    expect(xml).toContain('<w:gridCol w:w="838"/>');
+    expect(xml).toContain('<w:gridCol w:w="3251"/>');
+    expect(xml).toContain('<w:gridCol w:w="1996"/>');
+    expect(xml).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    expect(xml).toContain('w:fill="FFFF00"');
+    expect(xml).not.toContain('w:fill="D9D9D9"');
+    expect(xml).toContain('<w:jc w:val="center"/>');
+  });
+
+  it("centers 3xper narrative tables and uses TableGrid print chrome", () => {
+    const ctx = createDocxExportContext(undefined, CVP_DOCX_RUN_STYLE, {
+      useHeadingStyles: true,
+    });
+    const xml = narrativeToDocxXmlWithContext(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Worst-case surface factor." }],
+          },
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableHeader", "S. No"),
+                  textCell("tableHeader", "Surface Type"),
+                  textCell("tableHeader", "WAF (L/m²)"),
+                ],
+              },
+              {
+                type: "tableRow",
+                content: [
+                  textCell("tableCell", "1"),
+                  textCell("tableCell", "Polished Stainless Steel"),
+                  textCell("tableCell", "0.1-0.3"),
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    ).xml;
+    const tblPr = firstTblPr(xml);
+    expect(tblPr).toContain('<w:jc w:val="center"/>');
+    expect(tblPr).toContain('<w:tblCellMar>');
+    expect(tblPr).toContain('<w:left w:w="108" w:type="dxa"/>');
+    expect(tblPr).toContain('<w:right w:w="108" w:type="dxa"/>');
+    expect(tblPr).not.toContain("<w:tblBorders>");
+    expect(tblPr).toContain('<w:tblStyle w:val="TableGrid"/>');
+    expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    const rows = tableRows(xml);
+    expect(rows[0]).toContain("<w:tblHeader/>");
+    expect(rows[0]).not.toContain("<w:cantSplit/>");
+    expect(rows[1]).not.toContain("<w:cantSplit/>");
+    expect(xml).toContain("<w:widowControl/>");
+    expect(xml).not.toMatch(/<w:tc[\s\S]*?<w:widowControl\/>/);
+  });
+
+  it("applies the same table chrome to QSR overflow and VQ narrative tables", () => {
+    for (const style of [QSR_DOCX_RUN_STYLE, VQ_DOCX_RUN_STYLE]) {
+      const xml = narrativeToDocxXmlWithContext(
+        {
+          type: "doc",
+          content: [
+            {
+              type: "table",
+              content: [
+                {
+                  type: "tableRow",
+                  content: [
+                    textCell("tableHeader", "Item"),
+                    textCell("tableHeader", "Value"),
+                  ],
+                },
+                {
+                  type: "tableRow",
+                  content: [
+                    textCell("tableCell", "A"),
+                    textCell("tableCell", "B"),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        createDocxExportContext(undefined, style)
+      ).xml;
+      const tblPr = firstTblPr(xml);
+      expect(tblPr).toContain('<w:jc w:val="center"/>');
+      expect(tblPr).toContain("<w:tblCellMar>");
+      expect(tblPr).not.toContain("<w:tblBorders>");
+      expect(tableRows(xml)[1]).not.toContain("<w:cantSplit/>");
+    }
   });
 
   it("parses plain text dash lists into numbered Word XML", () => {
@@ -1175,7 +1713,66 @@ describe("narrativeToDocxXml advanced formatting", () => {
 
     const xml = narrativeToDocxXml(doc, ctx);
     expect(xml).toContain("<w:drawing>");
+    expect(xml).not.toContain("mc:AlternateContent");
     expect(ctx.media).toHaveLength(1);
+  });
+
+  it("exports annotated figures as a Word drawing group with a picture Fallback", () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const ctx = createDocxExportContext();
+    const xml = narrativeToDocxXml(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "imageInline",
+                attrs: {
+                  src: tinyPng,
+                  width: 10,
+                  drawing: {
+                    version: 1,
+                    shapes: [
+                      {
+                        id: "a1",
+                        type: "arrow",
+                        x1: 0.1,
+                        y1: 0.2,
+                        x2: 0.8,
+                        y2: 0.7,
+                        color: "#c62828",
+                      },
+                      {
+                        id: "l1",
+                        type: "label",
+                        x: 0.02,
+                        y: 0.1,
+                        w: 0.2,
+                        h: 0.08,
+                        text: "Cursor logo",
+                        color: "#c62828",
+                      },
+                    ],
+                  },
+                  flattenedSrc: tinyPng,
+                },
+              },
+            ],
+          },
+        ],
+      },
+      ctx
+    );
+    expect(xml).toContain("mc:AlternateContent");
+    expect(xml).toContain('Requires="wpg"');
+    expect(xml).toContain("wpg:wgp");
+    expect(xml).toContain("straightConnector1");
+    expect(xml).toContain("Cursor logo");
+    expect(xml).toContain("mc:Fallback");
+    expect(ctx.media.length).toBeGreaterThanOrEqual(1);
   });
 
   it("exports tableRef as the live Table N label", () => {

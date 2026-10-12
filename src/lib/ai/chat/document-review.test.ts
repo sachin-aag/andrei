@@ -533,11 +533,14 @@ describe("pickPlanModeChatTools", () => {
       continue_document_review: { kind: "continue" },
       finish_document_review: { kind: "finish" },
       ask_user: { kind: "ask" },
+      calculate: { kind: "calc" },
+      read_analysis: { kind: "analysis" },
       draft_field: { kind: "draft" },
       propose_edit: { kind: "edit" },
       insert_image: { kind: "image" },
       plot_measurements: { kind: "chart" },
       remove_image: { kind: "image-remove" },
+      annotate_image: { kind: "image-annotate" },
       edit_table: { kind: "table" },
       draft_rtm_table: { kind: "rtm" },
     };
@@ -551,9 +554,12 @@ describe("pickPlanModeChatTools", () => {
         "list_attachments",
         "list_suggestions",
         "ask_user",
+        "calculate",
+        "read_analysis",
       ])
     );
     expect(planTools).toHaveProperty("list_suggestions");
+    expect(planTools).toHaveProperty("calculate");
     expect(planTools).toMatchObject({
       start_document_review: { kind: "start" },
       continue_document_review: { kind: "continue" },
@@ -564,6 +570,7 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("insert_image");
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
+    expect(planTools).not.toHaveProperty("annotate_image");
     expect(planTools).not.toHaveProperty("edit_table");
     expect(planTools).not.toHaveProperty("draft_rtm_table");
     expect(planTools).not.toHaveProperty("draft_identity");

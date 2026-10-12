@@ -3,6 +3,7 @@ import {
   isSupportedAttachmentFile,
   type UploadByteProgress,
 } from "@/lib/attachments/upload-pdf";
+import { UNSUPPORTED_ATTACHMENT_TYPE_MESSAGE } from "@/lib/attachments/file-types";
 import { uploadPdfResumable } from "@/lib/attachments/upload-client";
 import type { AttachmentLibraryAssetRecord } from "@/lib/attachments/library-dto";
 
@@ -71,7 +72,7 @@ export async function uploadFileToLibrary({
   onProgress?: (progress: UploadByteProgress) => void;
 }): Promise<AttachmentLibraryAssetRecord> {
   if (!isSupportedAttachmentFile(file)) {
-    throw new Error("Only PDF and Word (.docx) files are allowed");
+    throw new Error(UNSUPPORTED_ATTACHMENT_TYPE_MESSAGE);
   }
 
   const { assetId, uploadUrl } = await reserveLibraryUpload({

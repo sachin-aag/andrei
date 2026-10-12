@@ -48,7 +48,7 @@ Set on **each** project → Settings → Environment Variables → Production, P
 | **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 | **andrei-3xper** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `3xper` |
 
-**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for every customer project. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle). Add a GitHub Actions variable `NEON_PROJECT_ID_<SLUG>` and a matching matrix row when you add a pack.
+**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for every customer project. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle). When you add a pack, add its Neon project id to `CUSTOMER_NEON_PREVIEW_PROJECTS` in `src/lib/db/neon-preview-projects.ts` (GitHub `NEON_PROJECT_ID_{SLUG}` is an optional override, not required for cleanup).
 
 The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (Neon logo, branch name truncated) for that ref only. Those are not pack env. Do not hand-edit them.
 
@@ -108,7 +108,7 @@ Client chrome reads the public var. A shared `ANDREI_CUSTOMER` would paint every
 1. Create a Neon project (Postgres 16 + **pgvector**). Connect it (Vercel **Storage → Neon**) so Production `DATABASE_URL` is the **pooled** URL (no git-branch) and Preview injects `preview/<git-branch>`.
 2. Keep **Create a branch for each preview deployment** **on**. Do not hand-edit Neon-logo Preview rows.
 3. `pnpm vercel:build` runs `runPendingMigrations` (creates `workspace_users` on a fresh DB, then journal SQL one file at a time). Do **not** edit old journal files to “fix” a new customer. Do **not** run `pnpm db:ensure-workspace-users` against Neon HTTP from local Docker.
-4. GitHub **Settings → Secrets and variables → Actions**: add variable `NEON_PROJECT_ID_{SLUG}` (Neon project id). Add a matrix row with that var to `.github/workflows/neon-preview-cleanup.yml` and `neon-preview-stale-cleanup.yml` (copy the `3xper` row). Unset vars are skipped.
+4. Add `{slug}` and its Neon project id to `CUSTOMER_NEON_PREVIEW_PROJECTS` in `src/lib/db/neon-preview-projects.ts`. Optionally set GitHub Actions variable `NEON_PROJECT_ID_{SLUG}` as an override. Do not rely on that variable being present — unset vars used to skip 3xper cleanup.
 
 ### 4. Auth
 

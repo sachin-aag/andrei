@@ -155,6 +155,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("read_document_page");
     expect(prepared?.activeTools).toContain("document_outline");
     expect(prepared?.activeTools).toContain("scan_attachments");
+    expect(prepared?.activeTools).toContain("calculate");
     expect(prepared?.activeTools).toContain("write_column");
     expect(prepared?.activeTools).toContain("manage_worksheet");
     expect(prepared?.activeTools).toContain("run_one_way_anova");

@@ -4,7 +4,7 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { QRA_PROMPT_VERSION } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { QRA_DRAFTING_GUIDANCE } from "./qra/drafting-guidance";
 import {
@@ -255,14 +255,14 @@ function mergeNarrative(raw: unknown, key: QraSectionKey) {
   const base = EMPTY_QRA_CONTENT[key] as { narrative: unknown };
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown };
-  return { narrative: normalizeRichField(o.narrative ?? base.narrative) };
+  return { narrative: mergeStoredRichField(o, "narrative", base.narrative) };
 }
 
 function mergeTable(raw: unknown, key: QraSectionKey) {
   const base = EMPTY_QRA_CONTENT[key] as { table: unknown };
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { table?: unknown };
-  return { table: normalizeRichField(o.table ?? base.table) };
+  return { table: mergeStoredRichField(o, "table", base.table) };
 }
 
 function mergeNarrativeTable(raw: unknown, key: QraSectionKey) {
@@ -273,8 +273,8 @@ function mergeNarrativeTable(raw: unknown, key: QraSectionKey) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown; table?: unknown };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
   };
 }
 
@@ -287,7 +287,7 @@ function mergeApproach(raw: unknown) {
     scopeDefined: o.scopeDefined ?? base.scopeDefined,
     scopeNarrow: o.scopeNarrow ?? base.scopeNarrow,
     assessmentMode: o.assessmentMode ?? base.assessmentMode,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 
@@ -297,7 +297,7 @@ function mergePeriodic(raw: unknown) {
   const o = raw as Partial<typeof base>;
   return {
     applicable: o.applicable ?? base.applicable,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 

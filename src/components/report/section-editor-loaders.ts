@@ -59,6 +59,10 @@ function loadSectionEditorsUncached(
       return import("./sections/qsr/qsr-section-editors").then(
         (mod) => mod.QSR_SECTION_EDITORS
       );
+    case "cleaning_verification_protocol":
+      return import("./sections/cvp/cvp-section-editors").then(
+        (mod) => mod.CVP_SECTION_EDITORS
+      );
     default: {
       const exhaustive: never = documentType;
       throw new Error(`Unknown document type: ${exhaustive}`);

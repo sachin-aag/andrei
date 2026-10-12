@@ -4,6 +4,7 @@ import { browserOriginFromRequest } from "@/lib/attachments/browser-origin";
 import {
   canonicalAttachmentMime,
   resolveAttachmentKind,
+  UNSUPPORTED_ATTACHMENT_TYPE_MESSAGE,
 } from "@/lib/attachments/file-types";
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
@@ -46,7 +47,7 @@ export async function POST(
   const kind = resolveAttachmentKind({ filename, mimeType });
   if (!kind) {
     return NextResponse.json(
-      { error: "Only PDF and Word (.docx) files are allowed" },
+      { error: UNSUPPORTED_ATTACHMENT_TYPE_MESSAGE },
       { status: 400 }
     );
   }

@@ -40,6 +40,11 @@ import {
   GenericDocxImportError,
   type GenericImportedDocument,
 } from "@/lib/import/docx-to-generic-document";
+import {
+  docxBufferToImportedCvp,
+  type ImportedCvpDocument,
+} from "@/lib/import/docx-to-cvp";
+import { CVP_DEFAULT_METADATA } from "@/lib/document-types/cvp/sections";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 import {
   flushLangfuseTraces,
@@ -163,6 +168,7 @@ function wordImportDocumentTypeError(documentType: DocumentType): string | null 
       return "Word import is not supported for this document type.";
     case "investigation":
     case "generic_body":
+    case "cleaning_verification_protocol":
       return null;
     default: {
       const exhaustive: never = kind;
@@ -190,6 +196,7 @@ export async function POST(req: Request) {
     let assignedManagerIds: string[];
     let importedContent: ImportedReportContent | null = null;
     let genericImported: GenericImportedDocument | null = null;
+    let cvpImported: ImportedCvpDocument | null = null;
     let sourceUpload: { buffer: Buffer; filename: string } | null = null;
     let preload = false;
     let templateId: string | undefined;
@@ -238,6 +245,7 @@ export async function POST(req: Request) {
                 async (): Promise<{
                   importedContent: ImportedReportContent | null;
                   genericImported: GenericImportedDocument | null;
+                  cvpImported: ImportedCvpDocument | null;
                 }> => {
                   setRouteObservationIO({
                     input: { documentType, filename: file.name },
@@ -247,14 +255,26 @@ export async function POST(req: Request) {
                       return {
                         importedContent: await docxBufferToImportedReportContent(buf),
                         genericImported: null,
+                        cvpImported: null,
                       };
                     case "generic_body":
                       return {
                         importedContent: null,
                         genericImported: await docxBufferToGenericDocument(buf),
+                        cvpImported: null,
+                      };
+                    case "cleaning_verification_protocol":
+                      return {
+                        importedContent: null,
+                        genericImported: null,
+                        cvpImported: await docxBufferToImportedCvp(buf),
                       };
                     case "none":
-                      return { importedContent: null, genericImported: null };
+                      return {
+                        importedContent: null,
+                        genericImported: null,
+                        cvpImported: null,
+                      };
                     default: {
                       const exhaustive: never = kind;
                       return exhaustive;
@@ -265,6 +285,7 @@ export async function POST(req: Request) {
           );
           importedContent = parsed.importedContent;
           genericImported = parsed.genericImported;
+          cvpImported = parsed.cvpImported;
           if (kind === "none") {
             return NextResponse.json(
               { error: "Word import is not supported for this document type." },
@@ -329,7 +350,7 @@ export async function POST(req: Request) {
     }
 
     if (preload) {
-      if (importedContent || genericImported || sourceUpload) {
+      if (importedContent || genericImported || cvpImported || sourceUpload) {
         return NextResponse.json(
           { error: "Word import cannot be preloaded" },
           { status: 400 }
@@ -388,6 +409,13 @@ export async function POST(req: Request) {
               importWarnings: genericImported.warnings,
               importedFromFilename: sourceUpload?.filename,
             }
+          : cvpImported
+            ? {
+                ...CVP_DEFAULT_METADATA,
+                ...cvpImported.metadata,
+                importWarnings: cvpImported.warnings,
+                importedFromFilename: sourceUpload?.filename,
+              }
           : def.defaultMetadata;
     const metadata = template
       ? { ...baseMetadata, ...demoTemplateMetadata(template) }
@@ -425,7 +453,8 @@ export async function POST(req: Request) {
       sectionRowsForCreate(
         documentType,
         importedContent,
-        genericBody
+        genericBody,
+        cvpImported?.sections ?? null
       ).map((row) => ({
         reportId: report.id,
         section: row.section,
@@ -473,7 +502,8 @@ export async function POST(req: Request) {
 
     const snapshotKeys = sectionKeysToSnapshotOnCreate(
       importedContent,
-      genericBody
+      genericBody,
+      cvpImported?.sections ?? null
     );
     if (snapshotKeys.size > 0) {
       const sectionRows = await db

@@ -20,6 +20,10 @@ import {
   tableRefDisplayText,
 } from "@/lib/tiptap/table-ref-markdown";
 import {
+  isMathAtomNode,
+  mathAtomDisplayText,
+} from "@/lib/tiptap/math-anchor";
+import {
   collapseWhitespace,
   normalizeUnicodeForAnchor,
 } from "@/lib/text/normalize-for-anchor";
@@ -58,8 +62,10 @@ import {
  *  - each text node contributes its characters verbatim;
  *  - a tableRef atom contributes its display label ("Table N" / "the table")
  *    and is locatable as one slice (the atom cannot be split);
+ *  - a mathInline / mathBlock atom contributes `$latex$` (or `$equation$`
+ *    when LaTeX is missing) and is locatable as one slice;
  *  - a single "\n" between block-level siblings;
- *  - a single " " for each other inline atom (image, equation);
+ *  - a single " " for each other inline atom (image);
  *  - NO markdown pipes, NO list numbers, NO "[equation]" / "[image]" tokens.
  */
 
@@ -224,7 +230,7 @@ const BLOCK_SEPARATOR_TYPES = new Set([
   "codeBlock",
 ]);
 
-const INLINE_ATOM_TYPES = new Set(["imageInline", "mathInline", "mathBlock"]);
+const INLINE_ATOM_TYPES = new Set(["imageInline"]);
 
 /**
  * Build an exact collapsed-whitespace → raw-index map.
@@ -458,8 +464,10 @@ export function flattenForAnchor(doc: JSONContent): AnchorIndex {
       return;
     }
 
-    if (isTableRefNode(node)) {
-      const label = tableRefDisplayText(tableRefAttrsFromNode(node));
+    if (isTableRefNode(node) || isMathAtomNode(node)) {
+      const label = isMathAtomNode(node)
+        ? mathAtomDisplayText(node)
+        : tableRefDisplayText(tableRefAttrsFromNode(node));
       const start = flat.length;
       flat += label;
       if (parentArr) {
@@ -794,7 +802,7 @@ export function topLevelIndexAfterAnchor(
 ): { status: "ok"; index: number } | { status: "not_found" | "ambiguous" } {
   const index = flattenForAnchor(doc);
   const located = locateEdit(index.text, {
-    anchorText: afterAnchor,
+    anchorText: afterAnchor.replace(/^#+\s*/, "").trim() || afterAnchor,
     deleteText: "",
     insertText: "x",
   });
@@ -917,7 +925,50 @@ function nodeHasMark(
 }
 
 function isSuggestionMarkHost(node: JSONContent): boolean {
-  return node.type === "text" || isTableRefNode(node);
+  return node.type === "text" || isTableRefNode(node) || isMathAtomNode(node);
+}
+
+function isIndivisibleSuggestionAtom(node: JSONContent): boolean {
+  return isTableRefNode(node) || isMathAtomNode(node);
+}
+
+/** Block-level atoms cannot host inline text/image siblings. */
+function sliceNeedsBlockWrap(ref: TextSlice): boolean {
+  return ref.node.type === "mathBlock";
+}
+
+function insertNodesAfterSlice(
+  ref: TextSlice,
+  nodes: JSONContent[]
+): TextSlice {
+  if (nodes.length === 0) return ref;
+  const wrap = sliceNeedsBlockWrap(ref);
+  const payload = wrap
+    ? [{ type: "paragraph" as const, content: nodes }]
+    : nodes;
+  if (ref.indexInParent >= 0) {
+    ref.parentArr.splice(ref.indexInParent + 1, 0, ...payload);
+  } else {
+    ref.parentArr.splice(0, 0, ...payload);
+  }
+  if (wrap) {
+    const at = ref.indexInParent >= 0 ? ref.indexInParent + 1 : 0;
+    const para = ref.parentArr[at]!;
+    const last = para.content![para.content!.length - 1]!;
+    return {
+      ...ref,
+      node: last,
+      parentArr: para.content ?? [],
+      indexInParent: (para.content?.length ?? 1) - 1,
+    };
+  }
+  const last = nodes[nodes.length - 1]!;
+  const idx = ref.parentArr.indexOf(last);
+  return {
+    ...ref,
+    node: last,
+    indexInParent: idx >= 0 ? idx : ref.indexInParent,
+  };
 }
 
 function splitTextNodeForDelete(
@@ -930,8 +981,8 @@ function splitTextNodeForDelete(
     type: suggestionDeleteMarkName,
     attrs: { ...attrs },
   };
-  if (isTableRefNode(ref.node)) {
-    // Atoms are indivisible: any overlap paints the whole REF.
+  if (isIndivisibleSuggestionAtom(ref.node)) {
+    // Atoms are indivisible: any overlap paints the whole node.
     if (localStart >= localEnd) return;
     if (nodeHasMark(ref.node, suggestionDeleteMarkName, attrs.id)) return;
     ref.node.marks = [...(ref.node.marks ?? []), deleteMark];
@@ -976,7 +1027,7 @@ function splitTextNodeAt(
   ref: TextSlice,
   localOffset: number
 ): TextSlice {
-  if (isTableRefNode(ref.node)) {
+  if (isIndivisibleSuggestionAtom(ref.node)) {
     if (localOffset <= 0) {
       return {
         ...ref,
@@ -1048,14 +1099,8 @@ function insertAfterRef(
   if (insertedNodes.length === 0) return null;
   const insertedNode = insertedNodes[insertedNodes.length - 1]!;
 
-  if (insertAfter && insertAfter.indexInParent >= 0) {
-    insertAfter.parentArr.splice(
-      insertAfter.indexInParent + 1,
-      0,
-      ...insertedNodes
-    );
-  } else if (insertAfter && insertAfter.indexInParent < 0) {
-    insertAfter.parentArr.splice(0, 0, ...insertedNodes);
+  if (insertAfter) {
+    insertNodesAfterSlice(insertAfter, insertedNodes);
   } else {
     const para: JSONContent = {
       type: "paragraph",
@@ -1088,12 +1133,8 @@ function insertImageAfterRef(
   beforePaired?: PairedBlockKind
 ): JSONContent {
   const node = pendingImageInlineNode(image, suggestionId);
-  if (insertAfter && insertAfter.indexInParent >= 0) {
-    insertAfter.parentArr.splice(insertAfter.indexInParent + 1, 0, node);
-    return node;
-  }
-  if (insertAfter && insertAfter.indexInParent < 0) {
-    insertAfter.parentArr.splice(0, 0, node);
+  if (insertAfter) {
+    insertNodesAfterSlice(insertAfter, [node]);
     return node;
   }
   const para: JSONContent = { type: "paragraph", content: [node] };
@@ -1173,7 +1214,7 @@ function findLastDeleteMarked(
         parentArr,
         indexInParent: idx,
         localStart: 0,
-        localEnd: isTableRefNode(node)
+        localEnd: isIndivisibleSuggestionAtom(node)
           ? 0
           : (node.text ?? "").length,
         blockId: 0,
@@ -1195,6 +1236,31 @@ function findLastDeleteMarked(
     }
   }
   return found;
+}
+
+function nodeIsInsideHeading(root: JSONContent, target: JSONContent): boolean {
+  const walk = (node: JSONContent, inside: boolean): boolean => {
+    if (node === target) return inside;
+    const next = inside || node.type === "heading";
+    return (node.content ?? []).some((child) => walk(child, next));
+  };
+  return walk(root, false);
+}
+
+/** `## Title` inside an H2 is a title rewrite, not a sibling heading block. */
+function classifySuggestionInsert(
+  insertText: string,
+  doc: JSONContent,
+  insertAfterNode: JSONContent | null
+) {
+  if (insertAfterNode && nodeIsInsideHeading(doc, insertAfterNode)) {
+    const trimmed = insertText.trim();
+    const match = /^(#{1,4})\s+(.+)$/.exec(trimmed);
+    if (match && !trimmed.includes("\n")) {
+      return { kind: "inline" as const, text: match[2]!.trim() };
+    }
+  }
+  return classifyMarkdownInsert(insertText);
 }
 
 function applySingleEditToRichDoc(
@@ -1273,7 +1339,7 @@ function applySingleEditToRichDoc(
         return { status: "empty_edit", doc: cloned };
       }
     } else {
-      const classified = classifyMarkdownInsert(raw);
+      const classified = classifySuggestionInsert(raw, cloned, null);
       if (classified.kind === "table") {
         return { status: "not_found", doc };
       }
@@ -1409,7 +1475,11 @@ function applySingleEditToRichDoc(
   }
 
   if (insertText) {
-    const classified = classifyMarkdownInsert(insertText);
+    const classified = classifySuggestionInsert(
+      insertText,
+      cloned,
+      insertAfter?.node ?? null
+    );
     if (classified.kind === "table") {
       return { status: "not_found", doc };
     }
@@ -1516,7 +1586,7 @@ function blockHasTextOutsideMark(
     if ((node.text ?? "").length === 0) return false;
     return !nodeHasMark(node, markName, markId);
   }
-  if (isTableRefNode(node)) {
+  if (isTableRefNode(node) || isMathAtomNode(node)) {
     return !nodeHasMark(node, markName, markId);
   }
   return (node.content ?? []).some((ch) =>

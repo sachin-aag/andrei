@@ -25,13 +25,28 @@ function fileWithPath(
 }
 
 describe("library folder upload scan", () => {
-  it("keeps nested PDF and Word paths", () => {
+  it("keeps nested PDF, Word, CSV, and Excel paths", () => {
     const pdf = fileWithPath("coa.pdf", "Q1/SOP/coa.pdf");
     const scan = libraryUploadFilesFromList([pdf]);
     expect(scan.rejectedNames).toEqual([]);
     expect(scan.accepted).toHaveLength(1);
     expect(scan.accepted[0]?.relativePath).toBe("Q1/SOP/coa.pdf");
     expect(libraryUploadBatchError(scan, 0)).toBeNull();
+  });
+
+  it("accepts CSV and Excel files from a folder scan", () => {
+    const csv = fileWithPath("results.csv", "Q1/results.csv", "text/csv");
+    const xlsx = fileWithPath(
+      "book.xlsx",
+      "Q1/book.xlsx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    const scan = libraryUploadFilesFromList([csv, xlsx]);
+    expect(scan.rejectedNames).toEqual([]);
+    expect(scan.accepted.map((item) => item.file.name)).toEqual([
+      "results.csv",
+      "book.xlsx",
+    ]);
   });
 
   it("lists unsupported files without blocking accepted PDF and Word files", () => {

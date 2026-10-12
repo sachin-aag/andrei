@@ -4,7 +4,7 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { FIR_PROMPT_VERSION } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import { FIR_DRAFTING_GUIDANCE } from "./fir/drafting-guidance";
 import { FIR_EVALUATION_SYSTEM_PROMPT } from "./fir/prompts";
@@ -382,14 +382,14 @@ function mergeNarrative(raw: unknown, key: FirSectionKey) {
   const base = EMPTY_FIR_CONTENT[key] as { narrative: unknown };
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown };
-  return { narrative: normalizeRichField(o.narrative ?? base.narrative) };
+  return { narrative: mergeStoredRichField(o, "narrative", base.narrative) };
 }
 
 function mergeTable(raw: unknown, key: FirSectionKey) {
   const base = EMPTY_FIR_CONTENT[key] as { table: unknown };
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { table?: unknown };
-  return { table: normalizeRichField(o.table ?? base.table) };
+  return { table: mergeStoredRichField(o, "table", base.table) };
 }
 
 function mergeNarrativeTable(raw: unknown, key: FirSectionKey) {
@@ -400,8 +400,8 @@ function mergeNarrativeTable(raw: unknown, key: FirSectionKey) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown; table?: unknown };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
   };
 }
 
@@ -415,7 +415,7 @@ function mergeTools(raw: unknown) {
           (FIR_INVESTIGATION_TOOLS as readonly string[]).includes(t as string)
         )
       : [...base.tools],
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 
@@ -438,7 +438,7 @@ function mergeRootCause(raw: unknown) {
           (FIR_ROOT_CAUSE_GROUPS as readonly string[]).includes(g as string)
         )
       : [...base.groups],
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 
@@ -451,7 +451,7 @@ function mergeHumanError(raw: unknown) {
       o.applicable === "yes" || o.applicable === "no"
         ? o.applicable
         : base.applicable,
-    table: normalizeRichField(o.table ?? base.table),
+    table: mergeStoredRichField(o, "table", base.table),
   };
 }
 
@@ -464,7 +464,7 @@ function mergeImpact(raw: unknown) {
       o.resultsStatus === "final" || o.resultsStatus === "interim"
         ? o.resultsStatus
         : base.resultsStatus,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 
@@ -478,7 +478,7 @@ function mergeDisposition(raw: unknown) {
     )
       ? (o.disposition as FirBatchDisposition)
       : base.disposition,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
   };
 }
 

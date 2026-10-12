@@ -2,8 +2,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 import { seededTableDoc } from "@/lib/document-types/design-verification/sections";
+import { cvpEquipmentSamplingSeed } from "@/lib/document-types/cvp/sections";
 import { ELR_RESPONSIBILITIES_HEADERS } from "@/lib/document-types/elr/sections";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 import {
   acceptAllSuggestions,
@@ -237,6 +239,140 @@ describe("acceptAllSuggestions", () => {
 
     expect(urls.filter((url) => url.includes("/sections/define"))).toHaveLength(1);
     expect(urls.filter((url) => url.includes("/comments/"))).toHaveLength(2);
+  });
+
+  it("retries a leftover that only locates after an earlier apply", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const follow = comment("c-follow", " during CIP", "on line FL-02");
+    follow.content = JSON.stringify({
+      deleteText: "",
+      insertText: " during CIP",
+      reasoning: "depends-on-c1",
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, follow],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.appliedIds).toEqual(["c1", "c-follow"]);
+    expect(result.skippedIds).toEqual([]);
+    const landed = JSON.stringify(result.nextSection);
+    expect(landed).toContain("on line FL-02");
+    expect(landed).toContain("during CIP");
+  });
+
+  it("resolves a conflicted merge leftover so Apply all cannot loop", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const para = (text: string) => ({
+      type: "paragraph",
+      content: [{ type: "text", text }],
+    });
+    const doc = (...texts: string[]) => ({
+      type: "doc",
+      content: texts.map(para),
+    });
+    const base = doc("Intro stays.", "The assay failed at 68 percent.");
+    const retest = comment("m1", "passed after retest", "failed at 68 percent");
+    retest.content = JSON.stringify({
+      deleteText: "failed at 68 percent",
+      insertText: "passed after retest",
+      reasoning: "retest",
+      suggestionBase: base,
+      suggestionIntent: doc("Intro stays.", "The assay passed after retest."),
+    });
+    const invalid = comment(
+      "m2",
+      "is invalid and will be repeated",
+      "failed at 68 percent"
+    );
+    invalid.content = JSON.stringify({
+      deleteText: "failed at 68 percent",
+      insertText: "is invalid and will be repeated",
+      reasoning: "invalid",
+      suggestionBase: base,
+      suggestionIntent: doc(
+        "Intro stays.",
+        "The assay is invalid and will be repeated."
+      ),
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [retest, invalid],
+      sectionContent: { narrative: base },
+    });
+
+    expect(result.appliedIds).toEqual(["m1", "m2"]);
+    expect(result.skippedIds).toEqual([]);
+    expect(urls.some((url) => url.includes("/comments/m2"))).toBe(true);
+  });
+
+  it("lands a later CVP equipment heading after applying an earlier box", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const firstFill = comment(
+      "eq1",
+      "",
+      "Capacity",
+      "cvp_equipment_sampling"
+    );
+    firstFill.contentPath = "items.0";
+    firstFill.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "fill",
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [{ row: 1, col: 1, expectedText: "", insertText: "10k L" }],
+      },
+    });
+    const headingEdit = comment(
+      "eq2",
+      "Glass Lined Reactor (GLR-1302)",
+      "15.1 Equipment name (Equipment No.)",
+      "cvp_equipment_sampling"
+    );
+    headingEdit.contentPath = "items.1";
+    headingEdit.content = JSON.stringify({
+      deleteText: "15.1 Equipment name (Equipment No.)",
+      insertText: "15.1 Glass Lined Reactor (GLR-1302)",
+      reasoning: "title",
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "cvp_equipment_sampling",
+      comments: [firstFill, headingEdit],
+      sectionContent: {
+        items: [cvpEquipmentSamplingSeed(1), cvpEquipmentSamplingSeed(1)],
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["eq1", "eq2"]);
+    expect(result.skippedIds).toEqual([]);
+    expect(JSON.stringify(result.nextSection)).toContain(
+      "15.1 Glass Lined Reactor (GLR-1302)"
+    );
   });
 
   it("applies overlapping suggestions recursively against the updated doc", async () => {
@@ -497,6 +633,81 @@ describe("acceptAllSuggestions", () => {
     expect(text).toContain("Engineering");
     expect(text).toContain("Production");
     expect(text).not.toContain(suggestionInsertMarkName);
+  });
+
+  it("applies a filled-row edit_cells then insert_rows after that row", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const modify = comment("t1", "", "Revise document number", "elr_responsibilities");
+    modify.contentPath = "table";
+    modify.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "revise",
+      tableOperation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            rowKey: "Existing Qualification",
+            expectedText: "EQ-1",
+            insertText: "EQ-1-REV",
+          },
+        ],
+      },
+    });
+
+    const extraRows = comment("t2", "", "Insert the next document", "elr_responsibilities");
+    extraRows.contentPath = "table";
+    extraRows.content = JSON.stringify({
+      deleteText: "",
+      insertText: "",
+      reasoning: "insert",
+      tableOperation: {
+        kind: "insert_rows",
+        tableIndex: 0,
+        afterRow: 1,
+        afterRowKey: "Existing Qualification",
+        rows: [["Design Qualification", "DQP-1", "Run the protocol"]],
+        expectedRowAtAfter: ["Existing Qualification", "EQ-1", "Owns the protocol"],
+      },
+    });
+
+    const filled = applyTableOperation(
+      seededTableDoc([...ELR_RESPONSIBILITIES_HEADERS]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          { row: 1, col: 0, insertText: "Existing Qualification" },
+          { row: 1, col: 1, insertText: "EQ-1" },
+          { row: 1, col: 2, insertText: "Owns the protocol" },
+        ],
+      }
+    );
+    expect(filled.ok).toBe(true);
+    if (!filled.ok) return;
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "elr_responsibilities",
+      comments: [modify, extraRows],
+      sectionContent: {
+        table: filled.doc,
+      },
+    });
+
+    expect(result.appliedIds).toEqual(["t1", "t2"]);
+    expect(result.skippedIds).toEqual([]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("EQ-1-REV");
+    expect(text).toContain("Design Qualification");
+    expect(text).toContain("DQP-1");
   });
 
   it("dismisses identity edit_cells as already_present instead of applying a no-op", async () => {

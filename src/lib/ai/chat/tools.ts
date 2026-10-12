@@ -27,8 +27,16 @@ import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
+import { repairCvpEquipmentProseEdit } from "@/lib/ai/chat/cvp-equipment-prose-edit";
+import {
+  editTableBlockedByTableRoles,
+  tableRoleGuidanceForField,
+} from "@/lib/ai/chat/table-role-guidance";
+import { bindCvpEquipmentWrite } from "@/lib/ai/chat/cvp-equipment-target";
+import { isCvpEquipmentItemField } from "@/lib/document-types/cvp/equipment-item-path";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
+import { flattenForAnchor, topLevelIndexAfterAnchor } from "@/lib/suggestions/locator";
 import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
 import {
   listInlineImagesInDoc,
@@ -36,6 +44,12 @@ import {
   type SuggestionImageInsert,
   type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
+import {
+  drawingPreviewSummary,
+  layoutCalloutsLeft,
+  type DrawingCallout,
+} from "@/lib/drawings/overlay";
 import {
   countImagesInDoc,
   MAX_IMAGES_PER_SECTION,
@@ -67,6 +81,14 @@ import {
   type AnalysisEvidence,
 } from "@/lib/ai/chat/analysis-evidence";
 import {
+  CALCULATE_MAX_EXPRESSION_CHARS,
+  CALCULATE_MAX_EXPRESSIONS,
+  CALCULATE_TOOL_NAME,
+  calculateExpressions,
+  evidenceFromCalculateBatch,
+  type CalculationEvidence,
+} from "@/lib/ai/chat/calculate";
+import {
   recentAssistantMessageTexts,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
@@ -96,6 +118,7 @@ import {
   chatTargetFields,
   fieldFillState,
   isChatEditableSection,
+  listFieldTables,
   sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
@@ -140,6 +163,7 @@ import {
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
+import { compact3xperLitreVolumes } from "@/lib/document-types/3xper-volume-style";
 import { coerceElrEnumDraft } from "@/lib/document-types/elr/draft-enums";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import type { CommitEditInput } from "@/lib/suggestions/apply-commit-content";
@@ -177,7 +201,9 @@ import {
   recordBlock,
   recordLeadIn,
   takeUnusedBlock,
+  hasUnusedLeadInMatchingAnchor,
   takeUnusedLeadIn,
+  takeUnusedLeadInMatchingAnchor,
   withPairedBlock,
   withPlaceAfterLeadIn,
 } from "@/lib/suggestions/same-turn-block-pair";
@@ -285,6 +311,7 @@ import {
 } from "@/lib/attachments/retrieval";
 import { overlayNumericSignsOnReadPage } from "@/lib/attachments/overlay-stored-pages";
 import {
+  ATTACHMENT_CATALOG_FILE_KINDS,
   LIST_ATTACHMENTS_DEFAULT_LIMIT,
   LIST_ATTACHMENTS_MAX_LIMIT,
   LIST_ATTACHMENTS_NOTE_MAX,
@@ -293,6 +320,7 @@ import {
 } from "@/lib/attachments/list-catalog";
 import { listAttachmentFolders } from "@/lib/attachments/folders";
 import { listActiveAttachments } from "@/lib/attachments/list-active";
+import { loadDocumentFigure } from "@/lib/attachments/load-document-figure";
 import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
@@ -383,7 +411,11 @@ import {
   type RecommendedResultsInventory,
 } from "@/lib/ai/chat/results-inventory";
 import { parseResultsMatrix } from "@/lib/document-types/convergent/matrix-parser";
-import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
+import {
+  recentUserMessageTexts,
+  type RetrievalPolicy,
+} from "@/lib/ai/chat/retrieval-policy";
+import { isWholeFieldReplaceTurn } from "@/lib/ai/chat/already-drafted";
 
 type AgentCommitOutcome =
   | { status: "not_editable"; message: string }
@@ -442,8 +474,15 @@ export type InsertImageResult =
   | { status: "plain_field"; message: string }
   | { status: "image_not_found"; message: string }
   | { status: "available_plots"; message: string }
+  | { status: "available_figures"; message: string }
+  | {
+      status: "attachment_out_of_scope";
+      attachmentId: string;
+      message: string;
+    }
   | { status: "too_many_images"; message: string }
-  | { status: "review_incomplete"; message: string };
+  | { status: "review_incomplete"; message: string }
+  | { status: "already_present"; message: string };
 
 type ProposedSecondInput = {
   anchorText?: string;
@@ -535,6 +574,13 @@ const REVIEW_INCOMPLETE_MESSAGE =
   "Finish the document review (start_document_review → continue_document_review until coverage is complete → finish_document_review) before drafting.";
 const SEEDED_ELR_TABLE_MESSAGE =
   "This ELR evidence table is a seeded matrix. Fill it with edit_table (edit_cells / insert_rows). Do not rewrite the field with draft_field — finish_document_review findings are a sample, not the matrix.";
+function multiTableDraftFieldMessage(tableCount: number): string {
+  return (
+    `This field has ${tableCount} tables (tableIndex 0–${tableCount - 1}). ` +
+    `Fill each with edit_table — copy tableIndex and headers from read_section. ` +
+    `draft_field would collapse them into one table.`
+  );
+}
 
 function documentPageToolPayload(page: {
   attachmentId: string;
@@ -1173,6 +1219,30 @@ async function loadMergedSection(
   };
 }
 
+function bindLoadedWriteField(
+  section: SectionType,
+  requestedField: string,
+  resolvedField: string,
+  loaded: { sectionId: string; content: Record<string, unknown> },
+  preferEmptyItem = true,
+  taggedItemField?: string
+): {
+  resolvedField: string;
+  loaded: { sectionId: string; content: Record<string, unknown> };
+} {
+  const bound = bindCvpEquipmentWrite(
+    section,
+    requestedField,
+    resolvedField,
+    loaded.content,
+    { preferEmptyItem, taggedItemField }
+  );
+  return {
+    resolvedField: bound.targetField,
+    loaded: { sectionId: loaded.sectionId, content: bound.content },
+  };
+}
+
 type OpenTableRowCard = {
   suggestionId: string;
   operation: InsertRowsOperation | EditCellsOperation;
@@ -1246,6 +1316,42 @@ async function documentContentsForReport(
   return loadDocumentContentsForTableNumber({ reportId, documentType });
 }
 
+/** Map model-supplied filenames onto ready attachment IDs. Unmatched names drop. */
+function resolveRequestedReviewAttachmentIds(
+  requested: readonly string[],
+  ready: readonly { attachmentId: string; filename: string | null }[]
+): string[] {
+  const allowed = new Set(ready.map((doc) => doc.attachmentId));
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  const add = (id: string) => {
+    if (!id || seen.has(id) || !allowed.has(id)) return;
+    seen.add(id);
+    resolved.push(id);
+  };
+  for (const raw of requested) {
+    if (allowed.has(raw)) {
+      add(raw);
+      continue;
+    }
+    const needle = raw.toLowerCase();
+    if (!needle) continue;
+    const exact = ready.filter(
+      (doc) => (doc.filename ?? "").toLowerCase() === needle
+    );
+    if (exact.length === 1) {
+      add(exact[0]!.attachmentId);
+      continue;
+    }
+    const partial = ready.filter((doc) => {
+      const name = (doc.filename ?? "").toLowerCase();
+      return Boolean(name) && (name.includes(needle) || needle.includes(name));
+    });
+    if (partial.length === 1) add(partial[0]!.attachmentId);
+  }
+  return resolved;
+}
+
 function fieldSnapshotKey(section: SectionType, targetField: string): string {
   return `${section}\0${targetField}`;
 }
@@ -1261,7 +1367,23 @@ function cloneFieldValue(
   return getPlainTextFieldValue(content, targetField);
 }
 
+function canonicalFieldSnapshotText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "doc"
+  ) {
+    return flattenForAnchor(value as JSONContent).text;
+  }
+  return null;
+}
+
 function fieldValuesEqual(a: unknown, b: unknown): boolean {
+  const aText = canonicalFieldSnapshotText(a);
+  const bText = canonicalFieldSnapshotText(b);
+  if (aText != null && bText != null) return aText === bText;
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -1381,7 +1503,11 @@ function suggestionPreviewFromRow(row: {
   const preview =
     payload.insertText ||
     payload.deleteText ||
-    (payload.tableOperation ? JSON.stringify(payload.tableOperation) : "");
+    (payload.drawingOperation
+      ? drawingPreviewSummary(payload.drawingOperation.drawing)
+      : payload.tableOperation
+        ? JSON.stringify(payload.tableOperation)
+        : "");
   return preview.replace(/\s+/g, " ").trim().slice(0, 400);
 }
 
@@ -1402,6 +1528,8 @@ export function buildChatTools(opts: {
   pinnedAttachmentIds?: readonly string[];
   /** Sections the engineer tagged with @; readable even when out of scope. */
   mentionedSections?: readonly SectionType[];
+  /** Exclusive tagged 15.N path (`items.1`) when one equipment box is @-tagged. */
+  mentionedTargetField?: string;
   retrievalPolicy?: RetrievalPolicy;
   documentReview?: DocumentReviewSession;
   /** Citations at end of each field (Convergent pack, or generic documents). */
@@ -1505,6 +1633,16 @@ export function buildChatTools(opts: {
     if (fieldValuesEqual(snap, live)) return null;
     return { status: "section_changed", message: SECTION_CHANGED_MESSAGE };
   };
+  const rememberLiveSnapshot = (
+    section: SectionType,
+    targetField: string,
+    liveContent: Record<string, unknown>
+  ): { status: "section_changed"; message: string } | null => {
+    const stale = unchangedOrStale(section, targetField, liveContent);
+    if (stale) return stale;
+    captureFieldSnapshot(section, targetField, liveContent);
+    return null;
+  };
   const dismissCovered = async (args: {
     section: SectionType;
     sectionContent: Record<string, unknown>;
@@ -1577,6 +1715,12 @@ export function buildChatTools(opts: {
     }
     return analysisEvidenceCache;
   };
+  /**
+   * This-turn `calculate` results stand behind the product the same way a
+   * saved analysis stands behind Cp/Cpk. Seeded from this request only —
+   * prior assistant chat is not a keep-source.
+   */
+  const calculationFacts: CalculationEvidence[] = [];
   const sameTurnStated = new Map<string, string>();
   let tablePlaceholderLookupBounced = false;
   let overclaimBounced = false;
@@ -1775,6 +1919,7 @@ export function buildChatTools(opts: {
   const mentionedSections = (opts.mentionedSections ?? []).filter((section) =>
     isChatEditableSection(section, documentType)
   );
+  const mentionedTargetField = opts.mentionedTargetField;
   const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
   const scopeHint =
     sectionScope === "all"
@@ -1816,7 +1961,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section. Returns text, readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
+        `Read the current text of an editable section. Returns text (equations as $latex$ or $equation$), readingText ([image:N] markers), structuredText (tables[] with tableIndex and [row,col]), fillState, pendingSuggestions (open cards only), and suggestionCounts (open / approved / dismissed). Quote $latex$ from text when a span includes an equation. Call list_suggestions to inspect approved or dismissed cards.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -1916,7 +2061,7 @@ export function buildChatTools(opts: {
         const loaded = await loadMergedSection(reportId, section);
         if (!loaded) return { error: "section_not_found" as const };
 
-        const all = chatTargetFields(section);
+        const all = chatTargetFields(section, loaded.content);
         const requested =
           fields && fields.length > 0
             ? all.filter((f) => fields.includes(f.targetField))
@@ -1924,20 +2069,35 @@ export function buildChatTools(opts: {
 
         const collected: SectionInlineImage[] = [];
         const fieldResults = requested.map((f) => {
-          const chat = sectionFieldForChat(
-            loaded.content,
+          const bound = bindLoadedWriteField(
             section,
             f.targetField,
+            f.targetField,
+            loaded,
+            false
+          );
+          const content = bound.loaded.content;
+          const targetField = bound.resolvedField;
+          const chat = sectionFieldForChat(
+            content,
+            section,
+            targetField,
             collected
           );
           const trimmed = chat.text.replace(/\s+/g, " ").trim();
-          captureFieldSnapshot(section, f.targetField, loaded.content);
+          captureFieldSnapshot(section, targetField, content);
+          const tableGuidance = tableRoleGuidanceForField({
+            documentType,
+            section,
+            targetField,
+            tables: chat.tables,
+          });
           return {
-            targetField: f.targetField,
+            targetField,
             kind: f.kind,
             charCount: trimmed.length,
             isEmpty: trimmed.length === 0 && chat.imageCount === 0,
-            fillState: fieldFillState(loaded.content, section, f.targetField),
+            fillState: fieldFillState(content, section, targetField),
             /** Anchor-compatible text — quote from this for propose_edit. */
             text: chat.text,
             /** Same content with [image:N] markers for describing visuals. */
@@ -1954,6 +2114,7 @@ export function buildChatTools(opts: {
              * Present only when the field contains at least one table.
              */
             tables: chat.tables,
+            ...(tableGuidance.length > 0 ? { tableGuidance } : {}),
           };
         });
 
@@ -2147,6 +2308,31 @@ export function buildChatTools(opts: {
       },
     }),
 
+    [CALCULATE_TOOL_NAME]: tool({
+      description:
+        "Evaluate arithmetic (rinse volume SA × RF, MACO PDE × MBS / TDD, √H + 1, considered-volume rounding). Call this before writing a product, quotient, or rounded litre that is not printed on a page. Pass the numbers — no units, no variables. Unicode × ÷ − √ are ok. Then write the display result (or `expression = display` when showing the working). Do not multiply in your head.",
+      inputSchema: z.object({
+        expressions: z
+          .array(
+            z
+              .string()
+              .trim()
+              .min(1)
+              .max(CALCULATE_MAX_EXPRESSION_CHARS)
+          )
+          .min(1)
+          .max(CALCULATE_MAX_EXPRESSIONS)
+          .describe(
+            "Arithmetic expressions, e.g. ['30.96 * 3', '30.96 * 0.2 * 6', 'round(37.152)']. Substitute numbers first; drop units."
+          ),
+      }),
+      execute: async ({ expressions }) => {
+        const batch = calculateExpressions(expressions);
+        calculationFacts.push(...evidenceFromCalculateBatch(batch));
+        return batch;
+      },
+    }),
+
     read_analysis: tool({
       description:
         "Read the computed results behind a saved Analytics time series: every out-of-band run, not the shortlist in the context map. Call with no analysisId for one comparable table across every time series on this report (one row per run, oldest first) — that is the historic/batch comparison. Call with analysisId for one series in full. These are computed values: state them directly, do not re-derive them by walking instrument pages.",
@@ -2300,9 +2486,9 @@ export function buildChatTools(opts: {
             `Folder path substring (nested paths included). Use ${LIST_ATTACHMENTS_ROOT_FOLDER} for files at the tree root.`
           ),
         fileType: z
-          .enum(["pdf", "docx", "other"])
+          .enum(ATTACHMENT_CATALOG_FILE_KINDS)
           .optional()
-          .describe("Filter to PDF, Word (.docx), or anything else."),
+          .describe("Filter to PDF, Word (.docx), CSV, Excel (.xlsx), or other."),
         status: z
           .enum(["all", "ready", "not_ready"])
           .optional()
@@ -2359,7 +2545,7 @@ export function buildChatTools(opts: {
           hint:
             catalog.nextOffset != null
               ? "Call again with offset=nextOffset to continue the file list. folders[] and fileTypes[] are already complete for this filter. Totals are the Attachments tree, not search hits."
-              : "folders[] and fileTypes[] are the folder and PDF/Word counts. These totals are the Attachments tree (including still-ingesting files unless status=ready). search_documents greps page text — use it when the question is which files mention a fact inside the PDF, not for the file set.",
+              : "folders[] and fileTypes[] are the folder and PDF/Word/CSV/Excel counts. These totals are the Attachments tree (including still-ingesting files unless status=ready). search_documents greps page text — use it when the question is which files mention a fact inside a file, not for the file set.",
           trustBoundary: DOCUMENT_TRUST_BOUNDARY,
         };
       },
@@ -2521,7 +2707,10 @@ export function buildChatTools(opts: {
       execute: async ({ objective, attachmentIds }) => {
         const ready = await listReadyDocumentsForReport(reportId);
         const allowed = new Set(ready.map((doc) => doc.attachmentId));
-        const requested = (attachmentIds ?? []).map((id) => id.trim()).filter(Boolean);
+        const requested = resolveRequestedReviewAttachmentIds(
+          (attachmentIds ?? []).map((id) => id.trim()).filter(Boolean),
+          ready
+        );
         const pinnedReady = pinnedAttachmentIds.filter((id) => allowed.has(id));
         const requestedInScope =
           pinnedReady.length > 0
@@ -2710,12 +2899,14 @@ export function buildChatTools(opts: {
         deleteText: z
           .string()
           .default("")
-          .describe("Exact substring to remove (subset of anchor), or '' to only insert."),
+          .describe(
+            "Exact substring to remove (subset of anchor), or '' to only insert. To replace or remove an equation, include its `$latex$` token from text."
+          ),
         insertText: z
           .string()
           .default("")
           .describe(
-            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. Do not paste a GFM pipe table — use edit_table create_table. Table mentions are `[[table]]` (never `Table 1 [[table]]`)."
+            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. `$...$` becomes an equation (simple `$N_2$` stays as subscript). Do not paste a GFM pipe table — use edit_table create_table. Table mentions are `[[table]]` (never `Table 1 [[table]]`)."
           ),
         scope: z
           .object({
@@ -2797,8 +2988,8 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
@@ -2806,10 +2997,18 @@ export function buildChatTools(opts: {
           };
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw,
+          true,
+          mentionedTargetField
+        );
         if (
           emptyInventoryNeedsMatchingReview({
             documentType,
@@ -2825,7 +3024,7 @@ export function buildChatTools(opts: {
             message: REVIEW_INCOMPLETE_MESSAGE,
           };
         }
-        const stale = unchangedOrStale(section, resolvedField, loaded.content);
+        const stale = rememberLiveSnapshot(section, resolvedField, loaded.content);
         if (stale) return stale;
 
         const parsedScope = parseEditScope(scope);
@@ -2841,6 +3040,26 @@ export function buildChatTools(opts: {
               resolvedField
             )
           : null;
+        let editAnchorText = anchorText;
+        let editDeleteText = deleteText;
+        let editInsertText = insertText;
+        if (isCvpEquipmentItemField(resolvedField) && fieldDoc) {
+          const repaired = repairCvpEquipmentProseEdit({
+            fieldDoc,
+            fieldText,
+            edit: {
+              anchorText,
+              deleteText,
+              insertText,
+              scope: parsedScope,
+            },
+          });
+          if (repaired) {
+            editAnchorText = repaired.anchorText;
+            editDeleteText = repaired.deleteText;
+            editInsertText = repaired.insertText;
+          }
+        }
         await ensureEvidence();
         const insertGrounding = await writeGrounding(
           section,
@@ -2850,11 +3069,12 @@ export function buildChatTools(opts: {
         );
         const analysisFacts = await loadAnalysisEvidence();
         let groundedInsert = groundDraftText({
-          text: insertText,
+          text: editInsertText,
           ledger: citationLedger,
           policy: unsupportedFactPolicy,
           grounding: insertGrounding,
           analyses: analysisFacts,
+          calculations: calculationFacts,
         });
         let groundedSecond = rawSecond
           ? groundDraftText({
@@ -2863,6 +3083,7 @@ export function buildChatTools(opts: {
               policy: unsupportedFactPolicy,
               grounding: insertGrounding,
               analyses: analysisFacts,
+              calculations: calculationFacts,
             })
           : null;
         const leftoverInsert = `${groundedInsert.text}\n${groundedSecond?.text ?? ""}`;
@@ -2876,18 +3097,19 @@ export function buildChatTools(opts: {
                   ...groundedInsert.unsupported,
                   ...(groundedSecond?.unsupported ?? []),
                 ],
-                texts: [insertText, rawSecond?.insertText ?? ""].filter(
+                texts: [editInsertText, rawSecond?.insertText ?? ""].filter(
                   (text) => text.length > 0
                 ),
               })
             : emptyRepair;
         if (repair.hits.length > 0) {
           groundedInsert = groundDraftText({
-            text: insertText,
+            text: editInsertText,
             ledger: citationLedger,
             policy: unsupportedFactPolicy,
             grounding: insertGrounding,
             analyses: analysisFacts,
+            calculations: calculationFacts,
           });
           groundedSecond = rawSecond
             ? groundDraftText({
@@ -2896,6 +3118,7 @@ export function buildChatTools(opts: {
                 policy: unsupportedFactPolicy,
                 grounding: insertGrounding,
                 analyses: analysisFacts,
+                calculations: calculationFacts,
               })
             : null;
         }
@@ -2940,8 +3163,8 @@ export function buildChatTools(opts: {
         }
         const prepared = prepareEditForCitationMode(
           {
-            anchorText,
-            deleteText,
+            anchorText: editAnchorText,
+            deleteText: editDeleteText,
             insertText: groundedInsert.text,
             scope: parsedScope,
             second: rawSecond
@@ -3161,7 +3384,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), or source=analytics (analysisId). Empty anchorText appends before Citations.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} source=chat (index on the latest user message), source=section (image.id from read_section), source=analytics (analysisId), or source=document (filename + page from a ready PDF/DOCX). Empty anchorText appends before Citations.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3210,6 +3433,31 @@ export function buildChatTools(opts: {
                 "Saved Analytics plot id from the context map or a tagged @ plot."
               ),
           }),
+          z.object({
+            source: z.literal("document"),
+            filename: z
+              .string()
+              .trim()
+              .min(1)
+              .describe(
+                "Ready attachment filename from list_attachments or search_documents."
+              ),
+            page: z
+              .number()
+              .int()
+              .min(1)
+              .describe(
+                "1-based page from search_documents / read_document_page (PDF page or Word pseudo-page)."
+              ),
+            figure: z
+              .number()
+              .int()
+              .min(1)
+              .optional()
+              .describe(
+                "Figure N from that page's visualInterpretation. Required when the Word page has more than one insertable raster. Omit for a PDF page (the whole page is rasterized)."
+              ),
+          }),
         ]),
         anchorText: z
           .string()
@@ -3256,20 +3504,33 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
-        if (!isRichTargetField(section, resolvedField)) {
+        if (!isRichTargetField(section, requestedResolved)) {
           return {
             status: "plain_field",
-            message: `'${resolvedField}' is a plain-text field and cannot hold an image. Insert into a rich narrative field instead.`,
+            message: `'${requestedResolved}' is a plain-text field and cannot hold an image. Insert into a rich narrative field instead.`,
           };
         }
+
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw,
+          true,
+          mentionedTargetField
+        );
 
         const source = image as InsertImageSource;
         if (source.source === "section") {
@@ -3286,11 +3547,11 @@ export function buildChatTools(opts: {
           }
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
-          return { status: "section_not_found", message: "Section not found." };
-        }
-        const staleInsert = unchangedOrStale(section, resolvedField, loaded.content);
+        const staleInsert = rememberLiveSnapshot(
+          section,
+          resolvedField,
+          loaded.content
+        );
         if (staleInsert) return staleInsert;
 
         const fieldDoc = getRichFieldValue(
@@ -3341,6 +3602,40 @@ export function buildChatTools(opts: {
                   message: `'${analysis.title}' could not be rendered as a figure. Open it in Analytics so the preview can be saved, then retry insert_image with source=analytics.`,
                 };
           }
+        } else if (source.source === "document") {
+          const loadedFigure = await loadDocumentFigure({
+            reportId,
+            filename: source.filename,
+            page: source.page,
+            figure: source.figure,
+            allowedAttachmentIds: pinnedAttachmentIds,
+          });
+          if (!loadedFigure.ok) {
+            if (loadedFigure.status === "attachment_out_of_scope") {
+              return {
+                status: "attachment_out_of_scope",
+                attachmentId: loadedFigure.attachmentId,
+                message: loadedFigure.message,
+              };
+            }
+            if (loadedFigure.status === "available_figures") {
+              return {
+                status: "available_figures",
+                message: loadedFigure.message,
+              };
+            }
+            return {
+              status: "image_not_found",
+              message: loadedFigure.message,
+            };
+          }
+          citationLedger.record(
+            loadedFigure.filename,
+            loadedFigure.page,
+            loadedFigure.attachmentId,
+            { quote: loadedFigure.image.alt ?? "" }
+          );
+          resolved = { ok: true, image: loadedFigure.image };
         } else {
           const locator = resolveSectionImageLocator({
             destSection: section,
@@ -3445,28 +3740,39 @@ export function buildChatTools(opts: {
           };
         }
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
-        const check = checkProposedEdit(
+        const imageEdit = {
+          deleteText: "",
+          insertText: "",
+          insertImage,
+          removeImage,
+        };
+        let locateAnchor = trimmedAnchor;
+        let check = checkProposedEdit(
           fieldText,
-          {
-            anchorText: anchorText ?? "",
-            deleteText: "",
-            insertText: "",
-            insertImage,
-            removeImage,
-          },
+          { ...imageEdit, anchorText: locateAnchor },
           fieldDoc
         );
+        // Invented captions ("Figure: Cross-Hatch…") are not in the field.
+        // Append rather than dropping the figure.
+        if (check.status === "not_found" && locateAnchor) {
+          locateAnchor = "";
+          check = checkProposedEdit(
+            fieldText,
+            { ...imageEdit, anchorText: "" },
+            fieldDoc
+          );
+        }
         if (check.status !== "ok") {
           return {
             status: check.status,
             hint: proposedEditHint(check, {
-              anchorText: anchorText ?? "",
+              anchorText: trimmedAnchor,
               fieldDoc,
             }),
           } as InsertImageResult;
         }
 
-        const appendBlock = isAppendBlock({ anchorText: anchorText ?? "" });
+        const appendBlock = isAppendBlock({ anchorText: locateAnchor });
         const existingOp = findImageOpForMove(imageOps, {
           section,
           targetField: resolvedField,
@@ -3481,14 +3787,14 @@ export function buildChatTools(opts: {
             reasoning,
           };
           await patchFixComment(existingOp.suggestionId, nextPayload, {
-            anchorText: trimmedAnchor,
+            anchorText: locateAnchor,
           });
           recordImageOp(imageOps, {
             suggestionId: existingOp.suggestionId,
             section,
             targetField: resolvedField,
             payload: nextPayload,
-            anchorText: trimmedAnchor,
+            anchorText: locateAnchor,
             src: insertImage.src,
             removeIndex: removeImage?.index ?? existingOp.removeIndex,
           });
@@ -3542,7 +3848,7 @@ export function buildChatTools(opts: {
               {
                 kind: "located",
                 edit: {
-                  anchorText: trimmedAnchor,
+                  anchorText: locateAnchor,
                   deleteText: "",
                   insertText: "",
                   insertImage,
@@ -3551,7 +3857,7 @@ export function buildChatTools(opts: {
               }
             )
           ),
-          anchorText: trimmedAnchor,
+          anchorText: locateAnchor,
           contentPath: resolvedField,
           fromPos: null,
           toPos: null,
@@ -3564,7 +3870,7 @@ export function buildChatTools(opts: {
           section,
           targetField: resolvedField,
           payload,
-          anchorText: trimmedAnchor,
+          anchorText: locateAnchor,
           src: insertImage.src,
           removeIndex: removeImage?.index,
         });
@@ -3589,7 +3895,7 @@ export function buildChatTools(opts: {
           return {
             status: "image_not_found",
             message:
-              "Could not insert this image. Call insert_image with source=chat, source=section (image.id from read_section), or source=analytics (analysisId from the context map). Do not put markdown image syntax in draft_field.",
+              "Could not insert this image. Call insert_image with source=chat, source=section (image.id from read_section), source=analytics (analysisId from the context map), or source=document (filename + page from a ready PDF/DOCX). Do not put markdown image syntax in draft_field.",
           };
         }
       }),
@@ -3638,6 +3944,7 @@ export function buildChatTools(opts: {
           retrievalPolicy,
           documentReview,
           blockPairing,
+          mentionedTargetField,
         }),
     }),
 
@@ -3693,20 +4000,33 @@ export function buildChatTools(opts: {
           if (!isChatEditableSection(section, documentType)) {
             return { status: "invalid_section", message: `Unknown section '${section}'.` };
           }
-          const resolvedField = resolveTargetField(section, targetField);
-          if (!resolvedField) {
+          const requestedResolved = resolveTargetField(section, targetField);
+          if (!requestedResolved) {
             return {
               status: "invalid_field",
               message: `'${targetField}' is not an editable field of ${section}.`,
               allowedFields: chatTargetFields(section).map((f) => f.targetField),
             };
           }
-          if (!isRichTargetField(section, resolvedField)) {
+          if (!isRichTargetField(section, requestedResolved)) {
             return {
               status: "plain_field",
-              message: `'${resolvedField}' is a plain-text field and cannot hold an image.`,
+              message: `'${requestedResolved}' is a plain-text field and cannot hold an image.`,
             };
           }
+
+          const loadedRaw = await loadMergedSection(reportId, section);
+          if (!loadedRaw) {
+            return { status: "section_not_found", message: "Section not found." };
+          }
+          const { resolvedField, loaded } = bindLoadedWriteField(
+            section,
+            targetField,
+            requestedResolved,
+            loadedRaw,
+            false,
+            mentionedTargetField
+          );
 
           const locator = resolveSectionImageLocator({
             destSection: section,
@@ -3728,11 +4048,11 @@ export function buildChatTools(opts: {
             };
           }
 
-          const loaded = await loadMergedSection(reportId, section);
-          if (!loaded) {
-            return { status: "section_not_found", message: "Section not found." };
-          }
-          const staleRemove = unchangedOrStale(section, resolvedField, loaded.content);
+          const staleRemove = rememberLiveSnapshot(
+            section,
+            resolvedField,
+            loaded.content
+          );
           if (staleRemove) return staleRemove;
 
           const fieldDoc = getRichFieldValue(
@@ -3900,9 +4220,265 @@ export function buildChatTools(opts: {
       },
     }),
 
+    annotate_image: tool({
+      description:
+        `Add arrows and labels (S-n callouts) onto an existing inline figure. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not generate a new sketch — the figure must already be in the field (insert_image first if needed). Pass tipX/tipY (0–1) when you know the location on the photo; labels sit outside the picture on the nearest edge so they do not cover the equipment. Omitting tips stacks labels in the left margin. The engineer reviews then can drag tips.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("Rich field path that currently contains the figure, e.g. 'narrative'."),
+        image: z.object({
+          index: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("1-based imageInline index in that field. Omit when passing id."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the field."
+            ),
+        }),
+        callouts: z
+          .array(
+            z.object({
+              text: z
+                .string()
+                .trim()
+                .min(1)
+                .max(80)
+                .describe("Callout label, e.g. 'S-1' or 'Top dish'."),
+              tipX: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .describe("Optional arrow tip X on the figure, 0–1 from the left."),
+              tipY: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .describe("Optional arrow tip Y on the figure, 0–1 from the top."),
+            })
+          )
+          .min(1)
+          .max(24)
+          .describe(
+            "Location callouts to draw. Pass tipX/tipY when the location on the photo is known; labels are placed outside the picture on the nearest edge."
+          ),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining the labels."),
+      }),
+      execute: async ({
+        section,
+        targetField,
+        image,
+        callouts,
+        reasoning,
+      }): Promise<InsertImageResult> => {
+        try {
+          if (!canEdit) {
+            return {
+              status: "not_editable",
+              message:
+                "This report is not editable in its current state, so figure annotations cannot be proposed.",
+            };
+          }
+          if (
+            shouldGateInProgressOrComprehensive({ retrievalPolicy, documentReview })
+          ) {
+            return {
+              status: "review_incomplete",
+              message: REVIEW_INCOMPLETE_MESSAGE,
+            };
+          }
+          if (!isChatEditableSection(section, documentType)) {
+            return { status: "invalid_section", message: `Unknown section '${section}'.` };
+          }
+          const requestedResolved = resolveTargetField(section, targetField);
+          if (!requestedResolved) {
+            return {
+              status: "invalid_field",
+              message: `'${targetField}' is not an editable field of ${section}.`,
+              allowedFields: chatTargetFields(section).map((f) => f.targetField),
+            };
+          }
+          if (!isRichTargetField(section, requestedResolved)) {
+            return {
+              status: "plain_field",
+              message: `'${requestedResolved}' is a plain-text field and cannot hold a figure.`,
+            };
+          }
+
+          const loadedRaw = await loadMergedSection(reportId, section);
+          if (!loadedRaw) {
+            return { status: "section_not_found", message: "Section not found." };
+          }
+          const { resolvedField, loaded } = bindLoadedWriteField(
+            section,
+            targetField,
+            requestedResolved,
+            loadedRaw,
+            false,
+            mentionedTargetField
+          );
+
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            index: image.index,
+            id: image.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+          if (
+            locator.locator.section !== section ||
+            locator.locator.targetField !== resolvedField
+          ) {
+            return {
+              status: "image_not_found",
+              message:
+                "annotate_image only labels a figure already in the field you are editing. Pass image.id from that field's read_section (e.g. 'narrative#1'). To copy a figure first, use insert_image.",
+            };
+          }
+
+          const staleAnnotate = rememberLiveSnapshot(
+            section,
+            resolvedField,
+            loaded.content
+          );
+          if (staleAnnotate) return staleAnnotate;
+
+          const fieldDoc = getRichFieldValue(
+            loaded.content as Record<string, unknown>,
+            resolvedField
+          );
+          const listed = listInlineImagesInDoc(fieldDoc);
+          const hit = listed.find((img) => img.index === locator.locator.index);
+          if (!hit) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: section,
+                sourceField: resolvedField,
+                index: locator.locator.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: false,
+              }),
+            };
+          }
+
+          const drawingCallouts: DrawingCallout[] = callouts.map((item) => ({
+            text: item.text,
+            tipX: item.tipX,
+            tipY: item.tipY,
+          }));
+          const drawing = layoutCalloutsLeft(drawingCallouts);
+          if (drawing.shapes.length === 0) {
+            return {
+              status: "image_not_found",
+              message: "Provide at least one callout with non-empty text.",
+            };
+          }
+          const probe = applyDrawingOperationToDoc(fieldDoc, {
+            index: hit.index,
+            drawing,
+          });
+          if (!probe.ok) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: section,
+                sourceField: resolvedField,
+                index: hit.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: false,
+              }),
+            };
+          }
+          if (probe.status === "already_present") {
+            return {
+              status: "already_present",
+              message:
+                "Those callouts are already on this figure. Do not propose the same annotation again.",
+            };
+          }
+
+          const suggestionId = createId();
+          const payload: ParsedAiFixPayload = {
+            deleteText: "",
+            insertText: "",
+            drawingOperation: { index: hit.index, drawing },
+            reasoning,
+          };
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent(
+              attachRecord(
+                payload,
+                loaded.content as Record<string, unknown>,
+                section,
+                resolvedField,
+                {
+                  kind: "located",
+                  edit: {
+                    anchorText: "",
+                    deleteText: "",
+                    insertText: drawingPreviewSummary(drawing),
+                  },
+                }
+              )
+            ),
+            anchorText: "",
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+          const supersededSuggestionIds = await dismissCovered({
+            section,
+            sectionContent: loaded.content,
+            newCommentId: suggestionId,
+          });
+          return proposedWithSupersession(
+            {
+              status: "proposed" as const,
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              summary: reasoning,
+            },
+            supersededSuggestionIds
+          );
+        } catch (err) {
+          console.error("annotate_image failed", err);
+          return {
+            status: "image_not_found",
+            message:
+              "Could not annotate this figure. Call read_section and pass image.id (e.g. 'narrative#1') or image.index. The figure must already be in the field.",
+          };
+        }
+      },
+    }),
+
     edit_table: tool({
       description:
-        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells, insert_rows, delete_rows, delete_table, insert_column, delete_column, create_table. Copy tableIndex and [row,col] from read_section. Row 0 is the header. For edit_cells prefer rowKey (first-cell text, e.g. URS-13) over row — each cell needs its own rowKey; do not reuse one dummy row for every URS. For insert_rows pass rows: [["col1","col2"], ...] — not cells, not nested insert_rows: [...], and not { banner }. Prefer afterRowKey (first-cell text) over afterRow. Do not unmerge an existing banner into six cells. When one cell is a list of items, put one \`- \` or \`1. \` line per item in insertText. Ordinary cells stay one line.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -3942,31 +4518,39 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        if (!resolvedField) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
-        if (!isRichTargetField(section, resolvedField)) {
+        if (!isRichTargetField(section, requestedResolved)) {
           return {
             status: "invalid_field",
-            message: `'${resolvedField}' is not a rich field and cannot hold a table.`,
+            message: `'${requestedResolved}' is not a rich field and cannot hold a table.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
 
-        const parsedOp = parseTableOperation(operation);
+        let parsedOp = parseTableOperation(operation);
         if (!parsedOp) {
           return { status: "invalid", hint: tableOperationInvalidHint(operation) };
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw,
+          true,
+          mentionedTargetField
+        );
         if (
           emptyInventoryNeedsMatchingReview({
             documentType,
@@ -3982,13 +4566,57 @@ export function buildChatTools(opts: {
             message: REVIEW_INCOMPLETE_MESSAGE,
           };
         }
-        const staleTable = unchangedOrStale(section, resolvedField, loaded.content);
+        const staleTable = rememberLiveSnapshot(
+          section,
+          resolvedField,
+          loaded.content
+        );
         if (staleTable) return staleTable;
+
+        const liveTables = listFieldTables(
+          loaded.content as Record<string, unknown>,
+          section,
+          resolvedField
+        );
+        if ("tableIndex" in parsedOp && typeof parsedOp.tableIndex === "number") {
+          const roleBlock = editTableBlockedByTableRoles({
+            documentType,
+            section,
+            targetField: resolvedField,
+            operationKind: parsedOp.kind,
+            tableIndex: parsedOp.tableIndex,
+            liveTables,
+            operationRows:
+              parsedOp.kind === "insert_rows" ? parsedOp.rows : undefined,
+          });
+          if (roleBlock) {
+            return { status: "invalid", hint: roleBlock };
+          }
+        }
 
         const fieldDoc = getRichFieldValue(
           loaded.content as Record<string, unknown>,
           resolvedField
         );
+        let pairCreateTableAfterPendingHeading = false;
+        let pendingCreateTableAnchor = "";
+        if (parsedOp.kind === "create_table") {
+          const afterAnchor = parsedOp.afterAnchor?.trim() ?? "";
+          if (
+            afterAnchor &&
+            topLevelIndexAfterAnchor(fieldDoc, afterAnchor).status !== "ok" &&
+            hasUnusedLeadInMatchingAnchor(
+              blockPairing,
+              section,
+              resolvedField,
+              afterAnchor
+            )
+          ) {
+            parsedOp = { ...parsedOp, afterAnchor: undefined };
+            pairCreateTableAfterPendingHeading = true;
+            pendingCreateTableAnchor = afterAnchor;
+          }
+        }
         let foldTarget: OpenTableRowCard | null = null;
         let captureDoc = fieldDoc;
         if (isFoldableTableRowOperation(parsedOp, fieldDoc)) {
@@ -4050,6 +4678,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: tableGrounding,
           analyses: tableAnalysisFacts,
+          calculations: calculationFacts,
           fieldDoc: captureDoc,
         });
         const tableNeedsRepair =
@@ -4069,6 +4698,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            calculations: calculationFacts,
             fieldDoc: captureDoc,
           });
         }
@@ -4079,6 +4709,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: tableGrounding,
             analyses: tableAnalysisFacts,
+            calculations: calculationFacts,
             clearOptionalOnBlock: true,
             fieldDoc: captureDoc,
           });
@@ -4359,7 +4990,14 @@ export function buildChatTools(opts: {
               : undefined,
         };
         if (appendTable) {
-          const leadIn = takeUnusedLeadIn(blockPairing, section, resolvedField);
+          const leadIn = pairCreateTableAfterPendingHeading
+            ? takeUnusedLeadInMatchingAnchor(
+                blockPairing,
+                section,
+                resolvedField,
+                pendingCreateTableAnchor
+              )
+            : takeUnusedLeadIn(blockPairing, section, resolvedField);
           if (leadIn) {
             payload = withPlaceAfterLeadIn(payload, leadIn.suggestionId);
             await patchFixPayload(
@@ -4504,8 +5142,21 @@ export function buildChatTools(opts: {
           (parsedForQueue.kind === "insert_rows" ||
             parsedForQueue.kind === "edit_cells")
         ) {
-          const queueField =
+          let queueField =
             resolveTargetField(section, targetField) ?? targetField;
+          if (section === "cvp_equipment_sampling") {
+            const queued = await loadMergedSection(reportId, section);
+            if (queued) {
+              queueField = bindLoadedWriteField(
+                section,
+                targetField,
+                queueField,
+                queued,
+                true,
+                mentionedTargetField
+              ).resolvedField;
+            }
+          }
           return enqueueInsertRows(
             insertRowsQueues,
             insertRowsQueueKey(section, queueField, parsedForQueue.tableIndex),
@@ -4518,7 +5169,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image. Cover/header identity scalars use draft_identity, not this tool.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as markdown. ${reviewableCopy} Empty prose fields, or a filled field with replaceFilledField: true. Tables use edit_table; figures use insert_image / remove_image / annotate_image. Cover/header identity scalars use draft_identity, not this tool.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -4566,17 +5217,36 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const resolvedField = resolveTargetField(section, targetField);
-        const field = resolvedField
-          ? chatTargetFields(section).find((f) => f.targetField === resolvedField)
-          : undefined;
-        if (!resolvedField || !field) {
+        const requestedResolved = resolveTargetField(section, targetField);
+        if (!requestedResolved) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
+        const loadedRaw = await loadMergedSection(reportId, section);
+        if (!loadedRaw) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+        const rewriteTurn = isWholeFieldReplaceTurn(
+          latestUserMessageText(messages) ?? "",
+          recentUserMessageTexts(messages)
+        );
+        const { resolvedField, loaded } = bindLoadedWriteField(
+          section,
+          targetField,
+          requestedResolved,
+          loadedRaw,
+          replaceFilledField !== true && !rewriteTurn,
+          mentionedTargetField
+        );
+        const field = {
+          targetField: resolvedField,
+          kind: (isRichTargetField(section, resolvedField)
+            ? "rich"
+            : "plain") as "rich" | "plain",
+        };
         if (isElrInventoryTableField(documentType, section, resolvedField)) {
           return {
             status: "use_edit_table",
@@ -4604,10 +5274,6 @@ export function buildChatTools(opts: {
           if (mismatch) return mismatch;
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
-          return { status: "section_not_found", message: "Section not found." };
-        }
         if (
           emptyInventoryNeedsMatchingReview({
             documentType,
@@ -4623,52 +5289,75 @@ export function buildChatTools(opts: {
             message: REVIEW_INCOMPLETE_MESSAGE,
           };
         }
-        const headerMismatch = liveTableHeadersMismatch({
-          content: loaded.content,
+        const liveTables = listFieldTables(
+          loaded.content,
           section,
-          targetField: resolvedField,
-          markdown,
-        });
-        if (headerMismatch) {
+          resolvedField
+        );
+        const fill = fieldFillState(loaded.content, section, resolvedField);
+        const replacingFilledField =
+          fill === "filled" && (replaceFilledField === true || rewriteTurn);
+        if (liveTables.length > 1 && !replacingFilledField) {
           return {
-            status: "header_mismatch",
-            message: headerMismatch,
+            status: "use_edit_table",
+            message: multiTableDraftFieldMessage(liveTables.length),
           };
         }
-        const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
+        if (!replacingFilledField) {
+          const headerMismatch = liveTableHeadersMismatch({
+            content: loaded.content,
+            section,
+            targetField: resolvedField,
+            markdown,
+          });
+          if (headerMismatch) {
+            return {
+              status: "header_mismatch",
+              message: headerMismatch,
+            };
+          }
+        }
+        const staleDraft = rememberLiveSnapshot(
+          section,
+          resolvedField,
+          loaded.content
+        );
         if (staleDraft) return staleDraft;
-        const fill = fieldFillState(loaded.content, section, resolvedField);
         if (fill === "filled") {
-          if (replaceFilledField !== true) {
+          if (!replacingFilledField) {
             return { status: "field_filled", message: FIELD_FILLED_MESSAGE };
           }
-          // A replacement that leaves most of the field intact is a targeted
-          // edit; draft_field would strike the whole field in review.
-          const scope = classifyRedraftScope({
-            currentText: sectionFieldPlainText(
-              loaded.content,
-              section,
-              resolvedField
-            ),
-            nextText: markdownToPlainText(markdown),
-            currentHasTable: isRichTargetField(section, resolvedField)
-              ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
-              : false,
-            nextHasTable: markdownHasTable(markdown),
-          });
-          if (scope.kind === "targeted_edit") {
-            return {
-              status: NOT_A_REWRITE_STATUS,
-              hint: redraftTooSmallHint(scope.coverage),
-              coverage: scope.coverage,
-            };
-          }
-          if (scope.kind === "table_structure") {
-            return {
-              status: NOT_A_REWRITE_STATUS,
-              hint: redraftTableStructureHint(scope.adding),
-              coverage: 0,
-            };
+          // Ordinary filled edits that keep most of the field belong on
+          // propose_edit / edit_table. An explicit rewrite turn ("redraft",
+          // "make 15.N as", "insert it" after that dump) is a whole-field
+          // replace even when boilerplate coverage looks targeted.
+          if (!rewriteTurn) {
+            const scope = classifyRedraftScope({
+              currentText: sectionFieldPlainText(
+                loaded.content,
+                section,
+                resolvedField
+              ),
+              nextText: markdownToPlainText(markdown),
+              currentHasTable: isRichTargetField(section, resolvedField)
+                ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
+                : false,
+              nextHasTable: markdownHasTable(markdown),
+            });
+            if (scope.kind === "targeted_edit") {
+              return {
+                status: NOT_A_REWRITE_STATUS,
+                hint: redraftTooSmallHint(scope.coverage),
+                coverage: scope.coverage,
+              };
+            }
+            if (scope.kind === "table_structure") {
+              return {
+                status: NOT_A_REWRITE_STATUS,
+                hint: redraftTableStructureHint(scope.adding),
+                coverage: 0,
+              };
+            }
           }
         }
 
@@ -4724,6 +5413,7 @@ export function buildChatTools(opts: {
           policy: unsupportedFactPolicy,
           grounding: draftGrounding,
           analyses: draftAnalysisFacts,
+          calculations: calculationFacts,
         });
         const repair =
           citationGroundingRunsRepair(draftGrounding.mode ?? "strict") &&
@@ -4741,6 +5431,7 @@ export function buildChatTools(opts: {
             policy: unsupportedFactPolicy,
             grounding: draftGrounding,
             analyses: draftAnalysisFacts,
+            calculations: calculationFacts,
           });
         }
         if (groundedDraft.blocked) {
@@ -4871,7 +5562,7 @@ export function buildChatTools(opts: {
       .map((field) => `'${field.key}' (${field.label}${field.required ? ", required" : ""})`)
       .join(", ");
     const capacityUnitHint = identityCatalog.some((field) => field.keepUnits)
-      ? " Measured size (capacity) includes the printed unit (8000 L, 3.0 KL) — not a bare number."
+      ? " Measured size (capacity) includes the printed unit (8k L not 8000 L; 3.0 KL as printed) — not a bare number."
       : "";
     tools.draft_identity = tool({
       description:
@@ -4890,7 +5581,7 @@ export function buildChatTools(opts: {
                 .min(1)
                 .max(500)
                 .describe(
-                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list. Measured size fields keep the printed unit (8000 L, 3.0 KL)."
+                  "Plain scalar copied from attachments or the engineer. No [filename, p. N], numbered [n], or Citations: list. Measured size fields keep the printed unit (8k L not 8000 L; 3.0 KL as printed)."
                 ),
             })
           )
@@ -5014,6 +5705,9 @@ export function buildChatTools(opts: {
           let value = sanitizeIdentityScalar(patch.value);
           if (field?.keepUnits) {
             value = attachIdentityCapacityUnits(value, identityQuotes);
+            if (documentType === "qualification_summary_report") {
+              value = compact3xperLitreVolumes(value);
+            }
           }
           return { key: patch.key, value };
         });

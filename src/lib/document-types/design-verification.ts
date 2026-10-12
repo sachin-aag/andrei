@@ -4,7 +4,7 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { getCustomerPack, type CustomerPack } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField, normalizeRichField } from "@/lib/tiptap/rich-text";
 import { convergentDesignVerificationDefinition } from "./convergent-design-verification";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
@@ -330,7 +330,7 @@ function mergeNarrative(raw: unknown): { narrative: ReturnType<typeof normalizeR
   const base = { narrative: EMPTY_DV_CONTENT.purpose_scope.narrative };
   if (!raw || typeof raw !== "object") return base;
   const o = raw as { narrative?: unknown };
-  return { narrative: normalizeRichField(o.narrative ?? base.narrative) };
+  return { narrative: mergeStoredRichField(o, "narrative", base.narrative) };
 }
 
 function mergeTable(
@@ -340,7 +340,7 @@ function mergeTable(
   const base = EMPTY_DV_CONTENT[key];
   if (!raw || typeof raw !== "object") return { table: base.table };
   const o = raw as { table?: unknown };
-  return { table: normalizeRichField(o.table ?? base.table) };
+  return { table: mergeStoredRichField(o, "table", base.table) };
 }
 
 function mergeDvSection(key: string, raw: unknown): unknown {

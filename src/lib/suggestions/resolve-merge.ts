@@ -74,7 +74,7 @@ export function resolveSuggestionMerge(args: {
   // mergeField flattens cells into prose and drops fixed-schema columns.
   if (args.comment.kind === "ai_fix") {
     const payload = parseAiFixCommentContent(args.comment.content);
-    if (payload.tableOperation) {
+    if (payload.tableOperation || payload.drawingOperation) {
       return {
         path,
         current,

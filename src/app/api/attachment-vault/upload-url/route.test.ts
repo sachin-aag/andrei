@@ -82,7 +82,7 @@ describe("/api/attachment-vault/upload-url", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
-      error: "Only PDF and Word (.docx) files are allowed",
+      error: "Only PDF, Word (.docx), CSV, and Excel (.xlsx) files are allowed",
     });
   });
 

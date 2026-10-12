@@ -16,6 +16,7 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
 import {
   countOpenAiSuggestions,
+  openAiSuggestionIds,
   sectionOrderWithOpenSuggestions,
 } from "@/lib/ai/suggestion-gating";
 import { getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
@@ -39,7 +40,16 @@ import type { SectionType } from "@/db/schema";
  * per-suggestion Apply / Dismiss on the gutter card stay section-scoped.
  */
 export function ReportBulkSuggestionActions() {
-  const { report, setReport, readOnly, currentUserId, refresh } = useReportData();
+  const {
+    report,
+    setReport,
+    readOnly,
+    currentUserId,
+    refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
+  } = useReportData();
   const { getUser } = useUserDirectory();
   const { comments, setComments } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -116,12 +126,18 @@ export function ReportBulkSuggestionActions() {
   const handleAcceptAll = useCallback(async () => {
     if (running || !canResolve) return;
     setRunning("accept");
+    const openIds = openAiSuggestionIds(comments);
+    closeSuggestionComments(openIds);
     try {
       const result = await acceptAllSuggestionsInReport({
         ...buildBulkArgs("bulk"),
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
       });
 
+      releaseSuggestionComments([...result.skippedIds, ...result.failedIds]);
+      for (const section of result.changedSections) {
+        markSectionPersisted(section);
+      }
       const applied = new Set(result.appliedIds);
       const superseded = new Set(result.dismissedIds);
       setComments((prev) =>
@@ -141,7 +157,9 @@ export function ReportBulkSuggestionActions() {
         result.dismissedIds.length
       );
       if (result.failedIds.length > 0) {
-        toast.error(`${message}. Some sections stopped after a save error.`);
+        toast.error(
+          `${message}. Could not save section. Please try again.`
+        );
         await refresh();
       } else if (result.appliedIds.length === 0) {
         toast.error(message);
@@ -150,6 +168,7 @@ export function ReportBulkSuggestionActions() {
       }
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments(openIds);
       toast.error("Could not apply suggestions");
       await refresh();
     } finally {
@@ -159,6 +178,10 @@ export function ReportBulkSuggestionActions() {
   }, [
     running,
     canResolve,
+    comments,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
     buildBulkArgs,
     report.documentType,
     setComments,
@@ -169,9 +192,15 @@ export function ReportBulkSuggestionActions() {
   const handleDismissAll = useCallback(async () => {
     if (running || !canResolve) return;
     setRunning("dismiss");
+    const openIds = openAiSuggestionIds(comments);
+    closeSuggestionComments(openIds);
     try {
       const result = await dismissAllSuggestionsInReport(buildBulkArgs("dismiss"));
 
+      releaseSuggestionComments(result.failedIds);
+      for (const section of result.changedSections) {
+        markSectionPersisted(section);
+      }
       const dismissed = new Set(result.appliedIds);
       setComments((prev) => prev.filter((c) => !dismissed.has(c.id)));
       for (const id of result.appliedIds) {
@@ -190,13 +219,25 @@ export function ReportBulkSuggestionActions() {
       }
     } catch (err) {
       console.error(err);
+      releaseSuggestionComments(openIds);
       toast.error("Could not dismiss suggestions");
       await refresh();
     } finally {
       releaseBulkHolds();
       setRunning(null);
     }
-  }, [running, canResolve, buildBulkArgs, setComments, refresh, releaseBulkHolds]);
+  }, [
+    running,
+    canResolve,
+    comments,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
+    buildBulkArgs,
+    setComments,
+    refresh,
+    releaseBulkHolds,
+  ]);
 
   if (!canResolve) return null;
   if (!shouldShowSuggestionBulkActions(openTotal)) return null;

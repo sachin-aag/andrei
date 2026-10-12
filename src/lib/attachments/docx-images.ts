@@ -13,6 +13,8 @@ const VISION_SAFE_MEDIA_TYPES = new Set([
   "image/webp",
 ]);
 
+export type DocxImageSourcePart = "body" | "header_footer";
+
 export type DocxEmbeddedImage = {
   ordinal: number;
   bytes: Buffer;
@@ -23,6 +25,18 @@ export type DocxEmbeddedImage = {
   /** Nearby paragraph text for placement / model context. */
   nearbyText: string;
   altText: string | null;
+  /** Header/footer rasters are letterhead — skip them on insert. */
+  sourcePart: DocxImageSourcePart;
+};
+
+export type DocxInsertCandidate = {
+  figure: number;
+  page: number;
+  nearbyText: string;
+  altText: string | null;
+  letterhead: boolean;
+  bytes: Buffer;
+  mediaType: string;
 };
 
 export type ExtractDocxImagesOptions = {
@@ -73,6 +87,7 @@ export function extractDocxEmbeddedImages(
         maxBytesPerImage,
         charOffset: 0,
         nearbyFallback: "Document header/footer",
+        sourcePart: "header_footer",
       });
     }
 
@@ -87,6 +102,7 @@ export function extractDocxEmbeddedImages(
       maxImages,
       maxBytesPerImage,
       charOffset: 0,
+      sourcePart: "body",
     });
 
     return {
@@ -108,6 +124,7 @@ function appendImagesFromPart(input: {
   maxBytesPerImage: number;
   charOffset: number;
   nearbyFallback?: string;
+  sourcePart: DocxImageSourcePart;
 }): { charOffset: number } {
   const partXml =
     input.partXml ?? input.zip.file(input.partPath)?.asText() ?? "";
@@ -154,6 +171,7 @@ function appendImagesFromPart(input: {
         charOffset,
         nearbyText,
         altText: altTexts[i] ?? null,
+        sourcePart: input.sourcePart,
       });
     }
 
@@ -274,6 +292,30 @@ export function assignDocxImagesToPages(
   }
 
   return byPage;
+}
+
+/** Map extracted rasters onto mammoth pages for insert_image source=document. */
+export function listDocxInsertCandidates(
+  pages: Array<{ pageNumber: number; text: string }>,
+  images: DocxEmbeddedImage[],
+  totalXmlChars: number
+): DocxInsertCandidate[] {
+  const byPage = assignDocxImagesToPages(pages, images, totalXmlChars);
+  const candidates: DocxInsertCandidate[] = [];
+  for (const [page, pageImages] of byPage) {
+    for (const image of pageImages) {
+      candidates.push({
+        figure: image.ordinal,
+        page,
+        nearbyText: image.nearbyText,
+        altText: image.altText,
+        letterhead: image.sourcePart === "header_footer",
+        bytes: image.bytes,
+        mediaType: image.mediaType,
+      });
+    }
+  }
+  return candidates;
 }
 
 /** Join figure descriptions for a page's `visualInterpretation` field. */

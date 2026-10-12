@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useSyncExternalStore,
 } from "react";
 import dynamic from "next/dynamic";
@@ -18,6 +19,7 @@ import {
   useReportEditors,
   useReportEvaluations,
   useReportPlaceholders,
+  useReportSections,
 } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import {
@@ -76,7 +78,7 @@ import {
 } from "@/lib/comments/navigate";
 import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
 import { getDocumentType, getWorkspaceSections, workspacePresentationFor } from "@/lib/document-types";
-import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
+import { cvpWorkspaceSectionDefs } from "@/lib/document-types/cvp/sections";
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack, isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import {
@@ -223,6 +225,30 @@ export function ReportWorkspace({
     currentUserRole,
     flushPendingSectionSaves,
   } = useReportData();
+  const { sections } = useReportSections();
+  const liveSectionContent = useMemo(
+    () =>
+      report.documentType === "cleaning_verification_protocol"
+        ? {
+            cvp_equipment_sampling: sections.cvp_equipment_sampling,
+            cvp_pgi: sections.cvp_pgi,
+            cvp_process_line: sections.cvp_process_line,
+          }
+        : undefined,
+    [
+      report.documentType,
+      sections.cvp_equipment_sampling,
+      sections.cvp_pgi,
+      sections.cvp_process_line,
+    ]
+  );
+  const workspaceSectionList = useMemo(
+    () =>
+      report.documentType === "cleaning_verification_protocol"
+        ? cvpWorkspaceSectionDefs(sections)
+        : getWorkspaceSections(report.documentType),
+    [report.documentType, sections]
+  );
   const sectionEditors = useDocumentSectionEditors(report.documentType);
   const { pendingPlaceholders } = useReportPlaceholders();
 
@@ -614,7 +640,7 @@ export function ReportWorkspace({
 
   const jumpEpochRef = useRef(0);
   const pendingJumpRef = useRef<SectionType | null>(null);
-  const jumpToSection = useCallback((s: SectionType) => {
+  const jumpToSection = useCallback((s: SectionType, jumpId?: string) => {
     setWorkProductView("report");
     setActiveTabId("report");
     const epoch = ++jumpEpochRef.current;
@@ -625,7 +651,10 @@ export function ReportWorkspace({
     }
     return requestWorkspaceSectionMount(s).then(() => {
       if (jumpEpochRef.current !== epoch) return;
-      const el = mainRef.current?.querySelector(`#${s}`);
+      const root = mainRef.current;
+      const el = jumpId
+        ? root?.querySelector(`[id="${CSS.escape(jumpId)}"]`)
+        : root?.querySelector(`#${CSS.escape(s)}`);
       if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
     });
   }, [editorsAllowed]);
@@ -660,55 +689,16 @@ export function ReportWorkspace({
         setSidebarCollapsed(true);
       }
     });
-    const timeouts: Array<ReturnType<typeof setTimeout>> = [];
     requestWorkspaceSectionMount(section);
-    // Wait for the urgent lazy mount (one frame) plus TipTap create.
-    const retryDelaysMs = [0, 50, 100, 200, 400, 800];
+    requestCommentFocus(commentId);
+    clearSuggestionsFocus();
 
-    const finish = (scrolled: boolean) => {
-      if (cancelled) return;
-      if (!scrolled) jumpToSection(section);
-      clearSuggestionsFocus();
-    };
-
-    const attempt = (index: number) => {
-      if (cancelled) return;
-      const active = comments.find((c) => c.id === commentId) ?? null;
-      if (active) {
-        requestCommentFocus(active.id);
-        if (scrollToGeneratedSuggestion(active)) {
-          finish(true);
-          return;
-        }
-      }
-      const next = index + 1;
-      if (next >= retryDelaysMs.length) {
-        finish(false);
-        return;
-      }
-      timeouts.push(setTimeout(() => attempt(next), retryDelaysMs[next]));
-    };
-
-    const start = () => {
-      if (cancelled) return;
-      attempt(0);
-    };
-
-    let innerFrame = 0;
-    const outerFrame = requestAnimationFrame(() => {
-      innerFrame = requestAnimationFrame(start);
-    });
     return () => {
       cancelled = true;
-      cancelAnimationFrame(outerFrame);
-      cancelAnimationFrame(innerFrame);
-      for (const id of timeouts) clearTimeout(id);
     };
   }, [
     suggestionsFocus,
     clearSuggestionsFocus,
-    jumpToSection,
-    comments,
     requestCommentFocus,
   ]);
 
@@ -1017,6 +1007,7 @@ export function ReportWorkspace({
             onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
             documentType={report.documentType}
             onJumpToSection={jumpToSection}
+            liveSectionContent={liveSectionContent}
           />
           {documentsCollapsed ? null : (
             <WorkspaceResizeHandle
@@ -1224,7 +1215,7 @@ export function ReportWorkspace({
                       )}
                     >
                     {editorsAllowed ? (
-                      getWorkspaceSections(report.documentType).map(
+                      workspaceSectionList.map(
                         (section, index) => {
                           const s = section.key;
                           const Editor = sectionEditors?.[s];

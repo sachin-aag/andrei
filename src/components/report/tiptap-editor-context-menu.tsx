@@ -266,7 +266,10 @@ export function TiptapEditorContextMenu({
           >
             Insert table reference
           </ContextMenuSubTrigger>
-          <ContextMenuSubContent data-testid="tiptap-context-table-ref-list">
+          <ContextMenuSubContent
+            className="max-h-[min(18rem,var(--radix-context-menu-content-available-height,calc(100vh-2rem)))] overflow-x-hidden overflow-y-auto"
+            data-testid="tiptap-context-table-ref-list"
+          >
             {/* Closed menus are on every field: do not build the list for them. */}
             {!open ? null : tableRefs.length > 0 ? (
               tableRefs.map((item) => (

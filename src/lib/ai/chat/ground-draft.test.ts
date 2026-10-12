@@ -315,6 +315,25 @@ describe("groundDraftText QSR row windows", () => {
     expect(result.unsupported).toEqual([]);
   });
 
+  it("writes CVP 10000 L as 10k L after the cited page verifies it", () => {
+    const result = groundDraftText({
+      text: "10000 L [CPDR.pdf, p. 2]",
+      ledger: ledgerFromPages([
+        {
+          filename: "CPDR.pdf",
+          pageNumber: 2,
+          attachmentId: "cpdr",
+          quote: "GLR-1302 Capacity 10000 L MSGL",
+        },
+      ]),
+      policy: "block",
+      grounding: { section: "cvp_equipment_sampling" },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("10k L");
+    expect(result.text).not.toContain("10000 L");
+  });
+
   it("accepts 0 to 760 mmHg for URS-35 when the URS page states it outside a neighbour window", () => {
     const result = groundDraftText({
       text: "0 to 760 mmHg",
@@ -681,7 +700,7 @@ describe("groundTableOperation", () => {
     expect(result.blocked).toBe(true);
     expect(result.operation).toMatchObject({
       kind: "edit_cells",
-      cells: [{ insertText: "<identifier> [PQR-24-PR-102.pdf, p. 2]" }],
+      cells: [{ insertText: "<identifier>" }],
     });
   });
 
@@ -849,6 +868,96 @@ describe("groundTableOperation", () => {
     expect(result.text).toContain("[PQR-24-PR-102.pdf, p. 8]");
     expect(result.text).not.toContain("[Planner.pdf, p. 22]");
   });
+
+  it("strips a coincidental Stage-4 protocol cite from a 5 L GMP rinse floor", () => {
+    const protocol =
+      "CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol.docx";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 1,
+        cells: [
+          {
+            row: 8,
+            col: 7,
+            rowKey: "MF-1301",
+            rowContext: "Micron Filter MF-1301 10\" 0.14 m²",
+            insertText: `5 L [${protocol}, p. 3]`,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: protocol,
+          pageNumber: 3,
+          attachmentId: "att-cvp",
+          quote:
+            "Rinse Factor RF = 3L/m². Solvent Adherence Factor SAF. Table 7 WAF ranges 1–3 L/m², 3–5 L/m², 5-10 L/m².",
+        },
+        {
+          filename: protocol,
+          pageNumber: 1,
+          attachmentId: "att-cvp",
+          quote:
+            "Plug Flow Reactor PFR-1301 (5 L HAS). Micron Filter MF-1301 size 10\".",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "cvp_rinse_volume",
+        tableColumnLabel: "Considered volume",
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("5 L");
+    expect(cell).not.toContain("<number>");
+    expect(cell).not.toContain(protocol);
+    expect(cell).not.toMatch(/\[\d+\]/);
+  });
+
+  it("keeps the cite when the page prints that considered rinse volume", () => {
+    const protocol =
+      "CVRP-ISM4-26-001-00 ISM Stage-4 Cleaning Verification_Protocol.docx";
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 1,
+        cells: [
+          {
+            row: 8,
+            col: 7,
+            rowKey: "MF-1301",
+            insertText: `5 L [${protocol}, p. 4]`,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: protocol,
+          pageNumber: 4,
+          attachmentId: "att-cvp",
+          quote:
+            "MF-1301 micron filter considered rinse volume 5 L to flood the 10 inch housing.",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "cvp_rinse_volume",
+        tableColumnLabel: "Considered volume",
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("5 L");
+    expect(cell).toContain(`[${protocol}, p. 4]`);
+  });
 });
 
 describe("gated placeholder persist policy", () => {
@@ -1000,5 +1109,102 @@ describe("groundTableOperation explicit insert keep", () => {
         ? result.operation.cells[0]!.insertText
         : "";
     expect(cell).not.toContain("01-01-2099");
+  });
+});
+
+describe("CVP 24.50 m² assistant-echo keep", () => {
+  const pipingQuote =
+    "Jacket piping size 3.6 inch inlet. Outlet 14.1. Coil installed.";
+  const invented =
+    "24.50 m² [Installation Qualification.PDF, p. 24]";
+
+  it("blocks 24.50 m² when the IQ page only prints piping sizes, even if the assistant already said it", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-62",
+            rowContext: "URS-62 Heat Transfer Area NLT 25.0 m²",
+            insertText: invented,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "Installation Qualification.PDF",
+          pageNumber: 24,
+          attachmentId: "att-iq",
+          quote: pipingQuote,
+        },
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 12,
+          attachmentId: "att-urs",
+          quote: "URS-62 Heat Transfer Area NLT 25.0 m² for the jacket.",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        tableCol: 2,
+        latestUserMessageText: "fill table 6 from the IQ",
+        recentAssistantTexts: [
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
+        ],
+      },
+    });
+    expect(result.blocked).toBe(true);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).not.toContain("24.50");
+    expect(cell).toContain("<number>");
+  });
+
+  it("still keeps 24.50 m² on an explicit go-ahead insert", () => {
+    const result = groundTableOperation({
+      operation: {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 2,
+            rowKey: "URS-62",
+            rowContext: "URS-62 Heat Transfer Area",
+            insertText: invented,
+          },
+        ],
+      },
+      ledger: ledgerFromPages([
+        {
+          filename: "Installation Qualification.PDF",
+          pageNumber: 24,
+          attachmentId: "att-iq",
+          quote: pipingQuote,
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        section: "qsr_rtm_process",
+        tableCol: 2,
+        latestUserMessageText: "go ahead and insert that",
+        recentAssistantTexts: [
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
+        ],
+      },
+    });
+    expect(result.blocked).toBe(false);
+    const cell =
+      result.operation.kind === "edit_cells"
+        ? result.operation.cells[0]!.insertText
+        : "";
+    expect(cell).toContain("24.50 m²");
+    expect(cell).not.toContain("<number>");
   });
 });

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v180-qsr-rtm-draft-fold");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v217-cvp-mfg-areas-column");
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {
@@ -137,6 +137,21 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("END of the section field");
     expect(prompt).toContain("Citations:");
     expect(prompt).toContain("cite it as [filename, p. N]");
+    expect(prompt).toContain("Do not copy citations from earlier assistant messages");
+    expect(prompt).toContain("Never cite a document you did not retrieve this turn");
+  });
+
+  it("tells Ask not to copy unsourced page cites", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
+    expect(prompt).toContain(
+      "Cite retrieved evidence only when a tool this turn returned that page"
+    );
+    expect(prompt).toContain(
+      "Do not copy numbers or [filename, p. N] from earlier assistant messages"
+    );
+    expect(prompt).toContain(
+      "Hard facts from attachments must appear in a retrieved quote this turn"
+    );
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -175,7 +190,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Cover identity");
     expect(prompt).toContain("equipmentName");
     expect(prompt).toContain("draft_identity values never include citations");
-    expect(prompt).toContain("8000 L, 3.0 KL");
+    expect(prompt).toContain("8k L not 8000 L; 3.0 KL as printed");
     expect(prompt).toContain("keep printed unit");
     expect(prompt).toContain(
       "never put source brackets, numbered markers, or a Citations: list in those values"
@@ -260,6 +275,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("never include [image:N] markers in anchorText");
   });
 
+  it("tells Agent to quote $latex$ equation tokens from field text", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("Equations in field text appear as `$latex$`");
+    expect(prompt).toContain("Never put `[equation]` in anchors");
+    expect(prompt).toContain("include its `$latex$` token from `text` in deleteText");
+  });
+
   it("routes figure placement to insert_image instead of markdown", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
@@ -269,6 +291,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("insert_image");
     expect(prompt).toContain("source=chat");
     expect(prompt).toContain("source=analytics");
+    expect(prompt).toContain("source=document");
     expect(prompt).toContain("plot_measurements");
     expect(prompt).not.toContain("Mode: ASK");
   });
@@ -281,7 +304,9 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("remove_image");
     expect(prompt).toContain("Never draft_field a field just to drop a figure");
-    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image / annotate_image");
+    expect(prompt).toContain("To label an existing figure");
+    expect(prompt).toContain("figures to insert_image / remove_image / annotate_image");
   });
 
   it("tells Document chat not to dump a worksheet table into the thread", () => {
@@ -334,6 +359,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("create_table");
     expect(prompt).toContain("delete_table");
     expect(prompt).toContain("Do not use draft_field to create or delete a table");
+    expect(prompt).toContain(
+      "Do not draft_field a field that already has more than one table unless they asked to redraft"
+    );
+    expect(prompt).toContain("insert that rewrite already in chat");
+    expect(prompt).toContain("seeded boilerplate stays");
+    expect(prompt).toContain("insert suggestions for 15.N.1");
+    expect(prompt).toContain("quote the heading and the paragraph after it only");
+    expect(prompt).toContain(
+      "Adding a table under an existing 15.N.x heading already in the saved box"
+    );
+    expect(prompt).toContain("tableIndex 0 equipment list");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {
@@ -370,15 +406,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Section focus: Define [define]");
     expect(prompt).toContain("The engineer tagged **Define**");
     expect(prompt).toContain('on section "define"');
-    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image / annotate_image");
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });
 
   it("includes plot_measurements by default, including Convergent", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image / annotate_image");
     expect(prompt).toContain("- plot_measurements — extract cited numeric measurements");
+    expect(prompt).toContain("- annotate_image — add S-n / location callouts");
     expect(prompt).not.toContain("Measurement charts belong in Analytics, not Document chat");
     expect(prompt).not.toContain("Tell the engineer to open Analytics");
   });
@@ -389,8 +426,8 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       includePlotMeasurements: false,
     });
-    expect(prompt).toContain("use insert_image / remove_image");
-    expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("use insert_image / remove_image / annotate_image");
+    expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image / annotate_image");
     expect(prompt).toContain("Measurement plots — not available in Document chat");
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });
@@ -428,6 +465,7 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Retrieval mode: ADAPTIVE");
     expect(agent).toContain("Search the attachments first");
     expect(agent).toContain("list_attachments");
+    expect(agent).toContain("PDF vs Word vs CSV vs Excel");
     expect(agent).toContain("Do not start a document review");
   });
 
@@ -650,5 +688,56 @@ describe("claim strength", () => {
       });
       expect(prompt).toContain("## Claim strength (required)");
     }
+  });
+});
+
+describe("CVP equipment sampling targets", () => {
+  it("tells Agent to write 15.2 into items.1 rather than a filled 15.1", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "cleaning_verification_protocol",
+    });
+    expect(prompt).toContain("Write the next empty items.N");
+    expect(prompt).toContain("An @-tagged 15.N box is that items.N only");
+    expect(prompt).toContain("Never create_table into a filled items.0");
+    expect(prompt).toContain("with empty afterAnchor / anchorText");
+  });
+
+  it("tells a remaining-section turn to finish one 15.N box and reuse the walk", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      intent: "write",
+      documentType: "cleaning_verification_protocol",
+      retrievalPolicy: "comprehensive",
+      pendingPlan: {
+        kind: "section_queue",
+        objective: "Draft the remaining sections",
+        createdAt: "2026-09-14T00:00:00.000Z",
+        promptVersion: "chat-v199-cvp-equipment-loop",
+        items: [
+          {
+            sectionKey: "cvp_equipment_sampling:items.2",
+            label: "15.3 LEAF FILTER (LF-1301)",
+            state: "in_progress",
+          },
+          {
+            sectionKey: "cvp_equipment_sampling:items.3",
+            label: "15.4 ANF (ANF-1301)",
+            state: "queued",
+          },
+        ],
+      },
+    });
+    expect(prompt).toContain(
+      "a finished walk covers the next equipment box; do not restart per 15.N"
+    );
+    expect(prompt).toContain("Draft only this 15.N box");
+    expect(prompt).toContain("create_table with empty afterAnchor");
+    expect(prompt).toContain(
+      "Do not restart document review when equipment-sampling coverage already finished"
+    );
   });
 });

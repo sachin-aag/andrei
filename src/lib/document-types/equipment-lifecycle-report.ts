@@ -5,7 +5,7 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { ELR_PROMPT_VERSION } from "@/lib/customers/packs";
 import { QUANTITY_MATH_CRITERION_KEY } from "@/lib/math/quantity-math";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   ELR_IDENTITY_FIELDS,
@@ -740,14 +740,14 @@ function mergeNarrative(raw: unknown, key: ElrSectionKey) {
   const base = EMPTY_ELR_CONTENT[key] as { narrative: unknown };
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown };
-  return { narrative: normalizeRichField(o.narrative ?? base.narrative) };
+  return { narrative: mergeStoredRichField(o, "narrative", base.narrative) };
 }
 
 function mergeTable(raw: unknown, key: ElrSectionKey) {
   const base = EMPTY_ELR_CONTENT[key] as { table: unknown };
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { table?: unknown };
-  return { table: normalizeRichField(o.table ?? base.table) };
+  return { table: mergeStoredRichField(o, "table", base.table) };
 }
 
 function mergeNarrativeTable(raw: unknown, key: ElrSectionKey) {
@@ -755,8 +755,8 @@ function mergeNarrativeTable(raw: unknown, key: ElrSectionKey) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown; table?: unknown };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
   };
 }
 
@@ -769,9 +769,9 @@ function mergeTrend(raw: unknown, key: ElrSectionKey) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as { narrative?: unknown; table?: unknown; trend?: unknown };
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
-    trend: normalizeRichField(o.trend ?? base.trend),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
+    trend: mergeStoredRichField(o, "trend", base.trend),
   };
 }
 
@@ -780,10 +780,12 @@ function mergeConclusion(raw: unknown) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as Partial<typeof base>;
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
     recommendation: o.recommendation ?? base.recommendation,
-    recommendationNarrative: normalizeRichField(
-      o.recommendationNarrative ?? base.recommendationNarrative
+    recommendationNarrative: mergeStoredRichField(
+      o,
+      "recommendationNarrative",
+      base.recommendationNarrative
     ),
   };
 }
@@ -793,8 +795,8 @@ function mergeRiskActions(raw: unknown) {
   if (!raw || typeof raw !== "object") return { ...base };
   const o = raw as Partial<typeof base>;
   return {
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    table: normalizeRichField(o.table ?? base.table),
+    narrative: mergeStoredRichField(o, "narrative", base.narrative),
+    table: mergeStoredRichField(o, "table", base.table),
     overallGrade: o.overallGrade ?? base.overallGrade,
   };
 }

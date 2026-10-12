@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { kindFromMime } from "@/lib/attachments/file-types";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { getMalwareScanner } from "@/lib/attachments/malware-scan";
-import { validateDocx } from "@/lib/attachments/validate-docx";
-import { validatePdf } from "@/lib/attachments/validate-pdf";
+import { validateAttachmentBuffer } from "@/lib/attachments/validate-attachment";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const SIZE_TOLERANCE_BYTES = 1024;
@@ -44,10 +43,9 @@ export async function validateAndPromoteStagedAttachment(input: {
   }
 
   const buffer = await storage.readObjectBuffer(input.stagingObjectKey);
-  const { pageCount } =
-    kind === "docx"
-      ? validateDocx(buffer)
-      : await validatePdf(buffer, { maxPages: limits.maxAttachmentPages });
+  const { pageCount } = await validateAttachmentBuffer(kind, buffer, {
+    maxPages: limits.maxAttachmentPages,
+  });
   const scanResult = await getMalwareScanner().scan(buffer, input.filename);
   if (!scanResult.ok) {
     throw new Error(scanResult.reason);
@@ -85,6 +83,10 @@ export function sanitizeFinalizeError(error: unknown): string {
     message.includes("PDF") ||
     message.includes("Word") ||
     message.includes(".docx") ||
+    message.includes("CSV") ||
+    message.includes("Excel") ||
+    message.includes(".xlsx") ||
+    message.includes("Spreadsheet") ||
     message.includes("file") ||
     message.includes("object") ||
     message.includes("type")

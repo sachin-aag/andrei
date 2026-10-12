@@ -203,6 +203,36 @@ describe("SuggestionCardFace", () => {
     ).toHaveTextContent("Computed by VAC1 over time");
   });
 
+  it("names the calculate expression behind a product", () => {
+    renderFixCard({
+      kind: "fix",
+      comment,
+      linkedEval: undefined,
+      queueIndex: 1,
+      queueTotal: 1,
+      payload: {
+        deleteText: "",
+        insertText: "92.88 L",
+        reasoning: "Evaluate rinse volume RF.",
+        claimProvenance: {
+          policy: "block",
+          claims: [
+            {
+              text: "92.88 L",
+              kind: "number",
+              status: "verified",
+              calculation: { expression: "30.96 * 3" },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(
+      screen.getByTestId("suggestion-traceability-computed")
+    ).toHaveTextContent("Computed by calculate (30.96 * 3)");
+  });
+
   it("summarizes a table edit without listing cell text", () => {
     renderFixCard({
       kind: "fix",

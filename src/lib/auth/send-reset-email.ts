@@ -1,53 +1,21 @@
 import { authBaseUrl } from "@/lib/auth/auth-base-url";
+import {
+  resolveResendApiKey,
+  resolveResendFromAddress,
+  sendResendEmail,
+} from "@/lib/auth/resend-email";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
 
-export const DEFAULT_RESEND_FROM = "noreply@andreihealth.com";
+export {
+  DEFAULT_RESEND_FROM,
+  resolveResendFromAddress,
+} from "@/lib/auth/resend-email";
 
 /**
  * Sends a password-reset email via the Resend HTTP API.
  * Reuses the same AUTH_RESEND_KEY and AUTH_EMAIL_FROM used by NextAuth's Resend provider.
  */
-export function resolveResendFromAddress(
-  raw = process.env.AUTH_EMAIL_FROM
-): string {
-  const trimmed = raw?.trim().replace(/^["']|["']$/g, "") ?? "";
-  return trimmed || DEFAULT_RESEND_FROM;
-}
-
-function resolveResendApiKey(): string | undefined {
-  const key =
-    process.env.AUTH_RESEND_KEY?.trim() || process.env.RESEND_API_KEY?.trim();
-  return key || undefined;
-}
-
-async function postResendEmail(opts: {
-  apiKey: string;
-  from: string;
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-}): Promise<{ ok: true } | { ok: false; status: number; body: string }> {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: opts.from,
-      to: opts.to,
-      subject: opts.subject,
-      html: opts.html,
-      text: opts.text,
-    }),
-  });
-
-  if (res.ok) return { ok: true };
-  return { ok: false, status: res.status, body: await res.text() };
-}
-
 export async function sendResetEmail(email: string, token: string) {
   // Playwright / ALLOW_TEST_LOGIN has no Resend key. Persist the token
   // (caller already wrote it) and skip the provider so lock-screen and
@@ -70,7 +38,7 @@ export async function sendResetEmail(email: string, token: string) {
       `;
   const text = `Reset your password: ${resetUrl}\nThis link expires in 1 hour.`;
 
-  let result = await postResendEmail({
+  await sendResendEmail({
     apiKey,
     from,
     to: email,
@@ -78,26 +46,4 @@ export async function sendResetEmail(email: string, token: string) {
     html,
     text,
   });
-
-  if (
-    !result.ok &&
-    result.status === 403 &&
-    from.toLowerCase() !== DEFAULT_RESEND_FROM
-  ) {
-    console.error(
-      `Resend rejected from=${from} (403); retrying with ${DEFAULT_RESEND_FROM}`
-    );
-    result = await postResendEmail({
-      apiKey,
-      from: DEFAULT_RESEND_FROM,
-      to: email,
-      subject,
-      html,
-      text,
-    });
-  }
-
-  if (!result.ok) {
-    throw new Error(`Resend API error: ${result.status} ${result.body}`);
-  }
 }

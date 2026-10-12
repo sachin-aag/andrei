@@ -136,8 +136,14 @@ describe("analytics chat tools", () => {
         draft_field: 3,
         read_section: 4,
         ask_user: 5,
+        calculate: 6,
       })
-    ).toEqual({ list_attachments: 0, search_documents: 1, ask_user: 5 });
+    ).toEqual({
+      list_attachments: 0,
+      search_documents: 1,
+      ask_user: 5,
+      calculate: 6,
+    });
   });
 
   it("omits write tools when the report is locked", () => {

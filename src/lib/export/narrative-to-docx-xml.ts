@@ -22,6 +22,14 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import { colorFromTextMarks, cssColorToWordVal } from "@/lib/tiptap/text-color";
 import { citationNumbersFromDoc } from "@/lib/suggestions/citations-at-end";
+import {
+  applyCvpEmptyFirstColumnMerges,
+  applyCvpSourceTableColWidths,
+  CVP_PAGE_BREAK_XML,
+  cvpHeadingCaps,
+  cvpHeadingParagraphXml,
+  stripTableCaptionNodes,
+} from "@/lib/export/cvp-docx-format";
 
 export type NarrativeDocxXmlResult = {
   xml: string;
@@ -88,6 +96,15 @@ function isEmptyExportNode(node: JSONContent | undefined): boolean {
   return !nodePlainText(node).trim();
 }
 
+/**
+ * Headings and tables start a new procedure. Nested bullets, body paragraphs,
+ * and page-local notes stay inside the current numbered list so Word prints
+ * 3 after 2 instead of restarting at 1.
+ */
+function breaksOrderedListSequence(node: JSONContent): boolean {
+  return node.type === "heading" || node.type === "table";
+}
+
 function isTableTitleNode(node: JSONContent): boolean {
   if (node.type !== "paragraph" && node.type !== "heading") return false;
   const text = nodePlainText(node).trim();
@@ -150,7 +167,14 @@ export function narrativeToDocxXmlWithContext(
     return { xml: wrapParagraph("Not Applicable"), ctx };
   }
 
-  const sanitized = sanitizeDocTextNodes(doc);
+  let sanitized = sanitizeDocTextNodes(doc);
+  if (ctx.mergeEmptyFirstColumn) {
+    sanitized = applyCvpSourceTableColWidths(sanitized);
+    sanitized = applyCvpEmptyFirstColumnMerges(sanitized);
+  }
+  if (ctx.stripTableCaptions) {
+    sanitized = stripTableCaptionNodes(sanitized);
+  }
   ctx.citationNumbers = citationNumbersFromDoc(sanitized);
   const parts: string[] = [];
   const portraitMax = portraitTableGridMax(ctx);
@@ -168,6 +192,8 @@ export function narrativeToDocxXmlWithContext(
     }
   }
   let landscapeOpen = false;
+  let continuedOrderedNumId: number | null = null;
+  let lastEmittedWasTable = false;
 
   const closeLandscape = () => {
     if (!landscapeOpen) return;
@@ -182,14 +208,27 @@ export function narrativeToDocxXmlWithContext(
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i]!;
+    if (breaksOrderedListSequence(node)) {
+      continuedOrderedNumId = null;
+    }
     if (node.type === "table") {
       if (landscapeWithTable.has(i)) {
         openLandscape();
-        parts.push(tableToXml(node, ctx, landscapeMax));
       } else {
         closeLandscape();
-        parts.push(tableToXml(node, ctx, portraitMax));
       }
+      if (lastEmittedWasTable) {
+        parts.push(tableSeparatorParagraphXml(ctx));
+      }
+      parts.push(
+        tableToXml(
+          node,
+          ctx,
+          landscapeWithTable.has(i) ? landscapeMax : portraitMax,
+          landscapeWithTable.has(i)
+        )
+      );
+      lastEmittedWasTable = true;
       continue;
     }
     // forceLandscapeTables: keep trailing paragraphs (table footnotes) in
@@ -202,11 +241,23 @@ export function narrativeToDocxXmlWithContext(
     } else if (!(forceLandscape && landscapeOpen)) {
       closeLandscape();
     }
+    lastEmittedWasTable = false;
     const keepNext = keepWithTable.has(i);
     if (node.type === "paragraph") {
       parts.push(paragraphToXml(node, false, null, null, keepNext, ctx));
     } else if (node.type === "bulletList" || node.type === "orderedList") {
-      parts.push(listToXml(node, ctx));
+      if (node.type === "orderedList") {
+        const reuseNumId = continuedOrderedNumId;
+        const allocatedBefore = ctx.allocatedNumIds.length;
+        parts.push(
+          listToXml(node, ctx, reuseNumId != null ? { numId: reuseNumId } : {})
+        );
+        if (reuseNumId == null) {
+          continuedOrderedNumId = ctx.allocatedNumIds[allocatedBefore] ?? null;
+        }
+      } else {
+        parts.push(listToXml(node, ctx));
+      }
     } else if (node.type === "heading") {
       parts.push(headingToXml(node, ctx, keepNext));
     } else if (node.type === "mathBlock") {
@@ -293,9 +344,14 @@ const TABLE_GRID_TOTAL_MAX_DXA = 10469;
 /** Minimum per-column width in dxa so cells stay readable after scaling. */
 const TABLE_GRID_MIN_COL_DXA = 180;
 
-function normalizeGridColWidths(widths: number[], maxTotalDxa: number): number[] {
+function normalizeGridColWidths(
+  widths: number[],
+  maxTotalDxa: number,
+  fillToMax = false
+): number[] {
   const sum = widths.reduce((a, b) => a + b, 0);
-  if (sum <= maxTotalDxa) return widths;
+  if (sum <= 0) return widths;
+  if (!fillToMax && sum <= maxTotalDxa) return widths;
 
   const scale = maxTotalDxa / sum;
   const scaled = widths.map((w) =>
@@ -358,16 +414,32 @@ function visualEmphasisKey(node: JSONContent | undefined, forceBold: boolean): s
   return "none";
 }
 
+function stripKnownCitationMarkers(
+  line: string,
+  citationNumbers: ReadonlySet<number>
+): string {
+  const stripped = line.replace(/\[(\d+)\]/g, (match, raw: string) =>
+    citationNumbers.has(Number(raw)) ? "" : match
+  );
+  return stripped.replace(/[ \t]+([.,;:])/g, "$1").replace(/ {2,}/g, " ");
+}
+
 function textLineToCitationAwareRuns(
   line: string,
   rPr: string,
   textTag: "w:t" | "w:delText",
   superscriptRPr: string,
-  citationNumbers: ReadonlySet<number> | undefined
+  citationNumbers: ReadonlySet<number> | undefined,
+  stripMarkers = false
 ): string {
   if (!line) return "";
   if (!citationNumbers || citationNumbers.size === 0) {
     return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(line)}</${textTag}></w:r>`;
+  }
+  if (stripMarkers) {
+    const cleaned = stripKnownCitationMarkers(line, citationNumbers);
+    if (!cleaned) return "";
+    return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(cleaned)}</${textTag}></w:r>`;
   }
 
   const parts: string[] = [];
@@ -422,24 +494,40 @@ function paragraphProperties(
   align?: string | null,
   numId?: number | null,
   keepNext?: boolean,
-  ctx?: DocxExportContext
+  ctx?: DocxExportContext,
+  extras?: { ilvl?: number; inTable?: boolean }
 ): string {
+  const inTable = extras?.inTable === true;
+  const ilvl = extras?.ilvl ?? 0;
   const jc = paragraphJustification(align, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
-  const style =
-    numId && ctx?.listParagraphStyle
-      ? `<w:pStyle w:val="ListParagraph"/>`
+  const widow =
+    !inTable && ctx?.widowControl === true ? "<w:widowControl/>" : "";
+  let style = "";
+  if (numId && inTable && ctx?.inTableListParagraphStyle) {
+    style = `<w:pStyle w:val="${ctx.inTableListParagraphStyle}"/>`;
+  } else if (numId && ctx?.listParagraphStyle) {
+    style = `<w:pStyle w:val="ListParagraph"/>`;
+  } else if (!numId && !inTable && ctx?.bodyParagraphStyle) {
+    style = `<w:pStyle w:val="${ctx.bodyParagraphStyle}"/>`;
+  }
+  const indent =
+    numId && inTable && ctx?.tableListIndentLeft
+      ? `<w:ind w:left="${ctx.tableListIndentLeft}" w:hanging="${ctx.tableListIndentHanging ?? "0"}"/>`
       : "";
-  const before = ctx?.paragraphSpacingBefore;
-  const after = ctx?.paragraphSpacingAfter;
+  const before = inTable ? null : ctx?.paragraphSpacingBefore;
+  const after = inTable ? null : ctx?.paragraphSpacingAfter;
+  const line = !inTable && ctx?.paragraphLine
+    ? ` w:line="${ctx.paragraphLine}" w:lineRule="${ctx.paragraphLineRule ?? "auto"}"`
+    : "";
   const spacing =
-    before || after
-      ? `<w:spacing w:before="${before ?? "0"}" w:after="${after ?? "0"}"/>`
+    before || after || line
+      ? `<w:spacing w:before="${before ?? "0"}" w:after="${after ?? "0"}"${line}/>`
       : "";
   const num = numId
-    ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>`
+    ? `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr>`
     : "";
-  return `<w:pPr>${style}${keep}${spacing}${jc}${num}</w:pPr>`;
+  return `<w:pPr>${style}${keep}${widow}${spacing}${indent}${jc}${num}</w:pPr>`;
 }
 
 function wrapParagraph(text: string, ctx?: DocxExportContext): string {
@@ -448,11 +536,14 @@ function wrapParagraph(text: string, ctx?: DocxExportContext): string {
   )}</w:t></w:r></w:p>`;
 }
 
-function headingStyleName(level: unknown): "Heading1" | "Heading2" | "Heading3" {
+function headingStyleName(
+  level: unknown
+): "Heading1" | "Heading2" | "Heading3" | "Heading4" {
   const n = typeof level === "number" ? level : Number(level);
   if (n <= 1 || Number.isNaN(n)) return "Heading1";
-  if (n >= 3) return "Heading3";
-  return "Heading2";
+  if (n === 2) return "Heading2";
+  if (n === 3) return "Heading3";
+  return "Heading4";
 }
 
 function headingToXml(
@@ -463,12 +554,41 @@ function headingToXml(
   if (!ctx.useHeadingStyles) {
     return paragraphToXml(node, true, null, null, keepNext, ctx);
   }
+  if (ctx.headingOutline === "cvp") {
+    return cvpContentHeadingToXml(node, ctx, keepNext);
+  }
   const style = headingStyleName(node.attrs?.level);
   const runs = inlineNodesToRuns(node.content ?? [], false, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
   const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${keep}${paragraphJustification(null, ctx)}</w:pPr>`;
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
+}
+
+function cvpContentHeadingToXml(
+  node: JSONContent,
+  ctx: DocxExportContext,
+  keepNext: boolean
+): string {
+  const raw = nodePlainText(node).trim();
+  if (!raw) return "";
+  const level = Number(node.attrs?.level);
+  if (level >= 3 || Number.isNaN(level)) {
+    return paragraphToXml(
+      { ...node, type: "paragraph" },
+      true,
+      null,
+      null,
+      keepNext,
+      ctx
+    );
+  }
+  const ilvl: 0 | 1 = level <= 1 ? 0 : 1;
+  const xml = cvpHeadingParagraphXml(cvpHeadingCaps(raw), ilvl);
+  if (level === 2 && ctx.pageBreakBeforeHeading2) {
+    return CVP_PAGE_BREAK_XML + xml;
+  }
+  return xml;
 }
 
 function paragraphToXml(
@@ -478,10 +598,17 @@ function paragraphToXml(
   numId?: number | null,
   keepNext = false,
   ctx?: DocxExportContext,
-  runSizeOverride?: string
+  runSizeOverride?: string,
+  extras?: { ilvl?: number; inTable?: boolean }
 ): string {
   const runs = inlineNodesToRuns(node.content ?? [], bold, ctx, runSizeOverride);
-  const pPr = paragraphProperties(paragraphAlign, numId, keepNext, ctx);
+  const pPr = paragraphProperties(
+    paragraphAlign,
+    numId,
+    keepNext,
+    ctx,
+    extras
+  );
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
@@ -571,7 +698,8 @@ function inlineNodesToRuns(
                 rPr,
                 textTag,
                 superscriptRPr,
-                ctx?.citationNumbers
+                ctx?.citationNumbers,
+                ctx?.stripInTextCitationMarkers === true
               )
             );
             emittedBoundarySpace = false;
@@ -592,7 +720,8 @@ function inlineNodesToRuns(
               rPr,
               textTag,
               superscriptRPr,
-              ctx?.citationNumbers
+              ctx?.citationNumbers,
+              ctx?.stripInTextCitationMarkers === true
             )
           );
           emittedBoundarySpace = false;
@@ -613,7 +742,16 @@ function inlineNodesToRuns(
       const src = child.attrs?.src as string | undefined;
       if (src) {
         const width = child.attrs?.width as number | undefined;
-        parts.push(registerInlineImage(ctx, src, width));
+        const flattenedSrc =
+          typeof child.attrs?.flattenedSrc === "string"
+            ? child.attrs.flattenedSrc
+            : null;
+        parts.push(
+          registerInlineImage(ctx, src, width, {
+            drawing: child.attrs?.drawing,
+            flattenedSrc,
+          })
+        );
       }
       emittedBoundarySpace = false;
     } else if (child.type === "mathInline") {
@@ -731,33 +869,69 @@ function runProperties(
   return rPr;
 }
 
-function listToXml(node: JSONContent, ctx: DocxExportContext): string {
+type ListXmlOptions = {
+  bold?: boolean;
+  align?: string | null;
+  keepNext?: boolean;
+  runSize?: string;
+  inTable?: boolean;
+  ilvl?: number;
+  numId?: number | null;
+};
+
+function listToXml(
+  node: JSONContent,
+  ctx: DocxExportContext | undefined,
+  options: ListXmlOptions = {}
+): string {
   const listType = node.type === "orderedList" ? "orderedList" : "bulletList";
-  const numId = allocateListNumId(
-    ctx,
-    listType,
-    (node.attrs?.listStyle as string | undefined) ?? null
-  );
+  const ilvl = options.ilvl ?? 0;
+  const numId =
+    options.numId ??
+    (ctx
+      ? allocateListNumId(
+          ctx,
+          listType,
+          (node.attrs?.listStyle as string | undefined) ?? null
+        )
+      : null);
   const parts: string[] = [];
   for (const item of node.content ?? []) {
-    if (item.type === "listItem") {
-      let numbered = true;
-      for (const child of item.content ?? []) {
+    if (item.type !== "listItem") continue;
+    let numbered = true;
+    for (const child of item.content ?? []) {
+      if (child.type === "bulletList" || child.type === "orderedList") {
+        const nestedSameType = child.type === node.type;
         parts.push(
-          paragraphToXml(
-            child,
-            false,
-            null,
-            numbered ? numId : null,
-            false,
-            ctx
-          )
+          listToXml(child, ctx, {
+            ...options,
+            ilvl: nestedSameType ? ilvl + 1 : 0,
+            numId: nestedSameType ? numId : undefined,
+          })
         );
-        numbered = false;
+        continue;
       }
+      parts.push(
+        paragraphToXml(
+          child,
+          options.bold ?? false,
+          options.align ?? null,
+          numbered ? numId : null,
+          options.keepNext ?? false,
+          ctx,
+          options.runSize,
+          { ilvl, inTable: options.inTable === true }
+        )
+      );
+      numbered = false;
     }
   }
   return parts.join("");
+}
+
+/** Word joins adjacent `<w:tbl>` into one grid. A paragraph keeps them apart. */
+function tableSeparatorParagraphXml(ctx: DocxExportContext): string {
+  return paragraphToXml({ type: "paragraph" }, false, null, null, false, ctx);
 }
 
 function portraitTableGridMax(ctx: DocxExportContext): number {
@@ -771,14 +945,15 @@ function portraitTableGridMax(ctx: DocxExportContext): number {
 function tableToXml(
   node: JSONContent,
   ctx?: DocxExportContext,
-  maxGridDxa?: number
+  maxGridDxa?: number,
+  fillToMax = false
 ): string {
   const gridMax =
     maxGridDxa ??
     ctx?.tableGridMaxDxa ??
     ctx?.pageSetup.portraitContentWidthDxa ??
     TABLE_GRID_TOTAL_MAX_DXA;
-  const inner = buildInnerTableXml(node, ctx, gridMax);
+  const inner = buildInnerTableXml(node, ctx, gridMax, fillToMax);
   if (!inner) return "";
   if (ctx && ctx.tableKeepTogetherWrapper === false) {
     return inner;
@@ -830,7 +1005,8 @@ function tableToXml(
 function buildInnerTableXml(
   node: JSONContent,
   ctx: DocxExportContext | undefined,
-  maxGridDxa: number
+  maxGridDxa: number,
+  fillToMax = false
 ): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return "";
@@ -853,7 +1029,7 @@ function buildInnerTableXml(
   const rawWidths = storedWidths
     ? storedWidths
     : Array.from({ length: colCount }, () => perColFallback);
-  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa);
+  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa, fillToMax);
   const gridTotalDxa = colWidths.reduce((a, b) => a + b, 0);
   const gridColXmlParts = colWidths.map(
     (w) => `<w:gridCol w:w="${Math.round(w)}"/>`
@@ -867,14 +1043,12 @@ function buildInnerTableXml(
   const tblJc = ctx?.tableJustify
     ? `<w:jc w:val="${ctx.tableJustify}"/>`
     : "";
-
-  // Nested inside the keep-together wrapper: explicit dxa width prevents Word
-  // from honoring an oversized imported tblGrid sum and clipping the right edge.
-  const tblPr = `<w:tblPr>
-<w:tblStyle w:val="TableGrid"/>
-${tblW}
-${tblJc}
-<w:tblBorders>
+  const tblLayout = storedWidths
+    ? `<w:tblLayout w:type="fixed"/>`
+    : "";
+  const tblBorders = ctx?.tableUseStyleBorders
+    ? ""
+    : `<w:tblBorders>
 <w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
 <w:left w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
 <w:bottom w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
@@ -882,7 +1056,25 @@ ${tblJc}
 <w:insideH w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
 <w:insideV w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
 </w:tblBorders>
-<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
+`;
+  const tblCellMar = ctx?.tableCellMar
+    ? `<w:tblCellMar>
+<w:top w:w="0" w:type="dxa"/>
+<w:left w:w="108" w:type="dxa"/>
+<w:bottom w:w="0" w:type="dxa"/>
+<w:right w:w="108" w:type="dxa"/>
+</w:tblCellMar>
+`
+    : "";
+
+  // Nested inside the keep-together wrapper: explicit dxa width prevents Word
+  // from honoring an oversized imported tblGrid sum and clipping the right edge.
+  const tblPr = `<w:tblPr>
+<w:tblStyle w:val="TableGrid"/>
+${tblW}
+${tblLayout}
+${tblJc}
+${tblCellMar}${tblBorders}<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
 </w:tblPr>`;
 
   const activeMerges: (ActiveRowMerge | null)[] = [];
@@ -917,9 +1109,11 @@ function tableRowToXml(
   ctx?: DocxExportContext
 ): string {
   const cells = row.content ?? [];
-  // Always set cantSplit so a single row never breaks mid-content across pages.
-  // Header rows additionally repeat at the top of each page if the table spills.
-  let trPr = "<w:trPr><w:cantSplit/>";
+  // Default: a single row never breaks mid-content. 3xper turns this off so
+  // wrapped cells can continue on the next page the way the source protocols do.
+  // Header rows still repeat at the top of each page if the table spills.
+  let trPr = "<w:trPr>";
+  if (ctx?.tableRowCantSplit !== false) trPr += "<w:cantSplit/>";
   if (isHeader) trPr += "<w:tblHeader/>";
   if (ctx?.tableJustify) trPr += `<w:jc w:val="${ctx.tableJustify}"/>`;
   trPr += "</w:trPr>";
@@ -1029,27 +1223,54 @@ function tableCellToXml(
   // keepNext on every paragraph in every non-last row asks Word to keep the
   // table together when it fits on a single page, while still allowing a
   // genuine split when the table is too tall for one page.
-  const keepNext = !isLastRow;
+  const keepNext =
+    ctx?.tableCellKeepNext === false ? false : !isLastRow;
   const paragraphs = options.empty ? [] : cell.content ?? [];
   const cellAlign = isHeader
     ? (hAlign ?? ctx?.tableHeaderAlign ?? "left")
     : (hAlign ?? "left");
   const cellSize = ctx?.tableCellSizeHalfPoints ?? undefined;
+  const cellExtras = { inTable: true };
   const content = paragraphs
-    .map((p) => {
-      if (p.type === "paragraph") {
-        return paragraphToXml(p, isHeader, cellAlign, null, keepNext, ctx, cellSize);
+    .map((block) => {
+      if (block.type === "bulletList" || block.type === "orderedList") {
+        return listToXml(block, ctx, {
+          bold: isHeader,
+          align: cellAlign,
+          keepNext,
+          runSize: cellSize,
+          inTable: true,
+        });
       }
-      return paragraphToXml(p, false, cellAlign, null, keepNext, ctx, cellSize);
+      if (block.type === "paragraph") {
+        return paragraphToXml(
+          block,
+          isHeader,
+          cellAlign,
+          null,
+          keepNext,
+          ctx,
+          cellSize,
+          cellExtras
+        );
+      }
+      return paragraphToXml(
+        block,
+        false,
+        cellAlign,
+        null,
+        keepNext,
+        ctx,
+        cellSize,
+        cellExtras
+      );
     })
     .join("");
 
   // Word requires at least one paragraph in each cell
   const cellContent =
     content ||
-    (keepNext
-      ? `<w:p>${paragraphProperties(cellAlign, null, true, ctx)}</w:p>`
-      : `<w:p>${paragraphProperties(cellAlign, null, false, ctx)}</w:p>`);
+    `<w:p>${paragraphProperties(cellAlign, null, keepNext, ctx, cellExtras)}</w:p>`;
   return `<w:tc>${tcPr}${cellContent}</w:tc>`;
 }
 

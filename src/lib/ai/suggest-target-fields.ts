@@ -1,4 +1,5 @@
 import type { SectionType } from "@/db/schema";
+import { cvpEquipmentItemIndexFromTarget } from "@/lib/document-types/cvp/equipment-item-path";
 
 /** Pattern entries use `[]` for a numeric array index slot. */
 export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = {
@@ -137,6 +138,38 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   qsr_operating_range: ["table"],
   qsr_other_details: ["narrative"],
   qsr_conclusion: ["narrative"],
+  // 3xper Cleaning Validation Protocol (QAD-SOP-PS-003-F08-00).
+  cvp_approvals: ["table"],
+  cvp_objective: ["narrative"],
+  cvp_scope: ["narrative"],
+  cvp_responsibilities: ["table"],
+  cvp_background: ["narrative"],
+  cvp_prerequisites: ["narrative"],
+  cvp_qualification_status: ["table"],
+  cvp_surface_area: ["table"],
+  cvp_rinse_volume: ["narrative"],
+  cvp_maco: ["narrative"],
+  cvp_acceptance_limits: ["narrative"],
+  cvp_methodology: ["narrative"],
+  cvp_sampling_procedure: ["narrative"],
+  cvp_swab_locations: ["narrative"],
+  cvp_sampling_plan: ["narrative"],
+  cvp_equipment_sampling: ["items.[]"],
+  cvp_nitrosamine: ["table"],
+  cvp_pgi: ["table"],
+  cvp_process_line: ["table"],
+  cvp_manufacturing_area: ["table"],
+  cvp_overall_results: ["narrative"],
+  cvp_recommendations: ["narrative"],
+  cvp_testing_procedure: ["table"],
+  cvp_method_validation: ["table"],
+  cvp_evaluation: ["narrative"],
+  cvp_deviations: ["narrative"],
+  cvp_revalidation: ["narrative"],
+  cvp_abbreviations: ["table"],
+  cvp_related_documents: ["table"],
+  cvp_annexures: ["table"],
+  cvp_history: ["table"],
   // MJ-only Investigation Report DS (SOP/QA/017-F01 R01). The fixed-list fields
   // (tools, classification, groups, applicable, resultsStatus, disposition) are
   // selects, so they are not suggestion targets.
@@ -170,11 +203,34 @@ function patternToRegex(pattern: string): RegExp {
   return new RegExp(`^${reSource}$`);
 }
 
-/** Concrete editable field paths for a section (excludes `[]` index patterns). */
+/** Expand `items.[]` against live array length (at least `items.0`). */
+export function expandIndexedFieldPaths(
+  patterns: readonly string[],
+  content?: unknown
+): string[] {
+  const rec =
+    content && typeof content === "object" && !Array.isArray(content)
+      ? (content as Record<string, unknown>)
+      : null;
+  const out: string[] = [];
+  for (const pattern of patterns) {
+    if (!pattern.includes("[]")) {
+      out.push(pattern);
+      continue;
+    }
+    const prefix = pattern.replace(/\.?\[\]$/, "");
+    const arr = rec?.[prefix];
+    const n = Array.isArray(arr) && arr.length > 0 ? arr.length : 1;
+    for (let i = 0; i < n; i++) {
+      out.push(pattern.replace("[]", String(i)));
+    }
+  }
+  return out;
+}
+
+/** Concrete editable field paths. `items.[]` becomes `items.0` without live content. */
 export function concreteTargetFields(section: SectionType): readonly string[] {
-  return (SUGGEST_TARGET_FIELD_PATTERNS[section] ?? []).filter(
-    (p) => !p.includes("[]")
-  );
+  return expandIndexedFieldPaths(SUGGEST_TARGET_FIELD_PATTERNS[section] ?? []);
 }
 
 export function isAllowedTargetField(section: SectionType, targetField: string): boolean {
@@ -191,6 +247,17 @@ export function resolveTargetField(
   section: SectionType,
   targetField: string
 ): string | null {
+  if (section === "cvp_equipment_sampling") {
+    const itemIndex = cvpEquipmentItemIndexFromTarget(targetField);
+    if (itemIndex != null) return `items.${itemIndex}`;
+    if (
+      targetField === "narrative" ||
+      targetField === "table" ||
+      targetField === section
+    ) {
+      return "items.0";
+    }
+  }
   if (isAllowedTargetField(section, targetField)) return targetField;
   const allowed = concreteTargetFields(section);
   if (targetField === section && allowed.length === 1) {
@@ -317,6 +384,37 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   qsr_operating_range: ["table"],
   qsr_other_details: ["narrative"],
   qsr_conclusion: ["narrative"],
+  cvp_approvals: ["table"],
+  cvp_objective: ["narrative"],
+  cvp_scope: ["narrative"],
+  cvp_responsibilities: ["table"],
+  cvp_background: ["narrative"],
+  cvp_prerequisites: ["narrative"],
+  cvp_qualification_status: ["table"],
+  cvp_surface_area: ["table"],
+  cvp_rinse_volume: ["narrative"],
+  cvp_maco: ["narrative"],
+  cvp_acceptance_limits: ["narrative"],
+  cvp_methodology: ["narrative"],
+  cvp_sampling_procedure: ["narrative"],
+  cvp_swab_locations: ["narrative"],
+  cvp_sampling_plan: ["narrative"],
+  cvp_equipment_sampling: ["items.[]"],
+  cvp_nitrosamine: ["table"],
+  cvp_pgi: ["table"],
+  cvp_process_line: ["table"],
+  cvp_manufacturing_area: ["table"],
+  cvp_overall_results: ["narrative"],
+  cvp_recommendations: ["narrative"],
+  cvp_testing_procedure: ["table"],
+  cvp_method_validation: ["table"],
+  cvp_evaluation: ["narrative"],
+  cvp_deviations: ["narrative"],
+  cvp_revalidation: ["narrative"],
+  cvp_abbreviations: ["table"],
+  cvp_related_documents: ["table"],
+  cvp_annexures: ["table"],
+  cvp_history: ["table"],
   // Investigation Report DS: the fixed-list fields are selects, not rich fields.
   fir_event_description: ["narrative"],
   fir_standard_procedures: ["narrative"],
@@ -344,7 +442,8 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {
   const paths = RICH_FIELD_PATHS[section];
-  return paths?.includes(contentPath) ?? false;
+  if (!paths || paths.length === 0) return false;
+  return paths.some((pattern) => patternToRegex(pattern).test(contentPath));
 }
 
 /** @deprecated Use isRichTargetField(section, path) — kept for narrative-only call sites during migration. */

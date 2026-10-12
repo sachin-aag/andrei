@@ -6,6 +6,10 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import {
+  MATH_BLOCK_NODE_TYPE,
+  MATH_INLINE_NODE_TYPE,
+} from "@/lib/tiptap/math-anchor";
 import { TABLE_REF_NODE_TYPE } from "@/lib/tiptap/table-ref-markdown";
 import { extendPosPastOpenBracketClose } from "@/lib/text/bracket-span";
 
@@ -132,7 +136,11 @@ export function collectSuggestionActionWidgetPositions(
       }
       return true;
     }
-    if (node.type.name === TABLE_REF_NODE_TYPE) {
+    if (
+      node.type.name === TABLE_REF_NODE_TYPE ||
+      node.type.name === MATH_INLINE_NODE_TYPE ||
+      node.type.name === MATH_BLOCK_NODE_TYPE
+    ) {
       const end = pos + node.nodeSize;
       for (const mark of node.marks) {
         if (mark.type !== insertType && mark.type !== deleteType) continue;

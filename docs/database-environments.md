@@ -11,7 +11,7 @@ When the [Neon/Vercel integration](./neon-vercel-setup.md) has **preview branchi
 | Event | Database | Migrations |
 |-------|----------|------------|
 | **PR opened / updated** | Neon creates an isolated preview branch; Vercel injects its `DATABASE_URL` for that preview deployment only | `pnpm vercel:build` → `db:migrate` then `next build` |
-| **PR closed** | Preview Neon branch deleted (if cleanup enabled in integration) | — |
+| **PR closed or git branch deleted** | Preview Neon branch deleted (`neon-preview-cleanup.yml`; ids in `neon-preview-projects.ts`) | — |
 | **Merge to `main`** | Production `DATABASE_URL` (Neon `main`) | Same build on production deploy |
 
 Locally you still use `.env.local` or Docker. CI uses `secrets.DATABASE_URL` or a stub (see `.github/workflows/ci.yml`).

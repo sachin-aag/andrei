@@ -16,21 +16,19 @@ Work through this once per Vercel project. Most repeat failures come from missin
 
 ### 2. GitHub Actions cleanup (every customer Neon)
 
-Every git ref builds on **every** customer Vercel project, so each ref can create a `preview/<git-branch>` in **each** Neon. Configure GitHub **Settings → Secrets and variables → Actions**:
+Every git ref builds on **every** customer Vercel project, so each ref can create a `preview/<git-branch>` in **each** Neon. Cleanup ids live in [`src/lib/db/neon-preview-projects.ts`](../src/lib/db/neon-preview-projects.ts) so a missing GitHub variable cannot skip a pack (that left 3xper `preview/…` branches behind after merge). Configure GitHub **Settings → Secrets and variables → Actions**:
 
 | Name | Type | Value |
 |------|------|--------|
 | `NEON_API_KEY` | Secret | Neon Console → Account → **API keys** |
-| `NEON_PROJECT_ID_MJ` | Variable | Andrei V2 project id (`andrei-v2`) |
-| `NEON_PROJECT_ID_DEMO` | Variable | `bold-field-45608643` |
-| `NEON_PROJECT_ID_CONVERGENT` | Variable | `cold-thunder-36255681` |
-| `NEON_PROJECT_ID_3XPER` | Variable | `dark-salad-24878113` |
+| `NEON_PROJECT_ID_MJ` | Variable (optional override) | Andrei V2 (`blue-block-88692066`) |
+| `NEON_PROJECT_ID_DEMO` | Variable (optional override) | `bold-field-45608643` |
+| `NEON_PROJECT_ID_CONVERGENT` | Variable (optional override) | `cold-thunder-36255681` |
+| `NEON_PROJECT_ID_3XPER` | Variable (optional override) | `dark-salad-24878113` |
 
-A fifth pack: add `NEON_PROJECT_ID_{SLUG}` and a matrix row in both cleanup workflows (see [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer)). Unset ids are skipped.
+A fifth pack: add the Neon project id to `CUSTOMER_NEON_PREVIEW_PROJECTS` (see [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer)). GitHub `NEON_PROJECT_ID_*` vars override those defaults when set; they are not required for cleanup to run.
 
-Legacy repos may only have `NEON_PROJECT_ID` (MJ). The `_MJ` / `_DEMO` / `_CONVERGENT` / `_3XPER` variables are what [`.github/workflows/neon-preview-cleanup.yml`](../.github/workflows/neon-preview-cleanup.yml) and [`.github/workflows/neon-preview-stale-cleanup.yml`](../.github/workflows/neon-preview-stale-cleanup.yml) use.
-
-- **On PR close:** `neon-preview-cleanup` deletes `preview/<git-branch>` (and `preview/pr-<n>-<git-branch>` fallback).
+- **On PR close or git branch delete:** `neon-preview-cleanup` deletes `preview/<git-branch>` (and `preview/pr-<n>-<git-branch>` when a PR number is present) in every known customer Neon.
 - **Weekly:** `neon-preview-stale-cleanup` deletes `preview/*` branches older than 14 days (manual **Run workflow** to override age).
 
 ### 3. Vercel build-time auto-heal (optional but recommended)
@@ -103,19 +101,16 @@ Merging or closing a PR does **not** delete the Neon preview branch right away w
 | **Vercel-managed** | When Vercel **deletes** the preview deployment (default retention can be **months**) |
 | **Neon-managed** | When the Git branch is gone and **another** preview deploy runs (not on merge alone) |
 
-This repo adds [`.github/workflows/neon-preview-cleanup.yml`](../.github/workflows/neon-preview-cleanup.yml) to delete the branch when a PR closes.
+This repo adds [`.github/workflows/neon-preview-cleanup.yml`](../.github/workflows/neon-preview-cleanup.yml) to delete the branch when a PR closes **or** a git branch is deleted.
 
 **GitHub repository settings (required for that workflow):**
 
 | Name | Type | Where to get it |
 |------|------|-----------------|
 | `NEON_API_KEY` | Actions **secret** | Neon Console → Account → **API keys** |
-| `NEON_PROJECT_ID_MJ` | Actions **variable** | Andrei V2 → Project → **Settings** |
-| `NEON_PROJECT_ID_DEMO` | Actions **variable** | `bold-field-45608643` |
-| `NEON_PROJECT_ID_CONVERGENT` | Actions **variable** | `cold-thunder-36255681` |
-| `NEON_PROJECT_ID_3XPER` | Actions **variable** | `dark-salad-24878113` |
+| `NEON_PROJECT_ID_*` | Actions **variable** (optional) | Overrides the hardcoded ids in `src/lib/db/neon-preview-projects.ts` |
 
-`NEON_PROJECT_ID` (no suffix) is still read as a legacy MJ fallback. Prefer the suffixed variables so every pack’s preview branches are cleaned. A new pack adds `NEON_PROJECT_ID_{SLUG}` plus a workflow matrix row.
+Known packs (MJ, demo, Convergent, 3xper) always clean up from those hardcoded ids. A new pack adds a row to `CUSTOMER_NEON_PREVIEW_PROJECTS`. `NEON_PROJECT_ID` (no suffix) still means “this project only” for local one-off scripts.
 
 Install the [Neon GitHub integration](https://neon.com/docs/guides/branching-github-actions) to create these automatically, or add them manually under **Settings → Secrets and variables → Actions**.
 
@@ -126,11 +121,11 @@ Install the [Neon GitHub integration](https://neon.com/docs/guides/branching-git
 1. Open a PR → wait for Vercel Preview → confirm deploy succeeds (migrations + build in logs).
 2. In Neon Console → **Branches**, confirm a `preview/…` branch exists for the PR.
 3. Merge to `main` → Production deploy runs migrations against `main`, then builds.
-4. Close or merge the PR → `neon-preview-cleanup` workflow deletes the preview Neon branch (if secrets are set).
+4. Close or merge the PR, or delete the git branch → `neon-preview-cleanup` deletes `preview/<git-branch>` on every known customer Neon (needs `NEON_API_KEY`).
 
 ## Troubleshooting
 
-- **Preview branch still there after merge** — Expected without the GitHub cleanup workflow or `NEON_API_KEY` / `NEON_PROJECT_ID_*`. See §4 and **Prevent preview `28P01` failures** above. Optionally shorten Vercel **Settings → Security → Deployment retention** for pre-production.
+- **Preview branch still there after merge** — Expected without the GitHub cleanup workflow or `NEON_API_KEY`. Pack ids are hardcoded (a missing `NEON_PROJECT_ID_*` variable must not skip 3xper / demo / Convergent). See §4 and **Prevent preview `28P01` failures** above. Optionally shorten Vercel **Settings → Security → Deployment retention** for pre-production.
 - **Build fails: DATABASE_URL is not set** — Preview branching is off or the inject raced the first compile. Enable **Create a branch for each preview deployment**, then redeploy.
 - **Build fails: 28P01 / password authentication failed** — Stale password for a deleted preview compute. Keep preview branching **on**. Delete Neon `preview/<git-branch>` (and leftover `preview/…` for that ref), then **Redeploy** the Vercel Preview. If `NEON_API_KEY` + `NEON_PROJECT_ID` are set on the Vercel project Preview env, the build log may already delete the branch — redeploy only. Do not hand-edit Neon-logo `DATABASE_URL` rows.
 - **Preview uses production data** — Preview branching is off, or a static Preview `DATABASE_URL` is the Production row. Turn preview branching **on** so Neon injects `preview/<git-branch>`.

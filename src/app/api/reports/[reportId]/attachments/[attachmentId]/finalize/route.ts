@@ -18,8 +18,8 @@ import {
   AttachmentPageBudgetExceededError,
   attachmentPageBudgetExceededResponse,
 } from "@/lib/attachments/page-budget";
-import { validateDocx } from "@/lib/attachments/validate-docx";
-import { validatePdf } from "@/lib/attachments/validate-pdf";
+import { validateAttachmentBuffer } from "@/lib/attachments/validate-attachment";
+import { sanitizeFinalizeError } from "@/lib/attachments/finalize-staged-bytes";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
@@ -189,10 +189,9 @@ export async function POST(
     }
 
     const buffer = await storage.readObjectBuffer(storageSource.stagingObjectKey);
-    const { pageCount } =
-      kind === "docx"
-        ? validateDocx(buffer)
-        : await validatePdf(buffer, { maxPages: limits.maxAttachmentPages });
+    const { pageCount } = await validateAttachmentBuffer(kind, buffer, {
+      maxPages: limits.maxAttachmentPages,
+    });
     const scanResult = await getMalwareScanner().scan(buffer, attachment.filename);
     if (!scanResult.ok) {
       throw new Error(scanResult.reason);
@@ -312,30 +311,4 @@ async function promoteObject(fromKey: string, toKey: string): Promise<void> {
   } catch {
     await storage.getObjectMetadata(toKey);
   }
-}
-
-function sanitizeFinalizeError(error: unknown): string {
-  if (!(error instanceof Error)) return "Attachment validation failed";
-  const message = error.message;
-  if (message.includes("Malware scanning")) {
-    return "Attachment malware scan failed";
-  }
-  if (message.includes("Malware")) {
-    return "Attachment malware scan failed";
-  }
-  // Preserve ingest-start / ingest-run messages if they bubble here.
-  if (message.includes("Document ingestion") || message.includes("ingest")) {
-    return message.slice(0, 300);
-  }
-  if (
-    message.includes("PDF") ||
-    message.includes("Word") ||
-    message.includes(".docx") ||
-    message.includes("file") ||
-    message.includes("object") ||
-    message.includes("type")
-  ) {
-    return message;
-  }
-  return "Attachment validation failed";
 }

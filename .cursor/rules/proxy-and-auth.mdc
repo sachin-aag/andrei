@@ -37,3 +37,8 @@ alwaysApply: false
   Sachin and Aditya (`src/lib/auth/external-login-alert.ts`). Fail-soft;
   skipped when `ALLOW_TEST_LOGIN` is on. Test-login JWT minting does not
   go through that event.
+- Magic-link and password-reset Resend sends retry once as
+  `noreply@andreihealth.com` when the pack `AUTH_EMAIL_FROM` 403s
+  (unverified domain; historically 3xper). Magic link uses a custom
+  `sendVerificationRequest` (`send-magic-link-email.ts`), not Auth.js's
+  default Resend POST.

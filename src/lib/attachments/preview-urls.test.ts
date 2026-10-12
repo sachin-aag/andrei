@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DOCX_MIME_TYPE, PDF_MIME_TYPE } from "@/lib/attachments/file-types";
+import { DOCX_MIME_TYPE, PDF_MIME_TYPE, CSV_MIME_TYPE, XLSX_MIME_TYPE } from "@/lib/attachments/file-types";
 import {
   attachmentDownloadHref,
   attachmentPreviewSrc,
@@ -28,6 +28,25 @@ describe("attachmentPreviewSrc", () => {
         page: 1,
       })
     ).toBe("/api/reports/report-1/attachments/att-2/preview");
+  });
+
+  it("uses the server-rendered HTML preview for CSV and Excel", () => {
+    expect(
+      attachmentPreviewSrc({
+        reportId: "report-1",
+        attachmentId: "att-csv",
+        mimeType: CSV_MIME_TYPE,
+        page: 1,
+      })
+    ).toBe("/api/reports/report-1/attachments/att-csv/preview");
+    expect(
+      attachmentPreviewSrc({
+        reportId: "report-1",
+        attachmentId: "att-xlsx",
+        mimeType: XLSX_MIME_TYPE,
+        page: 1,
+      })
+    ).toBe("/api/reports/report-1/attachments/att-xlsx/preview");
   });
 });
 
@@ -58,6 +77,23 @@ describe("libraryPreviewSrc", () => {
         page: 1,
       })
     ).toBe("/api/attachment-vault/asset-2/preview");
+  });
+
+  it("uses the server-rendered HTML preview for library CSV and Excel", () => {
+    expect(
+      libraryPreviewSrc({
+        assetId: "asset-csv",
+        mimeType: CSV_MIME_TYPE,
+        page: 1,
+      })
+    ).toBe("/api/attachment-vault/asset-csv/preview");
+    expect(
+      libraryPreviewSrc({
+        assetId: "asset-xlsx",
+        mimeType: XLSX_MIME_TYPE,
+        page: 1,
+      })
+    ).toBe("/api/attachment-vault/asset-xlsx/preview");
   });
 });
 

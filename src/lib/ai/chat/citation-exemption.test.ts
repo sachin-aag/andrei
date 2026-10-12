@@ -6,7 +6,10 @@ import {
   contentWithoutField,
   isExemptFrameFact,
   isExplicitInsertRequest,
+  isOperationalVolumeColumnLabel,
+  shouldKeepOperationalVolume,
   shouldKeepUnsupportedFact,
+  volumeSupportedForColumn,
 } from "./citation-exemption";
 import { extractHardFacts } from "./claim-facts";
 
@@ -229,21 +232,48 @@ describe("isExplicitInsertRequest", () => {
 });
 
 describe("shouldKeepUnsupportedFact", () => {
-  it("keeps a date the prior assistant turn already stated", () => {
+  it("keeps a date the engineer stated this turn", () => {
     const fact = extractHardFacts("30-06-2025").find(
       (row) => row.kind === "date"
     )!;
     expect(
       shouldKeepUnsupportedFact(fact, {
-        latestUserMessageText: "use that date",
+        latestUserMessageText: "use 30-06-2025 from the approval sheet",
+        recentAssistantTexts: ["Ignore this assistant echo of 01-01-2099."],
+      })
+    ).toBe(true);
+  });
+
+  it("does not keep a number the prior assistant turn invented", () => {
+    const fact = extractHardFacts("24.50 m²").find(
+      (row) => row.kind === "number"
+    )!;
+    expect(fact.text).toContain("24.50");
+    expect(
+      shouldKeepUnsupportedFact(fact, {
+        latestUserMessageText: "fill table 6 from the IQ",
         recentAssistantTexts: [
-          "The URS approval sheet shows 30-06-2025.",
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it("keeps every fact on an explicit go-ahead insert", () => {
+    const fact = extractHardFacts("24.50 m²").find(
+      (row) => row.kind === "number"
+    )!;
+    expect(
+      shouldKeepUnsupportedFact(fact, {
+        latestUserMessageText: "go ahead and insert that",
+        recentAssistantTexts: [
+          "Heat transfer area is 24.50 m² [Installation Qualification.PDF, p. 24].",
         ],
       })
     ).toBe(true);
   });
 
-  it("does not keep an invented date absent from the thread", () => {
+  it("does not keep an invented date absent from the user message", () => {
     const fact = extractHardFacts("01-01-2099").find(
       (row) => row.kind === "date"
     )!;
@@ -255,5 +285,40 @@ describe("shouldKeepUnsupportedFact", () => {
         ],
       })
     ).toBe(false);
+  });
+});
+
+describe("operational volume columns", () => {
+  it("treats considered volume and rinse sample quantity as floors", () => {
+    expect(isOperationalVolumeColumnLabel("Considered volume")).toBe(true);
+    expect(isOperationalVolumeColumnLabel("Rinse sample quantity")).toBe(true);
+    expect(isOperationalVolumeColumnLabel("Rinse volume (L)")).toBe(true);
+    expect(
+      isOperationalVolumeColumnLabel("Rinse volume RF (L) SA × RF")
+    ).toBe(false);
+    expect(
+      isOperationalVolumeColumnLabel("Rinse volume SAF (L) SA × SAF × SF")
+    ).toBe(false);
+    const fiveL = extractHardFacts("5 L").find((row) => row.kind === "number")!;
+    expect(shouldKeepOperationalVolume(fiveL, "Considered volume")).toBe(true);
+    expect(shouldKeepOperationalVolume(fiveL, "Capacity")).toBe(false);
+  });
+
+  it("does not treat PFR capacity as a considered rinse volume", () => {
+    const fiveL = extractHardFacts("5 L").find((row) => row.kind === "number")!;
+    expect(
+      volumeSupportedForColumn(
+        "Plug Flow Reactor PFR-1301 (5 L HAS). Micron Filter MF-1301 size 10\".",
+        fiveL,
+        "Considered volume"
+      )
+    ).toBe(false);
+    expect(
+      volumeSupportedForColumn(
+        "MF-1301 micron filter considered rinse volume 5 L to flood the housing.",
+        fiveL,
+        "Considered volume"
+      )
+    ).toBe(true);
   });
 });

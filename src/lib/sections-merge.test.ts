@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeAnalyzeSection,
   mergeControlSection,
+  mergeDefineSection,
   mergeImproveSection,
   mergeMeasureSection,
   mergeSection,
@@ -69,6 +70,13 @@ describe("sections merge", () => {
     const correctivePlain = richJsonToPlainText(improve.correctiveActions);
     expect(correctivePlain).toContain("Intro paragraphs before corrective detail.");
     expect(correctivePlain).toContain("Work order WO-1 closed.");
+  });
+
+  it("keeps a cleared define narrative instead of restoring seed template text", () => {
+    const merged = mergeDefineSection({
+      narrative: { type: "doc", content: [{ type: "paragraph" }] },
+    });
+    expect(richJsonToPlainText(merged.narrative).trim()).toBe("");
   });
 
   it("merges documents reviewed item list", () => {

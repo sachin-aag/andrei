@@ -229,6 +229,15 @@ describe("planReviewPages", () => {
     ).toBe("qsr_rtm");
     expect(objectiveTokens("5.1 Process Requirements")).toContain("process");
     expect(objectiveTokens("5.1 Process Requirements")).not.toContain("qsr");
+    expect(
+      coverageObjectiveDigest("Extract LOQ/LOD and swab locations for 15.3 LF-1301")
+    ).toBe("cvp_equipment_sampling");
+    expect(coverageObjectiveDigest("cvp_equipment_sampling")).toBe(
+      "cvp_equipment_sampling"
+    );
+    expect(
+      coverageObjectiveDigest("equipment sampling walk for the next vessel")
+    ).toBe("cvp_equipment_sampling");
   });
 
   it("treats a prose RTM finish as covering 5.2–5.4", () => {

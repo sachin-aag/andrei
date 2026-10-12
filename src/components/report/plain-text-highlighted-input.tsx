@@ -24,6 +24,7 @@ import {
   placeholderSpanAtOffset,
 } from "@/lib/plain-text/placeholder-at-offset";
 import { getTextareaSelectionClientRect } from "@/lib/plain-text/textarea-selection-rect";
+import { rectIntersectsBounds } from "@/lib/tiptap/selection-comment-anchor";
 import {
   selectionTouchesLockedPlainText,
   skipLockedPlainTextOnBackspace,
@@ -217,11 +218,31 @@ export function PlainTextHighlightedInput({
       return;
     }
 
+    const pane = textarea.closest<HTMLElement>("[data-canvas-pane]");
+    const paneActive =
+      pane == null || pane.getAttribute("data-canvas-pane") === "active";
+    const bounds = (pane ?? textarea).getBoundingClientRect();
+    if (!paneActive || !rectIntersectsBounds(rect, bounds)) {
+      setSelectionRect(null);
+      if (!commentComposing) setPendingSel(null);
+      return;
+    }
+
     setSelectionRect(rect);
     if (!commentComposing) {
       setPendingSel({ from: selectionStart, to: selectionEnd });
     }
   }, [canInlineComment, commentComposing, clearCommentUi, value]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !canInlineComment) return;
+    const pane = textarea.closest<HTMLElement>("[data-canvas-pane]");
+    const target: HTMLElement | Window = pane ?? window;
+    const onScroll = () => refreshSelectionUi();
+    target.addEventListener("scroll", onScroll, { passive: true });
+    return () => target.removeEventListener("scroll", onScroll);
+  }, [canInlineComment, refreshSelectionUi]);
 
   const selectPlaceholderAtCursor = useCallback(() => {
     const textarea = textareaRef.current;

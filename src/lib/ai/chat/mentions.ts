@@ -7,6 +7,10 @@ import {
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import {
+  chatMentionParentSection,
+  cvpEquipmentItemIndexFromMentionId,
+} from "@/lib/document-types/cvp/equipment-item-path";
+import {
   quotePromptMetadata,
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
@@ -34,7 +38,7 @@ export type ChatMentionType = "document" | "section" | "analysis";
  */
 export type ChatMention =
   | { type: "document"; id: string }
-  | { type: "section"; id: SectionType }
+  | { type: "section"; id: string }
   | { type: "analysis"; id: string };
 
 export type ResolvedDocumentMention = {
@@ -48,6 +52,8 @@ export type ResolvedDocumentMention = {
 export type ResolvedSectionMention = {
   section: SectionType;
   label: string;
+  /** In-section path when a 15.N equipment box was tagged (`items.1`). */
+  targetField?: string;
 };
 
 export type ResolvedAnalysisMention = {
@@ -150,7 +156,7 @@ export function parseChatMentions(
 
     mentions.push(
       type === "section"
-        ? { type: "section", id: trimmed as SectionType }
+        ? { type: "section", id: trimmed }
         : type === "analysis"
           ? { type: "analysis", id: trimmed }
           : { type: "document", id: trimmed }
@@ -168,12 +174,18 @@ export function sectionScopeFromMentions(
   mentions: readonly ChatMention[],
   documentType: DocumentType = "investigation_report"
 ): ChatSectionScope {
-  const sections = mentions.filter(
-    (mention): mention is Extract<ChatMention, { type: "section" }> =>
-      mention.type === "section"
-  );
-  if (sections.length !== 1) return CHAT_SECTION_SCOPE_ALL;
-  const section = sections[0]!.id;
+  const parents = [
+    ...new Set(
+      mentions
+        .filter(
+          (mention): mention is Extract<ChatMention, { type: "section" }> =>
+            mention.type === "section"
+        )
+        .map((mention) => chatMentionParentSection(mention.id))
+    ),
+  ];
+  if (parents.length !== 1) return CHAT_SECTION_SCOPE_ALL;
+  const section = parents[0]!;
   return isChatEditableSection(section, documentType)
     ? section
     : CHAT_SECTION_SCOPE_ALL;
@@ -200,7 +212,17 @@ export function resolveChatMentions(
 
   for (const mention of mentions) {
     if (mention.type === "section") {
-      sections.push({ section: mention.id, label: sectionLabel(mention.id) });
+      const parent = chatMentionParentSection(mention.id);
+      const itemIndex = cvpEquipmentItemIndexFromMentionId(mention.id);
+      const label =
+        itemIndex != null
+          ? `15.${itemIndex + 1} Equipment sampling`
+          : sectionLabel(parent as SectionType);
+      sections.push({
+        section: parent as SectionType,
+        label,
+        ...(itemIndex != null ? { targetField: `items.${itemIndex}` } : {}),
+      });
       continue;
     }
 
@@ -247,7 +269,21 @@ export function mentionedAttachmentIds(resolved: ResolvedChatMentions): string[]
 export function mentionedSections(
   resolved: ResolvedChatMentions
 ): SectionType[] {
-  return resolved.sections.map((entry) => entry.section);
+  return [...new Set(resolved.sections.map((entry) => entry.section))];
+}
+
+/** Exclusive tagged 15.N path so writes land in that box, not the next empty one. */
+export function mentionedCvpEquipmentTargetField(
+  resolved: ResolvedChatMentions
+): string | undefined {
+  const fields = [
+    ...new Set(
+      resolved.sections.flatMap((entry) =>
+        entry.targetField ? [entry.targetField] : []
+      )
+    ),
+  ];
+  return fields.length === 1 ? fields[0] : undefined;
 }
 
 export function mentionedAnalysisIds(resolved: ResolvedChatMentions): string[] {
@@ -307,7 +343,13 @@ export function buildMentionBlock(resolved: ResolvedChatMentions): string {
   if (sections.length > 0) {
     lines.push("Sections — read them with read_section before answering:");
     for (const entry of sections) {
-      lines.push(`- ${entry.label} [${entry.section}]`);
+      if (entry.targetField) {
+        lines.push(
+          `- ${entry.label} [${entry.section}] — write targetField ${entry.targetField} only (the tagged equipment box). Do not write a sibling 15.N box.`
+        );
+      } else {
+        lines.push(`- ${entry.label} [${entry.section}]`);
+      }
     }
   }
 

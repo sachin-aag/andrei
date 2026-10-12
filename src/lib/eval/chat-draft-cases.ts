@@ -41,6 +41,8 @@ export type ChatDraftGroundDraftCase = {
     pages: ChatDraftPage[];
     policy?: "block" | "flag";
     tableCol?: number;
+    latestUserMessageText?: string;
+    recentAssistantTexts?: string[];
   };
   expected: {
     blocked: boolean;
@@ -303,6 +305,14 @@ function parseCase(value: unknown, index: number): ChatDraftEvalCase {
         pages: parsePages(value.input.pages, id),
         policy,
         tableCol,
+        latestUserMessageText:
+          typeof value.input.latestUserMessageText === "string"
+            ? value.input.latestUserMessageText
+            : undefined,
+        recentAssistantTexts: asStringArray(
+          value.input.recentAssistantTexts,
+          `${id}.recentAssistantTexts`
+        ),
       },
       expected: {
         blocked: value.expected.blocked,
@@ -510,6 +520,8 @@ export function runChatDraftCase(entry: ChatDraftEvalCase): ChatDraftCaseOutput 
           section: entry.input.section,
           attachedFilenames: entry.input.attachedFilenames,
           tableCol: entry.input.tableCol,
+          latestUserMessageText: entry.input.latestUserMessageText,
+          recentAssistantTexts: entry.input.recentAssistantTexts,
         },
       });
       return {

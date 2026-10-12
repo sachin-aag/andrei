@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Content, JSONContent, Editor } from "@tiptap/core";
+import { posToDOMRect, type Content, type JSONContent, type Editor } from "@tiptap/core";
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -71,6 +71,10 @@ import {
   placeholderRefreshMeta,
 } from "@/lib/tiptap/placeholder-highlights";
 import {
+  rectIntersectsBounds,
+  shouldShowSelectionCommentBubble,
+} from "@/lib/tiptap/selection-comment-anchor";
+import {
   SuggestionInsert,
   SuggestionDelete,
   TrackChangesExtension,
@@ -105,7 +109,7 @@ import { readSuggestionRecord } from "@/lib/suggestions/suggestion-record";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import {
-  editorProfileFor,
+  editorHeadingLevels,
   getDocumentType,
   suggestionApplyModeFor,
 } from "@/lib/document-types";
@@ -128,6 +132,7 @@ import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
+import { applyDrawingOperationToDoc } from "@/lib/drawings/apply-drawing";
 import { documentContentsFromReportState } from "@/lib/suggestions/document-table-number";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
@@ -400,6 +405,9 @@ export function TiptapSectionField({
     currentUserId,
     getSectionId,
     refresh,
+    closeSuggestionComments,
+    releaseSuggestionComments,
+    markSectionPersisted,
   } = useReportData();
   const {
     comments,
@@ -599,8 +607,10 @@ export function TiptapSectionField({
   const [commentDraft, setCommentDraft] = useState("");
   const [pendingSel, setPendingSel] = useState<{ from: number; to: number } | null>(null);
   const [posting, setPosting] = useState(false);
-  const headingEnabled =
-    editorProfileFor(getDocumentType(report.documentType)) === "generic_document";
+  const headingLevels = editorHeadingLevels(
+    getDocumentType(report.documentType)
+  );
+  const headingEnabled = headingLevels !== false;
   const suggestionPersistMode = suggestionApplyModeFor(
     getDocumentType(report.documentType)
   );
@@ -617,7 +627,7 @@ export function TiptapSectionField({
       autofocus: false,
       extensions: [
         StarterKit.configure({
-          heading: headingEnabled ? { levels: [1, 2, 3] } : false,
+          heading: headingEnabled ? { levels: [...headingLevels] } : false,
           bulletList: false,
         }),
         BulletListWithStyle,
@@ -649,6 +659,10 @@ export function TiptapSectionField({
       editable,
       onUpdate: ({ editor: ed }) => {
         if (skipHydrateUpdateRef.current) return;
+        // Structural table previews are editor-local. Persisting them makes
+        // a later insert_rows card validate against painted cells and look
+        // like it never landed (stale / canPreview false).
+        if (tablePreviewSuggestionIdRef.current) return;
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
@@ -811,7 +825,9 @@ export function TiptapSectionField({
       if (!comment) throw new Error("Suggestion not found");
 
       beginSuggestionApplyTransition(section, suggestionId, mode);
+      closeSuggestionComments([suggestionId]);
 
+      let settled = false;
       try {
         const currentSection = sections[section] as Record<string, unknown>;
         const result =
@@ -866,6 +882,7 @@ export function TiptapSectionField({
               >)
             : null;
         const dismissedSiblings = accepted?.dismissed ?? [];
+        closeSuggestionComments(dismissedSiblings.map((row) => row.id));
 
         // Paint the applied result immediately. Preview marks live in the
         // editor, not provider state, so dismiss often has no nextSection.
@@ -875,11 +892,17 @@ export function TiptapSectionField({
         // disappeared.
         if (result.nextSection) {
           replaceSection(section, result.nextSection as unknown);
+          markSectionPersisted(section, result.nextSection);
           if (accepted) {
             applyRelatedSectionUpdates(
               replaceSection,
               accepted.nextRelatedSections
             );
+            for (const [related, content] of Object.entries(
+              accepted.nextRelatedSections ?? {}
+            )) {
+              if (content) markSectionPersisted(related, content);
+            }
           }
         }
         if (editor && !editor.isDestroyed && isRichField) {
@@ -935,9 +958,15 @@ export function TiptapSectionField({
                 return c;
               })
         );
+        settled = true;
         // Let the accepted/dismissed value paint while preview-held is still on,
         // otherwise ending the lock in the same tick re-strips the preview.
         await afterPaint();
+      } catch (err) {
+        if (!settled) {
+          releaseSuggestionComments([suggestionId]);
+        }
+        throw err;
       } finally {
         endSuggestionApplyTransition(section);
       }
@@ -958,6 +987,9 @@ export function TiptapSectionField({
       value,
       beginSuggestionApplyTransition,
       endSuggestionApplyTransition,
+      closeSuggestionComments,
+      releaseSuggestionComments,
+      markSectionPersisted,
     ]
   );
 
@@ -1230,7 +1262,16 @@ export function TiptapSectionField({
           };
 
           const payload = parseAiFixCommentContent(comment.content);
-          if (payload.tableOperation) {
+          if (payload.drawingOperation) {
+            const preview = applyDrawingOperationToDoc(
+              canonicalJson,
+              payload.drawingOperation
+            );
+            if (preview.ok) {
+              json = preview.doc;
+              tablePreviewSuggestionIdRef.current = activeSuggestionId;
+            }
+          } else if (payload.tableOperation) {
             const preview = buildTableOperationPreviewDoc(
               canonicalJson,
               payload.tableOperation,
@@ -1465,6 +1506,26 @@ export function TiptapSectionField({
     ? buildInactiveSuggestionCss(activeSuggestionId)
     : "";
 
+  const commentCanvasPane =
+    editor?.view.dom.closest<HTMLElement>("[data-canvas-pane]") ?? null;
+  const commentBubbleOptions = useMemo(() => {
+    const boundary = commentCanvasPane ?? undefined;
+    return {
+      strategy: "fixed" as const,
+      placement: "right-end" as const,
+      offset: 10,
+      flip: boundary ? { boundary, padding: 8 } : true,
+      shift: boundary ? { boundary, padding: 8 } : { padding: 8 },
+      // Hide when the selection is clipped by the canvas. Otherwise shift
+      // pins the chip to the viewport edge — over the app header.
+      hide: {
+        strategy: "referenceHidden" as const,
+        ...(boundary ? { boundary } : {}),
+      },
+      scrollTarget: commentCanvasPane ?? window,
+    };
+  }, [commentCanvasPane]);
+
   return (
     <div className={className}>
       {inactiveSuggestionCss ? (
@@ -1514,20 +1575,32 @@ export function TiptapSectionField({
           editor={editor}
           appendTo={() => document.body}
           className="z-50"
-          options={{
-            placement: "right-end",
-            offset: 10,
-            flip: true,
-            shift: { padding: 8 },
-          }}
+          options={commentBubbleOptions}
           shouldShow={({ editor: ed, state }) => {
-            if (!canInlineComment || !ed.isEditable) return false;
-            if (commentComposing) return true;
-            if (state.selection.empty) return false;
-            // Don't show comment bubble when the selection covers a placeholder
-            // (user clicked to fill it, not to comment on it)
-            if (isSelectionOverPlaceholder(state)) return false;
-            return true;
+            const pane = ed.view.dom.closest<HTMLElement>("[data-canvas-pane]");
+            const bounds = (pane ?? ed.view.dom).getBoundingClientRect();
+            let anchorIntersectsPane = false;
+            if (!state.selection.empty) {
+              try {
+                anchorIntersectsPane = rectIntersectsBounds(
+                  posToDOMRect(ed.view, state.selection.from, state.selection.to),
+                  bounds
+                );
+              } catch {
+                anchorIntersectsPane = false;
+              }
+            }
+            return shouldShowSelectionCommentBubble({
+              canInlineComment,
+              editable: ed.isEditable,
+              composing: commentComposing,
+              editorFocused: ed.view.hasFocus(),
+              selectionEmpty: state.selection.empty,
+              overPlaceholder: isSelectionOverPlaceholder(state),
+              paneActive:
+                pane == null || pane.getAttribute("data-canvas-pane") === "active",
+              anchorIntersectsPane,
+            });
           }}
         >
           <div

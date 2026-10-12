@@ -103,6 +103,8 @@ import {
   remainingChatAbortMs,
   scheduleChatTurnDeadline,
 } from "@/lib/ai/chat/assistant-turn";
+import { rewriteAskAssistantParts } from "@/lib/ai/chat/ask-citation-rewrite";
+import { rewriteUnlandedWriteParts } from "@/lib/ai/chat/unlanded-write-rewrite";
 
 export const maxDuration = 300;
 
@@ -569,11 +571,23 @@ async function handleAnalyticsChatPost(
         });
       }
       try {
+        const persistedParts = rewriteUnlandedWriteParts(
+          rewriteAskAssistantParts({
+            mode,
+            parts: persisted.parts,
+            history: messages,
+            response: {
+              id: responseMessage.id,
+              role: "assistant",
+              parts: persisted.parts,
+            },
+          })
+        );
         await db.insert(chatMessages).values({
           reportId,
           sessionId,
           role: "assistant",
-          parts: persisted.parts,
+          parts: persistedParts,
           metadata: chatAssistantTurnMetadata({
             pace,
             mode,

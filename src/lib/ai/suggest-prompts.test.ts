@@ -7,7 +7,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v24-citation-word-end");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v25-equation-anchors");
   });
 
   it("includes split-citation rules", () => {

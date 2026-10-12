@@ -22,6 +22,12 @@ describe("evidenceContainsFact", () => {
     ).toBe(true);
   });
 
+  it("matches 10k L against 10000 L", () => {
+    const volume = fact("Capacity 10k L");
+    expect(evidenceContainsFact("Capacity 10000 L", volume)).toBe(true);
+    expect(evidenceContainsFact("Jacket volume 10 L", volume)).toBe(false);
+  });
+
   it("matches 10,000 against 10000", () => {
     const count = fact("filled 10,000 units");
     expect(evidenceContainsFact("Units filled 10000", count)).toBe(true);
@@ -245,6 +251,33 @@ describe("evidenceContainsFact", () => {
         "Aseptic process simulation MF-24-001: 14 days incubation, contaminated units 0.",
         duration
       )
+    ).toBe(true);
+  });
+
+  it("does not treat a WAF range in L/m² as a rinse volume in L", () => {
+    const rinse = fact("Considered volume 5 L", "number");
+    expect(rinse.text).toContain("5 L");
+    expect(
+      evidenceContainsFact(
+        "Rinse Factor RF = 3L/m². Table 7 WAF: 1–3 L/m² easily soluble; 3–5 L/m² moderately soluble; 5-10 L/m² poorly soluble.",
+        rinse
+      )
+    ).toBe(false);
+    expect(evidenceContainsFact("Final rinse 5 L collected from MF-1301.", rinse)).toBe(
+      true
+    );
+  });
+
+  it("does not treat 5 mL as present because the page shows 5 L", () => {
+    const sample = fact("Rinse sample 5 mL", "number");
+    expect(evidenceContainsFact("Equipment capacity 5 L HAS.", sample)).toBe(false);
+  });
+
+  it("matches 192.4 µbar when the instrument log prints 192.4 without a unit", () => {
+    const reading = fact("The low was 192.4 µbar", "number");
+    expect(reading.text).toContain("192.4");
+    expect(
+      evidenceContainsFact("22/05/2026 20:59:11 192.4", reading)
     ).toBe(true);
   });
 });
