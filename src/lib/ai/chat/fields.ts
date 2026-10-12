@@ -324,9 +324,10 @@ export function seedFieldDoc(
   if (section === "cvp_equipment_sampling") {
     const index = cvpEquipmentItemIndex(targetField);
     if (index != null) {
-      return normalizeCvpEquipmentSamplingContent({
-        items: [cvpEquipmentSamplingSeed(index + 1)],
-      }).items[0];
+      const items = Array.from({ length: index + 1 }, (_, i) =>
+        cvpEquipmentSamplingSeed(i + 1)
+      );
+      return normalizeCvpEquipmentSamplingContent({ items }).items[index];
     }
   }
   const empty = emptyContentForSection(section);
@@ -421,9 +422,8 @@ export function fieldFillState(
       section === "cvp_equipment_sampling" &&
       cvpEquipmentItemIndex(targetField) != null
     ) {
-      const upgraded = normalizeCvpEquipmentSamplingContent({
-        items: [doc],
-      }).items[0];
+      const index = cvpEquipmentItemIndex(targetField)!;
+      const upgraded = normalizeCvpEquipmentSamplingContent(record).items[index];
       if (upgraded && scaffoldEmpty(upgraded)) {
         return "empty";
       }
