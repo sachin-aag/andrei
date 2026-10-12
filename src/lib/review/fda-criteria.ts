@@ -253,6 +253,7 @@ export function fdaCriteriaForDocumentType(
     case "vendor_qualification":
       return VQ_FDA;
     case "generic_document":
+    case "cleaning_verification_protocol":
       return [];
     default: {
       const _exhaustive: never = documentType;

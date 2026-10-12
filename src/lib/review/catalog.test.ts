@@ -25,7 +25,10 @@ describe("review catalog", () => {
 
   it("declares FDA criteria for every non-generic document type", () => {
     for (const type of documentTypeEnum.enumValues) {
-      if (type === "generic_document") {
+      if (
+        type === "generic_document" ||
+        type === "cleaning_verification_protocol"
+      ) {
         expect(fdaCriteriaForDocumentType(type)).toEqual([]);
         expect(
           checksForDocumentType(type).some((check) => check.category === "fda")
