@@ -666,30 +666,6 @@ describe("cleaning verification protocol sections", () => {
     ).toBe(1);
   });
 
-  it("aligns leftover three-batch evaluation wording with the ISM Stage-4 seed", () => {
-    const def = getDocumentType("cleaning_verification_protocol");
-    const merged = def.mergeSection("cvp_evaluation", {
-      narrative: {
-        type: "doc",
-        content: [
-          {
-            type: "paragraph",
-            content: [
-              {
-                type: "text",
-                text: "The cleaning procedure shall be considered validated when three consecutive cleaning batches each comply with the visual inspection, swab, rinse, extraneous matter, pH (wherever applicable), nitrosamine, and potential genotoxic impurities acceptance criteria defined in this protocol. A failed batch shall be investigated, and the count of consecutive batches restarts unless the investigation justifies otherwise.",
-              },
-            ],
-          },
-        ],
-      },
-    }) as { narrative: JSONContent };
-    expect(JSON.stringify(merged.narrative)).toContain(CVP_EVALUATION_SEEDS[0]);
-    expect(JSON.stringify(merged.narrative)).not.toContain(
-      "three consecutive cleaning batches each comply"
-    );
-  });
-
   it("widens old Results columns to Batch 1/2/3 and is idempotent", () => {
     const oldResidue: JSONContent = {
       type: "doc",
@@ -792,88 +768,6 @@ describe("cleaning verification protocol sections", () => {
       "2 ppm",
       "2 ppm",
       "2 ppm",
-    ]);
-  });
-
-  it("drops a leftover Limit row on an already-wide results table and keeps LOQ / LOD", () => {
-    const row = (cells: string[]) => ({
-      type: "tableRow" as const,
-      content: cells.map((text) => ({
-        type: "tableCell" as const,
-        content: [
-          {
-            type: "paragraph" as const,
-            content: text ? [{ type: "text" as const, text }] : [],
-          },
-        ],
-      })),
-    });
-    const edited: JSONContent = {
-      type: "doc",
-      content: [
-        {
-          type: "table",
-          content: [
-            {
-              type: "tableRow",
-              content: [...CVP_RESIDUE_RESULTS_HEADERS].map((text) => ({
-                type: "tableHeader",
-                content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-              })),
-            },
-            row(["Final Rinse Sample (Acetone)", "NA", "", "", ""]),
-            row(["Limit", "NMT 10 ppm", "", "12 ppm", ""]),
-            row(["LOQ", "note", "5 ppm [3]", "5 ppm [3]", "6 ppm"]),
-            row(["LOD", "", "2 ppm", "2 ppm", "2 ppm"]),
-          ],
-        },
-      ],
-    };
-    const cells = summarizeTablesInDoc(upgradeCvpValidationDoc(edited))[0]?.cells ?? [];
-    const byLabel = (label: string) => {
-      const rowIndex = cells.find((cell) => cell.col === 0 && cell.text === label)?.row;
-      return cells
-        .filter((cell) => cell.row === rowIndex)
-        .sort((a, b) => a.col - b.col)
-        .map((cell) => cell.text);
-    };
-    expect(byLabel("Limit")).toEqual([]);
-    expect(byLabel("Final Rinse Sample (Acetone)")[2]).toBe("NMT 10 ppm");
-    expect(byLabel("LOQ")).toEqual([
-      "LOQ",
-      "note",
-      "(empty)",
-      "5 ppm [3]",
-      "6 ppm",
-    ]);
-    expect(byLabel("LOD")).toEqual([
-      "LOD",
-      "(empty)",
-      "(empty)",
-      "2 ppm",
-      "2 ppm",
-    ]);
-
-    const merged = getDocumentType("cleaning_verification_protocol").mergeSection(
-      "cvp_equipment_sampling",
-      { items: [edited] }
-    ) as { items: JSONContent[] };
-    const mergedCells = summarizeTablesInDoc(merged.items[0]!)[0]?.cells ?? [];
-    const mergedByLabel = (label: string) => {
-      const rowIndex = mergedCells.find((cell) => cell.col === 0 && cell.text === label)?.row;
-      return mergedCells
-        .filter((cell) => cell.row === rowIndex)
-        .sort((a, b) => a.col - b.col)
-        .map((cell) => cell.text);
-    };
-    expect(mergedByLabel("Limit")).toEqual([]);
-    expect(mergedByLabel("Final Rinse Sample (Acetone)")[2]).toBe("NMT 10 ppm");
-    expect(mergedByLabel("LOQ")).toEqual([
-      "LOQ",
-      "note",
-      "(empty)",
-      "5 ppm [3]",
-      "6 ppm",
     ]);
   });
 
@@ -1618,59 +1512,6 @@ describe("cleaning verification protocol sections", () => {
     ]);
   });
 
-  it("upgrades empty or 0.1 ppm nitrosamine Limit NMT cells to 0.01 ppm", () => {
-    const def = getDocumentType("cleaning_verification_protocol");
-    const nitro = def.mergeSection("cvp_nitrosamine", {
-      table: {
-        type: "doc",
-        content: [
-          {
-            type: "table",
-            content: [
-              {
-                type: "tableRow",
-                content: [...CVP_NITROSAMINE_HEADERS].map((text) => ({
-                  type: "tableHeader",
-                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-                })),
-              },
-              {
-                type: "tableRow",
-                content: [
-                  "Limit NMT (ppm)",
-                  "",
-                  "",
-                  "0.01",
-                  "TBU",
-                  "",
-                  "",
-                  "",
-                  "",
-                ].map((text) => ({
-                  type: "tableCell",
-                  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-                })),
-              },
-            ],
-          },
-        ],
-      },
-    }) as { table: JSONContent };
-    const nitroLimit = summarizeTablesInDoc(nitro.table)[0]?.cells.filter(
-      (cell) => cell.row === 1
-    );
-    expect(nitroLimit?.slice(3).map((cell) => cell.text)).toEqual([
-      "0.01",
-      "TBU",
-      "0.01 ppm",
-      "0.01 ppm",
-      "0.01 ppm",
-      "0.01 ppm",
-    ]);
-    expect(JSON.stringify(nitro.table)).toContain("(NMT) 0.01 ppm");
-    expect(JSON.stringify(nitro.table)).not.toContain("[limit]");
-  });
-
   it("swaps untouched seed wording and leaves custom verification prose", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -1727,7 +1568,7 @@ describe("cleaning verification protocol sections", () => {
     ).toBe(2);
   });
 
-  it("drops an empty 15.0 batch execution table and rewrites sampling-plan seed prose", () => {
+  it("does not inject a batch execution table into sampling plan when none is stored", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     const merged = def.mergeSection("cvp_sampling_plan", {
       narrative: {
@@ -1738,7 +1579,7 @@ describe("cleaning verification protocol sections", () => {
             content: [
               {
                 type: "text",
-                text: "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine and potential genotoxic impurity limits, process-line and manufacturing-area verification, and the overall results table. Result and observation fields stay blank until the cleaning verification report is written.",
+                text: "Sampling plan overview for the equipment train.",
               },
             ],
           },
@@ -1747,8 +1588,6 @@ describe("cleaning verification protocol sections", () => {
     }) as { narrative: JSONContent };
     const tables = summarizeTablesInDoc(merged.narrative);
     expect(tables.some((table) => table.headers[0] === "Batch")).toBe(false);
-    expect(JSON.stringify(merged.narrative)).toContain("cleaning validation report");
-    expect(JSON.stringify(merged.narrative)).toContain("recommendations");
   });
 
   it("prints a product-specific title when the cover product is set", () => {

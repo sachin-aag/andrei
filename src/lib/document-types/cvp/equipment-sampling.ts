@@ -1,7 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { compact3xperLitreVolumesInDoc } from "@/lib/document-types/3xper-volume-style";
 import { emptyDoc, normalizeRichField } from "@/lib/tiptap/rich-text";
-import { upgradeCvpValidationDoc } from "@/lib/document-types/cvp/cycle-upgrade";
 import {
   CVP_CLEANING_OPERATION_HEADERS,
   CVP_EQUIPMENT_DOCUMENTS_HEADERS,
@@ -467,11 +466,9 @@ function normalizeItem(doc: JSONContent): JSONContent {
   // still runs on legacy `narrative` in docsFromRaw).
   return compact3xperLitreVolumesInDoc(
     applyCvpEquipmentTypeRecipe(
-      upgradeCvpValidationDoc(
-        collapseCvpEquipmentItem(
-          splitWarpedCvpEquipmentTables(
-            normalizeRichField(doc, { preserveHeadings: true })
-          )
+      collapseCvpEquipmentItem(
+        splitWarpedCvpEquipmentTables(
+          normalizeRichField(doc, { preserveHeadings: true })
         )
       )
     )

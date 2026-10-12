@@ -12,7 +12,6 @@ import {
 import {
   ensureCvpBatchExecutionTable,
   ensureCvpTableSectionBoilerplate,
-  upgradeCvpValidationDoc,
 } from "./cvp/cycle-upgrade";
 import { CVP_DRAFTING_GUIDANCE } from "./cvp/drafting-guidance";
 import {
@@ -200,12 +199,11 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
   );
   const aligned =
     key === "cvp_maco" ? alignCvpMacoEquipmentHeaders(compacted) : compacted;
-  const upgraded = ensureCvpTableSectionBoilerplate(
-    key,
+  const tableDoc =
     key === "cvp_sampling_plan"
-      ? ensureCvpBatchExecutionTable(upgradeCvpValidationDoc(aligned))
-      : upgradeCvpValidationDoc(aligned)
-  );
+      ? ensureCvpBatchExecutionTable(aligned)
+      : aligned;
+  const upgraded = ensureCvpTableSectionBoilerplate(key, tableDoc);
   return {
     [field]: stripCaptionsOnUnfilledTables(upgraded, {
       section: key,
