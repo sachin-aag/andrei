@@ -4559,6 +4559,61 @@ describe("buildChatTools propose edits", () => {
     });
   });
 
+  it("blocks delete_table on CVP 11.0 calculation grids when the equipment rinse matrix is missing", async () => {
+    const { markdownToDoc } = await import("@/lib/tiptap/markdown-to-doc");
+    const langfuseLikeLimits = {
+      narrative: markdownToDoc(
+        [
+          "Allowable carryover per m² = MACO ÷ total surface area.",
+          "",
+          "| Attribute | Description of Attribute | Value / Calculation |",
+          "| --- | --- | --- |",
+          "| Train surface area | m² | 120 |",
+          "",
+          "| Attribute | Description of Attribute | Value / Calculation |",
+          "| --- | --- | --- |",
+          "| Rinse limit | ppm | 0.5 |",
+        ].join("\n")
+      ),
+    };
+    dbSelectMock.mockImplementation(() => ({
+      from: (table: unknown) => ({
+        where: vi.fn().mockResolvedValue(
+          table === comments
+            ? []
+            : [
+                {
+                  id: "sec-acc",
+                  reportId: "report-1",
+                  section: "cvp_acceptance_limits",
+                  content: langfuseLikeLimits,
+                },
+              ]
+        ),
+      }),
+    }));
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      documentType: "cleaning_verification_protocol",
+      unsupportedFactPolicy: "flag",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "cvp_acceptance_limits",
+        targetField: "narrative",
+        reasoning:
+          "Remove Table 13 to replace it with the complete per-equipment rinse acceptance criteria table.",
+        operation: { kind: "delete_table", tableIndex: 1 },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(String((result as { hint?: string }).hint)).toContain("create_table");
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("coerces a malformed delete-all-rows call into delete_table", async () => {
     mockDefineSectionSelect({
       type: "doc",

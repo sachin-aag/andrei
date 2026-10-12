@@ -511,6 +511,9 @@ describe("cleaning verification protocol sections", () => {
     expect(CVP_DRAFTING_GUIDANCE).toContain(
       "LOQ NMT 1 ppm and LOD NMT 0.3 ppm sit in the Results columns"
     );
+    expect(CVP_DRAFTING_GUIDANCE).toContain("Acceptance limits (11.0");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("tableGuidance");
+    expect(CVP_DRAFTING_GUIDANCE).toContain("header shape");
   });
 
   it("seeds grouped Results columns and no 15.0 batch execution table", () => {

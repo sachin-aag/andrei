@@ -324,10 +324,9 @@ export function seedFieldDoc(
   if (section === "cvp_equipment_sampling") {
     const index = cvpEquipmentItemIndex(targetField);
     if (index != null) {
-      const items = Array.from({ length: index + 1 }, (_, i) =>
-        cvpEquipmentSamplingSeed(i + 1)
-      );
-      return normalizeCvpEquipmentSamplingContent({ items }).items[index];
+      return normalizeCvpEquipmentSamplingContent({
+        items: [cvpEquipmentSamplingSeed(index + 1)],
+      }).items[0];
     }
   }
   const empty = emptyContentForSection(section);
@@ -412,8 +411,22 @@ export function fieldFillState(
   if (isRichTargetField(section, targetField)) {
     const doc = getRichFieldValue(record, targetField);
     const seed = seedFieldDoc(section, targetField);
-    if (isEmptyTableScaffoldDoc(doc, seed) || isUnchangedSeedNarrative(doc, seed)) {
+    const scaffoldEmpty = (candidate: JSONContent) =>
+      isEmptyTableScaffoldDoc(candidate, seed) ||
+      isUnchangedSeedNarrative(candidate, seed);
+    if (scaffoldEmpty(doc)) {
       return "empty";
+    }
+    if (
+      section === "cvp_equipment_sampling" &&
+      cvpEquipmentItemIndex(targetField) != null
+    ) {
+      const upgraded = normalizeCvpEquipmentSamplingContent({
+        items: [doc],
+      }).items[0];
+      if (upgraded && scaffoldEmpty(upgraded)) {
+        return "empty";
+      }
     }
     if (
       section === "elr_system_trends" &&
