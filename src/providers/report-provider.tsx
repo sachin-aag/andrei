@@ -36,6 +36,7 @@ import {
   validateSuggestionLocate,
 } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
+import type { ReviewLocateHighlight } from "@/lib/review/finding-card";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import { planPendingSectionFlush } from "@/lib/reports/pending-section-flush";
@@ -175,6 +176,12 @@ type ReportContextValue = {
     bridge: SuggestionQueueBridge
   ) => void;
   endSuggestionApplyTransition: (section: SectionType) => void;
+  /** Open suggestion pinned to the front of its section queue by review apply. */
+  suggestionQueueHeadId: string | null;
+  promoteSuggestionToQueueHead: (commentId: string) => void;
+  /** Yellow highlight of one phrase. Does not open the suggestion preview. */
+  reviewLocate: ReviewLocateHighlight | null;
+  setReviewLocate: (next: ReviewLocateHighlight | null) => void;
   /** Per-section apply/dismiss transition — pauses auto-save while set. */
   suggestionApplyTransition: Partial<
     Record<
@@ -327,6 +334,10 @@ type ReportEvaluationContextValue = Pick<
   | "beginSuggestionApplyTransition"
   | "enterSuggestionQueueBridge"
   | "endSuggestionApplyTransition"
+  | "suggestionQueueHeadId"
+  | "promoteSuggestionToQueueHead"
+  | "reviewLocate"
+  | "setReviewLocate"
   | "suggestionApplyTransition"
   | "suggestionsFocus"
   | "clearSuggestionsFocus"
@@ -463,6 +474,12 @@ export function ReportProvider({
   >({});
 
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [suggestionQueueHeadId, setSuggestionQueueHeadId] = useState<
+    string | null
+  >(null);
+  const [reviewLocate, setReviewLocate] = useState<ReviewLocateHighlight | null>(
+    null
+  );
   const [focusedPanelPlaceholderId, setFocusedPanelPlaceholderId] = useState<
     string | null
   >(null);
@@ -951,6 +968,18 @@ export function ReportProvider({
     });
   }, []);
 
+  const promoteSuggestionToQueueHead = useCallback(
+    (commentId: string) => {
+      setSuggestionQueueHeadId(commentId);
+      const section = commentsRef.current.find(
+        (comment) => comment.id === commentId
+      )?.section;
+      if (section) endSuggestionApplyTransition(section);
+      requestCommentFocus(commentId);
+    },
+    [endSuggestionApplyTransition, requestCommentFocus]
+  );
+
   const isSuggestionPreviewHeld = useCallback(
     (section: SectionType) =>
       suggestionApplyTransition[section]?.holdInlinePreview === true,
@@ -977,9 +1006,17 @@ export function ReportProvider({
         evaluations,
         sectionContent: sections[section as keyof SectionContentMap],
         preferredCommentId: activeCommentId,
+        queueHeadCommentId: suggestionQueueHeadId,
       }).active;
     },
-    [activeCommentId, comments, evaluations, sections, suggestionApplyTransition]
+    [
+      activeCommentId,
+      comments,
+      evaluations,
+      sections,
+      suggestionApplyTransition,
+      suggestionQueueHeadId,
+    ]
   );
 
   const activeSuggestionIdForSection = useCallback(
@@ -992,6 +1029,7 @@ export function ReportProvider({
         evaluations,
         sectionContent,
         preferredCommentId: activeCommentId,
+        queueHeadCommentId: suggestionQueueHeadId,
       }).active;
       if (preferred) {
         const preferredValidation = validateSuggestionLocate(
@@ -1021,6 +1059,7 @@ export function ReportProvider({
       evaluations,
       isSuggestionPreviewHeld,
       sections,
+      suggestionQueueHeadId,
     ]
   );
 
@@ -1217,6 +1256,10 @@ export function ReportProvider({
       beginSuggestionApplyTransition,
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
+      suggestionQueueHeadId,
+      promoteSuggestionToQueueHead,
+      reviewLocate,
+      setReviewLocate,
       suggestionApplyTransition,
       suggestionsFocus,
       clearSuggestionsFocus,
@@ -1237,6 +1280,9 @@ export function ReportProvider({
       beginSuggestionApplyTransition,
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
+      suggestionQueueHeadId,
+      promoteSuggestionToQueueHead,
+      reviewLocate,
       suggestionApplyTransition,
       suggestionsFocus,
       clearSuggestionsFocus,

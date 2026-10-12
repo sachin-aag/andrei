@@ -369,9 +369,11 @@ export function firstPreviewableOpenSuggestion(
 }
 
 /**
- * Review queue plus which card to show. `preferredCommentId` wins when that
- * comment is still open in this section (newly generated chat edit, or a
- * focused mark). Otherwise the locatable head.
+ * Review queue plus which card to show. `queueHeadCommentId` moves that
+ * open comment to the front (a review-card apply while another suggestion
+ * is already queued). `preferredCommentId` wins as the visible card when
+ * that comment is still open (focused mark, or the promoted head).
+ * Otherwise the locatable head.
  */
 export function preferredOpenSuggestion(args: {
   section: SectionType;
@@ -379,17 +381,29 @@ export function preferredOpenSuggestion(args: {
   evaluations: EvaluationRecord[];
   sectionContent: unknown;
   preferredCommentId?: string | null;
+  queueHeadCommentId?: string | null;
 }): {
   ordered: CommentRecord[];
   active: CommentRecord | null;
   index: number;
 } {
-  const ordered = reviewOrderOpenSuggestions(
+  const reviewed = reviewOrderOpenSuggestions(
     args.section,
     args.comments,
     args.evaluations,
     args.sectionContent
   );
+  const headIndex = args.queueHeadCommentId
+    ? reviewed.findIndex((comment) => comment.id === args.queueHeadCommentId)
+    : -1;
+  const ordered =
+    headIndex > 0
+      ? [
+          reviewed[headIndex]!,
+          ...reviewed.slice(0, headIndex),
+          ...reviewed.slice(headIndex + 1),
+        ]
+      : reviewed;
   if (ordered.length === 0) {
     return { ordered, active: null, index: 0 };
   }

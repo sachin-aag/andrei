@@ -10,7 +10,6 @@ import {
   REVIEW_SEVERITY_LABEL,
   REVIEW_SEVERITY_ORDER,
   categoryLabel,
-  coerceReviewSeverity,
   compareSeverityDesc,
   countFindingSeverities,
   sortCategoriesBySeverity,
@@ -21,7 +20,10 @@ import {
   type ReviewFindingDto,
   type ReviewSeverityCounts,
 } from "@/lib/review";
-import { useReportEvaluations } from "@/providers/report-provider";
+import { useReportData, useReportEvaluations, useReportComments } from "@/providers/report-provider";
+import { getWorkspaceSections } from "@/lib/document-types";
+import { reviewFindingCardModel } from "@/lib/review/finding-card";
+import { ReviewFindingCard } from "./review-finding-card";
 import type { SectionType } from "@/db/schema";
 import {
   ReviewContext,
@@ -324,55 +326,91 @@ function ReviewIssueRow({
   onJumpToComment: (commentId: string) => void;
   onJumpToSection: (section: SectionType) => void;
 }) {
-  const { generateSuggestions, isSuggesting } = useReportEvaluations();
-  const severity = coerceReviewSeverity(finding.severity);
+  const {
+    isSuggesting,
+    evaluations,
+    promoteSuggestionToQueueHead,
+    setReviewLocate,
+    reviewLocate,
+  } = useReportEvaluations();
+  const { comments } = useReportComments();
+  const { report } = useReportData();
+  const { state } = useReview();
+  const check = state.checks.find((row) => row.id === finding.checkId) ?? null;
+  const workspaceSections = getWorkspaceSections(report.documentType);
+  const sectionIndex = finding.section
+    ? workspaceSections.findIndex((row) => row.key === finding.section)
+    : -1;
+  const criterionKey =
+    typeof finding.metadata.criterionKey === "string"
+      ? finding.metadata.criterionKey
+      : null;
+  const evaluationId =
+    typeof finding.metadata.evaluationId === "string"
+      ? finding.metadata.evaluationId
+      : null;
+  const evaluation =
+    evaluations.find((row) => evaluationId != null && row.id === evaluationId) ??
+    evaluations.find(
+      (row) =>
+        criterionKey != null &&
+        row.criterionKey === criterionKey &&
+        row.section === finding.section
+    );
+  const comment = finding.commentId
+    ? (comments.find((row) => row.id === finding.commentId) ?? null)
+    : null;
+  const card = reviewFindingCardModel({
+    finding,
+    check,
+    sectionLabel: sectionIndex >= 0 ? workspaceSections[sectionIndex]!.label : null,
+    sectionNumber: sectionIndex >= 0 ? sectionIndex + 1 : null,
+    criterionLabel: evaluation?.criterionLabel ?? null,
+    comment,
+  });
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <span
-          className={cn(
-            "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-            REVIEW_SEVERITY_CHIP_CLASS[severity]
-          )}
-        >
-          {REVIEW_SEVERITY_LABEL[severity]}
-        </span>
-      </div>
-      <button
-        type="button"
-        className="w-full text-left text-xs leading-snug text-[var(--foreground)] hover:text-[var(--foreground)]"
-        onClick={() => {
-          if (finding.commentId) {
-            onJumpToComment(finding.commentId);
-            return;
-          }
-          if (finding.section) {
-            onJumpToSection(finding.section as SectionType);
-            const criterionKey =
-              typeof finding.metadata.criterionKey === "string"
-                ? finding.metadata.criterionKey
-                : null;
-            if (criterionKey && finding.checkId.startsWith("report.criteria.")) {
-              void generateSuggestions(finding.section as SectionType);
+    <ReviewFindingCard
+      severity={finding.severity}
+      card={card}
+      located={reviewLocate?.findingId === finding.id}
+      onShowInDocument={
+        card.locate
+          ? () => {
+              const locate = card.locate;
+              if (!locate) return;
+              setReviewLocate({
+                findingId: finding.id,
+                section: locate.section,
+                contentPath: locate.contentPath,
+                needle: locate.needle,
+              });
+              void onJumpToSection(locate.section as SectionType);
             }
-          }
-        }}
-      >
-        {finding.message}
-      </button>
-      {finding.anchorText ? (
-        <p className="mt-1 line-clamp-2 text-[11px] text-[var(--muted-foreground)]">
-          {finding.anchorText}
-        </p>
-      ) : null}
-      <ReviewVerifyActions finding={finding} />
-      {finding.kind === "fixable" && !finding.commentId && isSuggesting ? (
-        <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
-          Generating a fix…
-        </p>
-      ) : null}
-    </div>
+          : undefined
+      }
+      onApplyTrackedChange={
+        card.applyCommentId
+          ? () => {
+              const commentId = card.applyCommentId;
+              if (!commentId) return;
+              setReviewLocate(null);
+              promoteSuggestionToQueueHead(commentId);
+              onJumpToComment(commentId);
+            }
+          : undefined
+      }
+      extra={
+        <>
+          <ReviewVerifyActions finding={finding} />
+          {finding.kind === "fixable" && !finding.commentId && isSuggesting ? (
+            <p className="mt-2 text-[10px] text-[var(--muted-foreground)]">
+              Generating a fix…
+            </p>
+          ) : null}
+        </>
+      }
+    />
   );
 }
 
@@ -571,7 +609,7 @@ function ReviewPanel({
         <div className="min-w-0 space-y-1.5">
           <h2 className="text-sm font-semibold">Review</h2>
           <p className="text-[11px] text-[var(--muted-foreground)]">
-            Run checks, then open a card to work through its issues.
+            Run checks, then open a card. Show in document highlights the phrase. Apply as tracked change queues the suggestion.
           </p>
           <ReviewSeverityStats />
         </div>

@@ -355,6 +355,16 @@ function mapNormalizedMatchToRaw(
   };
 }
 
+/** Unique [start, end) of `needle` in `haystack`, or null when missing or repeated. */
+export function uniqueTextSpan(
+  haystack: string,
+  needle: string
+): { start: number; end: number } | null {
+  const match = findUniqueAnchorInText(haystack, needle);
+  if (!match) return null;
+  return { start: match.start, end: match.end };
+}
+
 /**
  * Find `needle` uniquely in `haystack` (exact → collapsed → unicode).
  * Returns exact [start,end) in the original string via the index map.

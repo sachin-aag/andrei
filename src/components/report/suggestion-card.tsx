@@ -655,6 +655,7 @@ export function SectionSuggestionCard({
     endSuggestionApplyTransition,
     suggestionApplyTransition,
     gutterSuggestionCommentForSection,
+    suggestionQueueHeadId,
   } = useReportEvaluations();
   const { comments, setComments, activeCommentId } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -683,8 +684,9 @@ export function SectionSuggestionCard({
         evaluations,
         sectionContent: sections[section],
         preferredCommentId: activeCommentId,
+        queueHeadCommentId: suggestionQueueHeadId,
       }),
-    [section, comments, evaluations, sections, activeCommentId]
+    [section, comments, evaluations, sections, activeCommentId, suggestionQueueHeadId]
   );
 
   const active = queue.active;
