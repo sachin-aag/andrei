@@ -395,6 +395,10 @@ import {
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
 import {
+  quotesForNamedAttachments,
+  type StatedFactRef,
+} from "@/lib/ai/chat/stated-facts";
+import {
   repairSearchAttachmentIds,
   repairSearchQueries,
   repairTextsFromTableOperation,
@@ -1566,6 +1570,8 @@ export function buildChatTools(opts: {
   userIntentKind?: ChatUserIntentKind;
   /** Wall-clock start of this assistant turn — RTM family workers share it. */
   turnStartedAtMs?: number;
+  /** Engineer-typed pairs. Document chat only. */
+  statedFacts?: readonly StatedFactRef[];
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -1813,6 +1819,11 @@ export function buildChatTools(opts: {
       section,
       attachedFilenames: await loadReadyFilenames(),
       recentAssistantTexts: recentAssistantMessageTexts(messages, 4),
+      statedFacts: opts.statedFacts ?? [],
+      namedFileQuotes: quotesForNamedAttachments(
+        citationLedger.recordedPages(),
+        opts.pinnedAttachmentIds ?? []
+      ),
     };
   };
   let evidenceHydrate: Promise<void> | null = null;

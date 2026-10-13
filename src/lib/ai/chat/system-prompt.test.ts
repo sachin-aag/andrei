@@ -18,7 +18,29 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v217-cvp-mfg-areas-column");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v218-stated-facts");
+  });
+
+  it("injects engineer-stated facts without an author", () => {
+    const withFacts = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      statedFacts: [
+        {
+          entityText: "URS-13",
+          entityNormalized: "URS-13",
+          valueText: "−15 °C",
+          valueKind: "temperature",
+          valueNormalized: "-15c",
+        },
+      ],
+    });
+    expect(withFacts).toContain("Engineer-stated facts");
+    expect(withFacts).toContain("URS-13: −15 °C");
+    expect(withFacts).not.toContain("Ada Lovelace");
+    expect(buildChatSystemPrompt({ ...opts, mode: "agent" })).not.toContain(
+      "Engineer-stated facts"
+    );
   });
 
   it("tells Agent insert_rows to use string-array rows, not cells or { banner }", () => {

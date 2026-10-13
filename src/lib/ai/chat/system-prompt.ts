@@ -18,6 +18,10 @@ import {
 } from "@/lib/ai/chat/already-drafted";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import {
+  renderStatedFactsPrompt,
+  type StatedFactRef,
+} from "@/lib/ai/chat/stated-facts";
+import {
   intentToolAvailabilityRule,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
@@ -25,7 +29,7 @@ import { planPromptBlock, type ChatPendingPlan } from "@/lib/ai/chat/pending-pla
 import { composerModeTurnRule } from "@/lib/ai/chat/composer-mode-reminder";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v217-cvp-mfg-areas-column";
+export const CHAT_PROMPT_VERSION = "chat-v218-stated-facts";
 
 export type ChatMode = "plan" | "agent";
 
@@ -428,6 +432,8 @@ export function buildChatSystemPrompt(opts: {
   switchToAnalytics?: boolean;
   /** Server-owned remaining-section queue for this thread. */
   pendingPlan?: ChatPendingPlan | null;
+  /** Engineer-typed pairs on this report. Fact text only — no author. */
+  statedFacts?: readonly StatedFactRef[];
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -513,7 +519,11 @@ ${QUESTION_RULES}
 ${criteriaOutline}
 
 ## Current report
-${contextMap}
+${contextMap}${
+    opts.statedFacts && opts.statedFacts.length > 0
+      ? `\n\n${renderStatedFactsPrompt(opts.statedFacts)}`
+      : ""
+  }
 
 ${composerModeTurnRule(mode)}`;
 }

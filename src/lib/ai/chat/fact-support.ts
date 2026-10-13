@@ -21,6 +21,7 @@ import {
   calculationSupportingFact,
   type CalculationEvidence,
 } from "@/lib/ai/chat/calculate";
+import type { StatedFactRef } from "@/lib/ai/chat/stated-facts";
 
 const REPORT_LOOKUP_TOOLS = new Set(["read_section", "read_worksheet"]);
 const ATTACHMENT_EXTRACT_TOOLS = new Set([
@@ -37,6 +38,10 @@ export type LookupEvidence = {
   userHaystack: string;
   /** This-turn `calculate` products (not operands). */
   calculations?: readonly CalculationEvidence[];
+  /** Engineer-typed pairs. Ask persist keeps an exact entity match. */
+  statedFacts?: readonly StatedFactRef[];
+  /** Served quotes from attachments named on this turn. */
+  namedFileQuotes?: readonly string[];
 };
 
 export type LookupFactSupport =
@@ -210,7 +215,12 @@ function stringsFromExtractLookup(output: unknown): string[] {
 
 export function evidenceFromLedger(
   ledger: CitationPageLedger,
-  extras?: { reportHaystack?: string; userHaystack?: string }
+  extras?: {
+    reportHaystack?: string;
+    userHaystack?: string;
+    statedFacts?: readonly StatedFactRef[];
+    namedFileQuotes?: readonly string[];
+  }
 ): LookupEvidence {
   return {
     quotes: ledger
@@ -220,5 +230,7 @@ export function evidenceFromLedger(
     reportHaystack: extras?.reportHaystack ?? "",
     userHaystack: extras?.userHaystack ?? "",
     calculations: [],
+    statedFacts: extras?.statedFacts,
+    namedFileQuotes: extras?.namedFileQuotes,
   };
 }

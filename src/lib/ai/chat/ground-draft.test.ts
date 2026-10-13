@@ -13,6 +13,7 @@ import {
   UNSUPPORTED_FACTS_RETRY_MESSAGE,
 } from "@/lib/ai/chat/ground-draft";
 import { GROUNDEDNESS_GOLD_CASES } from "@/lib/eval/groundedness-cases";
+import { extractStatedFactCandidates } from "@/lib/ai/chat/stated-facts";
 import { moveCitationsToEndOfText } from "@/lib/suggestions/citations-at-end";
 
 function ledgerFromPages(
@@ -1109,6 +1110,62 @@ describe("groundTableOperation explicit insert keep", () => {
         ? result.operation.cells[0]!.insertText
         : "";
     expect(cell).not.toContain("01-01-2099");
+  });
+});
+
+describe("engineer-stated facts", () => {
+  const ledger = ledgerFromPages([
+    {
+      filename: "notes.pdf",
+      pageNumber: 1,
+      attachmentId: "att-notes",
+      quote: "Warehouse ambient 20 °C.",
+    },
+  ]);
+  const stated = extractStatedFactCandidates(
+    "URS-13 operating range is −15 °C."
+  );
+
+  it("keeps −15 °C for URS-13 and not for URS-14", () => {
+    const kept = groundDraftText({
+      text: "URS-13 was held at −15 °C.",
+      ledger,
+      policy: "block",
+      grounding: { statedFacts: stated, latestUserMessageText: "draft the range" },
+    });
+    expect(kept.blocked).toBe(false);
+    expect(kept.text).toContain("−15 °C");
+
+    const other = groundDraftText({
+      text: "URS-14 was held at −15 °C.",
+      ledger,
+      policy: "block",
+      grounding: { statedFacts: stated, latestUserMessageText: "draft the range" },
+    });
+    expect(other.blocked).toBe(true);
+    expect(other.text).not.toContain("−15 °C");
+  });
+
+  it("does not keep the stated value when a named file quote mentions that entity", () => {
+    const result = groundDraftText({
+      text: "URS-13 was held at −15 °C.",
+      ledger: ledgerFromPages([
+        {
+          filename: "urs.pdf",
+          pageNumber: 2,
+          attachmentId: "att-urs",
+          quote: "URS-13 setpoint 20 °C.",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        statedFacts: stated,
+        namedFileQuotes: ["URS-13 setpoint 20 °C."],
+        latestUserMessageText: "check the URS",
+      },
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.text).not.toContain("−15 °C");
   });
 });
 
