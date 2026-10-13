@@ -21,7 +21,6 @@ vi.mock("./report-bulk-suggestion-actions", () => ({
 }));
 vi.mock("./review", () => ({
   Review: {
-    SeverityStats: () => null,
     RunAll: () => (
       <button type="button" data-testid="run-all-review">
         Run all checks

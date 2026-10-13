@@ -134,20 +134,17 @@ function statusLabel(check: ReviewCheckDto, running: boolean): string {
   }
 }
 
-function ReviewSeverityStats({ layout = "panel" }: { layout?: "panel" | "header" }) {
+function ReviewSeverityStats() {
   const {
     state: { findings },
   } = useReview();
   const counts = countFindingSeverities(findings);
-  if (layout === "header" && counts.critical + counts.major + counts.minor === 0) {
-    return null;
-  }
   return (
     <ReviewSeverityChips
       counts={counts}
-      showZeros={layout === "panel"}
-      labeled={layout === "panel"}
-      testId={layout === "panel" ? "review-severity-stats" : "review-header-severity-stats"}
+      showZeros
+      labeled
+      testId="review-severity-stats"
     />
   );
 }
@@ -627,7 +624,6 @@ export const Review = {
   Panel: ReviewPanel,
   CategoryTabs: ReviewCategoryTabs,
   RunAll: ReviewRunAll,
-  SeverityStats: ReviewSeverityStats,
   CheckCard: ReviewCheckCard,
   IssueList: ReviewIssueList,
   IssueRow: ReviewIssueRow,
