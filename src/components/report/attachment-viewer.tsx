@@ -11,10 +11,15 @@ export function AttachmentViewer({
   attachmentId,
   active = true,
   onClose,
+  page: controlledPage,
+  onPageChange,
 }: {
   attachmentId: string;
   active?: boolean;
   onClose?: () => void;
+  /** Pane-local page. Omit to follow the shared preview page. */
+  page?: number;
+  onPageChange?: (page: number) => void;
 }) {
   const {
     attachments,
@@ -25,7 +30,7 @@ export function AttachmentViewer({
   } = useReportAttachments();
   const attachment =
     attachments.find((item) => item.id === attachmentId) ?? null;
-  const page = previewPageFor(attachmentId);
+  const page = controlledPage ?? previewPageFor(attachmentId);
   const dismiss = onClose ?? closeDocument;
 
   if (!attachment) {
@@ -58,9 +63,10 @@ export function AttachmentViewer({
       downloadUrl={attachmentDownloadHref(reportId, attachment.id)}
       page={page}
       active={active}
-      onVisiblePageChange={(nextPage) =>
-        rememberDocumentPage(attachment.id, nextPage)
-      }
+      onVisiblePageChange={(nextPage) => {
+        rememberDocumentPage(attachment.id, nextPage);
+        onPageChange?.(nextPage);
+      }}
       onClose={dismiss}
     />
   );

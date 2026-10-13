@@ -1,6 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { X } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import type { CanvasTabId, CanvasTabListItem } from "./work-product-canvas";
 
@@ -9,27 +15,33 @@ export function WorkProductTabs({
   value,
   onChange,
   onClose,
+  menuFor,
+  stripTestId,
 }: {
   tabs: readonly CanvasTabListItem[];
   value: CanvasTabId;
   onChange: (next: CanvasTabId) => void;
   onClose: (id: CanvasTabId) => void;
+  menuFor?: (tab: CanvasTabListItem) => ReactNode;
+  stripTestId?: string;
 }) {
   return (
     <div
       role="tablist"
       aria-label="Work product"
-      data-testid="work-product-tab-strip"
+      data-testid={stripTestId ?? "work-product-tab-strip"}
       className="flex min-w-0 flex-1 items-end gap-0 overflow-x-auto"
     >
       {tabs.map((tab) => {
         const selected = tab.id === value;
-        return (
+        const tabNode = (
           <div
-            key={tab.id}
+            key={menuFor ? undefined : tab.id}
             role="tab"
             data-testid={tab.testId}
-            data-walkthrough={tab.id === "analytics" ? "analytics" : undefined}
+            data-walkthrough={
+              tab.testId === "report-surface-analytics" ? "analytics" : undefined
+            }
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             title={tab.label}
@@ -63,6 +75,13 @@ export function WorkProductTabs({
               </button>
             ) : null}
           </div>
+        );
+        if (!menuFor) return tabNode;
+        return (
+          <ContextMenu key={tab.id}>
+            <ContextMenuTrigger asChild>{tabNode}</ContextMenuTrigger>
+            <ContextMenuContent>{menuFor(tab)}</ContextMenuContent>
+          </ContextMenu>
         );
       })}
     </div>

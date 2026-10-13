@@ -97,45 +97,82 @@ export function tabIdAfterClosing(args: {
   return "report";
 }
 
+function canvasTabTestId(id: CanvasTabId, scope?: string): string {
+  const attachmentId = attachmentIdFromTab(id);
+  const base = attachmentId
+    ? `work-product-tab-attachment-${attachmentId}`
+    : id === "report"
+      ? "report-surface-document"
+      : id === "analytics"
+        ? "report-surface-analytics"
+        : "work-product-tab-history";
+  return scope ? `${scope}-${base}` : base;
+}
+
 export function buildCanvasTabs(args: {
   statsEnabled: boolean;
-  openAttachmentIds: readonly string[];
+  openAttachmentIds?: readonly string[];
+  /** When set, this list is the pane's tabs. Otherwise the legacy single strip is built. */
+  tabIds?: readonly CanvasTabId[];
   attachmentLabels: Readonly<Record<string, string>>;
   compare: { from: number; to: number } | null;
+  /** Top-left pane keeps Report and Analytics uncloseable. */
+  pinned?: boolean;
+  /** Prefixes test ids so a second pane does not reuse the anchor ids. */
+  testIdScope?: string;
 }): CanvasTabListItem[] {
-  const tabs: CanvasTabListItem[] = [
-    {
-      id: "report",
-      label: "Report",
-      testId: "report-surface-document",
-      closable: false,
-    },
-  ];
-  if (args.statsEnabled) {
-    tabs.push({
-      id: "analytics",
-      label: "Analytics",
-      testId: "report-surface-analytics",
-      closable: false,
-    });
-  }
-  for (const attachmentId of args.openAttachmentIds) {
+  const pinned = args.pinned ?? true;
+  const tabIds: CanvasTabId[] = args.tabIds
+    ? [...args.tabIds]
+    : [
+      "report",
+      ...(args.statsEnabled ? (["analytics"] as const) : []),
+      ...(args.openAttachmentIds ?? []).map((id) => attachmentTabId(id)),
+      ...(args.compare ? (["history"] as const) : []),
+    ];
+  const tabs: CanvasTabListItem[] = [];
+  for (const id of tabIds) {
+    if (id === "analytics" && !args.statsEnabled) continue;
+    if (id === "report") {
+      tabs.push({
+        id,
+        label: "Report",
+        testId: canvasTabTestId(id, args.testIdScope),
+        closable: !pinned,
+      });
+      continue;
+    }
+    if (id === "analytics") {
+      tabs.push({
+        id,
+        label: "Analytics",
+        testId: canvasTabTestId(id, args.testIdScope),
+        closable: !pinned,
+      });
+      continue;
+    }
+    if (id === "history") {
+      const label = args.compare
+        ? `Compare ${args.compare.from} → ${args.compare.to}`
+        : "Compare";
+      tabs.push({
+        id,
+        label,
+        testId: canvasTabTestId(id, args.testIdScope),
+        closable: true,
+        closeAriaLabel: "Close compare",
+      });
+      continue;
+    }
+    const attachmentId = attachmentIdFromTab(id);
+    if (!attachmentId) continue;
     const label = args.attachmentLabels[attachmentId] ?? "Attachment";
     tabs.push({
-      id: attachmentTabId(attachmentId),
+      id,
       label,
-      testId: `work-product-tab-attachment-${attachmentId}`,
+      testId: canvasTabTestId(id, args.testIdScope),
       closable: true,
       closeAriaLabel: `Close ${label}`,
-    });
-  }
-  if (args.compare) {
-    tabs.push({
-      id: "history",
-      label: `Compare ${args.compare.from} → ${args.compare.to}`,
-      testId: "work-product-tab-history",
-      closable: true,
-      closeAriaLabel: "Close compare",
     });
   }
   return tabs;

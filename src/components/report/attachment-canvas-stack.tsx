@@ -7,10 +7,14 @@ export function AttachmentCanvasStack({
   openAttachmentIds,
   activeAttachmentId,
   onCloseTab,
+  pageFor,
+  onPageChange,
 }: {
   openAttachmentIds: readonly string[];
   activeAttachmentId: string | null;
   onCloseTab: (attachmentId: string) => void;
+  pageFor?: (attachmentId: string) => number | undefined;
+  onPageChange?: (attachmentId: string, page: number) => void;
 }) {
   if (openAttachmentIds.length === 0) return null;
 
@@ -29,6 +33,12 @@ export function AttachmentCanvasStack({
               attachmentId={id}
               active={active}
               onClose={() => onCloseTab(id)}
+              page={pageFor?.(id)}
+              onPageChange={
+                onPageChange
+                  ? (nextPage) => onPageChange(id, nextPage)
+                  : undefined
+              }
             />
           </CanvasTabPane>
         );
