@@ -20,7 +20,11 @@ type LoadBody = {
  * Collapsed list of engineer-stated facts on this report. Hidden when empty.
  * Keyed by report id so a report switch cannot keep the previous list.
  */
-export function StatedFactsDisclosure({ reportId }: { reportId: string }) {
+export function StatedFactsDisclosure({
+  reportId,
+}: {
+  reportId: string | undefined;
+}) {
   const [loaded, setLoaded] = useState<{
     reportId: string;
     facts: StatedFactRow[];
@@ -52,10 +56,13 @@ export function StatedFactsDisclosure({ reportId }: { reportId: string }) {
     return () => ac.abort();
   }, [reportId]);
 
-  const facts = loaded?.reportId === reportId ? loaded.facts : null;
-  const canDelete = loaded?.reportId === reportId ? loaded.canDelete : false;
+  if (!reportId) return null;
 
-  if (!reportId || !facts || facts.length === 0) return null;
+  const showing = loaded && loaded.reportId === reportId ? loaded : null;
+  const facts = showing?.facts ?? null;
+  const canDelete = showing?.canDelete === true;
+
+  if (!facts || facts.length === 0) return null;
 
   async function remove(id: string) {
     setDeletingId(id);

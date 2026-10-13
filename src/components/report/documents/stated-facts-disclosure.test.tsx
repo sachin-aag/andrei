@@ -31,6 +31,14 @@ const factB = {
 };
 
 describe("StatedFactsDisclosure", () => {
+  it("renders nothing and does not fetch when there is no report id", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<StatedFactsDisclosure reportId={undefined} />);
+    expect(screen.queryByTestId("stated-facts")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("hides when the report has no stated facts", async () => {
     vi.stubGlobal(
       "fetch",
