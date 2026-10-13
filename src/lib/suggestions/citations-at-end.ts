@@ -649,6 +649,17 @@ export function citationNumbersFromDoc(doc: JSONContent): Set<number> {
   return citationMarkerNumbersFromDoc(doc);
 }
 
+/**
+ * Start index of a trailing Citations:/References: list, or `-1` when the
+ * field has none. Body `[n]` markers stay in the prefix so parked citations
+ * can still resolve.
+ */
+export function trailingCitationListStart(text: string): number {
+  const split = splitTrailingCitationBlock(text);
+  if (!split.heading && split.lines.length === 0) return -1;
+  return split.body.length;
+}
+
 /** Drop a trailing Citations:/References: block from plain text. */
 export function stripTrailingCitationBlockFromText(text: string): string {
   const split = splitTrailingCitationBlock(text);
