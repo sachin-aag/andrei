@@ -75,7 +75,8 @@ export function extractStatedFactCandidates(text: string): StatedFactCandidate[]
   for (const span of sentences) {
     const sentence = text.slice(span.start, span.end);
     if (QUESTION_SENTENCE_RE.test(sentence.trim())) continue;
-    const facts = extractHardFacts(sentence);
+    const extracted = sentenceForStatedFactExtract(sentence);
+    const facts = extractHardFacts(extracted);
     const identifiers = facts.filter((fact) => fact.kind === "identifier");
     const quantities = facts.filter((fact) => fact.kind !== "identifier");
     if (quantities.length > 0 && identifiers.length > 0) {
@@ -88,7 +89,10 @@ export function extractStatedFactCandidates(text: string): StatedFactCandidate[]
     }
     if (quantities.length > 0) continue;
     for (const identifier of identifiers) {
-      const before = sentence.slice(Math.max(0, identifier.start - 48), identifier.start);
+      const before = extracted.slice(
+        Math.max(0, identifier.start - 48),
+        identifier.start
+      );
       if (!IDENTIFIER_ASSIGN_BEFORE_RE.test(before)) continue;
       found.push({
         entityText: "",
@@ -111,6 +115,49 @@ export function extractStatedFactCandidates(text: string): StatedFactCandidate[]
     if (unique.length >= STATED_FACTS_PER_MESSAGE) break;
   }
   return unique;
+}
+
+/**
+ * Spoken ids and units the hard-fact extractor misses: "URS 3", "celsius".
+ * The stored pair uses the rewritten form (`URS-3`, `20 to 130 °C`). The
+ * view still shows the engineer's original sentence.
+ */
+function sentenceForStatedFactExtract(sentence: string): string {
+  return sentence
+    .replace(/\b(?:degrees?\s+)?(?:celsius|centigrade)\b/gi, "°C")
+    .replace(
+      /\bURS(?:\s*[-–−]\s*|\s+)(\d+[a-z]?)\b/gi,
+      (_all, num: string) => `URS-${num}`
+    );
+}
+
+/** "20 to 130 °C" and "20 °C to 130 °C" are the same range. */
+function temperatureKey(normalized: string): string {
+  return normalized.replace(/c(?=to|[-–−]|$)/g, "").replace(/to|–|−/g, "-");
+}
+
+/** Exact id, so URS-3 does not bind URS-14 or URS-30. Spoken "URS 3" counts. */
+function contextNamesEntity(text: string, entityNormalized: string): boolean {
+  if (!entityNormalized) return false;
+  const hay = text
+    .toUpperCase()
+    .replace(/\bURS(?:\s*[-–−]\s*|\s+)(\d+[A-Z]?)\b/g, "URS-$1");
+  const needle = entityNormalized
+    .toUpperCase()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![A-Z0-9])${needle}(?![A-Z0-9])`).test(hay);
+}
+
+function sameIdentifier(stored: string, drafted: string): boolean {
+  return stored.toUpperCase() === drafted.toUpperCase();
+}
+
+function sameStatedValue(stated: StatedFactRef, fact: HardFact): boolean {
+  if (stated.valueKind !== fact.kind) return false;
+  if (fact.kind === "temperature") {
+    return temperatureKey(stated.valueNormalized) === temperatureKey(fact.normalized);
+  }
+  return stated.valueNormalized === fact.normalized;
 }
 
 function candidateFrom(
@@ -192,7 +239,7 @@ export function renderStatedFactsPrompt(facts: readonly StatedFactRef[]): string
   });
   return `## Engineer-stated facts
 These values were typed by an engineer on this report. They are not attachment evidence and they are not a reason to skip search. Do not invent a citation for them.
-If a lookup does not contain the value, you may use the engineer-stated value for that same entity.
+Use the engineer-stated value for that same entity, including when an attachment states a different value.
 If this turn @-tags an attachment or names one on this report, and a retrieved page from that file speaks to the same entity, use the page instead of the stated fact.
 Do not apply a stated value to a different entity.
 ${lines.join("\n")}`;
@@ -232,18 +279,15 @@ export function statedFactSupportsDraft(input: {
     return true;
   }
   for (const stated of input.statedFacts) {
-    if (stated.valueKind !== input.fact.kind) continue;
-    if (stated.valueNormalized !== input.fact.normalized) continue;
+    if (!sameStatedValue(stated, input.fact)) continue;
     if (stated.entityNormalized) {
-      const entity = asExtractedFact(
-        stated.entityText,
-        "identifier",
-        stated.entityNormalized
-      );
-      if (!entity) continue;
-      if (!evidenceContainsFact(input.draftContext, entity)) continue;
+      if (!contextNamesEntity(input.draftContext, stated.entityNormalized)) {
+        continue;
+      }
       const named = input.namedFileQuotes ?? [];
-      if (named.some((quote) => evidenceContainsFact(quote, entity))) continue;
+      if (named.some((quote) => contextNamesEntity(quote, stated.entityNormalized))) {
+        continue;
+      }
     } else if (namedQuoteMentionsValue(input.namedFileQuotes ?? [], input.fact)) {
       continue;
     }
@@ -260,22 +304,19 @@ function statedEntityInDraft(
   namedFileQuotes: readonly string[]
 ): boolean {
   for (const stated of statedFacts) {
-    if (!stated.entityNormalized || stated.entityNormalized !== fact.normalized) {
+    if (
+      !stated.entityNormalized ||
+      !sameIdentifier(stated.entityNormalized, fact.normalized)
+    ) {
       continue;
     }
-    const entity = asExtractedFact(
-      stated.entityText,
-      "identifier",
-      stated.entityNormalized
-    );
     const value = asExtractedFact(
       stated.valueText,
       stated.valueKind,
       stated.valueNormalized
     );
-    if (!entity || !value) continue;
-    if (!evidenceContainsFact(draftContext, value)) continue;
-    if (namedFileQuotes.some((quote) => evidenceContainsFact(quote, entity))) {
+    if (!value || !evidenceContainsFact(draftContext, value)) continue;
+    if (namedFileQuotes.some((quote) => contextNamesEntity(quote, stated.entityNormalized))) {
       continue;
     }
     return true;

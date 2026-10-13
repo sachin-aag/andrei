@@ -1167,6 +1167,30 @@ describe("engineer-stated facts", () => {
     expect(result.blocked).toBe(true);
     expect(result.text).not.toContain("−15 °C");
   });
+
+  it("keeps a spoken 20 to 130 celsius when the file says 15 °C to 130 °C", () => {
+    const spoken = extractStatedFactCandidates(
+      "URS 3 operating temperature is actually 20 to 130 celsius."
+    );
+    const result = groundDraftText({
+      text: "URS-3 shell operating temperature is 20 °C to 130 °C.",
+      ledger: ledgerFromPages([
+        {
+          filename: "User Requirement Specification.PDF",
+          pageNumber: 6,
+          attachmentId: "att-urs",
+          quote: "URS-3 Shell Operating temperature 15 °C to 130 °C",
+        },
+      ]),
+      policy: "block",
+      grounding: {
+        statedFacts: spoken,
+        latestUserMessageText: "what is the operating temperature value for URS 3?",
+      },
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.text).toContain("20 °C to 130 °C");
+  });
 });
 
 describe("CVP 24.50 m² assistant-echo keep", () => {

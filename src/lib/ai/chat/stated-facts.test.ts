@@ -36,6 +36,20 @@ describe("extractStatedFactCandidates", () => {
     });
   });
 
+  it("stores a spoken URS id and the word celsius", () => {
+    const rows = extractStatedFactCandidates(
+      "URS 3 operating temperature is actually 20 to 130 celsius. i think the attachment has the wrong value"
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      entityText: "URS-3",
+      valueKind: "temperature",
+      valueText: "20 to 130 °C",
+    });
+    expect(rows[0]?.sourceText).toContain("URS 3 operating temperature");
+    expect(rows[0]?.sourceText).toContain("celsius");
+  });
+
   it("drops a quantity with no identifier, a draft command, a question, and a bare yes", () => {
     expect(extractStatedFactCandidates("Use −15 °C.")).toEqual([]);
     expect(extractStatedFactCandidates("Draft URS-13.")).toEqual([]);
@@ -73,6 +87,36 @@ describe("statedFactSupportsDraft", () => {
   const stored = extractStatedFactCandidates(
     "URS-13 operating range is −15 °C."
   );
+
+  it("keeps 20 °C to 130 °C when the engineer said 20 to 130 celsius", () => {
+    const stored = extractStatedFactCandidates(
+      "URS 3 operating temperature is actually 20 to 130 celsius."
+    );
+    const range = tempFact("URS-3 shell operating temperature is 20 °C to 130 °C");
+    const fileRange = tempFact("URS-3 requirement is 15 °C to 130 °C");
+    const other = tempFact("URS-14 shell operating temperature is 20 °C to 130 °C");
+    expect(
+      statedFactSupportsDraft({
+        fact: range,
+        draftContext: "URS-3 shell operating temperature is 20 °C to 130 °C",
+        statedFacts: stored,
+      })
+    ).toBe(true);
+    expect(
+      statedFactSupportsDraft({
+        fact: fileRange,
+        draftContext: "URS-3 requirement is 15 °C to 130 °C",
+        statedFacts: stored,
+      })
+    ).toBe(false);
+    expect(
+      statedFactSupportsDraft({
+        fact: other,
+        draftContext: "URS-14 shell operating temperature is 20 °C to 130 °C",
+        statedFacts: stored,
+      })
+    ).toBe(false);
+  });
 
   it("keeps the value only when the draft names the same identifier", () => {
     const cold = tempFact("URS-13 was held at −15 °C");
@@ -160,6 +204,7 @@ describe("renderStatedFactsPrompt", () => {
     ]);
     expect(block).toContain("URS-13: −15 °C");
     expect(block).toContain("not a reason to skip search");
+    expect(block).toContain("including when an attachment states a different value");
     expect(block).not.toContain("author");
     expect(block).not.toContain("Ada Lovelace");
   });
