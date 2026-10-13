@@ -46,6 +46,20 @@ describe("proposed review edits", () => {
     );
   });
 
+  it("leaves AI Check comments with an evaluationId in the document queue", () => {
+    const comments = [
+      {
+        id: "eval-1",
+        status: "open",
+        content: '{"insertText":"x"}',
+        evaluationId: "e1",
+      },
+    ];
+    expect(
+      [...heldReviewSuggestionIds([{ commentId: "eval-1" }], comments)]
+    ).toEqual([]);
+  });
+
   it("round-trips releasedToQueue on comment JSON", () => {
     const next = withReleasedToQueue('{"insertText":"BN-100"}', true);
     expect(commentReleasedToQueue(next)).toBe(true);

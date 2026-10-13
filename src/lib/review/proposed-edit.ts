@@ -52,7 +52,12 @@ export function withReleasedToQueue(content: string, released: boolean): string 
 /** Open review findings whose suggestion is not yet an in-document tracked change. */
 export function heldReviewSuggestionIds(
   findings: Array<Pick<ReviewFindingDto, "commentId">>,
-  comments: Array<{ id: string; status: string; content: string }>
+  comments: Array<{
+    id: string;
+    status: string;
+    content: string;
+    evaluationId?: string | null;
+  }>
 ): Set<string> {
   const byId = new Map(comments.map((row) => [row.id, row]));
   const held = new Set<string>();
@@ -61,6 +66,10 @@ export function heldReviewSuggestionIds(
     const comment = byId.get(finding.commentId);
     if (!comment || comment.status !== "open") continue;
     if (commentReleasedToQueue(comment.content)) continue;
+    // AI Check / seed / criterion comments already belong in the document
+    // queue. Only Review-created comments (no evaluationId) stay hidden
+    // until Apply as tracked change.
+    if (comment.evaluationId) continue;
     held.add(finding.commentId);
   }
   return held;
