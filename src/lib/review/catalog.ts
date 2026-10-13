@@ -31,7 +31,8 @@ const STATIC_CHECKS: ReviewCheckDefinition[] = [
     id: "citations.supports_claim",
     category: "citations",
     label: "Citation supports claim",
-    description: "The cited page actually supports the sentence around each [n].",
+    description:
+      "The cited page contains the claim's facts and the same subject (not a neighbour vessel, URS, or equipment).",
     standardTag: "Citations",
     kind: "run",
     appliesTo: always,

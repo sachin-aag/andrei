@@ -20,11 +20,26 @@ import { locateProposedEdit } from "../persist-suggestion";
 import { iterReportFields } from "../fields";
 import { REVIEW_CITATION_PROMPT_VERSION } from "../prompts";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
+import {
+  claimWindowForCitation,
+  matchClaimToCitedPage,
+  supportMatchMessage,
+} from "./citation-support-match";
 
 const NUMERIC_MARKER_RE = /\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g;
 
 export const CITATION_SUPPORT_MAX_CLAIMS = 24;
 export const CITATION_SUPPORT_BATCH_SIZE = 8;
+
+export const CITATION_SUPPORT_SYSTEM_PROMPT = `Judge whether each cited page supports its claim.
+Return one judgement per CLAIM index. Do not invent sources.
+
+Use supported only when:
+- Hard facts in the claim (dates, IDs, numbers with their units) appear on the page, AND
+- The subject matches. The same number for a different vessel, URS ID, equipment, batch, loop, or row is unsupported.
+
+Use unsupported when facts are missing or clearly belong to a different subject.
+Use partial when OCR or layout makes the subject unclear. Partial means a human must confirm — do not guess supported.`;
 
 const batchSupportSchema = z.object({
   judgements: z.array(
@@ -48,11 +63,14 @@ export type CitationSupportJob = {
   attachmentId: string;
 };
 
-function sentenceAround(text: string, index: number, length: number): string {
-  const start = Math.max(0, text.lastIndexOf(".", index) + 1);
-  const after = text.indexOf(".", index + length);
-  const end = after === -1 ? Math.min(text.length, index + length + 180) : after + 1;
-  return text.slice(start, end).trim();
+function pageQuoteFromRead(read: {
+  transcript?: string | null;
+  visualInterpretation?: string | null;
+} | null): string {
+  return [read?.transcript, read?.visualInterpretation]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 4000);
 }
 
 export function collectCitationSupportJobs(
@@ -98,7 +116,12 @@ export function collectCitationSupportJobs(
         marker: match[0],
         citationNumber: n,
         source,
-        claim: sentenceAround(field.text, match.index, match[0].length),
+        claim: claimWindowForCitation(
+          field.text,
+          match.index,
+          match[0].length,
+          field.doc
+        ),
         filename: parsed.filename,
         page,
         attachmentId,
@@ -114,6 +137,76 @@ function chunk<T>(items: T[], size: number): T[][] {
     out.push(items.slice(i, i + size));
   }
   return out;
+}
+
+function humanFinding(
+  job: CitationSupportJob,
+  message: string,
+  severity: ReviewFindingDraft["severity"]
+): ReviewFindingDraft {
+  return {
+    section: job.section,
+    contentPath: job.contentPath,
+    anchorText: job.marker,
+    message,
+    severity,
+    kind: "needs_human",
+    metadata: {
+      citationNumber: job.citationNumber,
+      source: job.source,
+    },
+  };
+}
+
+async function proposeBetterCitation(
+  ctx: ReviewRunContext,
+  job: CitationSupportJob,
+  fallback: ReviewFindingDraft
+): Promise<ReviewFindingDraft> {
+  try {
+    const hits = await searchReportDocuments({
+      reportId: ctx.report.id,
+      query: job.claim,
+      limit: 3,
+    });
+    for (const hit of hits) {
+      if (
+        hit.filename.toLowerCase() === job.filename.toLowerCase() &&
+        hit.pageNumber === job.page
+      ) {
+        continue;
+      }
+      const read = await readDocumentPage({
+        reportId: ctx.report.id,
+        attachmentId: hit.attachmentId,
+        pageNumber: hit.pageNumber,
+      });
+      const quote = pageQuoteFromRead(read);
+      if (matchClaimToCitedPage(job.claim, quote).status !== "supported") {
+        continue;
+      }
+      const replacement = canonicalizeSourceCitationBracket(
+        `[${hit.filename}, p. ${hit.pageNumber}]`
+      );
+      const persisted = locateProposedEdit({
+        ctx,
+        section: job.section,
+        contentPath: job.contentPath,
+        edit: {
+          anchorText: job.source,
+          deleteText: job.source,
+          insertText: replacement,
+        },
+        reasoning: `${job.marker} does not support this claim on ${job.source}. Replace the Citations line with ${replacement}.`,
+        kind: "ai_fix",
+        severity: fallback.severity,
+      });
+      if (persisted) return persisted;
+    }
+  } catch {
+    return fallback;
+  }
+  return fallback;
 }
 
 export async function runCitationSupportsCheck(
@@ -157,19 +250,15 @@ export async function runCitationSupportsCheck(
           attachmentId: job.attachmentId,
           pageNumber: job.page,
         });
-        const quote = [read?.transcript, read?.visualInterpretation]
-          .filter(Boolean)
-          .join("\n")
-          .slice(0, 4000);
+        const quote = pageQuoteFromRead(read);
         if (!quote.trim()) {
-          findings.push({
-            section: job.section,
-            contentPath: job.contentPath,
-            anchorText: job.marker,
-            message: `${job.marker} cites a page with no extracted text. Please verify ${job.source}.`,
-            severity: "major",
-            kind: "needs_human",
-          });
+          findings.push(
+            humanFinding(
+              job,
+              `${job.marker} cites a page with no extracted text. Please verify ${job.source}.`,
+              "major"
+            )
+          );
           return null;
         }
         return { job, quote };
@@ -177,13 +266,29 @@ export async function runCitationSupportsCheck(
     )
   ).filter((row): row is { job: CitationSupportJob; quote: string } => row != null);
 
-  if (quoted.length === 0) return { findings };
+  const forModel: Array<{ job: CitationSupportJob; quote: string }> = [];
+  for (const row of quoted) {
+    const match = matchClaimToCitedPage(row.job.claim, row.quote);
+    if (match.status === "supported") continue;
+    if (match.status === "needs_model") {
+      forModel.push(row);
+      continue;
+    }
+    const fallback = humanFinding(
+      row.job,
+      supportMatchMessage(row.job.marker, row.job.source, match),
+      "critical"
+    );
+    findings.push(await proposeBetterCitation(ctx, row.job, fallback));
+  }
+
+  if (forModel.length === 0) return { findings };
 
   const model = resolveGoogleLanguageModel(CRITERIA_EVAL_GOOGLE_MODEL_ID, {
     vertexLocation: "global",
   });
 
-  const batches = chunk(quoted, CITATION_SUPPORT_BATCH_SIZE);
+  const batches = chunk(forModel, CITATION_SUPPORT_BATCH_SIZE);
   const judged = await Promise.all(
     batches.map(async (batch) => {
       await assertAiBudgetAvailable();
@@ -196,8 +301,7 @@ export async function runCitationSupportsCheck(
       const result = await generateText({
         model,
         output: Output.object({ schema: batchSupportSchema }),
-        system:
-          "Judge whether each cited page supports its claim. Return one judgement per CLAIM index. Do not invent sources.",
+        system: CITATION_SUPPORT_SYSTEM_PROMPT,
         prompt: `${prompt}\n\nReturn judgements for every CLAIM index.`,
         ...langfuseGenerateTextTelemetry({
           functionId: "review-citation-supports",
@@ -221,54 +325,21 @@ export async function runCitationSupportsCheck(
   for (const { batch, judgements } of judged) {
     for (const [index, row] of batch.entries()) {
       const judgement = judgements.find((item) => item.index === index);
-      if (!judgement || judgement.status === "supported") continue;
-      const needsHuman: ReviewFindingDraft = {
-        section: row.job.section,
-        contentPath: row.job.contentPath,
-        anchorText: row.job.marker,
-        message: `${row.job.marker} ${judgement.status}: ${judgement.reasoning}`,
-        severity: judgement.status === "unsupported" ? "critical" : "major",
-        kind: "needs_human",
-        metadata: {
-          citationNumber: row.job.citationNumber,
-          source: row.job.source,
-        },
-      };
-      try {
-        const hits = await searchReportDocuments({
-          reportId: ctx.report.id,
-          query: row.job.claim,
-          limit: 3,
-        });
-        const better = hits.find(
-          (hit) =>
-            hit.filename.toLowerCase() !== row.job.filename.toLowerCase() ||
-            hit.pageNumber !== row.job.page
-        );
-        if (!better) {
-          findings.push(needsHuman);
-          continue;
-        }
-        const replacement = canonicalizeSourceCitationBracket(
-          `[${better.filename}, p. ${better.pageNumber}]`
-        );
-        const persisted = locateProposedEdit({
-          ctx,
-          section: row.job.section,
-          contentPath: row.job.contentPath,
-          edit: {
-            anchorText: row.job.source,
-            deleteText: row.job.source,
-            insertText: replacement,
-          },
-          reasoning: `${row.job.marker} is ${judgement.status} on the cited page. Replace the Citations line with ${replacement}.`,
-          kind: "ai_fix",
-          severity: needsHuman.severity,
-        });
-        findings.push(persisted ?? needsHuman);
-      } catch {
+      if (judgement?.status === "supported") continue;
+      const status = judgement?.status ?? "partial";
+      const reasoning =
+        judgement?.reasoning ??
+        "The checker could not judge this citation. Please confirm the cited page matches this claim's subject and facts.";
+      const needsHuman = humanFinding(
+        row.job,
+        `${row.job.marker} ${status}: ${reasoning}`,
+        status === "unsupported" ? "critical" : "major"
+      );
+      if (status === "partial") {
         findings.push(needsHuman);
+        continue;
       }
+      findings.push(await proposeBetterCitation(ctx, row.job, needsHuman));
     }
   }
   return { findings };
