@@ -58,13 +58,17 @@ describe("StatedFactsDisclosure", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<StatedFactsDisclosure reportId="report-a" />);
-    expect(await screen.findByText("URS-13: −15 °C")).toBeTruthy();
+    expect(
+      await screen.findByText("URS-13 operating range is −15 °C.")
+    ).toBeTruthy();
     expect(screen.getByText(/Ada Lovelace/)).toBeTruthy();
     await user.click(
-      screen.getByRole("button", { name: "Delete stated fact URS-13: −15 °C" })
+      screen.getByRole("button", {
+        name: "Delete stated fact URS-13 operating range is −15 °C.",
+      })
     );
     await waitFor(() => {
-      expect(screen.queryByText("URS-13: −15 °C")).toBeNull();
+      expect(screen.queryByText("URS-13 operating range is −15 °C.")).toBeNull();
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/reports/report-a/stated-facts/fact-a",
@@ -84,14 +88,16 @@ describe("StatedFactsDisclosure", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const view = render(<StatedFactsDisclosure reportId="report-a" />);
-    expect(await screen.findByText("URS-13: −15 °C")).toBeTruthy();
+    expect(
+      await screen.findByText("URS-13 operating range is −15 °C.")
+    ).toBeTruthy();
     view.rerender(<StatedFactsDisclosure reportId="report-b" />);
     await waitFor(() => {
-      expect(screen.queryByText("URS-13: −15 °C")).toBeNull();
+      expect(screen.queryByText("URS-13 operating range is −15 °C.")).toBeNull();
     });
-    expect(screen.queryByText("URS-14: 20 °C")).toBeNull();
+    expect(screen.queryByText("URS-14 is 20 °C.")).toBeNull();
     pendingB.resolve?.(jsonResponse({ facts: [factB], canDelete: false }));
-    expect(await screen.findByText("URS-14: 20 °C")).toBeTruthy();
+    expect(await screen.findByText("URS-14 is 20 °C.")).toBeTruthy();
     expect(screen.queryByText("Ada Lovelace")).toBeNull();
   });
 });

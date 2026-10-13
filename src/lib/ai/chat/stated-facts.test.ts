@@ -17,69 +17,52 @@ function tempFact(text: string) {
 }
 
 describe("extractStatedFactCandidates", () => {
-  it("binds a quantity to each identifier in the same sentence", () => {
-    const rows = extractStatedFactCandidates(
-      "URS-13 and URS-14 operating range is −15 °C."
-    );
-    expect(rows.map((row) => row.entityText).sort()).toEqual(["URS-13", "URS-14"]);
-    expect(rows.every((row) => row.valueKind === "temperature")).toBe(true);
-    expect(new Set(rows.map((row) => row.valueNormalized)).size).toBe(1);
-  });
-
-  it("stores an assigned identifier on the report", () => {
-    const rows = extractStatedFactCandidates("The batch is MF-25-VIAL-01.");
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      entityText: "",
-      valueKind: "identifier",
-      valueText: "MF-25-VIAL-01",
-    });
-  });
-
-  it("stores a spoken URS id and the word celsius", () => {
+  it("stores each statement, including spoken wording with no hyphenated id", () => {
     const rows = extractStatedFactCandidates(
       "URS 3 operating temperature is actually 20 to 130 celsius. i think the attachment has the wrong value"
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      entityText: "URS-3",
-      valueKind: "temperature",
-      valueText: "20 to 130 °C",
-    });
-    expect(rows[0]?.sourceText).toContain("URS 3 operating temperature");
-    expect(rows[0]?.sourceText).toContain("celsius");
+    expect(rows.map((row) => row.text)).toEqual([
+      "URS 3 operating temperature is actually 20 to 130 celsius.",
+      "i think the attachment has the wrong value",
+    ]);
   });
 
-  it("drops a quantity with no identifier, a draft command, a question, and a bare yes", () => {
-    expect(extractStatedFactCandidates("Use −15 °C.")).toEqual([]);
-    expect(extractStatedFactCandidates("Draft URS-13.")).toEqual([]);
+  it("stores a value that names no identifier", () => {
+    const rows = extractStatedFactCandidates("Use −15 °C.");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.text).toBe("Use −15 °C.");
+  });
+
+  it("drops a question, a bare yes, and auto-continue", () => {
     expect(extractStatedFactCandidates("What temperature is URS-13?")).toEqual([]);
     expect(extractStatedFactCandidates("yes")).toEqual([]);
     expect(extractStatedFactCandidates("insert that")).toEqual([]);
+    expect(extractStatedFactCandidates("thanks")).toEqual([]);
     expect(extractStatedFactCandidates("Continue the remaining sections.")).toEqual(
       []
     );
   });
 
-  it("keeps a stated fact in a later sentence that is not a question", () => {
+  it("keeps a statement that follows a question", () => {
     const rows = extractStatedFactCandidates(
       "What about the jacket? URS-13 operating range is −15 °C."
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.entityText).toBe("URS-13");
+    expect(rows.map((row) => row.text)).toEqual([
+      "URS-13 operating range is −15 °C.",
+    ]);
   });
 });
 
 describe("omitStatedFactsAlreadyInReport", () => {
-  it("drops a pair already written in the report and keeps one whose entity is absent", () => {
+  it("drops a sentence already written in the report", () => {
     const candidates = extractStatedFactCandidates(
-      "URS-13 operating range is −15 °C. URS-14 operating range is −15 °C."
+      "URS-13 operating range is −15 °C. The holding tank is stainless."
     );
     const kept = omitStatedFactsAlreadyInReport(
       candidates,
-      "URS-13 operating range −15 °C is already drafted."
+      "Earlier draft. URS-13 operating range is −15 °C."
     );
-    expect(kept.map((row) => row.entityText)).toEqual(["URS-14"]);
+    expect(kept.map((row) => row.text)).toEqual(["The holding tank is stainless."]);
   });
 });
 
@@ -88,8 +71,8 @@ describe("statedFactSupportsDraft", () => {
     "URS-13 operating range is −15 °C."
   );
 
-  it("keeps 20 °C to 130 °C when the engineer said 20 to 130 celsius", () => {
-    const stored = extractStatedFactCandidates(
+  it("keeps 20 °C to 130 °C from a spoken sentence and not the file range or another id", () => {
+    const spoken = extractStatedFactCandidates(
       "URS 3 operating temperature is actually 20 to 130 celsius."
     );
     const range = tempFact("URS-3 shell operating temperature is 20 °C to 130 °C");
@@ -99,26 +82,26 @@ describe("statedFactSupportsDraft", () => {
       statedFactSupportsDraft({
         fact: range,
         draftContext: "URS-3 shell operating temperature is 20 °C to 130 °C",
-        statedFacts: stored,
+        statedFacts: spoken,
       })
     ).toBe(true);
     expect(
       statedFactSupportsDraft({
         fact: fileRange,
         draftContext: "URS-3 requirement is 15 °C to 130 °C",
-        statedFacts: stored,
+        statedFacts: spoken,
       })
     ).toBe(false);
     expect(
       statedFactSupportsDraft({
         fact: other,
         draftContext: "URS-14 shell operating temperature is 20 °C to 130 °C",
-        statedFacts: stored,
+        statedFacts: spoken,
       })
     ).toBe(false);
   });
 
-  it("keeps the value only when the draft names the same identifier", () => {
+  it("keeps the value only when the draft is about the same point", () => {
     const cold = tempFact("URS-13 was held at −15 °C");
     const other = tempFact("URS-14 was held at −15 °C");
     expect(
@@ -135,42 +118,20 @@ describe("statedFactSupportsDraft", () => {
         statedFacts: stored,
       })
     ).toBe(false);
-    const entity = extractHardFacts("URS-13 was held at −15 °C").find(
-      (row) => row.kind === "identifier"
-    );
-    expect(entity).toBeTruthy();
-    expect(
-      statedFactSupportsDraft({
-        fact: entity!,
-        draftContext: "URS-13 was held at −15 °C",
-        statedFacts: stored,
-      })
-    ).toBe(true);
   });
 
-  it("does not treat 15 °C or 15 L as the stored −15 °C", () => {
-    const plus = tempFact("URS-13 was held at 15 °C");
-    const litres = extractHardFacts("URS-13 holds 15 L").find(
-      (row) => row.kind === "number"
-    );
-    expect(litres).toBeTruthy();
+  it("does not treat 15 °C as the stored −15 °C", () => {
+    const warm = tempFact("URS-13 was held at 15 °C");
     expect(
       statedFactSupportsDraft({
-        fact: plus,
+        fact: warm,
         draftContext: "URS-13 was held at 15 °C",
         statedFacts: stored,
       })
     ).toBe(false);
-    expect(
-      statedFactSupportsDraft({
-        fact: litres!,
-        draftContext: "URS-13 holds 15 L",
-        statedFacts: stored,
-      })
-    ).toBe(false);
   });
 
-  it("lets a named attachment quote that mentions the entity win", () => {
+  it("lets a named attachment quote that shares the point win", () => {
     const cold = tempFact("URS-13 was held at −15 °C");
     expect(
       statedFactSupportsDraft({
@@ -192,37 +153,31 @@ describe("statedFactSupportsDraft", () => {
 });
 
 describe("renderStatedFactsPrompt", () => {
-  it("lists fact text and omits author and message ids", () => {
+  it("lists the sentence and omits author and message ids", () => {
     const block = renderStatedFactsPrompt([
       {
-        entityText: "URS-13",
-        entityNormalized: "URS-13",
-        valueText: "−15 °C",
-        valueKind: "temperature",
-        valueNormalized: "-15c",
+        text: "URS-13 operating range is −15 °C.",
+        normalized: "urs-13 operating range is −15 °c",
       },
     ]);
-    expect(block).toContain("URS-13: −15 °C");
+    expect(block).toContain("URS-13 operating range is −15 °C.");
     expect(block).toContain("not a reason to skip search");
-    expect(block).toContain("including when an attachment states a different value");
+    expect(block).toContain("including when an attachment disagrees");
     expect(block).not.toContain("author");
     expect(block).not.toContain("Ada Lovelace");
   });
 
   it("caps the prompt at the latest rows", () => {
     const facts = Array.from({ length: STATED_FACTS_PROMPT_CAP + 1 }, (_, i) => ({
-      entityText: "URS-1",
-      entityNormalized: "URS-1",
-      valueText: `${i} °C`,
-      valueKind: "temperature" as const,
-      valueNormalized: `${i}c`,
+      text: `Statement number ${i} stays.`,
+      normalized: `statement number ${i} stays`,
     }));
     const turned = statedFactsForTurn(facts);
     expect(turned).toHaveLength(STATED_FACTS_PROMPT_CAP);
-    expect(turned[0]?.valueText).toBe("1 °C");
-    expect(renderStatedFactsPrompt(facts)).not.toContain("- URS-1: 0 °C");
+    expect(turned[0]?.text).toBe("Statement number 1 stays.");
+    expect(renderStatedFactsPrompt(facts)).not.toContain("Statement number 0 stays.");
     expect(renderStatedFactsPrompt(facts)).toContain(
-      `- URS-1: ${STATED_FACTS_PROMPT_CAP} °C`
+      `Statement number ${STATED_FACTS_PROMPT_CAP} stays.`
     );
   });
 });

@@ -1,45 +1,38 @@
 /**
- * Report-level facts an engineer typed in document chat. A quantity is kept
- * only with the identifier in the same sentence, so one vessel's temperature
- * cannot fill another. Bare confirmations and question sentences are ignored.
- * The prompt receives the pair only — never the surrounding sentence, the
- * author, or the message id.
+ * Report-level statements an engineer typed in document chat.
+ * A sentence is stored when it is not a question and not a bare
+ * acknowledgement. Recognized equipment ids are not required.
+ * The prompt receives the sentence only — never the author or the message id.
  */
 
 import { splitSentences } from "@/lib/citations/citation-site";
-import {
-  extractHardFacts,
-  type HardFact,
-  type HardFactKind,
-} from "@/lib/ai/chat/claim-facts";
+import { extractHardFacts, type HardFact } from "@/lib/ai/chat/claim-facts";
 import { isBareChatConfirmation } from "@/lib/ai/chat/citation-exemption";
-import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { CHAT_AUTO_CONTINUE_TEXT } from "@/lib/ai/chat/pending-plan";
 
 export const STATED_FACTS_PER_MESSAGE = 20;
 export const STATED_FACTS_PROMPT_CAP = 40;
 const STATED_FACT_MESSAGE_CAP = 4_000;
 const SOURCE_TEXT_CAP = 500;
+const PROMPT_LINE_CAP = 400;
+/** Skip "already in the report" for scraps that would match inside other words. */
+const ALREADY_STATED_MIN = 24;
 
 const DEVANAGARI_RE = /[\u0900-\u097F]/;
 const QUESTION_SENTENCE_RE = /\?\s*$/;
-
-/**
- * Label immediately before an identifier assigns it to this report
- * ("batch is MF-25-VIAL-01", "document no. SOP/QA/017").
- */
-const IDENTIFIER_ASSIGN_BEFORE_RE =
-  /\b(?:batch|lot)\s*(?:no\.?|number|#)?\s*(?:is|was|are|=|:)\s*$|\bdocument\s*(?:no\.?|number|#)\s*(?:is|was|are|=|:)?\s*$|\b(?:is|was|=)\s*$/i;
+const ACK_SENTENCE_RE =
+  /^(?:thanks|thank you|hi|hello|hey|done|noted|got it|cool|great)(?:\s*[!.]*)?$/i;
+const INSERT_THAT_RE =
+  /^(?:please\s+)?(?:insert|put|place|add)\s+(?:that|this|it)\b/i;
 
 export type StatedFactRef = {
-  entityText: string;
-  entityNormalized: string;
-  valueText: string;
-  valueKind: HardFactKind;
-  valueNormalized: string;
+  /** English sentence injected into the prompt. */
+  text: string;
+  normalized: string;
 };
 
 export type StatedFactCandidate = StatedFactRef & {
+  /** Sentence the engineer typed, in their language. */
   sourceText: string;
 };
 
@@ -48,8 +41,8 @@ export function messageNeedsStatedFactTranslation(text: string): boolean {
 }
 
 /**
- * English text to extract from. Devanagari is translated first; a failed
- * translation stores nothing. `original` is the engineer's words for the view.
+ * English text to split into statements. Devanagari is translated first; a
+ * failed translation stores nothing. `original` is the engineer's words.
  */
 export async function englishTextForStatedFacts(
   text: string,
@@ -64,159 +57,47 @@ export async function englishTextForStatedFacts(
   return { english: translated, original: capped };
 }
 
+/**
+ * One row per non-question sentence. "URS 3 ... 20 to 130 celsius" is kept
+ * as that sentence. "yes", "insert that", and auto-continue are not.
+ */
 export function extractStatedFactCandidates(text: string): StatedFactCandidate[] {
   const trimmed = text.replace(/\s+/g, " ").trim();
   if (!trimmed) return [];
   if (trimmed === CHAT_AUTO_CONTINUE_TEXT) return [];
   if (isBareChatConfirmation(text)) return [];
 
-  const sentences = splitSentences(text);
   const found: StatedFactCandidate[] = [];
-  for (const span of sentences) {
-    const sentence = text.slice(span.start, span.end);
-    if (QUESTION_SENTENCE_RE.test(sentence.trim())) continue;
-    const extracted = sentenceForStatedFactExtract(sentence);
-    const facts = extractHardFacts(extracted);
-    const identifiers = facts.filter((fact) => fact.kind === "identifier");
-    const quantities = facts.filter((fact) => fact.kind !== "identifier");
-    if (quantities.length > 0 && identifiers.length > 0) {
-      for (const identifier of identifiers) {
-        for (const quantity of quantities) {
-          found.push(candidateFrom(identifier, quantity, sentence));
-        }
-      }
+  const seen = new Set<string>();
+  for (const sentence of statementClauses(text)) {
+    if (!sentence || QUESTION_SENTENCE_RE.test(sentence)) continue;
+    if (
+      isBareChatConfirmation(sentence) ||
+      ACK_SENTENCE_RE.test(sentence) ||
+      INSERT_THAT_RE.test(sentence)
+    ) {
       continue;
     }
-    if (quantities.length > 0) continue;
-    for (const identifier of identifiers) {
-      const before = extracted.slice(
-        Math.max(0, identifier.start - 48),
-        identifier.start
-      );
-      if (!IDENTIFIER_ASSIGN_BEFORE_RE.test(before)) continue;
-      found.push({
-        entityText: "",
-        entityNormalized: "",
-        valueText: identifier.text.trim(),
-        valueKind: "identifier",
-        valueNormalized: identifier.normalized,
-        sourceText: clipSource(sentence),
-      });
-    }
+    const normalized = normalizeStatement(sentence);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    found.push({ text: sentence, normalized, sourceText: sentence });
+    if (found.length >= STATED_FACTS_PER_MESSAGE) break;
   }
-
-  const seen = new Set<string>();
-  const unique: StatedFactCandidate[] = [];
-  for (const row of found) {
-    const key = `${row.entityNormalized}\0${row.valueKind}\0${row.valueNormalized}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(row);
-    if (unique.length >= STATED_FACTS_PER_MESSAGE) break;
-  }
-  return unique;
+  return found;
 }
 
-/**
- * Spoken ids and units the hard-fact extractor misses: "URS 3", "celsius".
- * The stored pair uses the rewritten form (`URS-3`, `20 to 130 °C`). The
- * view still shows the engineer's original sentence.
- */
-function sentenceForStatedFactExtract(sentence: string): string {
-  return sentence
-    .replace(/\b(?:degrees?\s+)?(?:celsius|centigrade)\b/gi, "°C")
-    .replace(
-      /\bURS(?:\s*[-–−]\s*|\s+)(\d+[a-z]?)\b/gi,
-      (_all, num: string) => `URS-${num}`
-    );
-}
-
-/** "20 to 130 °C" and "20 °C to 130 °C" are the same range. */
-function temperatureKey(normalized: string): string {
-  return normalized.replace(/c(?=to|[-–−]|$)/g, "").replace(/to|–|−/g, "-");
-}
-
-/** Exact id, so URS-3 does not bind URS-14 or URS-30. Spoken "URS 3" counts. */
-function contextNamesEntity(text: string, entityNormalized: string): boolean {
-  if (!entityNormalized) return false;
-  const hay = text
-    .toUpperCase()
-    .replace(/\bURS(?:\s*[-–−]\s*|\s+)(\d+[A-Z]?)\b/g, "URS-$1");
-  const needle = entityNormalized
-    .toUpperCase()
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![A-Z0-9])${needle}(?![A-Z0-9])`).test(hay);
-}
-
-function sameIdentifier(stored: string, drafted: string): boolean {
-  return stored.toUpperCase() === drafted.toUpperCase();
-}
-
-function sameStatedValue(stated: StatedFactRef, fact: HardFact): boolean {
-  if (stated.valueKind !== fact.kind) return false;
-  if (fact.kind === "temperature") {
-    return temperatureKey(stated.valueNormalized) === temperatureKey(fact.normalized);
-  }
-  return stated.valueNormalized === fact.normalized;
-}
-
-function candidateFrom(
-  identifier: HardFact,
-  quantity: HardFact,
-  sentence: string
-): StatedFactCandidate {
-  return {
-    entityText: identifier.text.trim(),
-    entityNormalized: identifier.normalized,
-    valueText: quantity.text.trim(),
-    valueKind: quantity.kind,
-    valueNormalized: quantity.normalized,
-    sourceText: clipSource(sentence),
-  };
-}
-
-function clipSource(sentence: string): string {
-  return sentence.replace(/\s+/g, " ").trim().slice(0, SOURCE_TEXT_CAP);
-}
-
-function asExtractedFact(
-  text: string,
-  kind: HardFactKind,
-  normalized: string
-): HardFact | null {
-  return (
-    extractHardFacts(text).find(
-      (fact) => fact.kind === kind && fact.normalized === normalized
-    ) ?? null
-  );
-}
-
-/** Drop a candidate whose entity and value are already in the report. */
+/** Drop a sentence that is already written in the report. */
 export function omitStatedFactsAlreadyInReport(
   candidates: readonly StatedFactCandidate[],
   haystack: string
 ): StatedFactCandidate[] {
-  if (!haystack.trim()) return [...candidates];
-  return candidates.filter((candidate) => !candidateAlreadyInReport(candidate, haystack));
-}
-
-function candidateAlreadyInReport(
-  candidate: StatedFactCandidate,
-  haystack: string
-): boolean {
-  const value = asExtractedFact(
-    candidate.valueText,
-    candidate.valueKind,
-    candidate.valueNormalized
-  );
-  if (!value || !evidenceContainsFact(haystack, value)) return false;
-  if (!candidate.entityNormalized) return true;
-  const entity = asExtractedFact(
-    candidate.entityText,
-    "identifier",
-    candidate.entityNormalized
-  );
-  return Boolean(entity && evidenceContainsFact(haystack, entity));
+  const hay = normalizeStatement(haystack);
+  if (!hay) return [...candidates];
+  return candidates.filter((candidate) => {
+    if (candidate.normalized.length < ALREADY_STATED_MIN) return true;
+    return !hay.includes(candidate.normalized);
+  });
 }
 
 /**
@@ -232,21 +113,14 @@ export function statedFactsForTurn(
 
 export function renderStatedFactsPrompt(facts: readonly StatedFactRef[]): string {
   if (facts.length === 0) return "";
-  const lines = statedFactsForTurn(facts).map((fact) => {
-    const value = promptToken(fact.valueText);
-    const entity = promptToken(fact.entityText);
-    return entity ? `- ${entity}: ${value}` : `- ${value}`;
-  });
+  const lines = statedFactsForTurn(facts).map(
+    (fact) => `- ${promptToken(fact.text)}`
+  );
   return `## Engineer-stated facts
-These values were typed by an engineer on this report. They are not attachment evidence and they are not a reason to skip search. Do not invent a citation for them.
-Use the engineer-stated value for that same entity, including when an attachment states a different value.
-If this turn @-tags an attachment or names one on this report, and a retrieved page from that file speaks to the same entity, use the page instead of the stated fact.
-Do not apply a stated value to a different entity.
+The engineer typed these statements on this report. They are not attachment evidence and they are not a reason to skip search. Do not invent a citation for them.
+Use a statement when it bears on the answer, including when an attachment disagrees. Do not stretch a statement past what it says.
+If this turn @-tags an attachment or names one on this report, and a retrieved page speaks to the same point, use the page instead of the statement.
 ${lines.join("\n")}`;
-}
-
-function promptToken(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
 export function quotesForNamedAttachments(
@@ -261,9 +135,9 @@ export function quotesForNamedAttachments(
 }
 
 /**
- * Keep a drafted hard fact only when a stored pair matches that exact value
- * and the draft also names the same identifier. A named file whose served
- * quote mentions the entity wins for this turn.
+ * Keep a drafted hard fact when a stored statement says that fact and the
+ * draft is still about the same point. A named file whose served quote
+ * shares that point wins for this turn.
  */
 export function statedFactSupportsDraft(input: {
   fact: HardFact;
@@ -272,61 +146,101 @@ export function statedFactSupportsDraft(input: {
   namedFileQuotes?: readonly string[];
 }): boolean {
   if (input.statedFacts.length === 0) return false;
-  if (
-    input.fact.kind === "identifier" &&
-    statedEntityInDraft(input.fact, input.draftContext, input.statedFacts, input.namedFileQuotes ?? [])
-  ) {
-    return true;
-  }
+  const quotes = input.namedFileQuotes ?? [];
   for (const stated of input.statedFacts) {
-    if (!sameStatedValue(stated, input.fact)) continue;
-    if (stated.entityNormalized) {
-      if (!contextNamesEntity(input.draftContext, stated.entityNormalized)) {
-        continue;
-      }
-      const named = input.namedFileQuotes ?? [];
-      if (named.some((quote) => contextNamesEntity(quote, stated.entityNormalized))) {
-        continue;
-      }
-    } else if (namedQuoteMentionsValue(input.namedFileQuotes ?? [], input.fact)) {
-      continue;
-    }
+    if (!statementSupportsFact(stated.text, input.fact)) continue;
+    if (!statementAppliesToDraft(stated.text, input.draftContext)) continue;
+    if (namedFilePreempts(stated.text, quotes)) continue;
     return true;
   }
   return false;
 }
 
-/** The binding identifier stays when the draft also contains that pair's value. */
-function statedEntityInDraft(
-  fact: HardFact,
-  draftContext: string,
-  statedFacts: readonly StatedFactRef[],
-  namedFileQuotes: readonly string[]
-): boolean {
-  for (const stated of statedFacts) {
-    if (
-      !stated.entityNormalized ||
-      !sameIdentifier(stated.entityNormalized, fact.normalized)
-    ) {
-      continue;
+export function normalizeStatement(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.?!,:;]+$/g, "")
+    .toLowerCase();
+}
+
+/** Segmenter leaves "…celsius. i think…" as one sentence when the next word is lowercase. */
+function statementClauses(text: string): string[] {
+  const clauses: string[] = [];
+  for (const span of splitSentences(text)) {
+    const sentence = text.slice(span.start, span.end);
+    for (const part of sentence.split(/(?<=[.!?])\s+/)) {
+      const clipped = clipSource(part);
+      if (clipped) clauses.push(clipped);
     }
-    const value = asExtractedFact(
-      stated.valueText,
-      stated.valueKind,
-      stated.valueNormalized
+  }
+  return clauses;
+}
+
+function clipSource(sentence: string): string {
+  return sentence.replace(/\s+/g, " ").trim().slice(0, SOURCE_TEXT_CAP);
+}
+
+function promptToken(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, PROMPT_LINE_CAP);
+}
+
+/** Spoken "URS 3" and "celsius" so a drafted °C range can match the sentence. */
+function statementForFactMatch(sentence: string): string {
+  return sentence
+    .replace(/\b(?:degrees?\s+)?(?:celsius|centigrade)\b/gi, "°C")
+    .replace(
+      /\bURS(?:\s*[-–−]\s*|\s+)(\d+[a-z]?)\b/gi,
+      (_all, num: string) => `URS-${num}`
     );
-    if (!value || !evidenceContainsFact(draftContext, value)) continue;
-    if (namedFileQuotes.some((quote) => contextNamesEntity(quote, stated.entityNormalized))) {
-      continue;
-    }
-    return true;
-  }
-  return false;
 }
 
-function namedQuoteMentionsValue(
-  quotes: readonly string[],
-  fact: HardFact
+function temperatureKey(normalized: string): string {
+  return normalized.replace(/c(?=to|[-–−]|$)/g, "").replace(/to|–|−/g, "-");
+}
+
+function factsMatch(stored: HardFact, drafted: HardFact): boolean {
+  if (stored.kind !== drafted.kind) return false;
+  if (stored.kind === "temperature") {
+    return temperatureKey(stored.normalized) === temperatureKey(drafted.normalized);
+  }
+  if (stored.kind === "identifier") {
+    return stored.normalized.toUpperCase() === drafted.normalized.toUpperCase();
+  }
+  return stored.normalized === drafted.normalized;
+}
+
+function statementFacts(text: string): HardFact[] {
+  return extractHardFacts(statementForFactMatch(text));
+}
+
+function identifiersIn(text: string): string[] {
+  return statementFacts(text)
+    .filter((fact) => fact.kind === "identifier")
+    .map((fact) => fact.normalized.toUpperCase());
+}
+
+function statementSupportsFact(statement: string, fact: HardFact): boolean {
+  return statementFacts(statement).some((stored) => factsMatch(stored, fact));
+}
+
+/**
+ * A statement that names URS-3 does not keep a number on a URS-14 draft.
+ * A statement with no id can support its own numbers anywhere.
+ */
+function statementAppliesToDraft(statement: string, draftContext: string): boolean {
+  const ids = identifiersIn(statement);
+  if (ids.length === 0) return true;
+  const draftIds = new Set(identifiersIn(draftContext));
+  return ids.some((id) => draftIds.has(id));
+}
+
+function namedFilePreempts(
+  statement: string,
+  quotes: readonly string[]
 ): boolean {
-  return quotes.some((quote) => evidenceContainsFact(quote, fact));
+  if (quotes.length === 0) return false;
+  const ids = new Set(identifiersIn(statement));
+  if (ids.size === 0) return false;
+  return quotes.some((quote) => identifiersIn(quote).some((id) => ids.has(id)));
 }

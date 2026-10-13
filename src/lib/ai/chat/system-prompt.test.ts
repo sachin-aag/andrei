@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v219-stated-fact-wins");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v220-stated-statements");
   });
 
   it("injects engineer-stated facts without an author", () => {
@@ -27,16 +27,13 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       statedFacts: [
         {
-          entityText: "URS-13",
-          entityNormalized: "URS-13",
-          valueText: "−15 °C",
-          valueKind: "temperature",
-          valueNormalized: "-15c",
+          text: "URS-13 operating range is −15 °C.",
+          normalized: "urs-13 operating range is −15 °c",
         },
       ],
     });
     expect(withFacts).toContain("Engineer-stated facts");
-    expect(withFacts).toContain("URS-13: −15 °C");
+    expect(withFacts).toContain("URS-13 operating range is −15 °C.");
     expect(withFacts).not.toContain("Ada Lovelace");
     expect(buildChatSystemPrompt({ ...opts, mode: "agent" })).not.toContain(
       "Engineer-stated facts"

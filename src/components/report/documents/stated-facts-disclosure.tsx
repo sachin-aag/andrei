@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 
 type StatedFactRow = {
   id: string;
-  entityText: string;
-  valueText: string;
+  text?: string;
   sourceText: string;
+  entityText?: string;
+  valueText?: string;
   authorName: string;
   createdAt: string;
 };
@@ -93,9 +94,12 @@ export function StatedFactsDisclosure({
       </summary>
       <ul className="max-h-40 space-y-2 overflow-y-auto px-3 pb-2">
         {facts.map((fact) => {
-          const label = fact.entityText
-            ? `${fact.entityText}: ${fact.valueText}`
-            : fact.valueText;
+          const label =
+            fact.sourceText.trim() ||
+            fact.text?.trim() ||
+            (fact.entityText
+              ? `${fact.entityText}: ${fact.valueText ?? ""}`
+              : fact.valueText ?? "");
           return (
             <li key={fact.id} className="text-[11px] leading-snug">
               <div className="flex items-start justify-between gap-2">
@@ -117,7 +121,7 @@ export function StatedFactsDisclosure({
                 {" · "}
                 {formatWhen(fact.createdAt)}
               </p>
-              {fact.sourceText ? (
+              {fact.sourceText && fact.sourceText.trim() !== label ? (
                 <p className="text-[var(--muted-foreground)]">{fact.sourceText}</p>
               ) : null}
             </li>

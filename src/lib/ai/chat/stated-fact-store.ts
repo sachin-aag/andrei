@@ -10,10 +10,10 @@ import { reportStatedFacts, workspaceUsers } from "@/db/schema";
 import type { AuditActorSnapshot } from "@/lib/audit/actor";
 import { recordAuditEvent } from "@/lib/audit/record-audit-event";
 import { alreadyStatedHaystack } from "@/lib/ai/chat/citation-exemption";
-import type { HardFactKind } from "@/lib/ai/chat/claim-facts";
 import {
   englishTextForStatedFacts,
   extractStatedFactCandidates,
+  normalizeStatement,
   omitStatedFactsAlreadyInReport,
   type StatedFactCandidate,
   type StatedFactRef,
@@ -99,8 +99,8 @@ async function insertStatedFact(input: {
     .where(
       and(
         eq(reportStatedFacts.reportId, input.reportId),
-        eq(reportStatedFacts.entityNormalized, candidate.entityNormalized),
-        eq(reportStatedFacts.valueNormalized, candidate.valueNormalized),
+        eq(reportStatedFacts.entityNormalized, ""),
+        eq(reportStatedFacts.valueNormalized, candidate.normalized),
         isNull(reportStatedFacts.deletedAt)
       )
     )
@@ -113,11 +113,11 @@ async function insertStatedFact(input: {
       .insert(reportStatedFacts)
       .values({
         reportId: input.reportId,
-        entityText: candidate.entityText,
-        entityNormalized: candidate.entityNormalized,
-        valueText: candidate.valueText,
-        valueKind: candidate.valueKind,
-        valueNormalized: candidate.valueNormalized,
+        entityText: "",
+        entityNormalized: "",
+        valueText: candidate.text,
+        valueKind: "statement",
+        valueNormalized: candidate.normalized,
         sourceText: candidate.sourceText,
         sourceMessageId: input.messageId,
         createdBy: input.authorId,
@@ -136,12 +136,8 @@ async function insertStatedFact(input: {
     entityType: "stated_fact",
     entityId: id,
     reportId: input.reportId,
-    summary: statedFactSummary("Recorded", candidate),
-    newValue: {
-      entityText: candidate.entityText,
-      valueText: candidate.valueText,
-      valueKind: candidate.valueKind,
-    },
+    summary: statedFactSummary("Recorded", candidate.text),
+    newValue: { text: candidate.text },
   });
 }
 
@@ -150,11 +146,11 @@ export async function listLiveStatedFacts(
 ): Promise<StatedFactRef[]> {
   const rows = await db
     .select({
-      entityText: reportStatedFacts.entityText,
-      entityNormalized: reportStatedFacts.entityNormalized,
       valueText: reportStatedFacts.valueText,
       valueKind: reportStatedFacts.valueKind,
       valueNormalized: reportStatedFacts.valueNormalized,
+      sourceText: reportStatedFacts.sourceText,
+      entityText: reportStatedFacts.entityText,
     })
     .from(reportStatedFacts)
     .where(
@@ -165,17 +161,8 @@ export async function listLiveStatedFacts(
     )
     .orderBy(asc(reportStatedFacts.createdAt));
   return rows.flatMap((row) => {
-    const valueKind = asHardFactKind(row.valueKind);
-    if (!valueKind) return [];
-    return [
-      {
-        entityText: row.entityText,
-        entityNormalized: row.entityNormalized,
-        valueText: row.valueText,
-        valueKind,
-        valueNormalized: row.valueNormalized,
-      },
-    ];
+    const ref = refFromRow(row);
+    return ref ? [ref] : [];
   });
 }
 
@@ -204,16 +191,12 @@ export async function listStatedFactsForView(
     )
     .orderBy(asc(reportStatedFacts.createdAt));
   return rows.flatMap((row) => {
-    const valueKind = asHardFactKind(row.valueKind);
-    if (!valueKind) return [];
+    const ref = refFromRow(row);
+    if (!ref) return [];
     return [
       {
+        ...ref,
         id: row.id,
-        entityText: row.entityText,
-        entityNormalized: row.entityNormalized,
-        valueText: row.valueText,
-        valueKind,
-        valueNormalized: row.valueNormalized,
         sourceText: row.sourceText,
         authorName: row.authorName?.trim() || "Former user",
         createdAt: row.createdAt.toISOString(),
@@ -222,18 +205,27 @@ export async function listStatedFactsForView(
   });
 }
 
-const HARD_FACT_KINDS = new Set<HardFactKind>([
-  "date",
-  "duration",
-  "temperature",
-  "identifier",
-  "number",
-]);
-
-function asHardFactKind(value: string): HardFactKind | null {
-  return HARD_FACT_KINDS.has(value as HardFactKind)
-    ? (value as HardFactKind)
-    : null;
+function refFromRow(row: {
+  valueText: string;
+  valueKind: string;
+  valueNormalized: string;
+  sourceText: string;
+  entityText: string;
+}): StatedFactRef | null {
+  const text = (
+    row.valueKind === "statement"
+      ? row.valueText
+      : row.sourceText ||
+        (row.entityText ? `${row.entityText}: ${row.valueText}` : row.valueText)
+  ).trim();
+  if (!text) return null;
+  return {
+    text,
+    normalized:
+      row.valueKind === "statement" && row.valueNormalized
+        ? row.valueNormalized
+        : normalizeStatement(text),
+  };
 }
 
 export async function softDeleteStatedFact(input: {
@@ -244,9 +236,8 @@ export async function softDeleteStatedFact(input: {
   const [existing] = await db
     .select({
       id: reportStatedFacts.id,
-      entityText: reportStatedFacts.entityText,
       valueText: reportStatedFacts.valueText,
-      valueKind: reportStatedFacts.valueKind,
+      sourceText: reportStatedFacts.sourceText,
     })
     .from(reportStatedFacts)
     .where(
@@ -270,23 +261,15 @@ export async function softDeleteStatedFact(input: {
     entityType: "stated_fact",
     entityId: existing.id,
     reportId: input.reportId,
-    summary: statedFactSummary("Removed", existing),
-    oldValue: {
-      entityText: existing.entityText,
-      valueText: existing.valueText,
-      valueKind: existing.valueKind,
-    },
+    summary: statedFactSummary("Removed", existing.sourceText || existing.valueText),
+    oldValue: { text: existing.sourceText || existing.valueText },
   });
   return true;
 }
 
-function statedFactSummary(
-  verb: string,
-  fact: { entityText: string; valueText: string }
-): string {
-  const value = fact.valueText.replace(/\s+/g, " ").trim().slice(0, 80);
-  const entity = fact.entityText.replace(/\s+/g, " ").trim().slice(0, 40);
-  return entity ? `${verb} stated fact ${entity}: ${value}` : `${verb} stated fact ${value}`;
+function statedFactSummary(verb: string, text: string): string {
+  const sentence = text.replace(/\s+/g, " ").trim().slice(0, 80);
+  return `${verb} stated fact ${sentence}`;
 }
 
 function isUniqueViolation(err: unknown): boolean {

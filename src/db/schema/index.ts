@@ -1183,10 +1183,10 @@ export const chatMessages = pgTable(
 );
 
 /**
- * Engineer-typed hard facts for one report. Document chat reads the live
+ * Engineer-typed statements for one report. Document chat reads the live
  * rows into the system prompt and the citation keep-list. Soft-deleted rows
  * stay for the audit trail (`stated_fact_added` / `stated_fact_deleted`).
- * A quantity is stored only with the identifier in the same sentence.
+ * A row is one sentence, not a recognized equipment id.
  */
 export const reportStatedFacts = pgTable(
   "report_stated_facts",
@@ -1195,7 +1195,7 @@ export const reportStatedFacts = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
-    /** Identifier the value belongs to. Empty when the fact is itself an identifier. */
+    /** Unused for statement rows. Kept so existing databases do not need a rebuild. */
     entityText: text("entity_text").notNull().default(""),
     entityNormalized: text("entity_normalized").notNull().default(""),
     valueText: text("value_text").notNull(),
