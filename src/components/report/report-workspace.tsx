@@ -55,6 +55,7 @@ import {
   findPane,
   focusPane,
   listPanes,
+  moveTabToPane,
   openAttachmentOnPane,
   openTabOnPane,
   paneForReportJump,
@@ -921,6 +922,30 @@ export function ReportWorkspace({
     [statsEnabled]
   );
 
+  const moveCanvasTab = useCallback(
+    (fromPaneId: string, toPaneId: string, tabId: CanvasTabId) => {
+      if (canvasTabKind(tabId) === "analytics") setAnalyticsOpen(true);
+      const attachmentId = attachmentIdFromTab(tabId);
+      if (attachmentId) {
+        setPanePages((pages) => {
+          const page = pages[fromPaneId]?.[attachmentId];
+          if (page == null) return pages;
+          const fromPages = { ...pages[fromPaneId] };
+          delete fromPages[attachmentId];
+          return {
+            ...pages,
+            [fromPaneId]: fromPages,
+            [toPaneId]: { ...pages[toPaneId], [attachmentId]: page },
+          };
+        });
+      }
+      setLayout((current) =>
+        moveTabToPane(current, fromPaneId, toPaneId, tabId, statsEnabled)
+      );
+    },
+    [statsEnabled]
+  );
+
   const dropAttachmentOnPane = useCallback(
     (paneId: string, attachmentId: string) => {
       setOpenTargetPaneId(paneId);
@@ -1125,6 +1150,7 @@ export function ReportWorkspace({
               onCloseOthers={closeOtherPaneTabs}
               onSplit={splitCanvasPane}
               onDropAttachment={dropAttachmentOnPane}
+              onMoveTab={moveCanvasTab}
               onRatio={resizeSplit}
               renderLeading={
                 agentChrome

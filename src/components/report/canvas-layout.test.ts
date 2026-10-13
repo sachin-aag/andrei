@@ -7,6 +7,7 @@ import {
   closeTab,
   createCanvasLayout,
   listPanes,
+  moveTabToPane,
   openAttachmentOnPane,
   openTabOnPane,
   paneForReportJump,
@@ -212,5 +213,65 @@ describe("canvas layout", () => {
     expect(setSplitRatio(layout, split.id, 0.99).root).toMatchObject({
       ratio: SPLIT_RATIO_MAX,
     });
+  });
+
+  it("copies a pinned report when it is dragged to another pane", () => {
+    const split = splitPane(
+      createCanvasLayout(true),
+      ANCHOR_PANE_ID,
+      "right",
+      "analytics",
+      true
+    );
+    const side = listPanes(split.root).find((pane) => pane.id !== ANCHOR_PANE_ID)!;
+    const moved = moveTabToPane(split, ANCHOR_PANE_ID, side.id, "report", true);
+    expect(tabs(moved, ANCHOR_PANE_ID)).toEqual(["report", "analytics"]);
+    expect(tabs(moved, side.id)).toEqual(["analytics", "report"]);
+    expect(moved.focusedPaneId).toBe(side.id);
+    expect(moveTabToPane(moved, side.id, side.id, "report", true)).toBe(moved);
+  });
+
+  it("moves an attachment tab and drops the pane when it was the last tab", () => {
+    const opened = openAttachmentOnPane(
+      createCanvasLayout(false),
+      ANCHOR_PANE_ID,
+      "att-1",
+      false
+    );
+    const split = splitPane(opened, ANCHOR_PANE_ID, "right", "attachment:att-1", false);
+    const side = listPanes(split.root).find((pane) => pane.id !== ANCHOR_PANE_ID)!;
+    const moved = moveTabToPane(
+      split,
+      side.id,
+      ANCHOR_PANE_ID,
+      "attachment:att-1",
+      false
+    );
+    expect(moved.root.kind).toBe("pane");
+    expect(tabs(moved, ANCHOR_PANE_ID)).toEqual(["report", "attachment:att-1"]);
+    expect(listPanes(moved.root).find((pane) => pane.activeTabId)?.activeTabId).toBe(
+      "attachment:att-1"
+    );
+  });
+
+  it("moves a second copy of a pdf onto the pane that already has it", () => {
+    const opened = openAttachmentOnPane(
+      openAttachmentOnPane(createCanvasLayout(false), ANCHOR_PANE_ID, "att-1", false),
+      ANCHOR_PANE_ID,
+      "att-2",
+      false
+    );
+    const split = splitPane(opened, ANCHOR_PANE_ID, "right", "attachment:att-1", false);
+    const side = listPanes(split.root).find((pane) => pane.id !== ANCHOR_PANE_ID)!;
+    const withCopy = openAttachmentOnPane(split, side.id, "att-2", false);
+    const moved = moveTabToPane(
+      withCopy,
+      ANCHOR_PANE_ID,
+      side.id,
+      "attachment:att-2",
+      false
+    );
+    expect(tabs(moved, ANCHOR_PANE_ID)).toEqual(["report"]);
+    expect(tabs(moved, side.id)).toEqual(["attachment:att-1", "attachment:att-2"]);
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -8,6 +8,7 @@ import {
   createCanvasLayout,
   splitPane,
 } from "./canvas-layout";
+import { CANVAS_TAB_DRAG_MIME } from "./canvas-tab-drag";
 import { CanvasSplitView } from "./canvas-split-view";
 
 function renderSplit(presentation: "grid" | "single" = "grid") {
@@ -19,6 +20,7 @@ function renderSplit(presentation: "grid" | "single" = "grid") {
     true
   );
   const onSplit = vi.fn();
+  const onMoveTab = vi.fn();
   render(
     <CanvasSplitView
       layout={layout}
@@ -32,11 +34,12 @@ function renderSplit(presentation: "grid" | "single" = "grid") {
       onCloseOthers={vi.fn()}
       onSplit={onSplit}
       onDropAttachment={vi.fn()}
+      onMoveTab={onMoveTab}
       onRatio={vi.fn()}
       renderBody={(pane) => <div>body {pane.id}</div>}
     />
   );
-  return { layout, onSplit };
+  return { layout, onSplit, onMoveTab };
 }
 
 describe("CanvasSplitView", () => {
@@ -77,5 +80,39 @@ describe("CanvasSplitView", () => {
     expect(splitDown).not.toHaveAttribute("data-disabled");
     await user.click(splitDown);
     expect(onSplit).toHaveBeenCalledWith(ANCHOR_PANE_ID, "down", "report");
+  });
+
+  it("drags a tab from one pane onto the other", () => {
+    const { onMoveTab } = renderSplit();
+    const store = new Map<string, string>();
+    const dataTransfer = {
+      setData(type: string, value: string) {
+        store.set(type, value);
+      },
+      getData(type: string) {
+        return store.get(type) ?? "";
+      },
+      get types() {
+        return [...store.keys()];
+      },
+      effectAllowed: "move",
+      dropEffect: "move",
+    };
+    fireEvent.dragStart(screen.getByTestId("pane-1-report-surface-document"), {
+      dataTransfer,
+    });
+    expect(store.has(CANVAS_TAB_DRAG_MIME)).toBe(true);
+    const anchor = screen.getByTestId("canvas-pane-anchor");
+    fireEvent.dragOver(anchor, { dataTransfer });
+    fireEvent.drop(anchor, { dataTransfer });
+    expect(onMoveTab).toHaveBeenCalledWith("pane-1", ANCHOR_PANE_ID, "report");
+  });
+
+  it("does not offer tab dragging in the single-pane presentation", () => {
+    renderSplit("single");
+    expect(screen.getByTestId("report-surface-document")).not.toHaveAttribute(
+      "draggable",
+      "true"
+    );
   });
 });

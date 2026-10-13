@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useRef,
   useState,
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
@@ -12,6 +13,10 @@ import {
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { ATTACHMENT_TAB_DRAG_MIME } from "./attachment-tab-drag";
+import {
+  CANVAS_TAB_DRAG_MIME,
+  readCanvasTabDrag,
+} from "./canvas-tab-drag";
 import {
   anchorPane,
   canSplitPane,
@@ -40,8 +45,11 @@ const SPLIT_DIRECTIONS: { id: SplitDirection; label: string }[] = [
   { id: "down", label: "Split down" },
 ];
 
-function dragHasAttachment(event: DragEvent | { dataTransfer: DataTransfer }) {
-  return event.dataTransfer.types.includes(ATTACHMENT_TAB_DRAG_MIME);
+function dragHasType(
+  event: DragEvent | { dataTransfer: DataTransfer },
+  mime: string
+) {
+  return event.dataTransfer.types.includes(mime);
 }
 
 function subtreeContains(node: LayoutNode, paneId: string): boolean {
@@ -140,6 +148,7 @@ export function CanvasSplitView({
   onCloseOthers,
   onSplit,
   onDropAttachment,
+  onMoveTab,
   onRatio,
   renderLeading,
   renderToolbar,
@@ -156,15 +165,22 @@ export function CanvasSplitView({
   onCloseOthers: (paneId: string, tabId: CanvasTabId) => void;
   onSplit: (paneId: string, direction: SplitDirection, tabId: CanvasTabId) => void;
   onDropAttachment: (paneId: string, attachmentId: string) => void;
+  onMoveTab: (fromPaneId: string, toPaneId: string, tabId: CanvasTabId) => void;
   onRatio: (splitId: string, ratio: number) => void;
   renderLeading?: (pane: PaneLeaf) => ReactNode;
   renderToolbar?: (pane: PaneLeaf) => ReactNode;
   renderBody: (pane: PaneLeaf) => ReactNode;
 }) {
   const [dropPaneId, setDropPaneId] = useState<string | null>(null);
+  const tabDragRef = useRef<{
+    paneId: string;
+    tabId: CanvasTabId;
+    copies: boolean;
+  } | null>(null);
   const focused =
     findPane(layout.root, layout.focusedPaneId) ?? anchorPane(layout.root);
   const multiple = listPanes(layout.root).length > 1;
+  const tabsDraggable = presentation === "grid" && multiple;
 
   const renderPane = (pane: PaneLeaf, menu: boolean) => {
     const anchor = isAnchorPane(layout.root, pane.id);
@@ -191,16 +207,38 @@ export function CanvasSplitView({
         )}
         onPointerDown={() => onFocusPane(pane.id)}
         onDragOver={(event) => {
-          if (!dragHasAttachment(event)) return;
+          const tabDrag = dragHasType(event, CANVAS_TAB_DRAG_MIME);
+          const fileDrag = dragHasType(event, ATTACHMENT_TAB_DRAG_MIME);
+          if (!tabDrag && !fileDrag) return;
+          if (tabDrag && tabDragRef.current?.paneId === pane.id) {
+            event.dataTransfer.dropEffect = "none";
+            return;
+          }
           event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
+          event.dataTransfer.dropEffect = tabDrag
+            ? tabDragRef.current?.copies
+              ? "copy"
+              : "move"
+            : "copy";
           if (dropPaneId !== pane.id) setDropPaneId(pane.id);
         }}
         onDragLeave={() => {
           if (dropPaneId === pane.id) setDropPaneId(null);
         }}
         onDrop={(event) => {
-          if (!dragHasAttachment(event)) return;
+          if (dragHasType(event, CANVAS_TAB_DRAG_MIME)) {
+            event.preventDefault();
+            setDropPaneId(null);
+            const payload =
+              readCanvasTabDrag(event.dataTransfer.getData(CANVAS_TAB_DRAG_MIME)) ??
+              tabDragRef.current;
+            tabDragRef.current = null;
+            if (payload && payload.paneId !== pane.id) {
+              onMoveTab(payload.paneId, pane.id, payload.tabId);
+            }
+            return;
+          }
+          if (!dragHasType(event, ATTACHMENT_TAB_DRAG_MIME)) return;
           const attachmentId = event.dataTransfer.getData(ATTACHMENT_TAB_DRAG_MIME);
           event.preventDefault();
           setDropPaneId(null);
@@ -224,6 +262,25 @@ export function CanvasSplitView({
             stripTestId={
               anchor ? undefined : `work-product-tab-strip-${pane.id}`
             }
+            dragPaneId={tabsDraggable ? pane.id : undefined}
+            dragCopiesTab={(tabId) =>
+              anchor &&
+              (tabId === "report" || (tabId === "analytics" && statsEnabled))
+            }
+            onTabDragStart={(tabId) => {
+              tabDragRef.current = {
+                paneId: pane.id,
+                tabId,
+                copies:
+                  anchor &&
+                  (tabId === "report" ||
+                    (tabId === "analytics" && statsEnabled)),
+              };
+            }}
+            onTabDragEnd={() => {
+              tabDragRef.current = null;
+              setDropPaneId(null);
+            }}
             menuFor={
               menu
                 ? (tab) => (

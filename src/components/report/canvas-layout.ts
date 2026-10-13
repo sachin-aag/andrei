@@ -309,6 +309,24 @@ export function openTabOnPane(
   return finish({ ...layout, root, focusedPaneId: paneId }, statsEnabled);
 }
 
+/** Drag a tab onto another pane. Pinned Report and Analytics on the anchor are copied. */
+export function moveTabToPane(
+  layout: CanvasLayout,
+  fromPaneId: string,
+  toPaneId: string,
+  tabId: CanvasTabId,
+  statsEnabled: boolean
+): CanvasLayout {
+  if (fromPaneId === toPaneId) return layout;
+  const source = findPane(layout.root, fromPaneId);
+  const target = findPane(layout.root, toPaneId);
+  if (!source || !target || !source.tabIds.includes(tabId)) return layout;
+  const copy = isPinnedTab(layout.root, fromPaneId, tabId, statsEnabled);
+  const opened = openTabOnPane(layout, toPaneId, tabId, statsEnabled);
+  if (copy || tabId === "history") return opened;
+  return closeTab(opened, fromPaneId, tabId, statsEnabled);
+}
+
 export function openAttachmentOnPane(
   layout: CanvasLayout,
   paneId: string,
