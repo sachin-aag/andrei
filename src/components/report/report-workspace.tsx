@@ -44,18 +44,33 @@ import {
   subscribeWorkspaceChromePrefs,
   writeWorkspaceChrome,
 } from "./workspace-chrome-prefs";
-import { WorkProductTabs } from "./work-product-tabs";
+import { CanvasSplitView } from "./canvas-split-view";
+import { ReportMirror } from "./report-mirror";
+import {
+  ANCHOR_PANE_ID,
+  attachmentIdsInPane,
+  closeOtherTabs,
+  closeTab,
+  createCanvasLayout,
+  findPane,
+  focusPane,
+  listPanes,
+  moveTabToPane,
+  openAttachmentOnPane,
+  openTabOnPane,
+  paneForReportJump,
+  pruneCanvasLayout,
+  selectTab,
+  setSplitRatio,
+  splitPane,
+  anchorPane,
+  type SplitDirection,
+} from "./canvas-layout";
 import { CommentsGutterToggle } from "./comments-gutter-toggle";
 import {
   attachmentIdFromTab,
   attachmentTabId,
-  buildCanvasTabs,
   canvasTabKind,
-  ensureAttachmentOpen,
-  pruneOpenAttachments,
-  rememberCanvasTabVisit,
-  removeAttachmentOpen,
-  tabIdAfterClosing,
   type CanvasTabId,
 } from "./work-product-canvas";
 import { ReviewGutterPaintedProvider } from "./review-gutter-painted";
@@ -296,6 +311,7 @@ export function ReportWorkspace({
     closeDocument,
     forgetDocumentPreview,
     documentOpenEpoch,
+    previewPageFor,
   } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
@@ -317,12 +333,14 @@ export function ReportWorkspace({
   );
   const [workProductView, setWorkProductView] =
     useState<WorkProductView>("report");
-  const [activeTabId, setActiveTabId] = useState<CanvasTabId>("report");
-  const [openAttachmentIds, setOpenAttachmentIds] = useState<string[]>([]);
+  const [layout, setLayout] = useState(() =>
+    createCanvasLayout(isStatisticalAnalysisEnabled())
+  );
+  const [panePages, setPanePages] = useState<
+    Record<string, Record<string, number>>
+  >({});
   const [seenOpenEpoch, setSeenOpenEpoch] = useState(-1);
-  const [canvasTabRecents, setCanvasTabRecents] = useState<CanvasTabId[]>([
-    "report",
-  ]);
+  const [openTargetPaneId, setOpenTargetPaneId] = useState<string | null>(null);
   const [compare, setCompare] = useState<{
     from: number;
     to: number;
@@ -386,43 +404,40 @@ export function ReportWorkspace({
     "continuous_document";
   const statsEnabled = isStatisticalAnalysisEnabled();
   const liveAttachmentIds = new Set(attachments.map((item) => item.id));
+  let nextLayout = layout;
   if (documentOpenEpoch !== seenOpenEpoch) {
     setSeenOpenEpoch(documentOpenEpoch);
     if (activeAttachmentId) {
-      setOpenAttachmentIds((ids) =>
-        ensureAttachmentOpen(ids, activeAttachmentId)
+      const paneId = openTargetPaneId ?? layout.focusedPaneId;
+      if (openTargetPaneId) setOpenTargetPaneId(null);
+      const page = previewPageFor(activeAttachmentId);
+      nextLayout = openAttachmentOnPane(
+        nextLayout,
+        paneId,
+        activeAttachmentId,
+        statsEnabled
       );
-      setActiveTabId(attachmentTabId(activeAttachmentId));
+      setPanePages((pages) => ({
+        ...pages,
+        [paneId]: { ...pages[paneId], [activeAttachmentId]: page },
+      }));
       if (agentChrome) {
         setPreviewCollapsed(false);
       }
     }
   }
-  const liveOpenAttachmentIds = pruneOpenAttachments(
-    documentOpenEpoch !== seenOpenEpoch && activeAttachmentId
-      ? ensureAttachmentOpen(openAttachmentIds, activeAttachmentId)
-      : openAttachmentIds,
-    liveAttachmentIds
-  );
-  const liveActiveTabId = ((): CanvasTabId => {
-    if (documentOpenEpoch !== seenOpenEpoch && activeAttachmentId) {
-      return attachmentTabId(activeAttachmentId);
-    }
-    if (activeTabId === "history" && !compare) return "report";
-    if (activeTabId === "analytics" && !statsEnabled) return "report";
-    const id = attachmentIdFromTab(activeTabId);
-    if (id && !liveAttachmentIds.has(id)) return "report";
-    return activeTabId;
-  })();
-  if (canvasTabRecents[canvasTabRecents.length - 1] !== liveActiveTabId) {
-    setCanvasTabRecents((recents) =>
-      rememberCanvasTabVisit(recents, liveActiveTabId)
-    );
-  }
-  const reportSurface = liveActiveTabId === "report";
-  const analyticsSurface = liveActiveTabId === "analytics";
-  const comparing = liveActiveTabId === "history" && compare != null;
-  const viewingDocument = canvasTabKind(liveActiveTabId) === "attachment";
+  nextLayout = pruneCanvasLayout(nextLayout, {
+    statsEnabled,
+    liveAttachmentIds,
+    historyOpen: compare != null,
+  });
+  if (nextLayout !== layout) setLayout(nextLayout);
+  const canvasLayout = nextLayout;
+  const anchor = anchorPane(canvasLayout.root);
+  const focusedPane =
+    findPane(canvasLayout.root, canvasLayout.focusedPaneId) ?? anchor;
+  const liveActiveTabId = focusedPane.activeTabId;
+  const reportSurface = anchor.activeTabId === "report";
   const analyticsCanEdit = canSaveReportSection(
     { id: currentUserId, role: currentUserRole, email: currentUserEmail },
     report
@@ -430,21 +445,6 @@ export function ReportWorkspace({
   const attachmentLabels = Object.fromEntries(
     attachments.map((item) => [item.id, item.filename])
   );
-  const canvasTabs = buildCanvasTabs({
-    statsEnabled,
-    openAttachmentIds: liveOpenAttachmentIds,
-    attachmentLabels,
-    compare,
-  });
-  const showCommentsSwitch =
-    !agentChrome && reportSurface && mode !== "view";
-  const historySurface: "report" | "analytics" =
-    comparing && compare
-      ? compare.surface
-      : analyticsSurface
-        ? "analytics"
-        : "report";
-  const showHistory = reportSurface || analyticsSurface || comparing;
   const activeAttachmentTabId = attachmentIdFromTab(liveActiveTabId);
   const activeAttachmentTabLabel = activeAttachmentTabId
     ? attachmentLabels[activeAttachmentTabId]
@@ -644,7 +644,15 @@ export function ReportWorkspace({
   const pendingJumpRef = useRef<SectionType | null>(null);
   const jumpToSection = useCallback((s: SectionType, jumpId?: string) => {
     setWorkProductView("report");
-    setActiveTabId("report");
+    const target = paneForReportJump(canvasLayout);
+    const showingMirror = target.id !== ANCHOR_PANE_ID;
+    setLayout(
+      selectTab(
+        openTabOnPane(canvasLayout, target.id, "report", statsEnabled),
+        target.id,
+        "report"
+      )
+    );
     const epoch = ++jumpEpochRef.current;
     if (!editorsAllowed) {
       pendingJumpRef.current = s;
@@ -653,13 +661,17 @@ export function ReportWorkspace({
     }
     return requestWorkspaceSectionMount(s).then(() => {
       if (jumpEpochRef.current !== epoch) return;
-      const root = mainRef.current;
-      const el = jumpId
-        ? root?.querySelector(`[id="${CSS.escape(jumpId)}"]`)
-        : root?.querySelector(`#${CSS.escape(s)}`);
+      const root = mainRef.current?.querySelector(
+        `[data-canvas-pane-body="${target.id}"]`
+      );
+      const el = showingMirror
+        ? root?.querySelector(`[data-mirror-section="${CSS.escape(s)}"]`)
+        : jumpId
+          ? root?.querySelector(`[id="${CSS.escape(jumpId)}"]`)
+          : root?.querySelector(`#${CSS.escape(s)}`);
       if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
     });
-  }, [editorsAllowed]);
+  }, [canvasLayout, editorsAllowed, statsEnabled]);
 
   useEffect(() => {
     const s = pendingJumpRef.current;
@@ -735,7 +747,9 @@ export function ReportWorkspace({
         false
       );
       setWorkProductView("report");
-      setActiveTabId("report");
+      setLayout((current) =>
+        selectTab(current, anchorPane(current.root).id, "report")
+      );
       setCommentsGutterVisible(true);
       if (gutterScrollTimeoutRef.current != null) {
         clearTimeout(gutterScrollTimeoutRef.current);
@@ -796,13 +810,15 @@ export function ReportWorkspace({
         setSidebarTab("assistant");
       }
       setWorkProductView(next);
-      setActiveTabId(next);
+      setLayout((current) =>
+        openTabOnPane(current, current.focusedPaneId, next, statsEnabled)
+      );
     },
-    [agentChrome, previewCollapsed]
+    [agentChrome, previewCollapsed, statsEnabled]
   );
 
-  const selectCanvasTab = useCallback(
-    (id: CanvasTabId) => {
+  const selectPaneTab = useCallback(
+    (paneId: string, id: CanvasTabId) => {
       if (agentChrome && previewCollapsed) {
         setPreviewCollapsed(false);
       }
@@ -815,108 +831,173 @@ export function ReportWorkspace({
             setSidebarTab("assistant");
           }
           setWorkProductView(kind);
-          setActiveTabId(kind);
+          setLayout((current) => selectTab(current, paneId, id));
           return;
         case "history":
-          setActiveTabId("history");
+          setLayout((current) => selectTab(current, paneId, id));
           return;
-        case "attachment": {
-          const attachmentId = attachmentIdFromTab(id);
-          if (attachmentId) openDocument(attachmentId);
+        case "attachment":
+          setLayout((current) => selectTab(current, paneId, id));
           return;
-        }
         default: {
           const _exhaustive: never = kind;
           return _exhaustive;
         }
       }
+    },
+    [agentChrome, previewCollapsed]
+  );
+
+  const releaseClosedAttachments = useCallback(
+    (root: ReturnType<typeof listPanes>, closedIds: readonly CanvasTabId[]) => {
+      for (const tabId of closedIds) {
+        const attachmentId = attachmentIdFromTab(tabId);
+        if (!attachmentId) continue;
+        const stillOpen = root.some((pane) => pane.tabIds.includes(tabId));
+        if (!stillOpen) {
+          forgetDocumentPreview(attachmentId);
+          if (activeAttachmentId === attachmentId) closeDocument();
+        }
+      }
+    },
+    [activeAttachmentId, closeDocument, forgetDocumentPreview]
+  );
+
+  const closePaneTab = useCallback(
+    (paneId: string, id: CanvasTabId) => {
+      const kind = canvasTabKind(id);
+      if (kind === "history") {
+        const surface = compare?.surface ?? "report";
+        setCompare(null);
+        if (surface === "analytics") {
+          setAnalyticsOpen(true);
+          setSidebarTab("assistant");
+        }
+        setWorkProductView(surface);
+        const closed = closeTab(canvasLayout, paneId, id, statsEnabled);
+        setLayout(
+          findPane(closed.root, paneId)
+            ? openTabOnPane(closed, paneId, surface, statsEnabled)
+            : closed
+        );
+        return;
+      }
+      const next = closeTab(canvasLayout, paneId, id, statsEnabled);
+      const attachmentId = attachmentIdFromTab(id);
+      if (attachmentId) {
+        releaseClosedAttachments(listPanes(next.root), [id]);
+      }
+      setLayout(next);
+    },
+    [canvasLayout, compare?.surface, releaseClosedAttachments, statsEnabled]
+  );
+
+  const closeOtherPaneTabs = useCallback(
+    (paneId: string, keepId: CanvasTabId) => {
+      const pane = findPane(canvasLayout.root, paneId);
+      if (!pane) return;
+      const next = closeOtherTabs(canvasLayout, paneId, keepId, statsEnabled);
+      const after = findPane(next.root, paneId);
+      const removed = pane.tabIds.filter(
+        (tabId) => !after?.tabIds.includes(tabId)
+      );
+      if (removed.includes("history")) setCompare(null);
+      releaseClosedAttachments(listPanes(next.root), removed);
+      setLayout(next);
+    },
+    [canvasLayout, releaseClosedAttachments, statsEnabled]
+  );
+
+  const focusCanvasPane = useCallback((paneId: string) => {
+    setLayout((current) => focusPane(current, paneId));
+  }, []);
+
+  const splitCanvasPane = useCallback(
+    (paneId: string, direction: SplitDirection, tabId: CanvasTabId) => {
+      if (canvasTabKind(tabId) === "analytics") setAnalyticsOpen(true);
+      setLayout((current) =>
+        splitPane(current, paneId, direction, tabId, statsEnabled)
+      );
+    },
+    [statsEnabled]
+  );
+
+  const moveCanvasTab = useCallback(
+    (fromPaneId: string, toPaneId: string, tabId: CanvasTabId) => {
+      if (canvasTabKind(tabId) === "analytics") setAnalyticsOpen(true);
+      const attachmentId = attachmentIdFromTab(tabId);
+      if (attachmentId) {
+        setPanePages((pages) => {
+          const page = pages[fromPaneId]?.[attachmentId];
+          if (page == null) return pages;
+          const fromPages = { ...pages[fromPaneId] };
+          delete fromPages[attachmentId];
+          return {
+            ...pages,
+            [fromPaneId]: fromPages,
+            [toPaneId]: { ...pages[toPaneId], [attachmentId]: page },
+          };
+        });
+      }
+      setLayout((current) =>
+        moveTabToPane(current, fromPaneId, toPaneId, tabId, statsEnabled)
+      );
+    },
+    [statsEnabled]
+  );
+
+  const dropAttachmentOnPane = useCallback(
+    (paneId: string, attachmentId: string) => {
+      setOpenTargetPaneId(paneId);
+      if (agentChrome && previewCollapsed) setPreviewCollapsed(false);
+      openDocument(attachmentId);
     },
     [agentChrome, openDocument, previewCollapsed]
   );
 
-  // Header Close and the tab-strip X both restore the last canvas tab.
-  const closeAttachmentTab = useCallback(
-    (attachmentId: string) => {
-      forgetDocumentPreview(attachmentId);
-      const remainingIds = removeAttachmentOpen(
-        liveOpenAttachmentIds,
-        attachmentId
-      );
-      setOpenAttachmentIds(remainingIds);
+  const resizeSplit = useCallback((splitId: string, ratio: number) => {
+    setLayout((current) => setSplitRatio(current, splitId, ratio));
+  }, []);
 
-      const closedTabId = attachmentTabId(attachmentId);
-      const remainingTabIds = buildCanvasTabs({
-        statsEnabled,
-        openAttachmentIds: remainingIds,
-        attachmentLabels,
-        compare,
-      }).map((tab) => tab.id);
-
-      const next = tabIdAfterClosing({
-        closedId: closedTabId,
-        currentlyActive: liveActiveTabId,
-        recents: canvasTabRecents,
-        remainingTabIds,
-      });
-      setCanvasTabRecents((recents) =>
-        recents.filter((id) => id !== closedTabId)
-      );
-
-      if (
-        activeAttachmentId === attachmentId &&
-        canvasTabKind(next) !== "attachment"
-      ) {
-        closeDocument();
+  const beginCompare = useCallback(
+    (
+      paneId: string,
+      surface: "report" | "analytics",
+      range: { from: number; to: number }
+    ) => {
+      if (agentChrome && previewCollapsed) setPreviewCollapsed(false);
+      if (surface === "analytics") {
+        setAnalyticsOpen(true);
+        setSidebarTab("assistant");
       }
-      if (next !== liveActiveTabId) {
-        selectCanvasTab(next);
-      }
+      setWorkProductView(surface);
+      setCompare({ ...range, surface });
+      setLayout((current) =>
+        openTabOnPane(current, paneId, "history", statsEnabled)
+      );
     },
-    [
-      activeAttachmentId,
-      attachmentLabels,
-      canvasTabRecents,
-      closeDocument,
-      compare,
-      forgetDocumentPreview,
-      liveActiveTabId,
-      liveOpenAttachmentIds,
-      selectCanvasTab,
-      statsEnabled,
-    ]
+    [agentChrome, previewCollapsed, statsEnabled]
   );
 
-  const closeCanvasTab = useCallback(
-    (id: CanvasTabId) => {
-      const kind = canvasTabKind(id);
-      switch (kind) {
-        case "report":
-        case "analytics":
-          return;
-        case "history": {
-          const surface = compare?.surface ?? "report";
-          setCompare(null);
-          if (surface === "analytics") {
-            setAnalyticsOpen(true);
-            setSidebarTab("assistant");
-          }
-          setActiveTabId(surface);
-          setWorkProductView(surface);
-          return;
-        }
-        case "attachment": {
-          const attachmentId = attachmentIdFromTab(id);
-          if (!attachmentId) return;
-          closeAttachmentTab(attachmentId);
-          return;
-        }
-        default: {
-          const _exhaustive: never = kind;
-          return _exhaustive;
-        }
+  const exitCompare = useCallback(
+    (surface: "report" | "analytics") => {
+      setCompare(null);
+      if (surface === "analytics") {
+        setAnalyticsOpen(true);
+        setSidebarTab("assistant");
       }
+      setWorkProductView(surface);
+      setLayout((current) => {
+        const owner = listPanes(current.root).find((pane) =>
+          pane.tabIds.includes("history")
+        );
+        if (!owner) return current;
+        const closed = closeTab(current, owner.id, "history", statsEnabled);
+        if (!findPane(closed.root, owner.id)) return closed;
+        return openTabOnPane(closed, owner.id, surface, statsEnabled);
+      });
     },
-    [closeAttachmentTab, compare]
+    [statsEnabled]
   );
 
   const handleChromeChange = useCallback(
@@ -1057,236 +1138,279 @@ export function ReportWorkspace({
               onExpand={() => setPreviewCollapsed(false)}
             />
           ) : (
-            <>
-              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
-                {agentChrome ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 shrink-0"
-                    aria-label="Collapse document panel"
-                    aria-expanded
-                    title="Collapse"
-                    onClick={() => setPreviewCollapsed(true)}
-                  >
-                    <PanelRightClose className="size-4" aria-hidden="true" />
-                  </Button>
-                ) : null}
-                <WorkProductTabs
-                  tabs={canvasTabs}
-                  value={liveActiveTabId}
-                  onChange={selectCanvasTab}
-                  onClose={closeCanvasTab}
-                />
-                <div className="ml-auto flex shrink-0 items-center gap-2 py-2">
-                  {showHistory ? (
-                    <DocumentRevisionHistory
-                      reportId={report.id}
-                      surface={historySurface}
-                      compare={compare}
-                      onCompare={(range) => {
-                        if (agentChrome && previewCollapsed) {
-                          setPreviewCollapsed(false);
-                        }
-                        if (historySurface === "analytics") {
-                          setAnalyticsOpen(true);
-                        }
-                        setWorkProductView(historySurface);
-                        setCompare({ ...range, surface: historySurface });
-                        setActiveTabId("history");
-                      }}
-                      onExitCompare={() => {
-                        const surface = compare?.surface ?? "report";
-                        setCompare(null);
-                        if (surface === "analytics") {
-                          setAnalyticsOpen(true);
-                        }
-                        setActiveTabId(surface);
-                        setWorkProductView(surface);
-                      }}
-                    />
-                  ) : null}
-                  {showCommentsSwitch ? (
-                    <CommentsGutterToggle
-                      checked={commentsGutterVisible}
-                      onCheckedChange={setCommentsGutterVisible}
-                    />
-                  ) : null}
-                </div>
-              </div>
-              <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-                {compare ? (
-                  <CanvasTabPane
-                    active={comparing}
-                    scrollable
-                    scrollTabId="history"
-                    testId="work-product-history-canvas"
-                  >
-                    {compare.surface === "report" ? (
-                      <DocumentRevisionDiff
+            <CanvasSplitView
+              layout={canvasLayout}
+              presentation={agentChrome ? "single" : "grid"}
+              statsEnabled={statsEnabled}
+              attachmentLabels={attachmentLabels}
+              compare={compare}
+              onFocusPane={focusCanvasPane}
+              onSelectTab={selectPaneTab}
+              onCloseTab={closePaneTab}
+              onCloseOthers={closeOtherPaneTabs}
+              onSplit={splitCanvasPane}
+              onDropAttachment={dropAttachmentOnPane}
+              onMoveTab={moveCanvasTab}
+              onRatio={resizeSplit}
+              renderLeading={
+                agentChrome
+                  ? () => (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 shrink-0"
+                        aria-label="Collapse document panel"
+                        aria-expanded
+                        title="Collapse"
+                        onClick={() => setPreviewCollapsed(true)}
+                      >
+                        <PanelRightClose className="size-4" aria-hidden="true" />
+                      </Button>
+                    )
+                  : undefined
+              }
+              renderToolbar={(pane) => {
+                const historySurface: "report" | "analytics" | null =
+                  pane.activeTabId === "history" && compare
+                    ? compare.surface
+                    : pane.activeTabId === "analytics"
+                      ? "analytics"
+                      : pane.activeTabId === "report"
+                        ? "report"
+                        : null;
+                const showComments =
+                  !agentChrome &&
+                  pane.id === ANCHOR_PANE_ID &&
+                  pane.activeTabId === "report" &&
+                  mode !== "view";
+                if (!historySurface && !showComments) return null;
+                return (
+                  <>
+                    {historySurface ? (
+                      <DocumentRevisionHistory
                         reportId={report.id}
-                        from={compare.from}
-                        to={compare.to}
-                        onExit={() => {
-                          setCompare(null);
-                          setActiveTabId("report");
-                          setWorkProductView("report");
-                        }}
+                        surface={historySurface}
+                        compare={compare}
+                        onCompare={(range) =>
+                          beginCompare(pane.id, historySurface, range)
+                        }
+                        onExitCompare={() => exitCompare(historySurface)}
                       />
-                    ) : (
-                      <AnalyticsRevisionDiff
-                        reportId={report.id}
-                        from={compare.from}
-                        to={compare.to}
-                        onExit={() => {
-                          setCompare(null);
-                          setAnalyticsOpen(true);
-                          setActiveTabId("analytics");
-                          setWorkProductView("analytics");
-                        }}
+                    ) : null}
+                    {showComments ? (
+                      <CommentsGutterToggle
+                        checked={commentsGutterVisible}
+                        onCheckedChange={setCommentsGutterVisible}
                       />
-                    )}
-                  </CanvasTabPane>
-                ) : null}
-                <CanvasTabPane
-                  active={reportSurface}
-                  scrollable
-                  scrollTabId="report"
-                  testId="report-document-canvas"
-                  onScroll={notifyWorkspaceScroll}
-                >
-                <ReviewGutterPaintedProvider painted={reviewGutterColumnPainted}>
-                <div
-                  className={cn(
-                    "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-                    documentCanvasWidthClass({
-                      continuousDocument,
-                      reviewGutterVisible: showReviewGutter,
-                    }),
-                    showReviewGutter && "review-gutter-open",
-                    showReviewGutter && REVIEW_GUTTER_GRID_COLS
-                  )}
-                  style={
-                    continuousDocument
-                      ? undefined
-                      : documentColumnStyle(documentWidth)
-                  }
-                >
-                  <div
-                    id="report-document-sheet"
-                    className={cn(
-                      "relative space-y-10 min-w-0",
-                      documentType === "quality_risk_assessment" && "qra-document"
-                    )}
-                  >
-                    {continuousDocument ? null : (
-                      <>
-                        <WorkspaceResizeHandle
-                          label="Resize document from the left"
-                          controlsId="report-document-sheet"
-                          edge="start"
-                          value={documentWidth}
-                          min={documentBounds.min}
-                          max={documentBounds.max}
-                          onChange={setDocumentWidth}
-                          onDragStart={() => beginResize("document")}
-                          onDragEnd={endResize}
-                          onReset={resetDocumentWidth}
-                        />
-                        <WorkspaceResizeHandle
-                          label="Resize document from the right"
-                          controlsId="report-document-sheet"
-                          edge="end"
-                          value={documentWidth}
-                          min={documentBounds.min}
-                          max={documentBounds.max}
-                          onChange={setDocumentWidth}
-                          onDragStart={() => beginResize("document")}
-                          onDragEnd={endResize}
-                          onReset={resetDocumentWidth}
-                        />
-                      </>
-                    )}
-                    <ReportHeader />
+                    ) : null}
+                  </>
+                );
+              }}
+              renderBody={(pane) => {
+                const anchorBody = pane.id === ANCHOR_PANE_ID;
+                const attachmentIds = attachmentIdsInPane(pane);
+                const activeAttachment =
+                  canvasTabKind(pane.activeTabId) === "attachment"
+                    ? attachmentIdFromTab(pane.activeTabId)
+                    : null;
+                return (
+                  <>
+                    {pane.tabIds.includes("history") && compare ? (
+                      <CanvasTabPane
+                        active={pane.activeTabId === "history"}
+                        scrollable
+                        scrollTabId="history"
+                        testId="work-product-history-canvas"
+                      >
+                        {compare.surface === "report" ? (
+                          <DocumentRevisionDiff
+                            reportId={report.id}
+                            from={compare.from}
+                            to={compare.to}
+                            onExit={() => exitCompare("report")}
+                          />
+                        ) : (
+                          <AnalyticsRevisionDiff
+                            reportId={report.id}
+                            from={compare.from}
+                            to={compare.to}
+                            onExit={() => exitCompare("analytics")}
+                          />
+                        )}
+                      </CanvasTabPane>
+                    ) : null}
+                    {anchorBody ? (
+                    <CanvasTabPane
+                      active={pane.activeTabId === "report"}
+                      scrollable
+                      scrollTabId="report"
+                      testId="report-document-canvas"
+                      onScroll={notifyWorkspaceScroll}
+                    >
+                    <ReviewGutterPaintedProvider painted={reviewGutterColumnPainted}>
                     <div
                       className={cn(
-                        "min-w-0",
-                        continuousDocument ? "space-y-4" : "space-y-10"
+                        "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+                        documentCanvasWidthClass({
+                          continuousDocument,
+                          reviewGutterVisible: showReviewGutter,
+                        }),
+                        showReviewGutter && "review-gutter-open",
+                        showReviewGutter && REVIEW_GUTTER_GRID_COLS
                       )}
+                      style={
+                        continuousDocument
+                          ? undefined
+                          : documentColumnStyle(documentWidth)
+                      }
                     >
-                    {editorsAllowed ? (
-                      workspaceSectionList.map(
-                        (section, index) => {
-                          const s = section.key;
-                          const Editor = sectionEditors?.[s];
-                          if (!Editor) return null;
-                          const extra = showReviewGutter
-                            ? sectionMinHeights[s]
-                            : undefined;
-                          return (
-                            <LazyWorkspaceSection
-                              key={s}
-                              id={s}
-                              title={section.label}
-                              eager={index < 1}
-                              onMounted={handleSectionMounted}
-                              style={
-                                extra
-                                  ? { paddingBottom: `${extra}px` }
-                                  : undefined
-                              }
-                            >
-                              <Editor />
-                            </LazyWorkspaceSection>
-                          );
-                        }
-                      )
-                    ) : (
-                      <ReportWorkspaceLoading />
-                    )}
+                      <div
+                        id="report-document-sheet"
+                        className={cn(
+                          "relative space-y-10 min-w-0",
+                          documentType === "quality_risk_assessment" && "qra-document"
+                        )}
+                      >
+                        {continuousDocument ? null : (
+                          <>
+                            <WorkspaceResizeHandle
+                              label="Resize document from the left"
+                              controlsId="report-document-sheet"
+                              edge="start"
+                              value={documentWidth}
+                              min={documentBounds.min}
+                              max={documentBounds.max}
+                              onChange={setDocumentWidth}
+                              onDragStart={() => beginResize("document")}
+                              onDragEnd={endResize}
+                              onReset={resetDocumentWidth}
+                            />
+                            <WorkspaceResizeHandle
+                              label="Resize document from the right"
+                              controlsId="report-document-sheet"
+                              edge="end"
+                              value={documentWidth}
+                              min={documentBounds.min}
+                              max={documentBounds.max}
+                              onChange={setDocumentWidth}
+                              onDragStart={() => beginResize("document")}
+                              onDragEnd={endResize}
+                              onReset={resetDocumentWidth}
+                            />
+                          </>
+                        )}
+                        <ReportHeader />
+                        <div
+                          className={cn(
+                            "min-w-0",
+                            continuousDocument ? "space-y-4" : "space-y-10"
+                          )}
+                        >
+                        {editorsAllowed ? (
+                          workspaceSectionList.map(
+                            (section, index) => {
+                              const s = section.key;
+                              const Editor = sectionEditors?.[s];
+                              if (!Editor) return null;
+                              const extra = showReviewGutter
+                                ? sectionMinHeights[s]
+                                : undefined;
+                              return (
+                                <LazyWorkspaceSection
+                                  key={s}
+                                  id={s}
+                                  title={section.label}
+                                  eager={index < 1}
+                                  onMounted={handleSectionMounted}
+                                  style={
+                                    extra
+                                      ? { paddingBottom: `${extra}px` }
+                                      : undefined
+                                  }
+                                >
+                                  <Editor />
+                                </LazyWorkspaceSection>
+                              );
+                            }
+                          )
+                        ) : (
+                          <ReportWorkspaceLoading />
+                        )}
+                        </div>
+                      </div>
+                      {showReviewGutter ? (
+                        <aside
+                          ref={reviewGutterAsideRef}
+                          className={REVIEW_GUTTER_ASIDE_CLASS}
+                          aria-label="Review margin"
+                        >
+                          <MarginGutter
+                            onSectionOverflow={handleSectionOverflow}
+                          />
+                        </aside>
+                      ) : null}
                     </div>
-                  </div>
-                  {showReviewGutter ? (
-                    <aside
-                      ref={reviewGutterAsideRef}
-                      className={REVIEW_GUTTER_ASIDE_CLASS}
-                      aria-label="Review margin"
-                    >
-                      <MarginGutter
-                        onSectionOverflow={handleSectionOverflow}
-                      />
-                    </aside>
-                  ) : null}
-                </div>
-                </ReviewGutterPaintedProvider>
-                </CanvasTabPane>
-                {analyticsOpen ? (
-                  <CanvasTabPane
-                    active={analyticsSurface}
-                    testId="report-analytics-canvas"
-                  >
-                    <StatisticalWorkspace
-                      reportId={report.id}
-                      readOnly={!analyticsCanEdit}
-                      reloadEpoch={analyticsReloadEpoch}
-                      agentBusy={analyticsAgentBusy}
-                      focusApiRef={analyticsFocusRef}
-                      onMentionSheetsChange={handleAnalyticsMentionSheetsChange}
+                    </ReviewGutterPaintedProvider>
+                    </CanvasTabPane>
+                    ) : pane.tabIds.includes("report") ? (
+                      <CanvasTabPane
+                        active={pane.activeTabId === "report"}
+                        scrollable
+                        scrollTabId={`${pane.id}-report`}
+                      >
+                        <ReportMirror />
+                      </CanvasTabPane>
+                    ) : null}
+                    {pane.tabIds.includes("analytics") &&
+                    (anchorBody ? analyticsOpen : true) ? (
+                      <CanvasTabPane
+                        active={pane.activeTabId === "analytics"}
+                        testId={
+                          anchorBody
+                            ? "report-analytics-canvas"
+                            : `${pane.id}-analytics-canvas`
+                        }
+                      >
+                        <StatisticalWorkspace
+                          reportId={report.id}
+                          readOnly={anchorBody ? !analyticsCanEdit : true}
+                          reloadEpoch={analyticsReloadEpoch}
+                          agentBusy={analyticsAgentBusy}
+                          focusApiRef={
+                            anchorBody ? analyticsFocusRef : undefined
+                          }
+                          onMentionSheetsChange={
+                            anchorBody
+                              ? handleAnalyticsMentionSheetsChange
+                              : undefined
+                          }
+                        />
+                      </CanvasTabPane>
+                    ) : null}
+                    <AttachmentCanvasStack
+                      openAttachmentIds={attachmentIds}
+                      activeAttachmentId={activeAttachment}
+                      onCloseTab={(attachmentId) =>
+                        closePaneTab(pane.id, attachmentTabId(attachmentId))
+                      }
+                      pageFor={(attachmentId) =>
+                        panePages[pane.id]?.[attachmentId]
+                      }
+                      onPageChange={(attachmentId, page) => {
+                        setPanePages((pages) => ({
+                          ...pages,
+                          [pane.id]: {
+                            ...pages[pane.id],
+                            [attachmentId]: page,
+                          },
+                        }));
+                      }}
                     />
-                  </CanvasTabPane>
-                ) : null}
-                <AttachmentCanvasStack
-                  openAttachmentIds={liveOpenAttachmentIds}
-                  activeAttachmentId={
-                    viewingDocument
-                      ? attachmentIdFromTab(liveActiveTabId)
-                      : null
-                  }
-                  onCloseTab={closeAttachmentTab}
-                />
-              </div>
-            </>
+                  </>
+                );
+              }}
+            />
           )}
           {agentChrome ? (
             <WorkspaceResizeHandle
