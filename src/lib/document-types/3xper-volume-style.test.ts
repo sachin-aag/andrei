@@ -3,6 +3,7 @@ import type { JSONContent } from "@tiptap/core";
 import {
   compact3xperLitreVolumes,
   compact3xperLitreVolumesInDoc,
+  compactCvpCapacities,
   usesCvpKLitreStyle,
 } from "./3xper-volume-style";
 
@@ -48,6 +49,16 @@ describe("compact3xperLitreVolumesInDoc", () => {
     expect(JSON.stringify(compact3xperLitreVolumesInDoc(doc))).not.toContain(
       "10000 L"
     );
+  });
+});
+
+describe("compactCvpCapacities", () => {
+  it("writes round-thousand litres as KL", () => {
+    expect(compactCvpCapacities("10000 L")).toBe("10 KL");
+    expect(compactCvpCapacities("10k L")).toBe("10 KL");
+    expect(compactCvpCapacities("8000 L")).toBe("8 KL");
+    expect(compactCvpCapacities("150 L")).toBe("150 L");
+    expect(compactCvpCapacities("10 KL")).toBe("10 KL");
   });
 });
 

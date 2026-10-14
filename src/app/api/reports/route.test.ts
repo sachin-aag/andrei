@@ -758,6 +758,7 @@ describe("/api/reports", () => {
         version: "00",
         effectiveDate: "",
         reportNo: "",
+        ccfNo: "",
       },
       sections: {
         cvp_objective: {

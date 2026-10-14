@@ -337,7 +337,7 @@ describe("getReportTableOfContents", () => {
       "12.0 Cleaning Validation Methodology"
     );
     expect(toc.find((e) => e.sectionKey === "cvp_overall_results")?.label).toBe(
-      "21.0 Overall Cleaning Results Summary"
+      "21.0 Overall Cleaning Results Summary & Conclusion"
     );
     expect(toc.find((e) => e.sectionKey === "cvp_recommendations")?.label).toBe(
       "Recommendations"
@@ -346,10 +346,12 @@ describe("getReportTableOfContents", () => {
     expect(sampling?.label).toMatch(/^15\.0 /);
     expect(sampling?.children?.map((e) => e.label)).toEqual([
       "15.1 Nitrosamine Limits in the Rinse Samples",
-      "15.2 Manufacturing Area Cleaning Validation",
+      "15.2 Process Line Cleaning Verification Summary",
+      "15.3 Manufacturing Area Cleaning Verification",
     ]);
     expect(sampling?.children?.map((e) => e.sectionKey)).toEqual([
       "cvp_nitrosamine",
+      "cvp_process_line",
       "cvp_manufacturing_area",
     ]);
   });
