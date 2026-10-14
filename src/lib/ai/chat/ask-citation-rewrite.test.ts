@@ -6,6 +6,7 @@ import {
   rewriteUnsourcedAskCitations,
 } from "./ask-citation-rewrite";
 import { CitationPageLedger } from "./citation-grounding";
+import { extractStatedFactCandidates } from "./stated-facts";
 
 const IQ = "Installation Qualification.PDF";
 
@@ -28,6 +29,20 @@ describe("rewriteUnsourcedAskCitations", () => {
     expect(result.text).not.toContain("24.50");
     expect(result.text).toContain("<number>");
     expect(result.text).toContain(UNSOURCED_ASK_GROUNDING_NOTE);
+  });
+
+  it("keeps an engineer-stated temperature for the same identifier", () => {
+    const result = rewriteUnsourcedAskCitations(
+      "URS-13 was held at −15 °C.",
+      ledgerWithIqPiping(),
+      {
+        statedFacts: extractStatedFactCandidates(
+          "URS-13 operating range is −15 °C."
+        ),
+      }
+    );
+    expect(result.dropped).toBe(false);
+    expect(result.text).toContain("−15 °C");
   });
 
   it("keeps a cite when the retrieved quote contains the nearby fact", () => {

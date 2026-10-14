@@ -49,6 +49,7 @@ import {
   volumeSupportedForColumn,
   type GroundDraftGrounding,
 } from "@/lib/ai/chat/citation-exemption";
+import { statedFactSupportsDraft } from "@/lib/ai/chat/stated-facts";
 import {
   compact3xperLitreVolumes,
   usesCvpKLitreStyle,
@@ -783,9 +784,31 @@ export function groundDraftText(input: {
   const unsourcedFacts = facts.filter((fact, index) => {
     if (records[index]?.status !== "unsourced") return false;
     if (keepTurn || shouldKeepUnsupportedFact(fact, keepSource)) return false;
+    if (
+      statedFactSupportsDraft({
+        fact,
+        draftContext: [
+          sentenceAround(cited, fact.start, fact.end),
+          input.context ?? "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        statedFacts: input.grounding?.statedFacts ?? [],
+        namedFileQuotes: input.grounding?.namedFileQuotes,
+      })
+    ) {
+      return false;
+    }
     if (shouldKeepOperationalVolume(fact, columnLabel)) return false;
     return true;
   });
+  const memoryKeepsIn = (fact: HardFact, draftContext: string) =>
+    statedFactSupportsDraft({
+      fact,
+      draftContext,
+      statedFacts: input.grounding?.statedFacts ?? [],
+      namedFileQuotes: input.grounding?.namedFileQuotes,
+    });
   const extraUnsupported = extraQsrUnsupported({
     cell: cited,
     context: input.context ?? cited,
@@ -797,9 +820,18 @@ export function groundDraftText(input: {
       override: input.grounding?.tableColumnLabel,
     }),
     ledger: input.ledger,
-  }).filter(
-    (fact) => !(keepTurn || shouldKeepUnsupportedFact(fact, keepSource))
-  );
+  }).filter((fact) => {
+    if (keepTurn || shouldKeepUnsupportedFact(fact, keepSource)) return false;
+    // Scope the pair to this cell plus its row, not the whole draft.
+    // Stock Complies / a different entity's row window have no kept hard fact.
+    const local = [fact.text, input.context ?? ""].filter(Boolean).join("\n");
+    if (memoryKeepsIn(fact, local)) return false;
+    const inner = extractHardFacts(fact.text);
+    return !(
+      inner.length > 0 &&
+      inner.every((innerFact) => memoryKeepsIn(innerFact, local))
+    );
+  });
   const unsupportedFacts = [...unsourcedFacts, ...extraUnsupported];
   const blocked =
     input.policy === "block" && unsupportedFacts.length > 0;

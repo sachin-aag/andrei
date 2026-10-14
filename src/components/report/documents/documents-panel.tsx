@@ -21,6 +21,7 @@ import { AttachmentUploadMenu } from "./attachment-upload-menu";
 import { DocumentTreeNodes } from "./document-tree";
 import { DragProvider, useDocumentDrag } from "./drag-context";
 import { NewFolderRow } from "./new-folder-row";
+import { StatedFactsDisclosure } from "./stated-facts-disclosure";
 import { TableOfContentsPanel } from "./table-of-contents-panel";
 
 export type LeftPanelTab = "attachments" | "contents";
@@ -131,7 +132,7 @@ function ExpandedDocumentsPanel({
   tableOfContents: ReturnType<typeof getReportTableOfContents>;
   onJumpToSection: (section: SectionType, jumpId?: string) => void;
 }) {
-  const { attachments, folders, canMutateAttachments, uploadFiles, uploadProgress, linkFromLibrary, isWorkspaceAdmin } =
+  const { attachments, folders, canMutateAttachments, uploadFiles, uploadProgress, linkFromLibrary, isWorkspaceAdmin, reportId } =
     useReportAttachments();
   const { dragging, endDrag } = useDocumentDrag();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -329,6 +330,8 @@ function ExpandedDocumentsPanel({
               </p>
             ) : null}
           </div>
+
+          <StatedFactsDisclosure key={reportId} reportId={reportId} />
 
           {dragging ? (
             <p className="border-t border-[var(--border)] px-3 py-1.5 text-[11px] text-[var(--muted-foreground)]">

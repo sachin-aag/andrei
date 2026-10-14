@@ -512,6 +512,13 @@
       "when": 1789504800000,
       "tag": "0071_cleaning_verification_protocol_type",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789591200000,
+      "tag": "0072_report_stated_facts",
+      "breakpoints": true
     }
   ]
 }

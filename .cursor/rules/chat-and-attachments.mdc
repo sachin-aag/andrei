@@ -226,7 +226,14 @@ next to that same label first; if the exact label is missing, the
 closest date label on the page. A signature or observation date is not
 that field when a closer status label exists. An explicit insert, or a
 fact the engineer stated this turn, still cites a page but is not dropped.
-Prior assistant chat is not a keep-source. Ask (plan) replies drop
+Prior assistant chat is not a keep-source. Document chat also keeps a
+report-level stated fact: each non-question sentence the engineer
+typed. A recognized id is not required. Bare yes and auto-continue are
+not stored. The prompt lists the sentence and uses it even when an
+attachment disagrees. A file `@`-tagged or named this turn wins when a
+served quote shares that point. Stated facts do not skip search,
+unlock an unread URS row, or replace `calculate`. Analytics chat does
+not use them. Ask (plan) replies drop
 `[filename, p. N]` on persist when that page was not retrieved this turn
 or the served quote does not contain the nearby hard fact, and replace
 unsourced hard facts with placeholders (attachment facts need a retrieved

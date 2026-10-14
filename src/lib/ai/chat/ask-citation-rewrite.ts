@@ -24,6 +24,11 @@ import {
   type LookupEvidence,
 } from "@/lib/ai/chat/fact-support";
 import {
+  quotesForNamedAttachments,
+  statedFactSupportsDraft,
+  type StatedFactRef,
+} from "@/lib/ai/chat/stated-facts";
+import {
   canonicalizeSourceCitationBracket,
   isSourceCitationBracket,
   parseSourceCitation,
@@ -133,7 +138,19 @@ function placeholderUnsupportedAskFacts(
 ): { text: string; placeholdered: boolean } {
   const originalDrops = new Set(
     extractHardFacts(original)
-      .filter((fact) => !shouldKeepAskFact(fact, evidence))
+      .filter((fact) => {
+        if (
+          statedFactSupportsDraft({
+            fact,
+            draftContext: sentenceAround(original, fact.start, fact.end),
+            statedFacts: evidence.statedFacts ?? [],
+            namedFileQuotes: evidence.namedFileQuotes,
+          })
+        ) {
+          return false;
+        }
+        return !shouldKeepAskFact(fact, evidence);
+      })
       .map((fact) => `${fact.kind}:${fact.normalized}`)
   );
   if (originalDrops.size === 0) return { text: cited, placeholdered: false };
@@ -155,7 +172,12 @@ function appendGroundingNote(text: string): string {
 export function rewriteUnsourcedAskCitations(
   text: string,
   ledger: CitationPageLedger,
-  extras?: { reportHaystack?: string; userHaystack?: string }
+  extras?: {
+    reportHaystack?: string;
+    userHaystack?: string;
+    statedFacts?: readonly StatedFactRef[];
+    namedFileQuotes?: readonly string[];
+  }
 ): { text: string; dropped: boolean } {
   if (!text.trim()) return { text, dropped: false };
   const cited = rewriteAskCitationText(text, ledger);
@@ -207,12 +229,19 @@ export function rewriteAskAssistantParts(input: {
   parts: UIMessage["parts"];
   history: readonly UIMessage[];
   response: UIMessage;
+  statedFacts?: readonly StatedFactRef[];
+  namedAttachmentIds?: readonly string[];
 }): UIMessage["parts"] {
   if (input.mode !== "plan") return input.parts;
   const messages = [...input.history, input.response];
   const ledger = new CitationPageLedger();
   ledger.seedFromMessages(messages);
   const evidence = collectAskEvidence({ messages, ledger });
+  evidence.statedFacts = input.statedFacts;
+  evidence.namedFileQuotes = quotesForNamedAttachments(
+    ledger.recordedPages(),
+    input.namedAttachmentIds ?? []
+  );
   let dropped = false;
   const next = input.parts.map((part) => {
     if (part.type !== "text") return part;
