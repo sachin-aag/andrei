@@ -45,6 +45,7 @@ export const CVP_SECTION_KEYS = [
   "cvp_sampling_plan",
   "cvp_equipment_sampling",
   "cvp_nitrosamine",
+  "cvp_process_line",
   "cvp_manufacturing_area",
   "cvp_testing_procedure",
   "cvp_method_validation",
@@ -62,7 +63,7 @@ export const CVP_SECTION_KEYS = [
 export type CvpSectionKey = (typeof CVP_SECTION_KEYS)[number];
 
 /** Filled on older protocols; omitted from new documents unless they still have user text. */
-export const CVP_LEGACY_SECTION_KEYS = ["cvp_pgi", "cvp_process_line"] as const;
+export const CVP_LEGACY_SECTION_KEYS = ["cvp_pgi"] as const;
 
 export type CvpLegacySectionKey = (typeof CVP_LEGACY_SECTION_KEYS)[number];
 
@@ -82,6 +83,7 @@ export const CVP_TABLE_SECTION_KEYS = [
   "cvp_qualification_status",
   "cvp_surface_area",
   "cvp_nitrosamine",
+  "cvp_process_line",
   "cvp_manufacturing_area",
   "cvp_testing_procedure",
   "cvp_method_validation",
@@ -93,7 +95,6 @@ export const CVP_TABLE_SECTION_KEYS = [
 
 export const CVP_LEGACY_TABLE_SECTION_KEYS = [
   "cvp_pgi",
-  "cvp_process_line",
 ] as const satisfies readonly CvpLegacySectionKey[];
 
 export type CvpTableSectionKey = (typeof CVP_TABLE_SECTION_KEYS)[number];
@@ -143,9 +144,9 @@ export const CVP_SECTION_LABELS: Record<CvpPersistableSectionKey, string> = {
   cvp_equipment_sampling: "Equipment sampling",
   cvp_nitrosamine: "Nitrosamine Limits in the Rinse Samples",
   cvp_pgi: "Potential Genotoxic Impurities Limits in the Rinse Samples",
-  cvp_process_line: "Process Line Cleaning Validation Summary",
-  cvp_manufacturing_area: "Manufacturing Area Cleaning Validation",
-  cvp_overall_results: "21.0 Overall Cleaning Results Summary",
+  cvp_process_line: "Process Line Cleaning Verification Summary",
+  cvp_manufacturing_area: "Manufacturing Area Cleaning Verification",
+  cvp_overall_results: "21.0 Overall Cleaning Results Summary & Conclusion",
   cvp_recommendations: "Recommendations",
   cvp_testing_procedure: "16.0 Testing Procedure",
   cvp_method_validation: "17.0 Status of Cleaning Analytical Method Validation",
@@ -170,7 +171,7 @@ export const CVP_SCOPE_HEADERS = [
   "S. No.",
   "Name of the Equipment",
   "Equipment No.",
-  "Capacity",
+  "Capacity (KL)",
   "MOC",
   "Purpose",
   "Product contact / Non-product contact",
@@ -212,7 +213,7 @@ export const CVP_RINSE_CALC_HEADERS = [
   "S. No",
   "Name of the Equipment",
   "Equipment No.",
-  "Capacity",
+  "Capacity (KL)",
   "Internal surface area (m²)",
   "Rinse volume RF (L) SA × RF",
   "Rinse volume SAF (L) SA × SAF × SF",
@@ -224,7 +225,7 @@ export const CVP_MACO_EQUIPMENT_HEADERS = [
   "S. No.",
   "Name of the Equipment",
   "Equipment No.",
-  "Capacity",
+  "Capacity (KL)",
   "MOC",
   "Is used for Stage-4?",
   "Equipment used previous / subsequent to this product",
@@ -234,6 +235,7 @@ export const CVP_MACO_EQUIPMENT_HEADERS = [
 
 /** Earlier seed labels, rewritten onto the protocol wording above. */
 const PREVIOUS_MACO_EQUIPMENT_HEADER_LABELS: Readonly<Record<string, string>> = {
+  capacity: "Capacity (KL)",
   "used for this stage?": "Is used for Stage-4?",
   "used previous / subsequent to this product?":
     "Equipment used previous / subsequent to this product",
@@ -357,12 +359,16 @@ export const CVP_MANUFACTURING_AREA_LEADING_HEADERS = [
   "Limit",
 ] as const;
 
-export const CVP_MANUFACTURING_AREA_HEADERS = [
+/** Earlier swab grid. On-read replaces it only while the seed row is still blank. */
+export const CVP_MANUFACTURING_AREA_SWAB_HEADERS = [
   ...CVP_MANUFACTURING_AREA_LEADING_HEADERS,
   "Batch 1",
   "Batch 2",
   "Batch 3",
 ] as const;
+
+export const CVP_MANUFACTURING_AREA_HEADERS =
+  CVP_PREVIOUS_MANUFACTURING_AREA_HEADERS;
 
 export const CVP_PREVIOUS_OVERALL_RESULTS_HEADERS = [
   "Sr. No.",
@@ -609,6 +615,7 @@ export const CVP_TABLE_HEADERS: Record<CvpTableSectionKey, readonly string[]> = 
   cvp_qualification_status: CVP_QUALIFICATION_HEADERS,
   cvp_surface_area: CVP_SURFACE_AREA_HEADERS,
   cvp_nitrosamine: CVP_NITROSAMINE_HEADERS,
+  cvp_process_line: CVP_PROCESS_LINE_HEADERS,
   cvp_manufacturing_area: CVP_MANUFACTURING_AREA_HEADERS,
   cvp_testing_procedure: CVP_TESTING_HEADERS,
   cvp_method_validation: CVP_METHOD_VALIDATION_HEADERS,
@@ -623,7 +630,6 @@ export const CVP_LEGACY_TABLE_HEADERS: Record<
   readonly string[]
 > = {
   cvp_pgi: CVP_PGI_HEADERS,
-  cvp_process_line: CVP_PROCESS_LINE_HEADERS,
 };
 
 const CELL_ATTRS = { colspan: 1, rowspan: 1, colwidth: null };
@@ -686,6 +692,91 @@ export function alignCvpMacoEquipmentHeaders(doc: JSONContent): JSONContent {
     };
   });
   return changed ? { ...doc, content } : doc;
+}
+
+/** Header cell that is exactly "Capacity" becomes "Capacity (KL)". */
+export function alignCvpCapacityHeaders(doc: JSONContent): JSONContent {
+  if (!doc.content) return doc;
+  let changed = false;
+  const content = doc.content.map((node) => {
+    if (node.type !== "table" || !node.content?.[0]) return node;
+    const header = node.content[0];
+    const cells = header.content ?? [];
+    let rowChanged = false;
+    const nextCells = cells.map((cell) => {
+      const label = nodePlain(cell).replace(/\s+/g, " ").trim();
+      if (label !== "Capacity") return cell;
+      rowChanged = true;
+      return replaceHeaderCellText(cell, "Capacity (KL)");
+    });
+    if (!rowChanged) return node;
+    changed = true;
+    return {
+      ...node,
+      content: [{ ...header, content: nextCells }, ...node.content.slice(1)],
+    };
+  });
+  return changed ? { ...doc, content } : doc;
+}
+
+function paragraphTextEquals(node: JSONContent, expected: string): boolean {
+  return nodePlain(node).replace(/\s+/g, " ").trim() === expected;
+}
+
+function manufacturingAreaTableIsUntouchedSwab(node: JSONContent): boolean {
+  if (node.type !== "table" || !node.content?.[0]) return false;
+  const labels = (node.content[0].content ?? []).map((cell) =>
+    nodePlain(cell).replace(/\s+/g, " ").trim()
+  );
+  if (labels.join("|") !== CVP_MANUFACTURING_AREA_SWAB_HEADERS.join("|")) {
+    return false;
+  }
+  return (node.content.slice(1) ?? []).every((row) =>
+    (row.content ?? []).every((cell, index) => {
+      const text = nodePlain(cell).replace(/\s+/g, " ").trim();
+      if (!text) return true;
+      return index === 4 && text === CVP_MANUFACTURING_AREA_LIMIT;
+    })
+  );
+}
+
+/**
+ * Swap the untouched swab seed for the visual / wipe-cloth grid.
+ * A filled swab table is left as the engineer wrote it.
+ */
+export function upgradeCvpManufacturingAreaDoc(doc: JSONContent): JSONContent {
+  if (!doc.content) return doc;
+  const swab = doc.content.find(manufacturingAreaTableIsUntouchedSwab);
+  if (!swab) return doc;
+  const visual = table(CVP_MANUFACTURING_AREA_HEADERS, [
+    ["", "Production", "", "", "", "", "", "", "", ""],
+    ["", "QA", "", "", "", "", "", "", "", ""],
+  ]);
+  const content = doc.content.flatMap((node) => {
+    if (node === swab) return [visual];
+    if (paragraphTextEquals(node, CVP_MANUFACTURING_AREA_SWAB_INTRO)) {
+      return CVP_MANUFACTURING_AREA_INTRO_SEEDS.map((text) => textParagraph(text));
+    }
+    const criteriaIndex = CVP_MANUFACTURING_AREA_SWAB_CRITERIA.findIndex((text) =>
+      paragraphTextEquals(node, text)
+    );
+    if (criteriaIndex >= 0) {
+      const next = CVP_MANUFACTURING_AREA_CRITERIA_SEEDS[criteriaIndex];
+      return next ? [textParagraph(next)] : [node];
+    }
+    return [node];
+  });
+  return { ...doc, content };
+}
+
+export function ensureCvpQualificationInference(doc: JSONContent): JSONContent {
+  if (nodePlain(doc).includes("equipment qualification requirements for this cleaning validation study")) {
+    return doc;
+  }
+  return {
+    ...doc,
+    content: [...(doc.content ?? []), textParagraph(CVP_QUALIFICATION_INFERENCE)],
+  };
 }
 
 function textParagraph(text: string, bold = false): JSONContent {
@@ -957,7 +1048,7 @@ const OVERALL_CRITERIA_ROWS = [
 ] as const;
 
 const ABBREVIATION_ROWS = [
-  ["CVRP", "Cleaning Validation Protocol"],
+  ["CVLP", "Cleaning Validation Protocol"],
   ["MACO", "Maximum Allowable Carryover"],
   ["PDE", "Permitted Daily Exposure"],
   ["TDD", "Therapeutic Daily Dose"],
@@ -1064,14 +1155,25 @@ export const CVP_PROCESS_LINE_CRITERIA_SEEDS = [
   "Process lines shall meet established visual cleanliness requirements.",
 ] as const;
 
+export const CVP_MANUFACTURING_AREA_SWAB_INTRO =
+  "Following completion of equipment cleaning, the associated manufacturing area shall be cleaned as per the approved area cleaning procedure. Swab samples shall be collected from the identified manufacturing-area locations and analysed for product residue. The Limit for manufacturing-area swab samples is 10 ppm. Results from each of the three consecutive cleaning batches shall be recorded in the following table.";
+
 export const CVP_MANUFACTURING_AREA_INTRO_SEEDS = [
-  "Following completion of equipment cleaning, the associated manufacturing area shall be cleaned as per the approved area cleaning procedure. Swab samples shall be collected from the identified manufacturing-area locations and analysed for product residue. The Limit for manufacturing-area swab samples is 10 ppm. Results from each of the three consecutive cleaning batches shall be recorded in the following table.",
+  "Following completion of equipment cleaning, the associated manufacturing area shall be cleaned as per the approved area cleaning procedure. Cleanliness shall be verified by visual inspection of the floor surrounding the equipment, the adjacent wall, the ceiling, the AHU grills or diffusers, and the equipment external surface, together with a white wipe-cloth assessment. Production and QA shall each record the verification. Results shall be recorded in the cleaning validation report.",
 ] as const;
 
-export const CVP_MANUFACTURING_AREA_CRITERIA_SEEDS = [
+export const CVP_MANUFACTURING_AREA_SWAB_CRITERIA = [
   "Manufacturing-area swab samples shall comply with the Limit of 10 ppm.",
   "The method LOD of 0.3 ppm applies to the manufacturing-area swab analysis.",
 ] as const;
+
+export const CVP_MANUFACTURING_AREA_CRITERIA_SEEDS = [
+  "No visible product residue, stain, or extraneous matter shall be observed on the floor, wall, ceiling, AHU grills, or equipment external surface.",
+  "The white wipe cloth used for the assessment shall remain visibly clean.",
+] as const;
+
+export const CVP_QUALIFICATION_INFERENCE =
+  "Inference: All equipment involved in this manufacturing train have been qualified and are suitable for their intended use. Therefore, the equipment qualification requirements for this cleaning validation study are considered fulfilled.";
 
 export const CVP_TESTING_PROCEDURE_INTRO_SEED =
   "Swab and rinse samples collected during the cleaning validation study shall be analyzed using approved specifications and validated analytical methods to verify the effectiveness of the cleaning procedure. Product residue and extraneous matter shall be evaluated. The applicable analytical methods, limits of quantitation (LOQ), and limits of detection (LOD) are summarized in the following table.";
@@ -1319,7 +1421,7 @@ export function cvpEquipmentSamplingSeed(
         ["Specification", "", ""],
         ["Testing Procedure", "", ""],
         ["Analytical Method Validation", "", ""],
-        ["Equipment Qualification", "", ""],
+        ["IQ report No. & date", "", ""],
       ]),
       ...swabNodes,
       ...cleaningNodes,
@@ -1444,7 +1546,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
       return {
         narrative: narrativeDoc(
           [
-            "Describe the manufacturing train, the cleaning procedure (manual / CIP), and the solvents used. List each equipment with its Batch Cleaning Record number and cleaning solvent.",
+            "The manufacturing train, the cleaning procedure (manual cleaning or CIP), and the cleaning solvents shall be described for the product and stage in scope. Each equipment shall be listed with its Batch Cleaning Record number and the cleaning solvent named on that record.",
           ],
           [table(CVP_CLEANING_METHOD_HEADERS)]
         ),
@@ -1460,7 +1562,15 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
         },
       };
     case "cvp_qualification_status":
-      return { table: tableDoc(CVP_QUALIFICATION_HEADERS) };
+      return {
+        table: {
+          type: "doc",
+          content: [
+            table(CVP_QUALIFICATION_HEADERS),
+            textParagraph(CVP_QUALIFICATION_INFERENCE),
+          ],
+        },
+      };
     case "cvp_surface_area":
       return {
         table: {
@@ -1477,7 +1587,8 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
           [
             "The rinse volume for each equipment is established before the MACO and acceptance limit calculations, since the rinse acceptance limits (Section 11.0) are derived from the allowable carryover per equipment and the rinse volume.",
             "Rinse Volume (L) = Surface Area (m²) × Rinse Factor (L/m²).",
-            "Rinse Factor typically ranges between 1–10 L/m²: 1–3 L/m² for easily soluble residues; 3–5 L/m² for moderately soluble residues; 5–10 L/m² for poorly soluble or potent residues. Copy the factor used from a cited cleaning-development or protocol page.",
+            "Rinse Factor typically ranges between 1–10 L/m²: 1–3 L/m² for easily soluble residues; 3–5 L/m² for moderately soluble residues; 5–10 L/m² for poorly soluble or potent residues. The factor shall be the value stated on the cited cleaning-development study or approved protocol.",
+            "Where the calculated SAF volume is too small to wet the equipment and collect a rinse sample, the considered volume shall be a practical minimum. That same volume, in litres, shall be the rinse volume used for the acceptance limit in Section 11.0.",
             "Worst-case area factor (WAF) by surface type:",
           ],
           [table(CVP_WAF_HEADERS, WAF_ROWS), table(CVP_RINSE_CALC_HEADERS)]
@@ -1541,7 +1652,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
     case "cvp_sampling_plan":
       return {
         narrative: narrativeDoc([
-          "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine limits, manufacturing-area cleaning verification, testing through revalidation, overall results, and recommendations. Result and observation fields stay blank until the cleaning validation report is written.",
+          "This section records the sampling plan and acceptance criteria for each product-contact equipment in the train, followed by nitrosamine limits, process-line cleaning verification, and manufacturing-area cleaning verification. Analytical results shall be recorded in the cleaning validation report.",
         ]),
       };
     case "cvp_equipment_sampling":
@@ -1558,6 +1669,10 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
           ),
         ]),
       };
+    case "cvp_process_line":
+      return {
+        table: tableWithBoilerplate(key, CVP_PROCESS_LINE_HEADERS),
+      };
     case "cvp_manufacturing_area":
       return {
         table: {
@@ -1566,8 +1681,9 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
             ...(CVP_TABLE_SECTION_BOILERPLATE[key] ?? []).map((item) =>
               textParagraph(item.text, item.bold === true)
             ),
-            groupedResultsTable(CVP_MANUFACTURING_AREA_LEADING_HEADERS, [
-              ["", "", "", "", CVP_MANUFACTURING_AREA_LIMIT, "", "", ""],
+            table(CVP_MANUFACTURING_AREA_HEADERS, [
+              ["", "Production", "", "", "", "", "", "", "", ""],
+              ["", "QA", "", "", "", "", "", "", "", ""],
             ]),
             textParagraph("Inference:", true),
             textParagraph("It shall be written in the cleaning validation report."),
@@ -1580,7 +1696,7 @@ function emptyCvpContent(key: CvpSectionKey): CvpSectionContent {
       return {
         narrative: narrativeDoc(
           [
-            "Result fields are intentionally left blank for recording during report finalization. List each equipment ID on one row, plus a Manufacturing Areas row. Write NA only where a test does not apply to that item.",
+            "Each equipment ID shall be listed on one row, together with a Manufacturing Areas row. Analytical results, status, and the conclusion shall be recorded in the cleaning validation report. Write NA only where a test does not apply to that item.",
           ],
           [
             table(CVP_OVERALL_RESULTS_HEADERS, [
@@ -1645,17 +1761,6 @@ export const EMPTY_CVP_LEGACY_CONTENT: Record<
       ],
     },
   },
-  cvp_process_line: {
-    table: {
-      type: "doc",
-      content: [
-        textParagraph(CVP_PROCESS_LINE_INTRO_SEED),
-        textParagraph(ACCEPTANCE_CRITERIA_LABEL, true),
-        ...CVP_PROCESS_LINE_CRITERIA_SEEDS.map((text) => textParagraph(text)),
-        table(CVP_PROCESS_LINE_HEADERS),
-      ],
-    },
-  },
 };
 
 export type CvpMetadata = {
@@ -1668,6 +1773,7 @@ export type CvpMetadata = {
   version: string;
   effectiveDate: string;
   reportNo: string;
+  ccfNo: string;
 };
 
 export const CVP_DEFAULT_METADATA: CvpMetadata = {
@@ -1680,6 +1786,7 @@ export const CVP_DEFAULT_METADATA: CvpMetadata = {
   version: "00",
   effectiveDate: "",
   reportNo: "",
+  ccfNo: "",
 };
 
 export function cvpMetadataFrom(metadata: unknown): CvpMetadata {
@@ -1699,6 +1806,7 @@ export function cvpMetadataFrom(metadata: unknown): CvpMetadata {
     version: pick("version"),
     effectiveDate: pick("effectiveDate"),
     reportNo: pick("reportNo"),
+    ccfNo: pick("ccfNo"),
   };
 }
 

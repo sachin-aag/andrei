@@ -124,6 +124,8 @@ export type DocxExportContext = {
   tableListIndentLeft: string | null;
   tableListIndentHanging: string | null;
   headingOutline: "cvp" | null;
+  /** Running SEQ Table cache for CVP captions. Mutated while emitting tables. */
+  tableCaptionSeq: number;
   stripTableCaptions: boolean;
   stripInTextCitationMarkers: boolean;
   mergeEmptyFirstColumn: boolean;
@@ -335,6 +337,7 @@ export function createDocxExportContext(
     tableListIndentLeft: runStyle?.tableListIndentLeft ?? null,
     tableListIndentHanging: runStyle?.tableListIndentHanging ?? null,
     headingOutline: runStyle?.headingOutline ?? null,
+    tableCaptionSeq: 0,
     stripTableCaptions: runStyle?.stripTableCaptions === true,
     stripInTextCitationMarkers: runStyle?.stripInTextCitationMarkers === true,
     mergeEmptyFirstColumn: runStyle?.mergeEmptyFirstColumn === true,

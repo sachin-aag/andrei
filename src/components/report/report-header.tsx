@@ -913,6 +913,14 @@ function CvpIdentityForm({
             onChange={set("plant")}
           />
           <IdentityField
+            id="cvp-ccf-no"
+            fieldKey="ccfNo"
+            label="CCF Number"
+            value={meta.ccfNo}
+            disabled={readOnly}
+            onChange={set("ccfNo")}
+          />
+          <IdentityField
             id="cvp-protocol-no"
             fieldKey="documentNo"
             label="Protocol No."

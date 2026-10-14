@@ -120,10 +120,11 @@ describe("cleaning verification protocol DOCX export", () => {
     const document = zip.file("word/document.xml")?.asText() ?? "";
     expect(document).toContain("w:w=\"11910\"");
     expect(document).toContain("w:h=\"16840\"");
-    expect(document).toContain(' TOC \\o "1-1" ');
+    expect(document).toContain(' TOC \\o "1-4" ');
     expect(document).toContain('<w:pStyle w:val="TOCHeading"/>');
     expect(document).toContain("TABLE OF CONTENTS");
-    expect(visibleText(document)).toContain("CLEANING VALIDATION PROTOCOL");
+    expect(document).toContain("{documentTitle}");
+    expect(document).toContain("{ccfNo}");
     expect(visibleText(document)).not.toContain("CLEANING VERIFICATION PROTOCOL");
     expect(document).toContain("CLEANING VALIDATION METHODOLOGY");
     expect(document).not.toContain("CLEANING VERIFICATION METHODOLOGY");
@@ -160,9 +161,12 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(body).toContain("APPROVAL SIGNATURES");
     expect(body).toContain("SAMPLING PLAN, ACCEPTANCE CRITERIA");
     expect(body).toContain("EQUIPMENT NAME (EQUIPMENT NO.)");
-    expect(body).toContain("15.1.1 Equipment details");
-    expect(body).toContain("15.1.2 Supporting Documents");
-    expect(body).toContain("15.1.3.1 Worst-case locations");
+    expect(body).toContain("Equipment details");
+    expect(body).toContain("Supporting Documents");
+    expect(body).toContain("Worst-case locations");
+    expect(body).toContain(
+      "Cleaning Validation Protocol for Equipment and Associated Auxiliary Systems Used in the Production of Isosorbide Mononitrate (Stage-4)"
+    );
     expect(body).toContain("RECOMMENDATIONS");
     expect(body).toContain("NITROSAMINE LIMITS");
     expect(body).toContain(
@@ -344,7 +348,7 @@ describe("cleaning verification protocol DOCX export", () => {
     expect(visibleText(citationsTable!)).not.toContain("Verification_Protocol");
   });
 
-  it("uses Heading1 numbering for 15.N titles and merges empty Function cells", async () => {
+  it("uses Heading2 numbering for 15.N titles and merges empty Function cells", async () => {
     const zip = await exportZip(
       sectionsWith({
         cvp_objective: {
@@ -382,11 +386,11 @@ describe("cleaning verification protocol DOCX export", () => {
     );
     const document = zip.file("word/document.xml")?.asText() ?? "";
     const equipment = paragraphContaining(document, "EQUIPMENT NAME (EQUIPMENT NO.)");
-    expect(equipment).toContain('<w:pStyle w:val="Heading1"/>');
+    expect(equipment).toContain('<w:pStyle w:val="Heading2"/>');
     expect(equipment).toContain('<w:ilvl w:val="1"/>');
     expect(equipment).toContain('<w:numId w:val="3"/>');
     expect(document).toContain('<w:br w:type="page"/>');
-    expect(document).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(document).toContain('<w:pStyle w:val="Heading3"/>');
     expect(document).toContain('<w:vMerge w:val="restart"/>');
     expect(document).toContain('<w:vMerge w:val="continue"/>');
     expect(document).toContain('<w:vAlign w:val="center"/>');
@@ -398,13 +402,10 @@ describe("cleaning verification protocol DOCX export", () => {
   it("matches source protocol column widths on form tables", async () => {
     const zip = await exportZip(sectionsWith());
     const document = zip.file("word/document.xml")?.asText() ?? "";
-    expect(document).toContain('<w:gridCol w:w="1524"/>');
-    expect(document).toContain('<w:gridCol w:w="2340"/>');
-    expect(document).toContain('<w:gridCol w:w="2225"/>');
-    expect(document).toContain('<w:tblW w:w="9882" w:type="dxa"/>');
-    expect(document).toContain('<w:gridCol w:w="838"/>');
-    expect(document).toContain('<w:gridCol w:w="3251"/>');
-    expect(document).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(document).toContain('<w:jc w:val="center"/>');
+    expect(document).toContain('<w:tblW w:w="9892" w:type="dxa"/>');
+    expect(document).not.toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(document).not.toContain('<w:tblW w:w="9882" w:type="dxa"/>');
     expect(document).toContain('<w:tblLayout w:type="fixed"/>');
   });
 

@@ -86,6 +86,9 @@ package-lock.json
 # Temporary onboarding credentials (sensitive — never commit)
 docs/mj-onboarding-temporary-passwords.md
 docs/convergent-onboarding-temporary-passwords.md
+
+# Local 3xper customer working docs (tracked deploy notes: docs/3xper-deployment.md)
+docs/3xper docs/
 .env*
 
 # Local video analysis scratch (large media + generated reports)

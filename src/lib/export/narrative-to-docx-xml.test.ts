@@ -1468,8 +1468,8 @@ describe("narrativeToDocxXml tables", () => {
     const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
     expect(xml).not.toContain("Table 2. Responsibilities");
     expect(xml).toContain("MIXED VESSEL (MV-1304)");
-    expect(xml).toContain('<w:pStyle w:val="Heading1"/>');
-    expect(xml).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(xml).toContain('<w:pStyle w:val="Heading2"/>');
+    expect(xml).not.toContain('<w:pStyle w:val="Heading1"/>');
     expect(xml).toContain('<w:pStyle w:val="TableParagraph"/>');
     expect(xml).not.toContain('<w:pStyle w:val="ListParagraph"/>');
     expect(xml).toContain("Sampling follows the cited pages.");
@@ -1520,16 +1520,16 @@ describe("narrativeToDocxXml tables", () => {
       ctx
     ).xml;
     expect(xml).toContain('<w:tblLayout w:type="fixed"/>');
-    expect(xml).toContain('<w:gridCol w:w="1524"/>');
-    expect(xml).toContain('<w:gridCol w:w="2340"/>');
-    expect(xml).toContain('<w:gridCol w:w="2225"/>');
-    expect(xml).toContain('<w:gridCol w:w="2020"/>');
-    expect(xml).toContain('<w:gridCol w:w="1773"/>');
-    expect(xml).toContain('<w:tblW w:w="9882" w:type="dxa"/>');
-    expect(xml).toContain('<w:gridCol w:w="838"/>');
-    expect(xml).toContain('<w:gridCol w:w="3251"/>');
-    expect(xml).toContain('<w:gridCol w:w="1996"/>');
-    expect(xml).toContain('<w:tblW w:w="6085" w:type="dxa"/>');
+    expect(xml).toContain('<w:gridCol w:w="1615"/>');
+    expect(xml).toContain('<w:gridCol w:w="2479"/>');
+    expect(xml).toContain('<w:gridCol w:w="2357"/>');
+    expect(xml).toContain('<w:gridCol w:w="2140"/>');
+    expect(xml).toContain('<w:gridCol w:w="1878"/>');
+    expect(xml).toContain('<w:tblW w:w="10469" w:type="dxa"/>');
+    expect(xml).toContain('<w:gridCol w:w="1442"/>');
+    expect(xml).toContain('<w:gridCol w:w="5593"/>');
+    expect(xml).toContain('<w:gridCol w:w="3434"/>');
+    expect(xml).not.toContain('<w:tblW w:w="6085" w:type="dxa"/>');
     expect(xml).not.toContain('<w:tblW w:w="5000" w:type="pct"/>');
     expect(xml).toContain('w:fill="FFFF00"');
     expect(xml).not.toContain('w:fill="D9D9D9"');

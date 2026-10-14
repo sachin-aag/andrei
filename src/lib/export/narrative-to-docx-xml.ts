@@ -26,8 +26,12 @@ import {
   applyCvpEmptyFirstColumnMerges,
   applyCvpSourceTableColWidths,
   CVP_PAGE_BREAK_XML,
+  cvpContentHeadingFormat,
   cvpHeadingCaps,
   cvpHeadingParagraphXml,
+  cvpTableCaptionXml,
+  formatCvpCalendarDatesInDoc,
+  stripCvpOutlineNumber,
   stripTableCaptionNodes,
 } from "@/lib/export/cvp-docx-format";
 
@@ -168,6 +172,9 @@ export function narrativeToDocxXmlWithContext(
   }
 
   let sanitized = sanitizeDocTextNodes(doc);
+  if (ctx.headingOutline === "cvp") {
+    sanitized = formatCvpCalendarDatesInDoc(sanitized);
+  }
   if (ctx.mergeEmptyFirstColumn) {
     sanitized = applyCvpSourceTableColWidths(sanitized);
     sanitized = applyCvpEmptyFirstColumnMerges(sanitized);
@@ -220,12 +227,16 @@ export function narrativeToDocxXmlWithContext(
       if (lastEmittedWasTable) {
         parts.push(tableSeparatorParagraphXml(ctx));
       }
+      if (ctx.headingOutline === "cvp") {
+        ctx.tableCaptionSeq += 1;
+        parts.push(cvpTableCaptionXml(ctx.tableCaptionSeq));
+      }
       parts.push(
         tableToXml(
           node,
           ctx,
           landscapeWithTable.has(i) ? landscapeMax : portraitMax,
-          landscapeWithTable.has(i)
+          landscapeWithTable.has(i) || ctx.headingOutline === "cvp"
         )
       );
       lastEmittedWasTable = true;
@@ -568,23 +579,16 @@ function headingToXml(
 function cvpContentHeadingToXml(
   node: JSONContent,
   ctx: DocxExportContext,
-  keepNext: boolean
+  _keepNext: boolean
 ): string {
   const raw = nodePlainText(node).trim();
   if (!raw) return "";
   const level = Number(node.attrs?.level);
-  if (level >= 3 || Number.isNaN(level)) {
-    return paragraphToXml(
-      { ...node, type: "paragraph" },
-      true,
-      null,
-      null,
-      keepNext,
-      ctx
-    );
-  }
-  const ilvl: 0 | 1 = level <= 1 ? 0 : 1;
-  const xml = cvpHeadingParagraphXml(cvpHeadingCaps(raw), ilvl);
+  const format = cvpContentHeadingFormat(level);
+  const label = format.uppercase
+    ? cvpHeadingCaps(raw)
+    : stripCvpOutlineNumber(raw);
+  const xml = cvpHeadingParagraphXml(label, format.ilvl, format.style);
   if (level === 2 && ctx.pageBreakBeforeHeading2) {
     return CVP_PAGE_BREAK_XML + xml;
   }
@@ -758,9 +762,16 @@ function inlineNodesToRuns(
       parts.push(mathInlineToRun(child, ctx));
       emittedBoundarySpace = false;
     } else if (child.type === "tableRef") {
-      const label = tableRefDisplayText({
-        n: typeof child.attrs?.n === "number" ? child.attrs.n : null,
-      });
+      const n = typeof child.attrs?.n === "number" ? child.attrs.n : null;
+      let label = tableRefDisplayText({ n });
+      if (ctx?.headingOutline === "cvp" && label === "the table") {
+        label = "Table";
+      }
+      const prev = nodes[index - 1];
+      const prevText = prev?.type === "text" ? (prev.text ?? "") : "";
+      if (prevText.length > 0 && !/\s$/.test(prevText)) {
+        label = ` ${label}`;
+      }
       const marks = child.marks ?? [];
       const revision = suggestionRevisionFromMarks(marks);
       const rPr = runProperties(
