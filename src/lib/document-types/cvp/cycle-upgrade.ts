@@ -1547,6 +1547,7 @@ function collapseRepeatedShellRows(table: JSONContent): JSONContent {
     );
     const description = cellPlain(cells[0]);
     const nextDescription = shellDescriptionWithoutIdList(description);
+    if (!/shell wall/i.test(description)) return [row];
     const nextCells =
       nextDescription === description
         ? cells
