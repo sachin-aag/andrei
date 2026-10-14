@@ -37,6 +37,12 @@ import {
   validateSuggestionLocate,
 } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
+import type { ReviewLocateHighlight } from "@/lib/review/finding-card";
+import type { ReviewFindingDto } from "@/lib/review/ui";
+import {
+  heldReviewSuggestionIds,
+  withoutHeldReviewSuggestions,
+} from "@/lib/review/proposed-edit";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import { planPendingSectionFlush } from "@/lib/reports/pending-section-flush";
@@ -180,6 +186,16 @@ type ReportContextValue = {
     bridge: SuggestionQueueBridge
   ) => void;
   endSuggestionApplyTransition: (section: SectionType) => void;
+  /** Open suggestion pinned to the front of its section queue by review apply. */
+  suggestionQueueHeadId: string | null;
+  promoteSuggestionToQueueHead: (commentId: string) => void;
+  reviewFindings: ReviewFindingDto[];
+  setReviewFindings: React.Dispatch<React.SetStateAction<ReviewFindingDto[]>>;
+  /** Open AI comments that are allowed to preview in the document. */
+  suggestionQueueComments: CommentRecord[];
+  /** Yellow highlight of one phrase. Does not open the suggestion preview. */
+  reviewLocate: ReviewLocateHighlight | null;
+  setReviewLocate: (next: ReviewLocateHighlight | null) => void;
   /** Per-section apply/dismiss transition — pauses auto-save while set. */
   suggestionApplyTransition: Partial<
     Record<
@@ -345,6 +361,13 @@ type ReportEvaluationContextValue = Pick<
   | "beginSuggestionApplyTransition"
   | "enterSuggestionQueueBridge"
   | "endSuggestionApplyTransition"
+  | "suggestionQueueHeadId"
+  | "promoteSuggestionToQueueHead"
+  | "reviewFindings"
+  | "setReviewFindings"
+  | "suggestionQueueComments"
+  | "reviewLocate"
+  | "setReviewLocate"
   | "suggestionApplyTransition"
   | "suggestionsFocus"
   | "clearSuggestionsFocus"
@@ -517,6 +540,13 @@ export function ReportProvider({
   >({});
 
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [suggestionQueueHeadId, setSuggestionQueueHeadId] = useState<
+    string | null
+  >(null);
+  const [reviewFindings, setReviewFindings] = useState<ReviewFindingDto[]>([]);
+  const [reviewLocate, setReviewLocate] = useState<ReviewLocateHighlight | null>(
+    null
+  );
   const [focusedPanelPlaceholderId, setFocusedPanelPlaceholderId] = useState<
     string | null
   >(null);
@@ -1027,6 +1057,27 @@ export function ReportProvider({
     });
   }, []);
 
+  const suggestionQueueComments = useMemo(
+    () =>
+      withoutHeldReviewSuggestions(
+        comments,
+        heldReviewSuggestionIds(reviewFindings, comments)
+      ),
+    [comments, reviewFindings]
+  );
+
+  const promoteSuggestionToQueueHead = useCallback(
+    (commentId: string) => {
+      setSuggestionQueueHeadId(commentId);
+      const section = commentsRef.current.find(
+        (comment) => comment.id === commentId
+      )?.section;
+      if (section) endSuggestionApplyTransition(section);
+      requestCommentFocus(commentId);
+    },
+    [endSuggestionApplyTransition, requestCommentFocus]
+  );
+
   const isSuggestionPreviewHeld = useCallback(
     (section: SectionType) =>
       suggestionApplyTransition[section]?.holdInlinePreview === true,
@@ -1049,13 +1100,22 @@ export function ReportProvider({
       }
       return preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent: sections[section as keyof SectionContentMap],
         preferredCommentId: activeCommentId,
+        queueHeadCommentId: suggestionQueueHeadId,
       }).active;
     },
-    [activeCommentId, comments, evaluations, sections, suggestionApplyTransition]
+    [
+      activeCommentId,
+      comments,
+      suggestionQueueComments,
+      evaluations,
+      sections,
+      suggestionApplyTransition,
+      suggestionQueueHeadId,
+    ]
   );
 
   const activeSuggestionIdForSection = useCallback(
@@ -1064,10 +1124,11 @@ export function ReportProvider({
       const sectionContent = sections[section as keyof SectionContentMap];
       const preferred = preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent,
         preferredCommentId: activeCommentId,
+        queueHeadCommentId: suggestionQueueHeadId,
       }).active;
       if (preferred) {
         const preferredValidation = validateSuggestionLocate(
@@ -1079,7 +1140,7 @@ export function ReportProvider({
       }
       const fallback = preferredOpenSuggestion({
         section,
-        comments,
+        comments: suggestionQueueComments,
         evaluations,
         sectionContent,
       }).active;
@@ -1093,10 +1154,11 @@ export function ReportProvider({
     },
     [
       activeCommentId,
-      comments,
+      suggestionQueueComments,
       evaluations,
       isSuggestionPreviewHeld,
       sections,
+      suggestionQueueHeadId,
     ]
   );
 
@@ -1299,6 +1361,13 @@ export function ReportProvider({
       beginSuggestionApplyTransition,
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
+      suggestionQueueHeadId,
+      promoteSuggestionToQueueHead,
+      reviewFindings,
+      setReviewFindings,
+      suggestionQueueComments,
+      reviewLocate,
+      setReviewLocate,
       suggestionApplyTransition,
       suggestionsFocus,
       clearSuggestionsFocus,
@@ -1319,6 +1388,12 @@ export function ReportProvider({
       beginSuggestionApplyTransition,
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
+      suggestionQueueHeadId,
+      promoteSuggestionToQueueHead,
+      reviewFindings,
+      setReviewFindings,
+      suggestionQueueComments,
+      reviewLocate,
       suggestionApplyTransition,
       suggestionsFocus,
       clearSuggestionsFocus,

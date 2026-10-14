@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chatWorkProductTarget,
   shouldCollapseAssistantOnSuggestionFocus,
-  shouldRevealCriteriaTab,
+  shouldRevealReviewTab,
 } from "./workspace-chrome";
 
 describe("shouldCollapseAssistantOnSuggestionFocus", () => {
@@ -11,10 +11,10 @@ describe("shouldCollapseAssistantOnSuggestionFocus", () => {
   });
 });
 
-describe("shouldRevealCriteriaTab", () => {
-  it("reveals Criteria when an Agent-chrome eval finishes on the report", () => {
+describe("shouldRevealReviewTab", () => {
+  it("reveals Review when an Agent-chrome eval finishes on the report", () => {
     expect(
-      shouldRevealCriteriaTab({
+      shouldRevealReviewTab({
         wasEvaluating: true,
         isEvaluating: false,
         chrome: "agent",
@@ -25,7 +25,7 @@ describe("shouldRevealCriteriaTab", () => {
 
   it("stays put while eval is still running or never started", () => {
     expect(
-      shouldRevealCriteriaTab({
+      shouldRevealReviewTab({
         wasEvaluating: true,
         isEvaluating: true,
         chrome: "agent",
@@ -33,7 +33,7 @@ describe("shouldRevealCriteriaTab", () => {
       })
     ).toBe(false);
     expect(
-      shouldRevealCriteriaTab({
+      shouldRevealReviewTab({
         wasEvaluating: false,
         isEvaluating: false,
         chrome: "agent",
@@ -44,7 +44,7 @@ describe("shouldRevealCriteriaTab", () => {
 
   it("does not steal the tab in Document chrome or on Analytics", () => {
     expect(
-      shouldRevealCriteriaTab({
+      shouldRevealReviewTab({
         wasEvaluating: true,
         isEvaluating: false,
         chrome: "document",
@@ -52,7 +52,7 @@ describe("shouldRevealCriteriaTab", () => {
       })
     ).toBe(false);
     expect(
-      shouldRevealCriteriaTab({
+      shouldRevealReviewTab({
         wasEvaluating: true,
         isEvaluating: false,
         chrome: "agent",

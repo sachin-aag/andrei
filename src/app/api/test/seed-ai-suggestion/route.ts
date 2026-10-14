@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { comments, criteriaEvaluations, reportSections } from "@/db/schema";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
+import { withReleasedToQueue } from "@/lib/review/proposed-edit";
 
 const bodySchema = z.object({
   reportId: z.string().min(1),
@@ -76,11 +77,14 @@ export async function POST(req: Request) {
       anchorText: body.anchorText,
       contentPath: body.contentPath,
       evaluationId: evaluation!.id,
-      content: JSON.stringify({
-        deleteText: body.deleteText,
-        insertText: body.insertText,
-        reasoning: body.reasoning,
-      }),
+      content: withReleasedToQueue(
+        JSON.stringify({
+          deleteText: body.deleteText,
+          insertText: body.insertText,
+          reasoning: body.reasoning,
+        }),
+        true
+      ),
     })
     .returning();
 

@@ -53,6 +53,11 @@ import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
+  createReviewLocateHighlightExtension,
+  REVIEW_LOCATE_CLASS,
+  REVIEW_LOCATE_REFRESH_META,
+} from "@/lib/tiptap/review-locate-highlight";
+import {
   citationRefreshMeta,
   createCitationHighlightExtension,
   type CitationOpenHandlers,
@@ -431,6 +436,7 @@ export function TiptapSectionField({
     suggestionApplyTransition,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
+    reviewLocate,
   } = useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
   const sectionsRef = useRef(sections);
@@ -449,6 +455,14 @@ export function TiptapSectionField({
   const tablePreviewSuggestionIdRef = useRef<string | null>(null);
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
+  const reviewLocateNeedleRef = useRef<string | null>(null);
+  const paintedLocateNeedleRef = useRef<string | null>(null);
+  reviewLocateNeedleRef.current =
+    reviewLocate &&
+    reviewLocate.section === section &&
+    reviewLocate.contentPath === contentPath
+      ? reviewLocate.needle
+      : null;
   const handlersRef = useRef<CommentHighlightHandlers>({
     onCommentActivate: () => {},
     onCommentHover: () => {},
@@ -529,6 +543,13 @@ export function TiptapSectionField({
     );
     /* eslint-enable react-hooks/refs */
   }, [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]);
+
+  const reviewLocateExtension = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror reads this getter on refresh, not during render
+      createReviewLocateHighlightExtension(() => reviewLocateNeedleRef.current),
+    []
+  );
 
   const filteredRanges = useMemo(() => {
     return comments
@@ -632,6 +653,7 @@ export function TiptapSectionField({
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
         citationHighlightExtension,
+        reviewLocateExtension,
       ],
       content: normalizeRichField(value, richFieldOptions),
       editable,
@@ -646,7 +668,7 @@ export function TiptapSectionField({
         onChangeRef.current(json);
       },
     },
-    [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
+    [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension, reviewLocateExtension]
   );
 
   useEffect(() => {
@@ -1398,6 +1420,28 @@ export function TiptapSectionField({
       }
     };
   }, [editor, activeCommentId, filteredRanges]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const needle = reviewLocateNeedleRef.current;
+    if (needle === paintedLocateNeedleRef.current) return;
+    paintedLocateNeedleRef.current = needle;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(REVIEW_LOCATE_REFRESH_META, true)
+        .setMeta("addToHistory", false)
+    );
+    if (!needle) return;
+    // After the section jump scrolls the heading to the top, center the phrase.
+    const timer = window.setTimeout(() => {
+      const mark = editor.view.dom.querySelector(`.${REVIEW_LOCATE_CLASS}`);
+      (mark ?? editor.view.dom).scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [editor, reviewLocate, section, contentPath]);
 
   useEffect(() => {
     if (!editor) return;

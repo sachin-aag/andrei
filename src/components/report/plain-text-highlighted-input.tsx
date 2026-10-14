@@ -35,11 +35,13 @@ import {
   useReportComments,
   useReportData,
   useReportEditors,
+  useReportEvaluations,
   useReportPlaceholders,
   type SuggestionApplyMode,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
+import { uniqueTextSpan } from "@/lib/suggestions/locator";
 import { cn } from "@/lib/utils";
 
 const fieldTypography =
@@ -88,17 +90,41 @@ export function PlainTextHighlightedInput({
   const shellRef = useRef<HTMLDivElement>(null);
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const { setActiveField } = useReportEditors();
+  const { reviewLocate } = useReportEvaluations();
   const { report, workspaceMode, currentUserId, getSectionId } = useReportData();
   const { setComments, setActiveCommentId } = useReportComments();
   const { getUser } = useUserDirectory();
   const segments = useMemo(() => splitPlainTextWithPlaceholders(value), [value]);
   const hasPlaceholders = segments.some((s) => s.kind === "placeholder");
-  const useMirrorOverlay = hasPlaceholders || mirrorContent != null;
 
   const fieldDot = fieldAnchor.indexOf(".");
   const fieldSection =
     fieldDot >= 0 ? (fieldAnchor.slice(0, fieldDot) as SectionType) : null;
   const fieldContentPath = fieldDot >= 0 ? fieldAnchor.slice(fieldDot + 1) : "";
+  const locateSpan = useMemo(() => {
+    if (!reviewLocate || !fieldSection) return null;
+    if (
+      reviewLocate.section !== fieldSection ||
+      reviewLocate.contentPath !== fieldContentPath
+    ) {
+      return null;
+    }
+    return uniqueTextSpan(value, reviewLocate.needle);
+  }, [reviewLocate, fieldSection, fieldContentPath, value]);
+
+  useEffect(() => {
+    if (!locateSpan) return;
+    const timer = window.setTimeout(() => {
+      const mark = shellRef.current?.querySelector(".review-locate-highlight");
+      (mark ?? shellRef.current)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [locateSpan, reviewLocate?.findingId]);
+  const useMirrorOverlay =
+    hasPlaceholders || mirrorContent != null || locateSpan != null;
   const focusedFromPos =
     fieldSection && fieldContentPath && focusedPanelPlaceholderId
       ? fromPosFromPlaceholderId(
@@ -397,6 +423,7 @@ export function PlainTextHighlightedInput({
         "relative",
         useMirrorOverlay && "grid",
         useMirrorOverlay && className,
+        locateSpan && "ring-2 ring-yellow-300/90",
         useMirrorOverlay &&
           suggestionActive &&
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
@@ -416,12 +443,27 @@ export function PlainTextHighlightedInput({
             fieldTypography
           )}
         >
-          {mirrorContent ?? (
-            <PlainTextPlaceholderSpans
-              text={value}
-              focusedFromPos={focusedFromPos}
-            />
-          )}
+          {mirrorContent ??
+            (locateSpan ? (
+              <>
+                <PlainTextPlaceholderSpans
+                  text={value.slice(0, locateSpan.start)}
+                />
+                <mark className="review-locate-highlight">
+                  {value.slice(locateSpan.start, locateSpan.end)}
+                </mark>
+                <PlainTextPlaceholderSpans
+                  text={value.slice(locateSpan.end)}
+                  baseOffset={locateSpan.end}
+                  focusedFromPos={focusedFromPos}
+                />
+              </>
+            ) : (
+              <PlainTextPlaceholderSpans
+                text={value}
+                focusedFromPos={focusedFromPos}
+              />
+            ))}
         </div>
       ) : null}
       <Textarea
@@ -436,6 +478,7 @@ export function PlainTextHighlightedInput({
               )
             : cn(
                 "text-sm leading-relaxed resize-none overflow-hidden",
+                locateSpan && "selection:bg-yellow-300",
                 className
               )
         }

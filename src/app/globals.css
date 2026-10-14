@@ -396,6 +396,11 @@ html[data-customer="3xper"] {
   border-bottom: 1px dashed rgb(91 33 182);
 }
 
+.review-locate-highlight {
+  background-color: rgb(250 204 21 / 0.9);
+  border-radius: 2px;
+}
+
 .comment-thread-bubble {
   display: inline-flex;
   vertical-align: middle;

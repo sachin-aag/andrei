@@ -293,6 +293,7 @@ export function buildCriterionEvaluationLlmPrompts({
   allSections,
   documentType = "investigation_report",
   criteria: criteriaOverride,
+  evaluationSystemPrompt,
 }: {
   section: SectionType;
   content: unknown;
@@ -303,6 +304,7 @@ export function buildCriterionEvaluationLlmPrompts({
   allSections?: AllSectionsContent;
   documentType?: DocumentType;
   criteria?: CriterionDefinition[];
+  evaluationSystemPrompt?: string;
 }): CriterionEvaluationLlmPrompts | null {
   const criteria =
     criteriaOverride ??
@@ -313,10 +315,9 @@ export function buildCriterionEvaluationLlmPrompts({
 
   const contentStr = sectionContentForPrompt(section, content);
 
-  const systemPrompt = buildEvaluationSystemPromptForType(
-    documentType,
-    section
-  );
+  const systemPrompt =
+    evaluationSystemPrompt ??
+    buildEvaluationSystemPromptForType(documentType, section);
 
   const priorBlock = buildPriorSectionsBlock(section, allSections);
 
@@ -361,6 +362,9 @@ export async function evaluateSection({
   providerHint,
   modelId,
   generationOptions,
+  criteria: criteriaOverride,
+  evaluationSystemPrompt,
+  promptVersion,
 }: {
   section: SectionType;
   content: unknown;
@@ -380,11 +384,23 @@ export async function evaluateSection({
   modelId?: string;
   /** Temperature, seed, and effort overrides for bulk eval / sweeps. */
   generationOptions?: EvalGenerationOptions;
+  /** Evaluate this set instead of the document-type registry criteria. */
+  criteria?: CriterionDefinition[];
+  evaluationSystemPrompt?: string;
+  promptVersion?: string;
 }): Promise<CriterionEvaluationResult[]> {
-  const criteria = criteriaFor(section, documentType);
+  const criteria = criteriaOverride ?? criteriaFor(section, documentType);
   if (criteria.length === 0) return [];
 
   if (isTestSkipEvaluation()) {
+    if (criteriaOverride) {
+      return criteriaOverride.map((c) => ({
+        criterionKey: c.key,
+        criterionLabel: c.label,
+        status: "partially_met" as const,
+        reasoning: "Stub evaluation (ALLOW_TEST_SKIP_EVALUATION).",
+      }));
+    }
     return getStubCriterionEvaluations(section, documentType ?? "investigation_report");
   }
 
@@ -434,6 +450,7 @@ export async function evaluateSection({
     allSections,
     documentType,
     criteria: llmCriteria,
+    evaluationSystemPrompt,
   });
 
   if (!prompts) {
@@ -481,7 +498,8 @@ export async function evaluateSection({
           section,
           criterionCount: llmCriteria.length,
           model: modelId ?? CRITERIA_EVAL_GOOGLE_MODEL_ID,
-          promptVersion: getDocumentType(documentType).prompts.promptVersion,
+          promptVersion:
+            promptVersion ?? getDocumentType(documentType).prompts.promptVersion,
         },
       }),
     });

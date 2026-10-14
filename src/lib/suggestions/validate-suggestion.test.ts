@@ -1132,6 +1132,18 @@ describe("reviewOrderOpenSuggestions", () => {
     expect(focused.active?.id).toBe("second");
     expect(focused.index).toBe(1);
 
+    const promoted = preferredOpenSuggestion({
+      section: "define",
+      comments: [first, second],
+      evaluations: [],
+      sectionContent,
+      preferredCommentId: "second",
+      queueHeadCommentId: "second",
+    });
+    expect(promoted.ordered.map((c) => c.id)).toEqual(["second", "first"]);
+    expect(promoted.active?.id).toBe("second");
+    expect(promoted.index).toBe(0);
+
     const fallback = preferredOpenSuggestion({
       section: "define",
       comments: [first, second],

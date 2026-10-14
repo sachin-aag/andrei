@@ -32,8 +32,8 @@ export function shouldCollapseAssistantOnSuggestionFocus(): boolean {
   return false;
 }
 
-/** Agent chrome hides the Criteria tab behind Assistant — reveal it when a run finishes. */
-export function shouldRevealCriteriaTab(args: {
+/** Agent chrome hides the Review tab behind Assistant — reveal it when a run finishes. */
+export function shouldRevealReviewTab(args: {
   wasEvaluating: boolean;
   isEvaluating: boolean;
   chrome: WorkspaceChrome;

@@ -8,6 +8,7 @@ import {
   readDocumentPage,
   reciprocalRankFusion,
   reportAttachmentChunkJoin,
+  reportAttachmentPageJoin,
   searchReportDocuments,
   searchReportDocumentsDetailed,
   searchReportDocumentsMany,
@@ -66,19 +67,32 @@ function chunkRow(chunkId: string, attachmentId: string, pageNumber = 1) {
   };
 }
 
+function sqlColumnNames(value: unknown): string[] {
+  const names: string[] = [];
+  const seen = new Set<unknown>();
+  const walk = (node: unknown) => {
+    if (node == null || typeof node !== "object" || seen.has(node)) return;
+    seen.add(node);
+    if ("name" in node && typeof node.name === "string") {
+      names.push(node.name);
+    }
+    for (const child of Object.values(node)) walk(child);
+  };
+  walk(value);
+  return names;
+}
+
 describe("reportAttachmentChunkJoin", () => {
   it("matches library links by assetId and eval/legacy rows by attachmentId", () => {
-    const names: string[] = [];
-    const seen = new Set<unknown>();
-    const walk = (value: unknown) => {
-      if (value == null || typeof value !== "object" || seen.has(value)) return;
-      seen.add(value);
-      if ("name" in value && typeof value.name === "string") {
-        names.push(value.name);
-      }
-      for (const child of Object.values(value)) walk(child);
-    };
-    walk(reportAttachmentChunkJoin());
+    const names = sqlColumnNames(reportAttachmentChunkJoin());
+    expect(names).toContain("asset_id");
+    expect(names).toContain("attachment_id");
+  });
+});
+
+describe("reportAttachmentPageJoin", () => {
+  it("matches library links by assetId and eval/legacy rows by attachmentId", () => {
+    const names = sqlColumnNames(reportAttachmentPageJoin());
     expect(names).toContain("asset_id");
     expect(names).toContain("attachment_id");
   });
