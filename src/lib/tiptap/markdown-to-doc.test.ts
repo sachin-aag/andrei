@@ -316,6 +316,21 @@ describe("markdownToDoc", () => {
     ]);
   });
 
+  it("flattens circumferential $0}^{circ}$ list to degree symbols", () => {
+    const doc = markdownToDoc(
+      String.raw`locations ($0}^{circ},90}^{circ},180}^{circ}$) at each level`
+    );
+    expect(richJsonToPlainText(doc)).toContain("locations (0°,90°,180°) at each level");
+    expect(richJsonToPlainText(doc)).not.toContain("circ");
+  });
+
+  it("repairs leftover 0}circ prose that never sat in dollar fences", () => {
+    const doc = markdownToDoc("points at 0}circ,90}circ,180}circ, and 270}circ");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "points at 0°,90°,180°, and 270°" },
+    ]);
+  });
+
   it("leaves currency-like dollar spans literal", () => {
     const doc = markdownToDoc("Cost is $100-$200 per lot.");
     expect(doc.content![0]!.content).toEqual([
@@ -670,6 +685,27 @@ describe("hydrateLiteralMarkdownInDoc", () => {
     expect(
       hydrateLiteralMarkdownInDoc({ type: "doc", content: [paragraph] })
     ).toEqual({ type: "doc", content: [paragraph] });
+  });
+
+  it("repairs persisted 0}circ sampling prose on editor load", () => {
+    const doc = hydrateLiteralMarkdownInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "levels) and diameter (points at 0}circ,90}circ,180}circ, and 270}circ)",
+            },
+          ],
+        },
+      ],
+    });
+    expect(richJsonToPlainText(doc)).toContain(
+      "levels) and diameter (points at 0°,90°,180°, and 270°)"
+    );
+    expect(richJsonToPlainText(doc)).not.toContain("circ");
   });
 
   it("renders a saved Nitrogen ($N_2$) paragraph instead of dollar latex", () => {
