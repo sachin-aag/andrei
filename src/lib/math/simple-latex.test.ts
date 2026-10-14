@@ -45,6 +45,13 @@ describe("simpleLatexToTextNodes", () => {
     ]);
   });
 
+  it("maps misplaced }^{circ} onto a degree instead of superscript circ", () => {
+    expect(simpleLatexToTextNodes("0}^{circ}")).toEqual([
+      { type: "text", text: "0°" },
+    ]);
+    expect(simpleLatexToPlainText("0}^{circ},90}^{circ}")).toBe("0°,90°");
+  });
+
   it("carries extra marks onto every run", () => {
     const italic = [{ type: "italic" }];
     expect(simpleLatexToTextNodes("N_2", italic)).toEqual([

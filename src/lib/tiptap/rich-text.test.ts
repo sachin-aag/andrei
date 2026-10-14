@@ -77,6 +77,26 @@ describe("rich text helpers", () => {
     ]);
   });
 
+  it("repairs persisted 0}circ degree leftovers on editor load", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "sample at 0}circ,90}circ,180}circ, and 270}circ",
+            },
+          ],
+        },
+      ],
+    });
+    expect(richJsonToPlainText(doc)).toBe(
+      "sample at 0°,90°,180°, and 270°"
+    );
+  });
+
   it("flattens persisted $$ quantity TeX on editor load", () => {
     const doc = normalizeRichField({
       type: "doc",

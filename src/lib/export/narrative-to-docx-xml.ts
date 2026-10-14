@@ -11,7 +11,10 @@ import {
 } from "@/lib/export/docx-page-setup";
 import { allocateListNumId } from "@/lib/export/docx-numbering";
 import { resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
-import { quantityLatexToPlainText } from "@/lib/math/quantity-math";
+import {
+  flattenQuantityMathInDoc,
+  quantityLatexToPlainText,
+} from "@/lib/math/quantity-math";
 import { simpleLatexToPlainText } from "@/lib/math/simple-latex";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
@@ -69,7 +72,7 @@ function sanitizeDocTextNodes(doc: JSONContent): JSONContent {
     }
     return node;
   }
-  return visit(doc);
+  return flattenQuantityMathInDoc(visit(doc)).doc;
 }
 
 function nodePlainText(node: JSONContent): string {

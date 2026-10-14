@@ -104,14 +104,28 @@ function unwrapSimpleGroups(text: string): string {
 }
 
 /**
- * Map `90^\circ`, `90^{\circ}`, and LLM-broken `90^circ` to `90°` so they flatten
- * to Unicode instead of a math atom or mistaken superscript "circ".
+ * Map degree TeX — including LLM-broken forms — to `90°` so they flatten to
+ * Unicode instead of a math atom or leftover `}circ` prose.
+ *
+ * Handles `90^\circ`, `90^{\circ}`, `90^circ`, misplaced `90}^{circ}` /
+ * `90}^{\circ}`, and leftover `90}circ` after `^{` was stripped.
  */
+const DEGREE_LATEX_RE =
+  /(\d+)\s*(?:\}\s*\^?\s*\{?|\^\s*\{?|\{)\s*(?:\\circ\b|circ\b|°)\s*\}?/gi;
+
 export function normalizeDegreeLatex(latex: string): string {
-  return latex.replace(
-    /(\d+)\s*\^\s*(?:\{?\s*(?:\\circ|circ|°)\s*\}?)/gi,
-    "$1°"
-  );
+  return latex.replace(DEGREE_LATEX_RE, "$1°");
+}
+
+/**
+ * Repair already-persisted prose that still shows `0}circ` / `90circ` instead
+ * of a degree symbol. Same patterns as `normalizeDegreeLatex`, for text nodes
+ * that are no longer inside `$...$`.
+ */
+export function repairBrokenDegreeText(text: string): string {
+  if (!text) return text;
+  const next = normalizeDegreeLatex(text);
+  return next === text ? text : next;
 }
 
 function collapseNumericDegreeCaret(text: string): string {
@@ -234,8 +248,39 @@ function flattenMathChild(
   return replacement;
 }
 
+function isCircSuperscript(node: JSONContent): boolean {
+  if (node.type !== "text") return false;
+  if (!/^(?:\\circ|circ|°)$/i.test((node.text ?? "").trim())) return false;
+  return (node.marks ?? []).some((mark) => mark.type === "superscript");
+}
+
+function flattenDegreeChild(
+  child: JSONContent,
+  previous: JSONContent | undefined,
+  samples: string[]
+): JSONContent | null {
+  if (child.type === "text" && typeof child.text === "string") {
+    if (
+      isCircSuperscript(child) &&
+      previous?.type === "text" &&
+      typeof previous.text === "string" &&
+      /\d\}?$/.test(previous.text)
+    ) {
+      samples.push(`${previous.text}${child.text}`);
+      return textNode(`${previous.text.replace(/\}$/, "")}°`, previous.marks);
+    }
+    const repaired = repairBrokenDegreeText(child.text);
+    if (repaired !== child.text) {
+      samples.push(child.text);
+      return { ...child, text: repaired };
+    }
+  }
+  return null;
+}
+
 /**
  * Replace flattenable mathInline / mathBlock atoms with Unicode text.
+ * Also repairs leftover `0}circ` prose and superscript-"circ" runs.
  * Real equations (`\frac`, …) are left in place.
  */
 export function flattenQuantityMathInDoc(doc: JSONContent): {
@@ -251,6 +296,22 @@ export function flattenQuantityMathInDoc(doc: JSONContent): {
       const flat = flattenMathChild(child, samples);
       if (flat) {
         content.push(...flat);
+        continue;
+      }
+      const degree = flattenDegreeChild(
+        child,
+        content[content.length - 1],
+        samples
+      );
+      if (degree) {
+        if (
+          isCircSuperscript(child) &&
+          content[content.length - 1]?.type === "text"
+        ) {
+          content[content.length - 1] = degree;
+          continue;
+        }
+        content.push(degree);
         continue;
       }
       content.push(walk(child));

@@ -7,9 +7,11 @@ import {
   tableRefNode,
 } from "@/lib/tiptap/table-ref-markdown";
 import {
+  flattenQuantityMathInDoc,
   normalizeDegreeLatex,
   quantityLatexToPlainText,
   quantityLatexToTextNodes,
+  repairBrokenDegreeText,
   shouldFlattenDollarLatex,
 } from "@/lib/math/quantity-math";
 import {
@@ -149,7 +151,10 @@ function hasUnclosedDisplayMath(texts: readonly string[]): boolean {
 }
 
 function textNode(text: string, marks: JSONContent["marks"] | undefined): JSONContent {
-  return marks?.length ? { type: "text", text, marks } : { type: "text", text };
+  const repaired = repairBrokenDegreeText(text);
+  return marks?.length
+    ? { type: "text", text: repaired, marks }
+    : { type: "text", text: repaired };
 }
 
 function mathInlineNode(
@@ -685,10 +690,11 @@ export function hydrateLiteralMarkdownInDoc(
   doc: JSONContent,
   options?: MarkdownToDocOptions
 ): JSONContent {
-  if (doc.type === "doc") {
-    return { ...doc, content: hydrateBlockArray(doc.content ?? [], options) };
-  }
-  return hydrateNode(doc, options);
+  const hydrated =
+    doc.type === "doc"
+      ? { ...doc, content: hydrateBlockArray(doc.content ?? [], options) }
+      : hydrateNode(doc, options);
+  return flattenQuantityMathInDoc(hydrated).doc;
 }
 
 function withExtraMarks(
