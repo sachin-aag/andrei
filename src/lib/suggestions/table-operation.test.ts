@@ -9,6 +9,7 @@ import {
   applyTableOperation,
   applyTableOperationForPersist,
   captureTableOperationSnapshots,
+  coerceTableOperationInput,
   summarizeTablesInDoc,
   existingTableCountFromContents,
   filledTableNumberInDocument,
@@ -2551,6 +2552,16 @@ describe("parseTableOperation", () => {
       expectedHeaders: ["Equipment", "Manufacturer", "Software"],
     };
     expect(parseTableOperation(raw)).toEqual(raw);
+  });
+
+  it("turns a missing operation into an empty object so the tool can hint", () => {
+    expect(coerceTableOperationInput(undefined)).toEqual({});
+    expect(coerceTableOperationInput(null)).toEqual({});
+    expect(parseTableOperation(undefined)).toBeUndefined();
+    expect(parseTableOperation(null)).toBeUndefined();
+    expect(tableOperationInvalidHint(undefined)).toMatch(
+      /kind at the top of operation/
+    );
   });
 
   it("rejects unknown kinds and malformed coordinates", () => {

@@ -2458,9 +2458,12 @@ function coerceInsertRowsShape(next: Record<string, unknown>): void {
 
 /**
  * Repair common model mistakes so `edit_table` can return a hint (or succeed)
- * instead of throwing at the tool schema. Does not invent cell text.
+ * instead of throwing at the tool schema. Does not invent cell text. A missing
+ * or null payload becomes `{}` so Zod leftovers can hint instead of failing
+ * the stream (`operation` omitted entirely).
  */
 export function coerceTableOperationInput(raw: unknown): unknown {
+  if (raw == null) return {};
   if (!isRecord(raw)) return raw;
   const next: Record<string, unknown> = hoistNestedTableKind({ ...raw });
   const mapped =

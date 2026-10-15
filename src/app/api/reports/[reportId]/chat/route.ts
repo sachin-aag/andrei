@@ -939,7 +939,7 @@ async function handleChatPost(
     onError: (error) => {
       const formatted = chatUiStreamErrorText(error);
       if (formatted.recoverable) {
-        console.warn("chat: unavailable tool in stream", {
+        console.warn("chat: recoverable tool error in stream", {
           reportId,
           sessionId,
           error: formatChatLlmError(error),
