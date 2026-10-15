@@ -994,6 +994,26 @@ describe("buildChatTools edit_table", () => {
       })
     ).toBe(true);
   });
+
+  it("accepts the production payload that omitted operation instead of throwing", () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "design_verification",
+    });
+    const input = {
+      targetField: "table",
+      section: "traceability",
+      reasoning:
+        "Populate traceability matrix with requirements from the Solea verification requirements documents.",
+    };
+    expect(accepts(tools, "edit_table", input)).toBe(true);
+    expect(inputSchemaOf(tools, "edit_table").parse(input)).toMatchObject({
+      section: "traceability",
+      targetField: "table",
+      operation: {},
+    });
+  });
 });
 
 describe("buildChatTools document review", () => {
@@ -4702,6 +4722,29 @@ describe("buildChatTools propose edits", () => {
     expect(result).toMatchObject({ status: "invalid" });
     expect(String((result as { hint?: string }).hint)).toMatch(/delete_table/);
     expect(String((result as { hint?: string }).hint)).toMatch(/draft_field/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("returns an invalid hint when edit_table omits operation", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "design_verification",
+      actor,
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "traceability",
+        targetField: "table",
+        reasoning:
+          "Populate traceability matrix with requirements from the Solea verification requirements documents.",
+      } as never,
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(String((result as { hint?: string }).hint)).toMatch(
+      /kind at the top of operation/
+    );
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 

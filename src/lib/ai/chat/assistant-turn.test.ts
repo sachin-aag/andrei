@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai";
+import { InvalidToolInputError, type UIMessage } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assistantPartsAreCannedError,
@@ -669,6 +669,19 @@ describe("chatUiStreamErrorText", () => {
     const formatted = chatUiStreamErrorText(error);
     expect(formatted.recoverable).toBe(true);
     expect(formatted.text).toContain("edit_table is not available this step");
+    expect(formatted.text).not.toBe(CHAT_ASSISTANT_ERROR_MESSAGE);
+  });
+
+  it("does not fail the turn for an InvalidToolInputError that omitted operation", () => {
+    const error = new InvalidToolInputError({
+      toolName: "edit_table",
+      toolInput:
+        '{"targetField":"table","section":"traceability","reasoning":"Populate traceability matrix."}',
+      cause: new Error("Invalid input: expected object, received undefined"),
+    });
+    const formatted = chatUiStreamErrorText(error);
+    expect(formatted.recoverable).toBe(true);
+    expect(formatted.text).toMatch(/operation with kind at the top/);
     expect(formatted.text).not.toBe(CHAT_ASSISTANT_ERROR_MESSAGE);
   });
 

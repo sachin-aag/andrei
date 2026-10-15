@@ -95,7 +95,8 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
   `unsupported_tool` is the exception — keep it out of the allowlist and
   `activeTools`; `repairChatToolCall` remaps a hallucinated name such as
   `edit_table` onto it so `AI_NoSuchToolError` cannot fail the chat. On Agent
-  read, that signal unlocks registered write tools on the next step.
+  read, that signal unlocks registered write tools on the next step. A missing
+  `edit_table` `operation` must return an invalid hint, not fail the stream.
   `list_suggestions` is on the Plan allowlist.
 - Chat/workspace changes walk the **full spectrum**, not just the control you
   clicked: Document **and** Agent chrome, Report chat **and** Analytics chat,
