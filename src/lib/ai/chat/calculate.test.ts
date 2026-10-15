@@ -9,6 +9,7 @@ import {
   calculationSupportingFact,
   evaluateArithmetic,
   formatCalculationResult,
+  isCapabilityIndexLabel,
 } from "@/lib/ai/chat/calculate";
 
 describe("evaluateArithmetic", () => {
@@ -110,6 +111,21 @@ describe("calculationSupportingFact", () => {
     expect(calculationSupportingFact(operand, evidence)).toBeNull();
   });
 
+  it("never backs a capability index — those come from a saved analysis", () => {
+    const cpk = evaluateArithmetic("(12.81 - 8.0) / (3 * 1.083)");
+    expect(cpk.ok).toBe(true);
+    if (!cpk.ok) return;
+    const evidence = [calculationEvidenceFromItem(cpk)];
+    const text = `Cpk ${cpk.display.slice(0, 4)} against LSL 8.0 N.`;
+    const fact = extractHardFacts(text).find((f) => f.text.startsWith("1.4"))!;
+    expect(fact).toBeDefined();
+    expect(calculationSupportingFact(fact, evidence)).not.toBeNull();
+    expect(calculationSupportingFact(fact, evidence, text.slice(0, fact.start))).toBeNull();
+    expect(isCapabilityIndexLabel("Ppk of ")).toBe(true);
+    expect(isCapabilityIndexLabel("Cpu = ")).toBe(true);
+    expect(isCapabilityIndexLabel("rinse volume ")).toBe(false);
+  });
+
   it("reads results from a tool output payload", () => {
     const evidence = calculationEvidenceFromToolOutput({
       status: "ok",
@@ -161,6 +177,28 @@ describe("groundDraftText with calculation evidence", () => {
     );
     expect(claim?.status).toBe("verified");
     expect(claim?.calculation).toMatchObject({ expression: "30.96 * 3" });
+  });
+
+  it("blocks a hand-computed Cpk cited to the spreadsheet", () => {
+    const cpk = evaluateArithmetic("(12.81 - 8.0) / (3 * 1.083)");
+    expect(cpk.ok).toBe(true);
+    if (!cpk.ok) return;
+    const result = groundDraftText({
+      text: "Peel strength Cpk was 1.48 against LSL 8.0 N [cpdr.pdf, p. 8].",
+      ledger: ledgerWith("Peel force LSL 8.0 N. Lot A 12.4 13.1 11.9"),
+      policy: "block",
+      calculations: [calculationEvidenceFromItem(cpk)],
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.text).not.toContain("1.48");
+    // The same product with no capability label is still a computed fact.
+    const plain = groundDraftText({
+      text: "The margin ratio was 1.48 against LSL 8.0 N [cpdr.pdf, p. 8].",
+      ledger: ledgerWith("Peel force LSL 8.0 N. Lot A 12.4 13.1 11.9"),
+      policy: "block",
+      calculations: [calculationEvidenceFromItem(cpk)],
+    });
+    expect(plain.text).toContain("1.48");
   });
 
   it("still requires operands to sit on a retrieved page", () => {

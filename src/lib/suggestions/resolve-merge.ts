@@ -27,6 +27,7 @@ import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion
 import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { trackedChangeDoc } from "@/lib/suggestions/tracked-block-diff";
 import { commitNarrativeSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   collectPendingSuggestionMarkIds,
@@ -170,7 +171,7 @@ export function persistMergedAsTrackedChange(args: {
   commentId: string;
   createdAt: string;
 }): JSONContent {
-  const preview = buildRedraftPreviewDoc(args.current, args.merged, {
+  const preview = trackedChangeDoc(args.current, args.merged, {
     id: args.commentId,
     authorId: AI_AUTHOR_ID,
     status: "pending",

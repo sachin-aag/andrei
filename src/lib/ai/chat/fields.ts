@@ -604,6 +604,7 @@ const ALL_DOCUMENT_TYPES: Record<DocumentType, true> = {
   vendor_qualification: true,
   qualification_summary_report: true,
   cleaning_verification_protocol: true,
+  equipment_qualification_report: true,
 };
 
 /** Human label for a section (registry, then shared map, then title-cased key). */

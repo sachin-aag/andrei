@@ -241,6 +241,19 @@ export const SECTION_LABELS: Record<string, string> = {
   cvp_related_documents: "23.0 Related Documents",
   cvp_annexures: "24.0 List of Annexures",
   cvp_history: "25.0 History of the Document",
+  eqr_purpose: "Purpose",
+  eqr_scope: "Scope",
+  eqr_references: "References",
+  eqr_equipment: "Equipment Identification",
+  eqr_approach: "Qualification Approach",
+  eqr_iq: "Installation Qualification (IQ)",
+  eqr_oq: "Operational Qualification (OQ)",
+  eqr_pq: "Performance Qualification (PQ)",
+  eqr_deviations: "Deviations",
+  eqr_conclusion: "Conclusion and Qualified State",
+  eqr_ongoing_control: "Ongoing Control and Requalification",
+  eqr_attachments: "Attachments",
+  eqr_approvals: "Approvals",
 };
 
 /** Title-case a section key so Criteria and comments never show `revision_history`. */
@@ -252,6 +265,7 @@ export function humanizeSectionKey(section: string): string {
     .replace(/^cvp_/, "")
     .replace(/^qsr_/, "")
     .replace(/^fir_/, "")
+    .replace(/^eqr_/, "")
     .split("_")
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

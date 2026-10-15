@@ -133,7 +133,7 @@ function placeholderUnsupportedAskFacts(
 ): { text: string; placeholdered: boolean } {
   const originalDrops = new Set(
     extractHardFacts(original)
-      .filter((fact) => !shouldKeepAskFact(fact, evidence))
+      .filter((fact) => !shouldKeepAskFact(fact, evidence, original))
       .map((fact) => `${fact.kind}:${fact.normalized}`)
   );
   if (originalDrops.size === 0) return { text: cited, placeholdered: false };

@@ -242,6 +242,27 @@ function formatNameList(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
+/** Past-tense labels for tools without a dedicated activity row. */
+const TOOL_ACTIVITY_LABELS: Record<string, { pending: string; done: string }> = {
+  read_section: { pending: "Reading section…", done: "Read section" },
+  read_worksheet: { pending: "Reading worksheet…", done: "Read worksheet" },
+  extract_sheet: { pending: "Reading spreadsheet…", done: "Read spreadsheet" },
+  extract_numeric_series: { pending: "Extracting values…", done: "Extracted values" },
+  ask_user: { pending: "Asking you…", done: "Asked you" },
+};
+
+/**
+ * Never show a raw `snake_case` tool id. Unknown tools fall back to
+ * sentence case (`write_column` → "Write column").
+ */
+export function toolActivityLabel(toolName: string, pending: boolean): string {
+  const known = TOOL_ACTIVITY_LABELS[toolName];
+  if (known) return pending ? known.pending : known.done;
+  const words = toolName.replace(/[_-]+/g, " ").trim();
+  const sentence = words ? words[0]!.toUpperCase() + words.slice(1) : "Tool";
+  return pending ? `${sentence}…` : sentence;
+}
+
 function isDocumentActivityTool(toolName: string): boolean {
   return DOCUMENT_ACTIVITY_TOOLS.has(toolName);
 }
@@ -458,7 +479,7 @@ function documentActivityDetail(
       };
     }
     default:
-      return { kind: "detail", label: info.toolName, pending };
+      return { kind: "detail", label: toolActivityLabel(info.toolName, pending), pending };
   }
 }
 
@@ -984,7 +1005,7 @@ function buildGenericNode(info: ChatToolPartInfo): ActivitySurfaceNode {
       label: pending
         ? "Checking that action…"
         : requested
-          ? `${requested} isn't available this step`
+          ? `${toolActivityLabel(requested, false)} isn't available this step`
           : "That action isn't available this step",
       pending,
       tone: "muted",
@@ -999,7 +1020,7 @@ function buildGenericNode(info: ChatToolPartInfo): ActivitySurfaceNode {
   const pending = isToolPending(info);
   return {
     kind: "generic",
-    label: pending ? `Running ${info.toolName}…` : info.toolName,
+    label: toolActivityLabel(info.toolName, pending),
     pending,
     tone: "muted",
     expandable: Boolean(info.errorText),

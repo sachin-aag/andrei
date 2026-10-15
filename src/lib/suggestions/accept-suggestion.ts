@@ -24,7 +24,7 @@ import {
   withResolutionReason,
 } from "@/lib/suggestions/supersession";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
-import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { trackedChangeDoc } from "@/lib/suggestions/tracked-block-diff";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import type { SuggestionApplyMode } from "@/lib/document-types";
 import { isCvpSectionKey } from "@/lib/document-types/cvp/sections";
@@ -240,7 +240,7 @@ export function applySuggestionToContent(
               sectionContent,
               path,
               commitNarrativeSuggestionMarks(
-                buildRedraftPreviewDoc(
+                trackedChangeDoc(
                   getRichFieldValue(sectionContent, path),
                   markdownToDoc(redraft.markdown, { headingNodes: true }),
                   {

@@ -5,6 +5,7 @@ import { cvpEquipmentTocChildren } from "@/lib/document-types/cvp/equipment-samp
 import { cvpLegacySectionHasUserContent } from "@/lib/document-types/cvp/sections";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
 import { GENERIC_DOCUMENT_SECTION_LABEL } from "@/lib/document-types/generic/sections";
+import { EQR_SECTION_KEYS, EQR_SECTION_LABELS } from "@/lib/document-types/eqr/sections";
 import { VQ_SECTION_LABELS } from "@/lib/document-types/vq/sections";
 
 /** One row in the left-rail table of contents (Word-recipe hierarchy). */
@@ -382,6 +383,11 @@ const VQ_TOC: TableOfContentsEntry[] = [
 ];
 
 /** The QAD/016/F06-00 Index page. */
+const EQR_TOC: TableOfContentsEntry[] = EQR_SECTION_KEYS.map((key) => ({
+  label: EQR_SECTION_LABELS[key],
+  sectionKey: key,
+}));
+
 const QSR_TOC: TableOfContentsEntry[] = [
   {
     label: "Introduction",
@@ -613,6 +619,8 @@ function reportTableOfContentsRecipe(
       return QSR_TOC;
     case "cleaning_verification_protocol":
       return CVP_TOC;
+    case "equipment_qualification_report":
+      return EQR_TOC;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;

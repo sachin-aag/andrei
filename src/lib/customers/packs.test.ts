@@ -57,19 +57,21 @@ describe("customer packs (demo)", () => {
     expect(DEMO_PACK.unsupportedFactPolicy).toBe("block");
   });
 
-  it("lists investigation, design verification, and document types on demo", () => {
+  it("lists investigation, design verification, document, and equipment qualification types on demo", () => {
     expect(listDocumentTypes().map((d) => d.key)).toEqual([
       "investigation_report",
       "design_verification",
       "generic_document",
+      "equipment_qualification_report",
     ]);
     expect(isDocumentTypeEnabled("design_verification")).toBe(true);
     expect(isDocumentTypeEnabled("generic_document")).toBe(true);
+    expect(isDocumentTypeEnabled("equipment_qualification_report")).toBe(true);
   });
 
-  it("describes investigation, design verification, and documents on the demo dashboard", () => {
+  it("describes every demo type on the dashboard", () => {
     expect(engineerReportsSubtitle(listDocumentTypes())).toBe(
-      "Create and manage investigation, design verification and document reports."
+      "Create and manage investigation, design verification, document and equipment qualification reports."
     );
   });
 

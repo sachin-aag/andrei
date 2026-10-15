@@ -182,6 +182,7 @@ export const DEMO_PACK: CustomerPack = {
     "investigation_report",
     "design_verification",
     "generic_document",
+    "equipment_qualification_report",
   ],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",

@@ -4,6 +4,7 @@ import {
   MJ_PACK,
   CONVERGENT_PACK,
   XPER_PACK,
+  isDocumentTypeEnabled,
 } from "@/lib/customers/packs";
 import {
   BLANK_DOCUMENT_TEMPLATE,
@@ -93,6 +94,14 @@ describe("demo document templates", () => {
       })
     ).toBe("CAPA");
     expect(demoTemplateTitleFromMetadata({})).toBeNull();
+  });
+
+  it("opens the equipment qualification report as its own sectioned type", () => {
+    const eq = demoTemplateById("equipment-qualification-report");
+    expect(eq?.documentType).toBe("equipment_qualification_report");
+    expect(eq?.outlineMarkdown).toBeUndefined();
+    expect(isDocumentTypeEnabled("equipment_qualification_report", DEMO_PACK)).toBe(true);
+    expect(isDocumentTypeEnabled("equipment_qualification_report", MJ_PACK)).toBe(false);
   });
 
   it("keeps catalog ids unique", () => {

@@ -226,6 +226,7 @@ export function tocHeadingSpecsForDocumentType(
     case "failure_investigation_report":
       return FIR_TOC_HEADINGS;
     case "generic_document":
+    case "equipment_qualification_report":
       return null;
     default: {
       const _exhaustive: never = documentType;

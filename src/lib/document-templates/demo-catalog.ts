@@ -424,25 +424,15 @@ const EQ_REPORT: DemoDocumentTemplate = {
   title: "Equipment Qualification Report",
   description:
     "Report of IQ / OQ / PQ execution and the qualified status of the equipment.",
-  documentType: "generic_document",
+  documentType: "equipment_qualification_report",
   documentNoPlaceholder: "e.g. EQR-2026-001",
-  outlineMarkdown: `# Equipment Qualification Report
-
-## 1. Purpose
-Record the executed qualification and the resulting qualified state.
-
-## 2. Equipment identity
-ID, model, serial, location, and software version.
-
-## 3. IQ / OQ / PQ summary
-What was executed, deviations, and whether acceptance criteria were met.
-
-## 4. Deviations and changes
-Open items that affect the qualified state.
-
-## 5. Conclusion
-Qualified / not qualified, with the approved operating range.
-`,
+  previewLines: [
+    "Equipment Identification",
+    "Qualification Approach",
+    "Installation Qualification (IQ)",
+    "Operational Qualification (OQ)",
+    "Performance Qualification (PQ)",
+  ],
 };
 
 const GOI: DemoDocumentTemplate = {

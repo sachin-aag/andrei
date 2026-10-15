@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { EQR_FIELDS, isEqrSectionKey } from "@/lib/document-types/eqr/sections";
 import type { SectionType } from "@/db/schema";
 import type { AnalyzeSection } from "@/types/sections";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
@@ -233,6 +234,17 @@ function collectContextLines(
         tableFormat: "markdown",
       })
     );
+  } else if (isEqrSectionKey(section)) {
+    // Every EQR box, labelled — prose and fixed-schema tables live in separate fields.
+    for (const field of EQR_FIELDS[section]) {
+      pushTextBlock(
+        lines,
+        field.label,
+        richJsonToPlainText(normalizeRichField(content[field.key]), {
+          tableFormat: "markdown",
+        })
+      );
+    }
   } else {
     if ("narrative" in content) {
       pushNarrativeLine(lines, section, content);

@@ -3,6 +3,7 @@ import {
   buildChatActivityBlocks,
   documentReviewActivityNode,
   readChatToolPart,
+  toolActivityLabel,
 } from "@/lib/ai/chat/chat-activity-ui";
 
 function toolPart(
@@ -530,7 +531,7 @@ describe("buildChatActivityBlocks", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.kind).toBe("activity");
     if (blocks[0]?.kind !== "activity") return;
-    expect(blocks[0].node.label).toBe("edit_table isn't available this step");
+    expect(blocks[0].node.label).toBe("Edit table isn't available this step");
     expect(blocks[0].node.tone).toBe("muted");
     expect(blocks[0].node.children[0]).toEqual(
       expect.objectContaining({
@@ -632,5 +633,13 @@ describe("readChatToolPart", () => {
     expect(done).toHaveLength(1);
     if (done[0]?.kind !== "activity") return;
     expect(done[0].node.label).toBe("Calculated 2 values");
+  });
+});
+
+describe("toolActivityLabel", () => {
+  it("never shows a raw tool id", () => {
+    expect(toolActivityLabel("read_section", false)).toBe("Read section");
+    expect(toolActivityLabel("extract_sheet", true)).toBe("Reading spreadsheet…");
+    expect(toolActivityLabel("some_new_tool", false)).toBe("Some new tool");
   });
 });

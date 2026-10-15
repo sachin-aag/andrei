@@ -193,6 +193,20 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   fir_preventive_action: ["narrative", "table"],
   fir_capa_effectiveness: ["table"],
   fir_attachments: ["table"],
+  // Equipment qualification report (demo) — one rich box per section
+  eqr_purpose: ["narrative"],
+  eqr_scope: ["narrative"],
+  eqr_references: ["table"],
+  eqr_equipment: ["table"],
+  eqr_approach: ["narrative", "parameters", "attributes"],
+  eqr_iq: ["narrative", "table"],
+  eqr_oq: ["narrative", "table", "instruments", "processWindow"],
+  eqr_pq: ["narrative", "table", "statistics"],
+  eqr_deviations: ["narrative", "table"],
+  eqr_conclusion: ["narrative"],
+  eqr_ongoing_control: ["narrative"],
+  eqr_attachments: ["narrative"],
+  eqr_approvals: ["table"],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -438,6 +452,20 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   fir_attachments: ["table"],
   /** Virtual DV section: values live in reports.metadata, no rich field. */
   cover_page: [],
+  // Equipment qualification report (demo) — one rich box per section
+  eqr_purpose: ["narrative"],
+  eqr_scope: ["narrative"],
+  eqr_references: ["table"],
+  eqr_equipment: ["table"],
+  eqr_approach: ["narrative", "parameters", "attributes"],
+  eqr_iq: ["narrative", "table"],
+  eqr_oq: ["narrative", "table", "instruments", "processWindow"],
+  eqr_pq: ["narrative", "table", "statistics"],
+  eqr_deviations: ["narrative", "table"],
+  eqr_conclusion: ["narrative"],
+  eqr_ongoing_control: ["narrative"],
+  eqr_attachments: ["narrative"],
+  eqr_approvals: ["table"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

@@ -811,7 +811,7 @@ export function SixpackView({
       <div
         ref={captureRef}
         data-testid="analysis-preview-figure"
-        className="flex flex-col gap-3 rounded-md bg-[#f4f6f9] p-4"
+        className="@container flex flex-col gap-3 rounded-md bg-[#f4f6f9] p-4"
       >
         <div>
           <h2 className="text-base font-semibold">
@@ -826,7 +826,7 @@ export function SixpackView({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @5xl:grid-cols-3">
           <Panel title="I Chart">
             <ControlChart
               series={results.individuals}

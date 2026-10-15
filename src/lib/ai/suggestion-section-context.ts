@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { EQR_FIELDS, isEqrSectionKey } from "@/lib/document-types/eqr/sections";
 import type { SectionType } from "@/db/schema";
 import type { AnalyzeSection } from "@/types/sections";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
@@ -253,6 +254,10 @@ export function contextForSuggestionPrompt(
   } else if (section === "results_and_discussions") {
     pushCanonicalNarrative(lines, section, content);
     pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
+  } else if (isEqrSectionKey(section)) {
+    for (const field of EQR_FIELDS[section]) {
+      pushCanonicalBlock(lines, field.label, canonicalRichText(content[field.key]));
+    }
   } else {
     if ("narrative" in content) {
       pushCanonicalNarrative(lines, section, content);

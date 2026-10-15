@@ -1800,7 +1800,7 @@ export function ChatPanel({
   );
 
   const currentTitle =
-    sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
+    sessions.find((s) => s.id === currentSessionId)?.title ?? "Assistant";
   const sessionTabs = useMemo(
     () =>
       buildChatSessionTabItems({

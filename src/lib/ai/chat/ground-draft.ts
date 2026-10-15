@@ -38,6 +38,7 @@ import {
 } from "@/lib/ai/chat/analysis-evidence";
 import {
   calculationSupportingFact,
+  isCapabilityIndexLabel,
   type CalculationEvidence,
 } from "@/lib/ai/chat/calculate";
 import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
@@ -271,6 +272,8 @@ function resolveFact(
     context?: string;
     analyses?: readonly AnalysisEvidence[];
     calculations?: readonly CalculationEvidence[];
+    /** Draft text just before the fact — names the statistic it reports. */
+    labelBefore?: string;
     section?: string;
     columnLabel?: string;
     presenceFallback?: boolean;
@@ -427,10 +430,14 @@ function resolveFact(
 
   // Same argument as analyses: a product the calculate tool just returned is
   // derivable, not invented. Operands still have to sit on a retrieved page.
-  const calculated = calculationSupportingFact(
-    fact,
-    extras.calculations ?? []
-  );
+  // Capability indices are the exception: see isCapabilityIndexLabel.
+  const calculated = isCapabilityIndexLabel(extras.columnLabel ?? "")
+    ? null
+    : calculationSupportingFact(
+        fact,
+        extras.calculations ?? [],
+        extras.labelBefore ?? ""
+      );
   if (calculated) {
     return {
       text: fact.text,
@@ -751,6 +758,7 @@ export function groundDraftText(input: {
       context: input.context,
       analyses: input.analyses,
       calculations: input.calculations,
+      labelBefore: cited.slice(Math.max(0, fact.start - 24), fact.start),
       section: input.grounding?.section,
       columnLabel: resolveTableColumnLabel({
         section: input.grounding?.section,

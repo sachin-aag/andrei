@@ -9,6 +9,7 @@ import { equipmentLifecycleReportDefinition } from "./equipment-lifecycle-report
 import { vendorQualificationDefinition } from "./vendor-qualification";
 import { failureInvestigationReportDefinition } from "./failure-investigation-report";
 import { qualificationSummaryReportDefinition } from "./qualification-summary-report";
+import { equipmentQualificationReportDefinition } from "./equipment-qualification-report";
 import { cleaningVerificationProtocolDefinition } from "./cleaning-verification-protocol";
 import { isCvpPersistableSectionKey } from "./cvp/sections";
 import type {
@@ -47,6 +48,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return qualificationSummaryReportDefinition;
     case "cleaning_verification_protocol":
       return cleaningVerificationProtocolDefinition;
+    case "equipment_qualification_report":
+      return equipmentQualificationReportDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -67,7 +70,8 @@ export function resolveDocumentType(
     type === "vendor_qualification" ||
     type === "failure_investigation_report" ||
     type === "qualification_summary_report" ||
-    type === "cleaning_verification_protocol"
+    type === "cleaning_verification_protocol" ||
+    type === "equipment_qualification_report"
   ) {
     return type;
   }

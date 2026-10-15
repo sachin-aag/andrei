@@ -19,7 +19,8 @@ alwaysApply: false
 Reports are `investigation_report`, `failure_investigation_report` (MJ
 Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
-`equipment_lifecycle_report`, `generic_document` (demo pack only), or
+`equipment_lifecycle_report`, `generic_document` / `equipment_qualification_report`
+(demo pack only), or
 `vendor_qualification` / `qualification_summary_report` /
 `cleaning_verification_protocol` (3xper pack only; user-facing label
 **Cleaning Validation Protocol**, three consecutive batches). The registry is
@@ -86,7 +87,10 @@ const sections = getWorkspaceSections(report.documentType);
   (hide Criteria / Run AI Check), headings enabled, Word import is type-owned
   (`wordImport.kind === "generic_body"` — do **not** set pack `wordImportEnabled`
   on demo), and accepting AI suggestions uses `suggestionApplyMode: "tracked_change"`
-  (pending insert/delete marks persist and export as Word tracked changes).
+  (pending insert/delete marks persist and export as Word tracked changes). Persisting a
+  merged or redrafted field goes through `trackedChangeDoc` (`suggestions/tracked-block-diff.ts`):
+  only changed blocks / rows / cells / words are marked — never wrap the whole field, or every
+  apply leaves a dead copy of the body behind.
   The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
   do not persist page-break nodes.
 - 3xper `cleaning_verification_protocol` Word import is also type-owned

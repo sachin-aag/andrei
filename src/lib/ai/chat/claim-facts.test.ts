@@ -16,6 +16,20 @@ describe("extractHardFacts", () => {
     expect(facts.every((fact) => fact.kind === "identifier")).toBe(true);
   });
 
+  it("extracts unitless capability statistics so the gate can check them", () => {
+    const facts = extractHardFacts("Cpk (within) 1.69, Ppk = 1.40 and mean 12.81 N; see Section 4.2.");
+    expect(facts.map((f) => f.text)).toEqual(["1.69", "1.40", "12.81"]);
+  });
+
+  it("extracts hyphenated document and record numbers", () => {
+    const facts = extractHardFacts("Per URS-HB-02 Rev 02, DEV-HB-26-003 logged TC-REF-114 (PSV-13001).");
+    expect(facts.filter((f) => f.kind === "identifier").map((f) => f.text)).toEqual([
+      "URS-HB-02",
+      "DEV-HB-26-003",
+      "TC-REF-114",
+    ]);
+  });
+
   it("attaches a same-sentence citation to the fact", () => {
     const facts = extractHardFacts(
       "Equipment E/PR/070 [PQR-24-PR-102.pdf, p. 2] remains qualified."

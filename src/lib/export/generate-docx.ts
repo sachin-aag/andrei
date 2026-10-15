@@ -27,6 +27,7 @@ import type { DocumentType, SectionType, reports as reportsTable } from "@/db/sc
 import { getCustomerPack } from "@/lib/customers/packs";
 import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
 import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
+import { EQR_FIELDS, EQR_SECTION_KEYS, EQR_SECTION_LABELS } from "@/lib/document-types/eqr/sections";
 import { getUser } from "@/lib/auth/user-directory";
 import { isHiddenExpertReviewerEmail } from "@/lib/reports/hidden-expert-reviewer";
 import { formatCalendarDate } from "@/lib/utils";
@@ -606,6 +607,14 @@ export async function generateReportDocx({
       content: await flattenDrawingsInValue(row.content),
     }))
   );
+  if (report.documentType === "equipment_qualification_report") {
+    return generateEqrDocx({
+      report,
+      sections: exportSections,
+      comments,
+      electronicSignatures,
+    });
+  }
   if (report.documentType === "generic_document") {
     return generateGenericDocumentDocx({
       report,
@@ -750,6 +759,91 @@ async function generateGenericDocumentDocx({
     type: "nodebuffer",
     compression: "DEFLATE",
   });
+}
+
+/**
+ * Equipment qualification report: the generic Andrei template, one numbered
+ * Heading 1 per section (1.0 Purpose … 13.0 Approvals) followed by that
+ * section's box. Suggestions are finalized on accept, so no revisions here.
+ */
+async function generateEqrDocx({
+  report,
+  sections,
+  comments,
+  electronicSignatures,
+}: {
+  report: ReportRowWithManagers;
+  sections: ReportSectionRecord[];
+  comments: ReportDocxComment[];
+  electronicSignatures: DocxAuditSignature[];
+}): Promise<Buffer> {
+  const zip = new PizZip(
+    fs.readFileSync(getDocumentType("equipment_qualification_report").export.templatePath)
+  );
+  // Shared generic template: retitle its static "Document" heading for this type.
+  const documentXml = zip.file("word/document.xml")?.asText();
+  if (documentXml) {
+    zip.file(
+      "word/document.xml",
+      documentXml.replace(
+        /(<w:t[^>]*>)Document(<\/w:t>)/,
+        `$1${getDocumentType("equipment_qualification_report").label}$2`
+      )
+    );
+  }
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    delimiters: { start: "{", end: "}" },
+    nullGetter: () => "",
+  });
+  const ctx = createDocxExportContext(loadListNumberingBasesFromZip(zip), undefined, {
+    useHeadingStyles: true,
+    pageSetup: loadDocxPageSetupFromZip(zip),
+    nextImageIndex: nextUnusedImageIndexFromZip(zip),
+  });
+  const headingXml = (text: string, level: 1 | 2) =>
+    narrativeToDocxXmlWithContext(
+      { type: "doc", content: [{ type: "heading", attrs: { level }, content: [{ type: "text", text }] }] },
+      ctx
+    ).xml;
+  const bodyXml = EQR_SECTION_KEYS.map((key, index) => {
+    const row = sections.find((s) => s.section === key);
+    const merged = mergeSectionForType("equipment_qualification_report", key, row?.content) as Record<
+      string,
+      JSONContent | undefined
+    >;
+    const fields = EQR_FIELDS[key];
+    const parts = fields.map((field) => {
+      // Single-box sections and the leading summary need no sub-heading.
+      const label = fields.length > 1 && field.label !== "Summary" ? headingXml(field.label, 2) : "";
+      const body = withWordComments(
+        narrativeToDocxXmlWithContext(
+          normalizeRichField(merged[field.key], { preserveHeadings: field.kind === "prose" }),
+          ctx
+        ).xml,
+        ctx,
+        comments,
+        key,
+        field.key
+      );
+      return label + body;
+    });
+    return headingXml(`${index + 1}.0 ${EQR_SECTION_LABELS[key]}`, 1) + parts.join("");
+  }).join("");
+
+  doc.render({
+    date: formatCalendarDate(report.date),
+    documentNo: report.documentNo,
+    bodyXml,
+  });
+  applyTableCaptionSectionBreaksToDocxZip(doc.getZip());
+  applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
+  applyNumberingToDocxZip(doc.getZip(), ctx);
+  applyInlineMediaToDocxZip(doc.getZip(), ctx);
+  applyWordCommentsToDocxZip(doc.getZip(), ctx);
+  await applyGoogleDocsImageCompat(doc.getZip());
+  return doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
 async function generateDesignVerificationDocx({

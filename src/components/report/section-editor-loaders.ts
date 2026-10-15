@@ -63,6 +63,10 @@ function loadSectionEditorsUncached(
       return import("./sections/cvp/cvp-section-editors").then(
         (mod) => mod.CVP_SECTION_EDITORS
       );
+    case "equipment_qualification_report":
+      return import("./sections/eqr/eqr-section-editors").then(
+        (mod) => mod.EQR_SECTION_EDITORS
+      );
     default: {
       const exhaustive: never = documentType;
       throw new Error(`Unknown document type: ${exhaustive}`);

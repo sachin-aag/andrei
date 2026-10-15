@@ -30,6 +30,8 @@ export function reportExportDocxFileName(
       return `Investigation_Report_${safe}${suffix}.docx`;
     case "generic_document":
       return `Document_${safe}${suffix}.docx`;
+    case "equipment_qualification_report":
+      return `Equipment_Qualification_Report_${safe}${suffix}.docx`;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;
@@ -59,6 +61,8 @@ export function reportExportDocxArchiveName(documentType: DocumentType): string 
       return "investigation-report.docx";
     case "generic_document":
       return "document.docx";
+    case "equipment_qualification_report":
+      return "equipment-qualification-report.docx";
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;

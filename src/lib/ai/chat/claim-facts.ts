@@ -118,6 +118,22 @@ const NUMBER_WITH_UNIT_RE = new RegExp(
   "gi"
 );
 
+/**
+ * A labelled statistic carries no unit, so NUMBER_WITH_UNIT_RE never saw it
+ * and a model could write any Cpk it liked. Only the number is the fact.
+ */
+const STATISTIC_VALUE_RE =
+  /(?<=\b(?:[CP]p[klu]?|mean|average|median|std\.?\s*dev(?:iation)?|standard deviation|sd|sigma|σ)\s*(?:\([^)\n]{1,20}\)\s*)?(?:of|was|is|were|=|:|≈)?\s*)[-−]?\d+(?:\.\d+)?(?![\d.]*\s*(?:%|°))(?![\w.]*\d)/gi;
+
+/**
+ * Document and record numbers the evidence must name: `URS-HB-02`,
+ * `DEV-HB-26-003`, `TC-REF-114`. Letters first, a digit somewhere, at least
+ * two hyphens — so a model cannot cite a spec that does not exist. One-hyphen
+ * tags (`PSV-13001`) stay plain text: QSR row matching owns those.
+ */
+const DOCUMENT_REF_RE =
+  /\b(?=[A-Z]{2,8}-[A-Z0-9-]*\d)[A-Z]{2,8}(?:-[A-Z0-9]{1,8}){2,4}\b/g;
+
 /** 3xper house style `10k L` is 10000 L — extract before a bare `10`. */
 const K_LITRE_RE =
   /(?<![A-Za-z0-9.])[-−–]?\s*\d+(?:\.\d+)?k\s+L\b/gi;
@@ -224,12 +240,14 @@ function pushMatch(
   citeSpans: Array<{ start: number; end: number }>,
   match: RegExpExecArray,
   kind: HardFactKind,
-  cited: CitedPage[]
+  cited: CitedPage[],
+  labelled = false
 ): void {
   const raw = match[0];
   const start = match.index;
   const end = start + raw.length;
-  if (HEADING_ONLY_RE.test(raw.trim())) return;
+  // A labelled `Cpk 1.48` is a value, not a `1.48` heading number.
+  if (!labelled && HEADING_ONLY_RE.test(raw.trim())) return;
   if (overlaps(start, end, citeSpans)) return;
   if (overlaps(start, end, taken)) return;
   taken.push({ start, end });
@@ -250,7 +268,8 @@ function collectKind(
   text: string,
   regex: RegExp,
   kind: HardFactKind,
-  citedFor: (start: number, end: number) => CitedPage[]
+  citedFor: (start: number, end: number) => CitedPage[],
+  labelled = false
 ): void {
   regex.lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -261,7 +280,8 @@ function collectKind(
       citeSpans,
       match,
       kind,
-      citedFor(match.index, match.index + match[0].length)
+      citedFor(match.index, match.index + match[0].length),
+      labelled
     );
   }
 }
@@ -291,6 +311,7 @@ export function extractHardFacts(text: string): HardFact[] {
   };
 
   collectKind(facts, taken, citeSpans, text, IDENTIFIER_RE, "identifier", sentenceCited);
+  collectKind(facts, taken, citeSpans, text, DOCUMENT_REF_RE, "identifier", sentenceCited);
   collectKind(facts, taken, citeSpans, text, DATE_RE, "date", sentenceCited);
   collectKind(facts, taken, citeSpans, text, TEMPERATURE_RE, "temperature", sentenceCited);
   collectKind(facts, taken, citeSpans, text, DURATION_RE, "duration", sentenceCited);
@@ -306,6 +327,7 @@ export function extractHardFacts(text: string): HardFact[] {
   collectKind(facts, taken, citeSpans, text, K_LITRE_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, NUMBER_WITH_UNIT_RE, "number", sentenceCited);
   collectKind(facts, taken, citeSpans, text, BARE_THOUSANDS_RE, "number", sentenceCited);
+  collectKind(facts, taken, citeSpans, text, STATISTIC_VALUE_RE, "number", sentenceCited, true);
   collectKind(facts, taken, citeSpans, text, BARE_ZERO_RE, "number", sentenceCited);
 
   facts.sort((a, b) => a.start - b.start);

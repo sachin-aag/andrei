@@ -108,12 +108,26 @@ export function calculationEvidenceFromItem(
   return { expression: item.expression, values };
 }
 
+/** `Cpk`, `Ppk of`, `Cpu =` … right before the number, or as its column. */
+const CAPABILITY_INDEX_LABEL = /\b[cp]p[klu]?\b[^\d\n]{0,12}$/i;
+
+/**
+ * Capability indices need a spec limit, a sigma estimate, and the right
+ * subgroup structure. Hand arithmetic gets those wrong (a Cpu with no USL),
+ * so only a saved analysis or a printed page may back them, never `calculate`.
+ */
+export function isCapabilityIndexLabel(labelBefore: string): boolean {
+  return CAPABILITY_INDEX_LABEL.test(labelBefore.trimEnd() + " ");
+}
+
 export function calculationSupportingFact(
   fact: HardFact,
-  evidence: readonly CalculationEvidence[]
+  evidence: readonly CalculationEvidence[],
+  labelBefore = ""
 ): CalculationEvidence | null {
   if (evidence.length === 0) return null;
   if (fact.kind === "identifier" || fact.kind === "date") return null;
+  if (labelBefore && isCapabilityIndexLabel(labelBefore)) return null;
   const tokens = factNumericTokens(fact);
   if (tokens.length === 0) return null;
   for (const entry of evidence) {

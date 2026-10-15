@@ -1358,7 +1358,12 @@ export function TiptapSectionField({
 
     if (JSON.stringify(json) === before) return;
 
-    setRichEditorContentPreservingViewport(editor, json as Content);
+    // TipTap's React node views flushSync on setContent; inside this effect
+    // React is still committing and warns. A microtask lands before paint.
+    const next = json as Content;
+    queueMicrotask(() => {
+      if (!editor.isDestroyed) setRichEditorContentPreservingViewport(editor, next);
+    });
     // Suggestion preview marks are editor-local UI. Persisting them into section
     // state makes the external-value sync immediately re-run this effect.
   }, [

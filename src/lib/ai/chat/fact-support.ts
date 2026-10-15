@@ -72,12 +72,14 @@ export function attachmentQuotesSupportFact(
  */
 export function classifyLookupFactSupport(
   fact: HardFact,
-  evidence: LookupEvidence
+  evidence: LookupEvidence,
+  sourceText = ""
 ): LookupFactSupport {
   if (attachmentQuotesSupportFact(evidence.quotes, fact)) return "quote";
   if (factSupportedByHaystack(evidence.userHaystack, fact)) return "user";
   if (factSupportedByHaystack(evidence.reportHaystack, fact)) return "report";
-  if (calculationSupportingFact(fact, evidence.calculations ?? [])) {
+  const labelBefore = sourceText.slice(Math.max(0, fact.start - 24), fact.start);
+  if (calculationSupportingFact(fact, evidence.calculations ?? [], labelBefore)) {
     return "computed";
   }
   return "none";
@@ -103,9 +105,10 @@ export function lookupEvidenceWasCollected(evidence: LookupEvidence): boolean {
  */
 export function shouldKeepAskFact(
   fact: HardFact,
-  evidence: LookupEvidence
+  evidence: LookupEvidence,
+  sourceText = ""
 ): boolean {
-  const support = classifyLookupFactSupport(fact, evidence);
+  const support = classifyLookupFactSupport(fact, evidence, sourceText);
   if (
     support === "quote" ||
     support === "user" ||

@@ -28,14 +28,22 @@ export async function ensureVaultIngestHolderReport(
     .limit(1);
   if (existing) return existing.id;
 
-  const id = createId();
-  await db.insert(reports).values({
-    id,
-    documentType: "generic_document",
-    documentNo: VAULT_INGEST_HOLDER_DOCUMENT_NO,
-    authorId: ownerId,
-    status: "draft",
-    metadata: { vaultIngestHolder: true } satisfies VaultIngestHolderMetadata,
-  });
-  return id;
+  // Concurrent uploads race here; the unique index picks one row and every
+  // caller gets it back. A soft-deleted holder is revived the same way.
+  const [row] = await db
+    .insert(reports)
+    .values({
+      id: createId(),
+      documentType: "generic_document",
+      documentNo: VAULT_INGEST_HOLDER_DOCUMENT_NO,
+      authorId: ownerId,
+      status: "draft",
+      metadata: { vaultIngestHolder: true } satisfies VaultIngestHolderMetadata,
+    })
+    .onConflictDoUpdate({
+      target: [reports.authorId, reports.documentType, reports.documentNo],
+      set: { deletedAt: null },
+    })
+    .returning({ id: reports.id });
+  return row!.id;
 }

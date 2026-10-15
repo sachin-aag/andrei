@@ -2,6 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import { expandIndexedFieldPaths, RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
+import { isEqrTableField } from "@/lib/document-types/eqr/sections";
 import {
   ELR_TABLE_CAPTION_TITLES,
   EMPTY_ELR_CONTENT,
@@ -380,6 +381,7 @@ export function isFixedColumnTable(
   section: string,
   targetField: string
 ): boolean {
+  if (isEqrTableField(section, targetField)) return true;
   if (targetField !== "table") return false;
   return (
     dvTableHeadersForSection(section).length > 0 ||

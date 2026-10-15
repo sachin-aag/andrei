@@ -726,6 +726,9 @@ export function ReportProvider({
       ),
     });
     if (plan.skip) return;
+    // Queued plan steps send from an effect; flushSync there warns and is a
+    // no-op. One microtask puts us after the commit so the editor sync lands.
+    await Promise.resolve();
     flushSync(() => {
       for (const sync of plan.editorsToSync) {
         try {
