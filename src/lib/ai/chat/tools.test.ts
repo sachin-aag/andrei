@@ -3531,6 +3531,40 @@ describe("buildChatTools propose edits", () => {
     });
   });
 
+  it("refuses a near-identical redraft even on an explicit rewrite turn", async () => {
+    const filled =
+      "The purpose of this report is to present the testing results obtained following the partial executions of the Solea Model 3 System Design Verification Protocol and Solea Model 3 Hardware Design Verification Protocol, respectively, which verified the Solea Model 3 Perioguide Handpiece (SUB-00448), Perioguide Tip (SUB-00471), CO2 Sensor Housing (SUB-00458), CO2 Sensor Acquisition Module (SUB-00464) and CO2 Sensor Handpiece Adapter (SUB-00468) for release on the Solea Model 3 [1]. The Perioguide project enables a variety of laser periodontal procedures to be performed in a closed periodontal pocket [1]. Citations: [Mechanical Test Report Attachments only.pdf]";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [{ type: "text", text: "redraft @Purpose section" }],
+        },
+      ],
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: `${filled.slice(0, filled.indexOf(".pdf]"))}.pdf, p. 1]`,
+        reasoning: "Redraft the Purpose section with precise source page citations.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "not_a_rewrite" });
+    expect(String((refused as { hint?: string }).hint)).toMatch(/Rewrite the prose/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("lands insert-it after a 15.N redraft even when coverage looks targeted", async () => {
     const filled =
       "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation. The batch was quarantined pending review.";

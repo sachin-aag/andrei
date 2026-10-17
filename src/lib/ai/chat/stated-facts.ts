@@ -7,6 +7,10 @@
 
 import { splitSentences } from "@/lib/citations/citation-site";
 import { extractHardFacts, type HardFact } from "@/lib/ai/chat/claim-facts";
+import {
+  isExplicitDocumentEdit,
+  isExplicitSectionRewrite,
+} from "@/lib/ai/chat/already-drafted";
 import { isBareChatConfirmation } from "@/lib/ai/chat/citation-exemption";
 import { CHAT_AUTO_CONTINUE_TEXT } from "@/lib/ai/chat/pending-plan";
 
@@ -59,7 +63,8 @@ export async function englishTextForStatedFacts(
 
 /**
  * One row per non-question sentence. "URS 3 ... 20 to 130 celsius" is kept
- * as that sentence. "yes", "insert that", and auto-continue are not.
+ * as that sentence. "yes", "insert that", "redraft @Purpose", insert-the-
+ * suggestion commands, and auto-continue are not.
  */
 export function extractStatedFactCandidates(text: string): StatedFactCandidate[] {
   const trimmed = text.replace(/\s+/g, " ").trim();
@@ -74,7 +79,9 @@ export function extractStatedFactCandidates(text: string): StatedFactCandidate[]
     if (
       isBareChatConfirmation(sentence) ||
       ACK_SENTENCE_RE.test(sentence) ||
-      INSERT_THAT_RE.test(sentence)
+      INSERT_THAT_RE.test(sentence) ||
+      isExplicitSectionRewrite(sentence) ||
+      isExplicitDocumentEdit(sentence)
     ) {
       continue;
     }
