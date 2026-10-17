@@ -228,8 +228,13 @@ that field when a closer status label exists. An explicit insert, or a
 fact the engineer stated this turn, still cites a page but is not dropped.
 Prior assistant chat is not a keep-source. Document chat also keeps a
 report-level stated fact: each non-question sentence the engineer
-typed. A recognized id is not required. Bare yes and auto-continue are
-not stored. The prompt lists the sentence and uses it even when an
+typed. A recognized id is not required. Bare yes, auto-continue, and
+rewrite / insert-the-suggestion commands (`redraft @Purpose`,
+`insert the suggestion`) are not stored. A filled `draft_field` that
+only tweaks a citation or a few words still bounces to `propose_edit`
+even on an explicit rewrite turn — striking the whole field for a
+page-number change looks broken. Boilerplate-heavy 15.N replaces still
+land. The prompt lists the sentence and uses it even when an
 attachment disagrees. A file `@`-tagged or named this turn wins when a
 served quote shares that point. Stated facts do not skip search,
 unlock an unread URS row, or replace `calculate`. Analytics chat does
