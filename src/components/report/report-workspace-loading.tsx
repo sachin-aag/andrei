@@ -20,7 +20,7 @@ export function ReportWorkspaceLoading({
     <div
       className={cn(
         "flex items-center justify-center bg-[var(--background)]",
-        fullScreen ? "h-screen" : "min-h-[50vh] flex-1"
+        fullScreen ? "h-dvh" : "min-h-[50vh] flex-1"
       )}
     >
       <div className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
