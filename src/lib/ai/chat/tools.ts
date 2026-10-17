@@ -110,6 +110,7 @@ import {
   docHasTable,
   redraftTableStructureHint,
   redraftTooSmallHint,
+  TRIVIAL_REDRAFT_COVERAGE,
 } from "@/lib/ai/chat/redraft-scope";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
@@ -5341,33 +5342,47 @@ export function buildChatTools(opts: {
           // Ordinary filled edits that keep most of the field belong on
           // propose_edit / edit_table. An explicit rewrite turn ("redraft",
           // "make 15.N as", "insert it" after that dump) is a whole-field
-          // replace even when boilerplate coverage looks targeted.
-          if (!rewriteTurn) {
-            const scope = classifyRedraftScope({
-              currentText: sectionFieldPlainText(
-                loaded.content,
-                section,
-                resolvedField
-              ),
-              nextText: markdownToPlainText(markdown),
-              currentHasTable: isRichTargetField(section, resolvedField)
-                ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
-                : false,
-              nextHasTable: markdownHasTable(markdown),
-            });
-            if (scope.kind === "targeted_edit") {
-              return {
-                status: NOT_A_REWRITE_STATUS,
-                hint: redraftTooSmallHint(scope.coverage),
-                coverage: scope.coverage,
-              };
-            }
-            if (scope.kind === "table_structure") {
-              return {
-                status: NOT_A_REWRITE_STATUS,
-                hint: redraftTableStructureHint(scope.adding),
-                coverage: 0,
-              };
+          // replace even when boilerplate coverage looks targeted — except
+          // a near-identical citation/wording tweak, which still strikes
+          // the whole field in review and looks like a broken redraft.
+          const scope = classifyRedraftScope({
+            currentText: sectionFieldPlainText(
+              loaded.content,
+              section,
+              resolvedField
+            ),
+            nextText: markdownToPlainText(markdown),
+            currentHasTable: isRichTargetField(section, resolvedField)
+              ? docHasTable(getRichFieldValue(loaded.content, resolvedField))
+              : false,
+            nextHasTable: markdownHasTable(markdown),
+          });
+          switch (scope.kind) {
+            case "targeted_edit":
+              if (!rewriteTurn || scope.coverage <= TRIVIAL_REDRAFT_COVERAGE) {
+                return {
+                  status: NOT_A_REWRITE_STATUS,
+                  hint: redraftTooSmallHint(scope.coverage, {
+                    rewriteRequested: rewriteTurn,
+                  }),
+                  coverage: scope.coverage,
+                };
+              }
+              break;
+            case "table_structure":
+              if (!rewriteTurn) {
+                return {
+                  status: NOT_A_REWRITE_STATUS,
+                  hint: redraftTableStructureHint(scope.adding),
+                  coverage: 0,
+                };
+              }
+              break;
+            case "rewrite":
+              break;
+            default: {
+              const _exhaustive: never = scope;
+              return _exhaustive;
             }
           }
         }

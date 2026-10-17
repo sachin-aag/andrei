@@ -5,6 +5,7 @@ import {
   redraftDeleteCoverage,
   redraftTableStructureHint,
   redraftTooSmallHint,
+  TRIVIAL_REDRAFT_COVERAGE,
 } from "./redraft-scope";
 
 const PURPOSE =
@@ -149,6 +150,27 @@ describe("redraftTooSmallHint", () => {
     expect(hint).toContain("63%");
     expect(hint).toContain("propose_edit");
     expect(hint).toContain("Nearby wording in the same field belongs in one call");
+  });
+
+  it("tells a rewrite turn to rewrite the prose instead of striking a citation tweak", () => {
+    const hint = redraftTooSmallHint(0.02, { rewriteRequested: true });
+    expect(hint).toContain("98%");
+    expect(hint).toContain("Rewrite the prose");
+    expect(hint).toContain("propose_edit");
+    expect(hint).not.toContain("Only use draft_field here");
+  });
+});
+
+describe("TRIVIAL_REDRAFT_COVERAGE", () => {
+  it("is well below the rewrite threshold so boilerplate-heavy redrafts still land", () => {
+    expect(TRIVIAL_REDRAFT_COVERAGE).toBeLessThan(0.5);
+    const purpose =
+      "The purpose of this report is to present the testing results obtained following the partial executions of the Solea Model 3 System Design Verification Protocol and Solea Model 3 Hardware Design Verification Protocol, respectively, which verified the Solea Model 3 Perioguide Handpiece (SUB-00448) for release on the Solea Model 3 [1]. The Perioguide project enables a variety of laser periodontal procedures to be performed in a closed periodontal pocket [1]. Citations: [Mechanical Test Report Attachments only.pdf]";
+    const withPage =
+      "The purpose of this report is to present the testing results obtained following the partial executions of the Solea Model 3 System Design Verification Protocol and Solea Model 3 Hardware Design Verification Protocol, respectively, which verified the Solea Model 3 Perioguide Handpiece (SUB-00448) for release on the Solea Model 3 [1]. The Perioguide project enables a variety of laser periodontal procedures to be performed in a closed periodontal pocket [1]. Citations: [Mechanical Test Report Attachments only.pdf, p. 1]";
+    expect(redraftDeleteCoverage(purpose, withPage)).toBeLessThanOrEqual(
+      TRIVIAL_REDRAFT_COVERAGE
+    );
   });
 });
 
