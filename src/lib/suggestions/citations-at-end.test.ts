@@ -18,6 +18,7 @@ import {
   stripTrailingCitationBlockFromDoc,
   stripTrailingCitationBlockFromText,
   stripTrailingCitationsFromContent,
+  trailingCitationListStart,
   applyGlobalCitationNumbersToContent,
   citationNumbersFromDoc,
   orderedCitationSourcesFromContent,
@@ -623,6 +624,21 @@ describe("stripTrailingCitationBlockFromText", () => {
         "See SOP [12] and the result [1].\n\nCitations:\n1. [protocol.pdf, p. 3]"
       )
     ).toBe("See SOP [12] and the result.");
+  });
+});
+
+describe("trailingCitationListStart", () => {
+  it("points at the bibliography while leaving body [n] markers in the prefix", () => {
+    const text =
+      "Effective date 06-11-2025 [1].\n\nCitations:\n1. [Design Qualification.PDF, p. 1]";
+    const start = trailingCitationListStart(text);
+    expect(start).toBeGreaterThan(0);
+    expect(text.slice(0, start)).toContain("[1]");
+    expect(text.slice(start)).toContain("Citations:");
+  });
+
+  it("returns -1 when the field has no Citations list", () => {
+    expect(trailingCitationListStart("Effective date 06-11-2025.")).toBe(-1);
   });
 });
 
