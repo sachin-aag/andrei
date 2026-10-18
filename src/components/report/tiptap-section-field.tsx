@@ -577,6 +577,10 @@ export function TiptapSectionField({
     readOnly,
     trackChangesMode,
   });
+  const editableRef = useRef(editable);
+  useLayoutEffect(() => {
+    editableRef.current = editable;
+  }, [editable]);
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
@@ -641,6 +645,8 @@ export function TiptapSectionField({
         // a later insert_rows card validate against painted cells and look
         // like it never landed (stale / canPreview false).
         if (tablePreviewSuggestionIdRef.current) return;
+        // View-only replicas must not write into the live section JSON.
+        if (!editableRef.current) return;
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);

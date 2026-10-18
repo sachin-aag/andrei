@@ -100,10 +100,17 @@ export function useGenericSectionSave(section: string) {
 
   useHydrateAutosaveFromSectionRow(section, markPersisted);
 
-  useEffect(
-    () => registerSectionFlush(section, flush, needsFlush),
-    [section, flush, needsFlush, registerSectionFlush]
-  );
+  useEffect(() => {
+    if (readOnly && !trackChangesMode) return;
+    return registerSectionFlush(section, flush, needsFlush);
+  }, [
+    section,
+    flush,
+    needsFlush,
+    registerSectionFlush,
+    readOnly,
+    trackChangesMode,
+  ]);
 
   return { status, lastSavedAt, value, flushSave: flush };
 }

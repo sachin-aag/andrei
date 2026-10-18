@@ -7,6 +7,7 @@ import { usePersistedScrollTop } from "./canvas-tab-scroll";
 /**
  * One work-product canvas surface. Parked tabs stay mounted and use
  * visibility (not display:none) so nested scrollers keep scrollTop.
+ * `header` sits outside the scroller so view-only chrome stays pinned.
  */
 export function CanvasTabPane({
   active,
@@ -14,6 +15,7 @@ export function CanvasTabPane({
   scrollTabId,
   testId,
   className,
+  header,
   children,
   ...rest
 }: {
@@ -22,27 +24,37 @@ export function CanvasTabPane({
   scrollTabId?: string;
   testId?: string;
   className?: string;
+  /** Pinned above the tab body; does not scroll with `scrollable` content. */
+  header?: ReactNode;
   children: ReactNode;
 } & Omit<HTMLAttributes<HTMLDivElement>, "children" | "role" | "className">) {
   const scrollRef = usePersistedScrollTop(scrollable ? scrollTabId : undefined);
 
   return (
     <div
-      {...rest}
-      ref={scrollRef}
       role="tabpanel"
       inert={!active || undefined}
       aria-hidden={!active}
       data-testid={testId}
       data-canvas-pane={active ? "active" : "parked"}
       className={cn(
-        "absolute inset-0 flex min-h-0 min-w-0 flex-col",
+        "absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden",
         active ? "z-10" : "invisible pointer-events-none z-0",
-        scrollable ? "overflow-auto overscroll-contain" : "overflow-hidden",
         className
       )}
     >
-      {children}
+      {header ? <div className="shrink-0">{header}</div> : null}
+      <div
+        {...rest}
+        ref={scrollRef}
+        data-canvas-pane-scroll=""
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col",
+          scrollable ? "overflow-auto overscroll-contain" : "overflow-hidden"
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

@@ -39,6 +39,7 @@ import { warmupPdfjsPreview } from "@/lib/attachments/load-pdfjs";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type { ReportAttachmentRecord } from "@/types/report";
+import { ATTACHMENT_TAB_DRAG_MIME } from "../attachment-tab-drag";
 import { useDocumentDrag } from "./drag-context";
 import { indentStyle } from "./indent";
 import { LargeUploadTape } from "./large-upload-tape";
@@ -326,11 +327,17 @@ function FileNode({
     <div
       data-document-file={attachment.id}
       data-status={attachment.processingStatus}
-      draggable={canMutateAttachments && !renaming}
+      draggable={!renaming}
       onDragStart={(event) => {
         event.stopPropagation();
-        event.dataTransfer.effectAllowed = "move";
-        beginDrag({ kind: "file", id: attachment.id });
+        event.dataTransfer.effectAllowed = canMutateAttachments
+          ? "copyMove"
+          : "copy";
+        event.dataTransfer.setData(ATTACHMENT_TAB_DRAG_MIME, attachment.id);
+        event.dataTransfer.setData("text/plain", attachment.filename);
+        if (canMutateAttachments) {
+          beginDrag({ kind: "file", id: attachment.id });
+        }
       }}
       onDragEnd={cancelDrag}
       className={cn(
