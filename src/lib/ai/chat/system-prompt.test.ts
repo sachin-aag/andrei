@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v220-stated-statements");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v221-cvp-cvlp-kl");
   });
 
   it("injects engineer-stated facts without an author", () => {

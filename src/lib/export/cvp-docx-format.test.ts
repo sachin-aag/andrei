@@ -4,9 +4,11 @@ import {
   applyCvpEmptyFirstColumnMerges,
   applyCvpSourceTableColWidths,
   CVP_DOCX_HEADING_NUM_ID,
+  cvpContentHeadingFormat,
   cvpHeadingCaps,
   cvpTemplateHeadingSpec,
   cvpWordTocXml,
+  formatCvpCalendarDates,
   stripCvpOutlineNumber,
   stripTableCaptionNodes,
 } from "./cvp-docx-format";
@@ -44,8 +46,12 @@ describe("cvp-docx-format", () => {
       ilvl: 1,
     });
     expect(cvpTemplateHeadingSpec("cvp_overall_results")).toEqual({
-      text: "OVERALL CLEANING RESULTS SUMMARY",
+      text: "OVERALL CLEANING RESULTS SUMMARY & CONCLUSION",
       ilvl: 0,
+    });
+    expect(cvpTemplateHeadingSpec("cvp_process_line")).toEqual({
+      text: "PROCESS LINE CLEANING VERIFICATION SUMMARY",
+      ilvl: 1,
     });
     expect(cvpTemplateHeadingSpec("cvp_recommendations")).toEqual({
       text: "RECOMMENDATIONS",
@@ -54,9 +60,30 @@ describe("cvp-docx-format", () => {
     expect(CVP_DOCX_HEADING_NUM_ID).toBe(3);
   });
 
-  it("emits a Word TOC field for Heading1 only", () => {
+  it("maps 15.N.M.P headings onto Heading2–4 and rewrites ISO dates", () => {
+    expect(cvpContentHeadingFormat(2)).toEqual({
+      style: "Heading2",
+      ilvl: 1,
+      uppercase: true,
+    });
+    expect(cvpContentHeadingFormat(3)).toEqual({
+      style: "Heading3",
+      ilvl: 2,
+      uppercase: false,
+    });
+    expect(cvpContentHeadingFormat(4)).toEqual({
+      style: "Heading4",
+      ilvl: 3,
+      uppercase: false,
+    });
+    expect(formatCvpCalendarDates("Qualified on 2026-06-13 and 18-03-2026.")).toBe(
+      "Qualified on 13-06-2026 and 18-03-2026."
+    );
+  });
+
+  it("emits a Word TOC field through heading level 4", () => {
     const xml = cvpWordTocXml();
-    expect(xml).toContain(" TOC \\o \"1-1\" ");
+    expect(xml).toContain(" TOC \\o \"1-4\" ");
     expect(xml).toContain('<w:pStyle w:val="TOCHeading"/>');
     expect(xml).toContain("TABLE OF CONTENTS");
     expect(xml).not.toContain("<w:tbl>");

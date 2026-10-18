@@ -313,7 +313,7 @@ describe("applyCvpEquipmentTypeRecipe — 15.N.4 / 15.N.6 on-read", () => {
     expect(text).toContain("15.1.4 Cleaning operation results summary");
     expect(text).toContain("Water quantity used for reflux (L)");
     expect(text).toContain("Production Chemist verification");
-    expect(text).toContain("10k L");
+    expect(text).toContain("10 KL");
   });
 
   it("does not duplicate 15.N.6 when the four verification rows are already present", () => {

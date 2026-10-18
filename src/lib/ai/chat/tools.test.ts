@@ -4912,7 +4912,7 @@ describe("buildChatTools propose edits", () => {
       TEST_TOOL_OPTIONS
     )) as { fields: Array<{ targetField: string; text: string }> };
     expect(read.fields[0]?.targetField).toBe("items.1");
-    expect(read.fields[0]?.text).toContain("10k L");
+    expect(read.fields[0]?.text).toContain("10 KL");
     expect(read.fields[0]?.text).not.toContain("10000 L");
 
     const proposed = await tools.edit_table!.execute!(

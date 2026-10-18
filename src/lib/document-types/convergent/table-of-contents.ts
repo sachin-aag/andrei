@@ -476,7 +476,11 @@ const CVP_TOC: TableOfContentsEntry[] = [
         sectionKey: "cvp_nitrosamine",
       },
       {
-        label: "15.(n+2) Manufacturing Area Cleaning Validation",
+        label: "15.(n+2) Process Line Cleaning Verification Summary",
+        sectionKey: "cvp_process_line",
+      },
+      {
+        label: "15.(n+3) Manufacturing Area Cleaning Verification",
         sectionKey: "cvp_manufacturing_area",
       },
     ],
@@ -493,7 +497,7 @@ const CVP_TOC: TableOfContentsEntry[] = [
   { label: "19.0 Deviations", sectionKey: "cvp_deviations" },
   { label: "20.0 Revalidation", sectionKey: "cvp_revalidation" },
   {
-    label: "21.0 Overall Cleaning Results Summary",
+    label: "21.0 Overall Cleaning Results Summary & Conclusion",
     sectionKey: "cvp_overall_results",
   },
   { label: "Recommendations", sectionKey: "cvp_recommendations" },
@@ -635,23 +639,13 @@ function withLiveCvpEquipmentSampling(
     : [];
   const count = live.length;
   const nitroN = `${count + 1}`;
-  const mfgN = `${count + 2}`;
+  const lineN = `${count + 2}`;
+  const mfgN = `${count + 3}`;
   const extras: TableOfContentsEntry[] = [];
   if (cvpLegacySectionHasUserContent("cvp_pgi", liveSectionContent?.cvp_pgi)) {
     extras.push({
       label: "Potential Genotoxic Impurities Limits in the Rinse Samples",
       sectionKey: "cvp_pgi",
-    });
-  }
-  if (
-    cvpLegacySectionHasUserContent(
-      "cvp_process_line",
-      liveSectionContent?.cvp_process_line
-    )
-  ) {
-    extras.push({
-      label: "Process Line Cleaning Validation Summary",
-      sectionKey: "cvp_process_line",
     });
   }
   return recipe.map((entry) => {
@@ -672,11 +666,19 @@ function withLiveCvpEquipmentSampling(
             ...extras,
           ];
         }
+        if (child.sectionKey === "cvp_process_line") {
+          return [
+            {
+              ...child,
+              label: `15.${lineN} Process Line Cleaning Verification Summary`,
+            },
+          ];
+        }
         if (child.sectionKey === "cvp_manufacturing_area") {
           return [
             {
               ...child,
-              label: `15.${mfgN} Manufacturing Area Cleaning Validation`,
+              label: `15.${mfgN} Manufacturing Area Cleaning Verification`,
             },
           ];
         }

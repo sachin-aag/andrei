@@ -51,7 +51,7 @@ import {
 } from "@/lib/ai/chat/citation-exemption";
 import { statedFactSupportsDraft } from "@/lib/ai/chat/stated-facts";
 import {
-  compact3xperLitreVolumes,
+  compactCvpCapacities,
   usesCvpKLitreStyle,
 } from "@/lib/document-types/3xper-volume-style";
 import { elrTableHeadersForSection } from "@/lib/document-types/elr/sections";
@@ -92,7 +92,7 @@ function styleCvpDraftText(
   blocked: boolean
 ): string {
   if (blocked || !usesCvpKLitreStyle(section)) return text;
-  return compact3xperLitreVolumes(text);
+  return compactCvpCapacities(text);
 }
 
 export type GroundDropReason = "fail_closed" | "unsourced_fact" | "qsr_extra";

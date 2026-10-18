@@ -71,6 +71,12 @@ export const CVP_IDENTITY_FIELDS: readonly ChatIdentityField[] = [
     storage: "metadata",
     metadataKey: "reportNo",
   },
+  {
+    key: "ccfNo",
+    label: "CCF Number",
+    storage: "metadata",
+    metadataKey: "ccfNo",
+  },
 ];
 
 /** Header identity lines; they live in `reports.metadata`, not in a section. */
@@ -88,6 +94,7 @@ export function cvpChatContextIdentity(
     line("department", meta.department),
     `form: ${CVP_FORM_NO} version ${sanitizePromptMetadata(meta.version, 20) || "00"}`,
     line("report no.", meta.reportNo),
+    line("CCF number", meta.ccfNo),
     "This is a Cleaning Validation Protocol. Numbered headings, the running header, footer Format No., and approval chrome are fixed by the form — do not draft those as section titles. Fill cover identity (product, code, stage, plant, protocol no.) with draft_identity from attachments. Report No. stays blank on the protocol. Cover scalars never include citations. Result tables use a grouped Results header over three blank batch columns; execution cells stay blank. Do not copy Stage-5 report verdicts (Validated, results later, unfinished AMV) into this protocol.",
   ];
 }

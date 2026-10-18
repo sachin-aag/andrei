@@ -23,6 +23,7 @@ import {
   cvpTemplateHeadingSpec,
   cvpHeadingParagraphXml,
   cvpWordTocXml,
+  normalizeCvpHeadingNumberingXml,
 } from "../src/lib/export/cvp-docx-format";
 
 const SOURCE = path.join(
@@ -111,6 +112,25 @@ function replaceVerificationTitle(xml: string): string {
     .replace(/>(\s*)Verification(\s*)</g, ">$1Validation$2<");
 }
 
+function tagCoverTitle(el: string): string {
+  const text = elementText(el).replace(/\s+/g, " ").trim();
+  if (
+    text === "CLEANING VALIDATION PROTOCOL" ||
+    text === "CLEANING VERIFICATION PROTOCOL"
+  ) {
+    return setParagraphText(el, "{documentTitle}");
+  }
+  return el;
+}
+
+function appendCcfRow(tbl: string): string {
+  if (elementText(tbl).includes("{ccfNo}")) return tbl;
+  const last = tableRows(tbl).at(-1);
+  if (!last) fail("cover table has no rows");
+  const ccf = last.replace(">Plant<", ">CCF Number<").replace("{plant}", "{ccfNo}");
+  return tbl.replace(last, `${last}${ccf}`);
+}
+
 function tagCoverTable(tbl: string): string {
   const tags = [
     "{productName}",
@@ -124,11 +144,13 @@ function tagCoverTable(tbl: string): string {
     "Stage",
     "Plant",
   ] as const;
-  return mapRows(tbl, (tr, i) => {
-    const cells = rowCells(tr);
-    expectText(elementText(cells[0] ?? ""), labels[i] ?? "", `cover row ${i} label`);
-    return replaceCell(tr, 2, 0, tags[i] ?? fail(`cover row ${i}`));
-  });
+  return appendCcfRow(
+    mapRows(tbl, (tr, i) => {
+      const cells = rowCells(tr);
+      expectText(elementText(cells[0] ?? ""), labels[i] ?? "", `cover row ${i} label`);
+      return replaceCell(tr, 2, 0, tags[i] ?? fail(`cover row ${i}`));
+    })
+  );
 }
 
 function tagHeaderTable(tbl: string, withEffectiveDate: boolean): string {
@@ -208,10 +230,12 @@ function main() {
   const sectPr = els.at(-1);
   if (!sectPr?.startsWith("<w:sectPr")) fail("final sectPr moved");
 
-  const cover = (fromSource
-    ? [...els.slice(0, coverTableIdx), tagCoverTable(els[coverTableIdx]!)]
-    : els.slice(0, coverTableIdx + 1)
-  ).map(replaceVerificationTitle);
+  const coverTable = fromSource
+    ? tagCoverTable(els[coverTableIdx]!)
+    : appendCcfRow(els[coverTableIdx]!);
+  const cover = [...els.slice(0, coverTableIdx), coverTable]
+    .map(replaceVerificationTitle)
+    .map(tagCoverTitle);
   const body = [...cover, ...sectionBody(), sectPr];
   zip.file(
     "word/document.xml",
@@ -246,6 +270,14 @@ function main() {
       const file = zip.file(name);
       if (file) zip.file(name, replaceVerificationTitle(file.asText()));
     }
+  }
+
+  const numbering = zip.file("word/numbering.xml");
+  if (numbering) {
+    zip.file(
+      "word/numbering.xml",
+      normalizeCvpHeadingNumberingXml(numbering.asText())
+    );
   }
 
   fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });

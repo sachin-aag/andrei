@@ -39,12 +39,17 @@ import {
 import { summarizeTablesInDoc } from "@/lib/suggestions/table-operation";
 
 describe("cleaning verification protocol sections", () => {
-  it("registers twenty-nine F08 sections with a narrative or table field", () => {
+  it("registers thirty F08 sections with a narrative or table field", () => {
     const def = getDocumentType("cleaning_verification_protocol");
     expect(def.key).toBe("cleaning_verification_protocol");
     expect(def.documentNoLabel).toBe("Protocol No.");
+    expect(def.documentNoPlaceholder).toBe("e.g. CVLP-ISM4-26-001");
+    expect(def.chat.identityFields?.map((field) => field.key)).toContain(
+      "ccfNo"
+    );
+    expect(cvpMetadataFrom({ ccfNo: "CCF-12" }).ccfNo).toBe("CCF-12");
     expect(def.wordImport).toEqual({ kind: "cleaning_verification_protocol" });
-    expect(def.sections).toHaveLength(29);
+    expect(def.sections).toHaveLength(30);
     expect(def.sections.map((s) => s.key)).toEqual([...CVP_SECTION_KEYS]);
     expect(CVP_FORM_NO).toBe("QAD-SOP-PS-003-F08-00");
     for (const key of CVP_SECTION_KEYS) {
@@ -317,7 +322,7 @@ describe("cleaning verification protocol sections", () => {
       items: [{ type: "doc", content: [filled] }],
     }) as { items: JSONContent[] };
     const text = JSON.stringify(merged);
-    expect(text).toContain("10k L");
+    expect(text).toContain("10 KL");
     expect(text).not.toContain("10000 L");
     expect(text).not.toContain("Duplicate this box");
     expect(text).not.toContain("Equipment name (Equipment No.)");
@@ -380,7 +385,7 @@ describe("cleaning verification protocol sections", () => {
     );
     expect(h2s).toHaveLength(1);
     expect(JSON.stringify(h2s[0])).toContain("Glass Lined Reactor (GLR-1302)");
-    expect(text).toContain("10k L [1]");
+    expect(text).toContain("10 KL [1]");
     expect(text).not.toContain("Duplicate this box");
     expect((text.match(/15\.1\.1 Equipment details/g) ?? []).length).toBe(1);
     expect((text.match(/It shall be written in the cleaning validation report\./g) ?? []).length).toBe(2);
@@ -466,7 +471,7 @@ describe("cleaning verification protocol sections", () => {
 
   it("tells Agent the whole form is a protocol with explicit leave-blank execution fields", () => {
     const def = getDocumentType("cleaning_verification_protocol");
-    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v4");
+    expect(def.prompts.promptVersion).toBe("3xper-cvp-f08-v5");
     expect(def.prompts.base).toContain(
       "This is a protocol, not an executed cleaning validation report"
     );
@@ -547,8 +552,8 @@ describe("cleaning verification protocol sections", () => {
     expect(tableText("cvp_nitrosamine")).toContain(CVP_NITROSAMINE_INTRO_SEED);
     expect(tableText("cvp_nitrosamine")).toContain("0.01 ppm");
     expect(EMPTY_CVP_CONTENT).not.toHaveProperty("cvp_pgi");
-    expect(EMPTY_CVP_CONTENT).not.toHaveProperty("cvp_process_line");
-    expect(tableText("cvp_manufacturing_area")).toContain("10 ppm");
+    expect(tableText("cvp_process_line")).toContain("process lines");
+    expect(tableText("cvp_manufacturing_area")).toContain("white wipe");
     expect(tableText("cvp_testing_procedure")).toContain(
       CVP_TESTING_PROCEDURE_INTRO_SEED
     );

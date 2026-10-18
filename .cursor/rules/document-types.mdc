@@ -92,8 +92,8 @@ const sections = getWorkspaceSections(report.documentType);
 - 3xper `cleaning_verification_protocol` Word import is also type-owned
   (`wordImport.kind === "cleaning_verification_protocol"`). Do **not** turn on
   pack `wordImportEnabled` — VQ and QSR stay without create-time upload.
-  Outline is 29 `cvp_*` keys (1.0–25.0 plus unnumbered Recommendations);
-  `cvp_pgi` / `cvp_process_line` stay persistable only when already filled.
+  Outline is 30 `cvp_*` keys (1.0–25.0 plus process-line cleaning verification and unnumbered Recommendations);
+  `cvp_pgi` stays persistable only when already filled. Process-line cleaning verification is a required section after nitrosamine.
   Add equipment picks a type recipe. Do not seed Stage-5 leftovers
   (unfinished nitrosamine, GLR-1205 two-location shortcut, RCVD label).
 - Left-rail chrome is Attachments | Contents on every pack (Convergent layout:

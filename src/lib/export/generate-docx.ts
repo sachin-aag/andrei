@@ -53,6 +53,7 @@ import {
   applyNumberingToDocxZip,
   loadListNumberingBasesFromZip,
 } from "@/lib/export/docx-numbering";
+import { normalizeCvpHeadingNumberingXml } from "@/lib/export/cvp-docx-format";
 import { applyMechanicalResultsColWidths } from "@/lib/export/mechanical-table-footnotes";
 import {
   narrativeToDocxXmlWithContext,
@@ -870,6 +871,15 @@ async function generateDesignVerificationDocx({
   }
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyNumberingToDocxZip(doc.getZip(), ctx);
+  if (documentType === "cleaning_verification_protocol") {
+    const numbering = doc.getZip().file("word/numbering.xml");
+    if (numbering) {
+      doc.getZip().file(
+        "word/numbering.xml",
+        normalizeCvpHeadingNumberingXml(numbering.asText())
+      );
+    }
+  }
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
   await applyGoogleDocsImageCompat(doc.getZip());
 

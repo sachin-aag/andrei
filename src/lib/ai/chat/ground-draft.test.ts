@@ -316,7 +316,7 @@ describe("groundDraftText QSR row windows", () => {
     expect(result.unsupported).toEqual([]);
   });
 
-  it("writes CVP 10000 L as 10k L after the cited page verifies it", () => {
+  it("writes CVP 10000 L as 10 KL after the cited page verifies it", () => {
     const result = groundDraftText({
       text: "10000 L [CPDR.pdf, p. 2]",
       ledger: ledgerFromPages([
@@ -331,7 +331,7 @@ describe("groundDraftText QSR row windows", () => {
       grounding: { section: "cvp_equipment_sampling" },
     });
     expect(result.blocked).toBe(false);
-    expect(result.text).toContain("10k L");
+    expect(result.text).toContain("10 KL");
     expect(result.text).not.toContain("10000 L");
   });
 

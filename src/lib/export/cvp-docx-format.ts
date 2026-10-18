@@ -52,7 +52,82 @@ function escapeXml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-/** Live Word TOC field (`TOC \o "1-1"`) — Heading1 only, matching the source protocol. */
+const ISO_DATE_RE = /\b(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/g;
+
+/** Table cells and prose: `2026-06-13` → `13-06-2026`. Existing DD-MM-YYYY stays. */
+export function formatCvpCalendarDates(text: string): string {
+  return text.replace(ISO_DATE_RE, (_, year: string, month: string, day: string) => {
+    return `${day}-${month}-${year}`;
+  });
+}
+
+export function formatCvpCalendarDatesInDoc(node: JSONContent): JSONContent {
+  const next: JSONContent = { ...node };
+  if (typeof node.text === "string") {
+    next.text = formatCvpCalendarDates(node.text);
+  }
+  if (node.content) {
+    next.content = node.content.map(formatCvpCalendarDatesInDoc);
+  }
+  return next;
+}
+
+export type CvpHeadingStyle = "Heading1" | "Heading2" | "Heading3" | "Heading4";
+
+/** TipTap heading level → Word outline style and numId 3 ilvl (15.N.M.P). */
+export function cvpContentHeadingFormat(level: number): {
+  style: CvpHeadingStyle;
+  ilvl: 0 | 1 | 2 | 3;
+  uppercase: boolean;
+} {
+  if (!Number.isFinite(level) || level <= 1) {
+    return { style: "Heading1", ilvl: 0, uppercase: true };
+  }
+  if (level === 2) return { style: "Heading2", ilvl: 1, uppercase: true };
+  if (level === 3) return { style: "Heading3", ilvl: 2, uppercase: false };
+  return { style: "Heading4", ilvl: 3, uppercase: false };
+}
+
+/** Centred `Table N` caption. `N` is the SEQ cache Word refreshes on Update Field. */
+export function cvpTableCaptionXml(n: number): string {
+  return (
+    `<w:p><w:pPr><w:pStyle w:val="Caption"/><w:jc w:val="center"/>` +
+    `<w:spacing w:before="120" w:after="60"/>` +
+    `</w:pPr>` +
+    `<w:r><w:rPr><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>` +
+    `<w:t xml:space="preserve">Table </w:t></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+    `<w:r><w:instrText xml:space="preserve"> SEQ Table \\* ARABIC </w:instrText></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r><w:t>${n}</w:t></w:r>` +
+    `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+    `</w:p>`
+  );
+}
+
+/**
+ * numId 3 ilvl 2 in the source abstract sits at 4680 dxa, which pushes
+ * 15.N.M off the text width. Pull ilvl 2 and 3 back in line with ilvl 1.
+ */
+export function normalizeCvpHeadingNumberingXml(xml: string): string {
+  return xml.replace(
+    /<w:abstractNum\b[^>]*w:abstractNumId="1"[^>]*>[\s\S]*?<\/w:abstractNum>/,
+    (abstract) => {
+      if (!abstract.includes('w:val="%1.0"')) return abstract;
+      return abstract
+        .replace(
+          /(<w:lvl w:ilvl="2">[\s\S]*?<w:ind )w:left="\d+" w:hanging="\d+"/,
+          '$1w:left="1584" w:hanging="720"'
+        )
+        .replace(
+          /(<w:lvl w:ilvl="3">[\s\S]*?<w:ind )w:left="\d+" w:hanging="\d+"/,
+          '$1w:left="2016" w:hanging="864"'
+        );
+    }
+  );
+}
+
+/** Live Word TOC field (`TOC \\o "1-4"`) — through 15.N.M.P. */
 export function cvpWordTocXml(): string {
   return (
     `<w:sdt>` +
@@ -73,7 +148,7 @@ export function cvpWordTocXml(): string {
     `</w:p>` +
     `<w:p>` +
     `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-    `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-1" \\h \\z \\u </w:instrText></w:r>` +
+    `<w:r><w:instrText xml:space="preserve"> TOC \\o "1-4" \\h \\z \\u </w:instrText></w:r>` +
     `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
     `<w:r><w:t xml:space="preserve">Right-click and choose Update Field to refresh this table of contents.</w:t></w:r>` +
     `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
@@ -85,7 +160,8 @@ export function cvpWordTocXml(): string {
 
 export function cvpHeadingParagraphXml(
   text: string,
-  ilvl: 0 | 1 | "none"
+  ilvl: 0 | 1 | 2 | 3 | "none",
+  style: CvpHeadingStyle = "Heading1"
 ): string {
   const numPr =
     ilvl === "none"
@@ -93,7 +169,7 @@ export function cvpHeadingParagraphXml(
       : `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${CVP_DOCX_HEADING_NUM_ID}"/></w:numPr>`;
   return (
     `<w:p><w:pPr>` +
-    `<w:pStyle w:val="Heading1"/>` +
+    `<w:pStyle w:val="${style}"/>` +
     `<w:keepNext/>` +
     numPr +
     `<w:spacing w:before="23" w:line="360" w:lineRule="auto"/>` +
