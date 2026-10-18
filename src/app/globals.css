@@ -186,7 +186,7 @@ html[data-customer="3xper"] {
     overflow-wrap: anywhere;
   }
   body {
-    min-height: 100vh;
+    min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
   }
   ::-webkit-scrollbar {

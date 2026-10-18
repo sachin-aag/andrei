@@ -122,6 +122,14 @@ export function simpleLatexToTextNodes(
       i++;
     }
     if (!script) return null;
+    if (
+      markType === "superscript" &&
+      /^(?:\\circ|circ|°)$/i.test(script.trim())
+    ) {
+      if (buffer.endsWith("}")) buffer = buffer.slice(0, -1);
+      buffer += "°";
+      continue;
+    }
     flush();
     nodes.push(
       textNode(script, withMarks([{ type: markType }], extraMarks))

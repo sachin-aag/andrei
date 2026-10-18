@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai";
+import { InvalidToolInputError, type UIMessage } from "ai";
 import { closeIncompleteChatToolParts } from "@/lib/ai/chat/tool-part-repair";
 import {
   isUnavailableToolStreamError,
@@ -10,10 +10,36 @@ import {
 export const CHAT_ASSISTANT_ERROR_MESSAGE =
   "The assistant hit an error. Please try again.";
 
+const INVALID_TOOL_INPUT_RE = /Invalid input for tool ['"]?([a-zA-Z0-9_-]+)/i;
+
+export function invalidToolInputNameFromError(error: unknown): string | null {
+  if (InvalidToolInputError.isInstance(error)) {
+    const name = error.toolName.trim();
+    if (name) return name;
+  }
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : "";
+  const match = message.match(INVALID_TOOL_INPUT_RE);
+  return match?.[1] ?? null;
+}
+
+export function invalidToolInputHint(toolName: string): string {
+  const name = toolName.trim() || "that tool";
+  if (name === "edit_table") {
+    return "edit_table needs an operation with kind at the top (edit_cells, insert_rows, create_table, …) plus cells, rows, or headers. Call read_section, then retry. Do not paste a markdown table as a stand-in.";
+  }
+  return `${name} was called with incomplete input. Retry ${name} with every required field from the tool schema.`;
+}
+
 /**
  * `toUIMessageStreamResponse({ onError })` formats both fatal stream errors
- * *and* invalid-tool `errorText`. Treat a hallucinated tool name as recoverable
- * so the turn continues with a hint instead of the generic failure copy.
+ * *and* invalid-tool `errorText`. Treat a hallucinated tool name or a
+ * schema-invalid payload as recoverable so the turn continues with a hint
+ * instead of the generic failure copy.
  */
 export function chatUiStreamErrorText(error: unknown): {
   recoverable: boolean;
@@ -22,6 +48,10 @@ export function chatUiStreamErrorText(error: unknown): {
   if (isUnavailableToolStreamError(error)) {
     const name = unavailableToolNameFromError(error) ?? "that tool";
     return { recoverable: true, text: unsupportedChatToolHint(name) };
+  }
+  const invalidTool = invalidToolInputNameFromError(error);
+  if (invalidTool) {
+    return { recoverable: true, text: invalidToolInputHint(invalidTool) };
   }
   return { recoverable: false, text: CHAT_ASSISTANT_ERROR_MESSAGE };
 }

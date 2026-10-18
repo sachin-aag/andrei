@@ -9,6 +9,7 @@
 
 import type { DocumentType, SectionType } from "@/db/schema";
 import { extractHardFacts, type HardFact } from "@/lib/ai/chat/claim-facts";
+import type { StatedFactRef } from "@/lib/ai/chat/stated-facts";
 import { evidenceContainsFact } from "@/lib/ai/chat/evidence-match";
 import { factSupportedByHaystack } from "@/lib/ai/chat/fact-support";
 import { contextForPrompt } from "@/lib/ai/section-context";
@@ -53,6 +54,16 @@ export type GroundDraftGrounding = {
    * the model can invent a number, echo it in markdown, then cite it on write.
    */
   recentAssistantTexts?: readonly string[];
+  /**
+   * Engineer-typed pairs on this report. They keep an exact value for the
+   * same entity. They do not unlock an unread URS row or a row-window check.
+   */
+  statedFacts?: readonly StatedFactRef[];
+  /**
+   * Served quotes from attachments this turn @-tagged or named. When one of
+   * them mentions the entity, that file wins over the stated fact.
+   */
+  namedFileQuotes?: readonly string[];
 };
 
 const MONTH_INDEX: Record<string, number> = {
@@ -326,6 +337,13 @@ const CONFIRM_INSERT_RE =
 
 const INSERT_VERB_RE =
   /\b(?:insert|put|place|enter|paste|fill(?:\s+(?:in|out))?)\b/i;
+
+/** Bare yes / go ahead. Not a stated fact — the value is not in this message. */
+export function isBareChatConfirmation(userText: string): boolean {
+  const text = userText.replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  return CONFIRM_INSERT_RE.test(text);
+}
 
 /** Go-ahead / insert-that / fill-the-date — keep values, still cite. */
 export function isExplicitInsertRequest(userText: string): boolean {
