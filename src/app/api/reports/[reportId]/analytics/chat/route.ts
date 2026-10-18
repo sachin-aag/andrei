@@ -481,7 +481,7 @@ async function handleAnalyticsChatPost(
     onError: (error) => {
       const formatted = chatUiStreamErrorText(error);
       if (formatted.recoverable) {
-        console.warn("analytics-chat: unavailable tool in stream", {
+        console.warn("analytics-chat: recoverable tool error in stream", {
           reportId,
           sessionId,
           error: formatChatLlmError(error),
