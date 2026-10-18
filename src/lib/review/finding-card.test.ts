@@ -138,7 +138,7 @@ describe("reviewFindingCardModel", () => {
     expect(card.kicker).toBe("Citation supports claim");
   });
 
-  it("asks for review when there is no automatic fix and paints the repeated token in its context", () => {
+  it("drafts on apply for a check finding and paints the repeated token in its context", () => {
     const card = reviewFindingCardModel({
       finding: finding({
         checkId: "citations.resolves",
@@ -155,8 +155,8 @@ describe("reviewFindingCardModel", () => {
       comment: null,
     });
 
-    expect(card.suggestion).toEqual({ kind: "manual", suggestedText: null });
-    expect(card.primary).toBe("verify");
+    expect(card.suggestion).toEqual({ kind: "draft_on_apply", suggestedText: null });
+    expect(card.primary).toBe("apply");
     expect(card.locate).toEqual({
       section: "measure",
       contentPath: "narrative",
@@ -165,7 +165,7 @@ describe("reviewFindingCardModel", () => {
     });
   });
 
-  it("shows unmatched grammar wording as a manual suggestion", () => {
+  it("carries unmatched grammar wording into the drafted fix", () => {
     const card = reviewFindingCardModel({
       finding: finding({
         checkId: "writing.grammar",
@@ -182,10 +182,10 @@ describe("reviewFindingCardModel", () => {
       comment: null,
     });
     expect(card.suggestion).toEqual({
-      kind: "manual",
+      kind: "draft_on_apply",
       suggestedText: "Prerequisites",
     });
-    expect(card.primary).toBe("verify");
+    expect(card.primary).toBe("apply");
   });
 
   it("drafts on apply for a criterion and highlights the section without a quote", () => {
@@ -203,7 +203,7 @@ describe("reviewFindingCardModel", () => {
       criterionLabel: "Subjective acceptance criterion",
       comment: null,
     });
-    expect(card.suggestion).toEqual({ kind: "draft_on_apply" });
+    expect(card.suggestion).toEqual({ kind: "draft_on_apply", suggestedText: null });
     expect(card.primary).toBe("apply");
     expect(card.locate).toEqual({
       section: "measure",
@@ -263,7 +263,29 @@ describe("reviewFindingCardModel", () => {
         content: singleSpanContent,
       },
     });
-    expect(card.primary).toBe("verify");
+    expect(card.suggestion).toEqual({ kind: "draft_on_apply", suggestedText: null });
+    expect(card.primary).toBe("apply");
+  });
+
+  it("has nothing to apply for a section-level finding without a criterion", () => {
+    const card = reviewFindingCardModel({
+      finding: finding({
+        contentPath: null,
+        anchorText: "",
+        kind: "needs_human",
+        commentId: null,
+        message: "This section is not available to evaluate on this report.",
+        metadata: {},
+      }),
+      check: null,
+      sectionLabel: "Measure",
+      sectionNumber: 2,
+      criterionLabel: null,
+      comment: null,
+    });
+    expect(card.suggestion).toEqual({ kind: "none" });
+    expect(card.primary).toBe("none");
+    expect(card.locate).toMatchObject({ section: "measure", contentPath: null });
   });
 
   it("has nothing to locate when the finding is not tied to a section", () => {
@@ -283,5 +305,6 @@ describe("reviewFindingCardModel", () => {
       comment: null,
     });
     expect(card.locate).toBeNull();
+    expect(card.primary).toBe("none");
   });
 });

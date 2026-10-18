@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Crosshair } from "lucide-react";
+import { Crosshair } from "lucide-react";
 import type { MouseEvent } from "react";
 import {
   REVIEW_SEVERITY_LABEL,
@@ -30,11 +30,13 @@ const SEVERITY_ACCENT: Record<ReviewSeverity, string> = {
 const PRIMARY_LABEL: Record<ReviewCardPrimaryAction, string> = {
   apply: "Apply as tracked change",
   view: "View tracked change",
-  verify: "Mark verified",
+  none: "Apply as tracked change",
 };
 
+const NOTHING_TO_APPLY =
+  "This finding is not about one passage, so there is no exact change to make.";
+
 function busyLabel(card: ReviewFindingCardModel): string {
-  if (card.primary === "verify") return "Saving…";
   return card.suggestion.kind === "draft_on_apply" ? "Drafting…" : "Applying…";
 }
 
@@ -78,24 +80,24 @@ function suggestionCopy(suggestion: ReviewCardSuggestion): {
         text: "Edits more than one place. The changes show as tracked changes in the document.",
       };
     case "draft_on_apply":
-      return {
-        tone: "ai",
-        label: "AI fix",
-        text: "The AI drafts a fix for this when you apply it.",
-      };
-    case "manual":
       return suggestion.suggestedText
         ? {
-            tone: "manual",
+            tone: "ai",
             label: "Suggested wording",
             text: suggestion.suggestedText,
-            note: "The exact text could not be matched, so make this edit by hand.",
+            note: "The AI places this in the document when you apply it.",
           }
         : {
-            tone: "manual",
-            label: "Needs your review",
-            text: "No automatic fix. Check the highlighted text, then mark it verified or dismiss it.",
+            tone: "ai",
+            label: "AI fix",
+            text: "The AI drafts an exact change when you apply it. Anything it cannot confirm becomes a <placeholder>.",
           };
+    case "none":
+      return {
+        tone: "manual",
+        label: "Nothing to apply",
+        text: `${NOTHING_TO_APPLY} Dismiss it once it is handled.`,
+      };
   }
 }
 
@@ -131,7 +133,7 @@ function SuggestionBox({
       <p
         className={cn(
           "mt-1 text-sm leading-snug text-[var(--foreground)]",
-          copy.tone === "manual" && !copy.note && "text-xs text-[var(--muted-foreground)]",
+          copy.tone === "manual" && "text-xs text-[var(--muted-foreground)]",
           copy.struck && "line-through decoration-red-500/70"
         )}
       >
@@ -166,7 +168,7 @@ export function ReviewFindingCard({
   locateHint?: string | null;
   /** Omitted when the finding is not tied to a section. */
   onShowInDocument?: () => void;
-  /** Omitted when the viewer cannot edit. */
+  /** Omitted when the viewer cannot edit or there is nothing to apply. */
   onPrimary?: () => void;
   onDismiss?: () => void;
 }) {
@@ -220,24 +222,17 @@ export function ReviewFindingCard({
       />
       {/* Fixed two rows so every card lays out the same at any panel width. */}
       <div className="mt-3 space-y-2">
-        {onPrimary ? (
-          <Button
-            type="button"
-            size="sm"
-            variant={card.primary === "verify" ? "outline" : "success"}
-            className={cn(
-              "w-full gap-1.5",
-              card.primary === "verify" && "bg-[var(--card)]"
-            )}
-            onClick={onPrimary}
-            disabled={busy}
-          >
-            {card.primary === "verify" ? (
-              <CheckCircle2 className="size-3.5" aria-hidden="true" />
-            ) : null}
-            {busy ? busyLabel(card) : PRIMARY_LABEL[card.primary]}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="success"
+          className="w-full gap-1.5"
+          onClick={onPrimary}
+          disabled={busy || !onPrimary}
+          title={card.primary === "none" ? NOTHING_TO_APPLY : undefined}
+        >
+          {busy ? busyLabel(card) : PRIMARY_LABEL[card.primary]}
+        </Button>
         <div className="flex items-center justify-between gap-2">
           <Button
             type="button"

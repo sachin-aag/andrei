@@ -88,29 +88,31 @@ describe("ReviewFindingCard", () => {
     ]);
   });
 
-  it("keeps the same layout for a finding with no automatic fix", () => {
+  it("keeps the same buttons, disabled, when there is nothing to apply", () => {
     render(
       <ReviewFindingCard
         severity="major"
-        card={{
-          ...card,
-          suggestion: { kind: "manual", suggestedText: null },
-          primary: "verify",
-        }}
+        card={{ ...card, suggestion: { kind: "none" }, primary: "none" }}
         onShowInDocument={vi.fn()}
-        onPrimary={vi.fn()}
         onDismiss={vi.fn()}
       />
     );
-    expect(screen.getByText("Needs your review")).toBeInTheDocument();
-    expect(actionNames()).toEqual(["Mark verified", "Show in document", "Dismiss"]);
+    expect(screen.getByText("Nothing to apply")).toBeInTheDocument();
+    expect(actionNames()).toEqual([
+      "Apply as tracked change",
+      "Show in document",
+      "Dismiss",
+    ]);
+    expect(
+      screen.getByRole("button", { name: "Apply as tracked change" })
+    ).toBeDisabled();
   });
 
   it("labels each suggestion kind in the same box", () => {
     const { rerender } = render(
       <ReviewFindingCard
         severity="minor"
-        card={{ ...card, suggestion: { kind: "draft_on_apply" } }}
+        card={{ ...card, suggestion: { kind: "draft_on_apply", suggestedText: null } }}
       />
     );
     expect(screen.getByText("AI fix")).toBeInTheDocument();
@@ -133,13 +135,15 @@ describe("ReviewFindingCard", () => {
         severity="minor"
         card={{
           ...card,
-          suggestion: { kind: "manual", suggestedText: "Prerequisites" },
-          primary: "verify",
+          suggestion: { kind: "draft_on_apply", suggestedText: "Prerequisites" },
         }}
       />
     );
     expect(screen.getByText("Suggested wording")).toBeInTheDocument();
     expect(screen.getByText("Prerequisites")).toBeInTheDocument();
+    expect(
+      screen.getByText("The AI places this in the document when you apply it.")
+    ).toBeInTheDocument();
   });
 
   it("disables Show in document when there is no place to highlight", () => {

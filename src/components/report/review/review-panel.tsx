@@ -368,19 +368,15 @@ function ReviewIssueRow({
     onJumpToComment(commentId);
   };
 
-  const primary = !canRun
-    ? undefined
-    : card.primary === "verify"
+  const primary =
+    canRun && card.primary !== "none"
       ? () => {
-          if (located) setReviewLocate(null);
-          void patchFinding(finding.id, "verified");
-        }
-      : () => {
           void (async () => {
             const commentId = await applyTrackedChange(finding.id);
             if (commentId) openTrackedChange(commentId);
           })();
-        };
+        }
+      : undefined;
 
   const dismiss = canRun
     ? () => {

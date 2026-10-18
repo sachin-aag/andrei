@@ -19,12 +19,12 @@ export type {
 /** What the suggestion box on every card says. */
 export type ReviewCardSuggestion =
   | { kind: "replacement"; deleteText: string; insertText: string }
-  | { kind: "draft_on_apply" }
+  | { kind: "draft_on_apply"; suggestedText: string | null }
   | { kind: "multi_part" }
-  | { kind: "manual"; suggestedText: string | null };
+  | { kind: "none" };
 
-/** The one main button on every card. */
-export type ReviewCardPrimaryAction = "apply" | "view" | "verify";
+/** The one main button on every card. "none" shows it disabled with the reason. */
+export type ReviewCardPrimaryAction = "apply" | "view" | "none";
 
 export type ReviewFindingCardModel = {
   location: string;
@@ -209,10 +209,16 @@ export function reviewFindingCardModel(args: {
     };
   }
 
-  if (canGenerateReviewSuggestion(finding)) {
+  if (
+    canGenerateReviewSuggestion(finding) ||
+    (finding.section && finding.contentPath)
+  ) {
     return {
       ...base,
-      suggestion: { kind: "draft_on_apply" },
+      suggestion: {
+        kind: "draft_on_apply",
+        suggestedText: suggestedTextFromMetadata(finding.metadata),
+      },
       primary: "apply",
       locate: findingLocate(finding),
     };
@@ -220,11 +226,8 @@ export function reviewFindingCardModel(args: {
 
   return {
     ...base,
-    suggestion: {
-      kind: "manual",
-      suggestedText: suggestedTextFromMetadata(finding.metadata),
-    },
-    primary: "verify",
+    suggestion: { kind: "none" },
+    primary: "none",
     locate: findingLocate(finding),
   };
 }
