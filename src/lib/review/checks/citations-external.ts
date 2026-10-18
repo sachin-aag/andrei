@@ -1,4 +1,5 @@
 import { iterReportFields } from "../fields";
+import { locateFieldsForMatch } from "../locate";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 
 /** SOP / QMS / regulation identifiers that may live outside the vault. */
@@ -25,13 +26,15 @@ export function externalRefFindings(
         return compact.includes(needle) || haystack.includes(token.toLowerCase());
       });
       if (attached) continue;
+      const located = locateFieldsForMatch(field.text, match.index, token);
       findings.push({
         section: field.section,
         contentPath: field.contentPath,
-        anchorText: token,
+        anchorText: located.anchorText,
         message: `Please verify ${token} — it is not in the attached vault files.`,
         severity: "major",
         kind: "needs_human",
+        metadata: located.metadata,
       });
     }
   }

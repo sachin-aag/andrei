@@ -7,6 +7,7 @@ import {
   sourceCitationForNumber,
 } from "@/lib/suggestions/citations-at-end";
 import { iterReportFields } from "../fields";
+import { locateFieldsForMatch } from "../locate";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 
 const NUMERIC_MARKER_RE = /\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g;
@@ -49,6 +50,7 @@ export function citationResolveFindings(
     let match: RegExpExecArray | null;
     while ((match = NUMERIC_MARKER_RE.exec(body)) !== null) {
       if (!isNumericCitationMarker(match[0])) continue;
+      const located = locateFieldsForMatch(body, match.index, match[0]);
       const numbers = citationNumbersFromMarker(match[0]);
       for (const n of numbers) {
         const source = sourceCitationForNumber(field.text, n);
@@ -56,11 +58,11 @@ export function citationResolveFindings(
           findings.push({
             section: field.section,
             contentPath: field.contentPath,
-            anchorText: match[0],
+            anchorText: located.anchorText,
             message: `${match[0]} has no matching line in the Citations list.`,
             severity: "critical",
             kind: "needs_human",
-            metadata: { citationNumber: n },
+            metadata: { citationNumber: n, ...located.metadata },
           });
           continue;
         }
@@ -69,11 +71,11 @@ export function citationResolveFindings(
           findings.push({
             section: field.section,
             contentPath: field.contentPath,
-            anchorText: match[0],
+            anchorText: located.anchorText,
             message: `${match[0]} maps to ${source}, which is not a parseable file citation. Please verify it.`,
             severity: "major",
             kind: "needs_human",
-            metadata: { citationNumber: n, source },
+            metadata: { citationNumber: n, source, ...located.metadata },
           });
           continue;
         }
@@ -81,11 +83,11 @@ export function citationResolveFindings(
           findings.push({
             section: field.section,
             contentPath: field.contentPath,
-            anchorText: match[0],
+            anchorText: located.anchorText,
             message: `${match[0]} cites ${parsed.filename}, which is not an attached file. Please verify it.`,
             severity: "critical",
             kind: "needs_human",
-            metadata: { citationNumber: n, source },
+            metadata: { citationNumber: n, source, ...located.metadata },
           });
           continue;
         }
@@ -94,11 +96,11 @@ export function citationResolveFindings(
           findings.push({
             section: field.section,
             contentPath: field.contentPath,
-            anchorText: match[0],
+            anchorText: located.anchorText,
             message: `${match[0]} cites ${parsed.filename} p. ${page}, which is not a ready page. Please verify it.`,
             severity: "critical",
             kind: "needs_human",
-            metadata: { citationNumber: n, source, page },
+            metadata: { citationNumber: n, source, page, ...located.metadata },
           });
         }
       }

@@ -2,7 +2,8 @@ import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { evaluateSection, evaluationContentHash } from "@/lib/ai/evaluate";
 import { getCriteria, getDocumentType } from "@/lib/document-types";
 import { effectiveStatus } from "@/lib/ai/criteria-view";
-import { upsertCriterionEvaluations } from "../persist";
+import { openFindingsForCheck, upsertCriterionEvaluations } from "../persist";
+import { anchorForQuote } from "../quote-anchor";
 import type { ReviewCheckResult, ReviewRunContext } from "../types";
 
 export function reportCriteriaCheckId(section: string): `report.criteria.${string}` {
@@ -77,31 +78,36 @@ export async function runReportCriteriaCheck(
       contentHash,
     })
   ) {
-    const ids = new Map(
-      ctx.evaluations
-        .filter((row) => row.section === section)
-        .map((row) => [row.criterionKey, row.id])
+    const cached = ctx.evaluations.filter(
+      (row) =>
+        row.section === section &&
+        criteria.some((criterion) => criterion.key === row.criterionKey)
     );
-    return {
-      findings: findingsFromCriteriaResults({
-        ctx,
-        section,
-        sectionId: sectionRow.id,
-        results: ctx.evaluations
-          .filter(
-            (row) =>
-              row.section === section &&
-              criteria.some((criterion) => criterion.key === row.criterionKey)
-          )
-          .map((row) => ({
+    const quotes = await priorQuotes(ctx, section);
+    const failing = cached.filter((row) => {
+      const status = effectiveStatus(row);
+      return status !== "met" && status !== "not_evaluated";
+    });
+    // Evaluations from AI Check never asked for a quote; evaluate once more so
+    // each finding can point at its passage instead of the whole section.
+    if (failing.every((row) => quotes.has(row.id))) {
+      const ids = new Map(cached.map((row) => [row.criterionKey, row.id]));
+      return {
+        findings: findingsFromCriteriaResults({
+          ctx,
+          section,
+          sectionId: sectionRow.id,
+          results: cached.map((row) => ({
             criterionKey: row.criterionKey,
             criterionLabel: row.criterionLabel,
             status: row.status,
             reasoning: row.reasoning,
+            quote: quotes.get(row.id),
           })),
-        ids,
-      }),
-    };
+          ids,
+        }),
+      };
+    }
   }
 
   const results = await evaluateSection({
@@ -114,6 +120,7 @@ export async function runReportCriteriaCheck(
     allSections: ctx.sections,
     documentType: ctx.documentType,
     report: ctx.report as never,
+    requestQuotes: true,
   });
 
   const ids = await upsertCriterionEvaluations({
@@ -135,6 +142,25 @@ export async function runReportCriteriaCheck(
   };
 }
 
+/** Quotes earlier review runs got for these evaluations ("" = asked, none given). */
+async function priorQuotes(
+  ctx: ReviewRunContext,
+  section: string
+): Promise<Map<string, string>> {
+  const rows = await openFindingsForCheck(
+    ctx.report.id,
+    reportCriteriaCheckId(section)
+  );
+  const quotes = new Map<string, string>();
+  for (const row of rows) {
+    const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+    if (typeof metadata.evaluationId !== "string") continue;
+    if (typeof metadata.quote !== "string") continue;
+    quotes.set(metadata.evaluationId, metadata.quote);
+  }
+  return quotes;
+}
+
 function findingsFromCriteriaResults(args: {
   ctx: ReviewRunContext;
   section: string;
@@ -144,6 +170,7 @@ function findingsFromCriteriaResults(args: {
     criterionLabel: string;
     status: ReviewRunContext["evaluations"][number]["status"];
     reasoning: string;
+    quote?: string;
   }>;
   ids: Map<string, string>;
 }): ReviewCheckResult["findings"] {
@@ -175,15 +202,17 @@ function findingsFromCriteriaResults(args: {
     if (effectiveStatus(evalRow) === "met") continue;
     if (effectiveStatus(evalRow) === "not_evaluated") continue;
     const comment = openFixes.find((row) => row.evaluationId === evaluationId);
+    const quote = result.quote ?? "";
+    const quoted = comment ? null : anchorForQuote(args.ctx, args.section, quote);
     findings.push({
       section: args.section,
-      contentPath: comment?.contentPath ?? null,
-      anchorText: comment?.anchorText ?? "",
+      contentPath: comment?.contentPath ?? quoted?.contentPath ?? null,
+      anchorText: comment?.anchorText ?? quoted?.anchorText ?? "",
       message: `${result.criterionLabel}: ${result.reasoning || result.status}`,
       severity: result.status === "not_met" ? ("critical" as const) : ("major" as const),
       kind: comment ? ("fixable" as const) : ("needs_human" as const),
       commentId: comment?.id ?? null,
-      metadata: { criterionKey: result.criterionKey, evaluationId },
+      metadata: { criterionKey: result.criterionKey, evaluationId, quote },
     });
   }
   return findings;

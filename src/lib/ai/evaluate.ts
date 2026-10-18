@@ -108,6 +108,20 @@ const evaluationSchema = z.object({
   ),
 });
 
+/** Review checks also ask for the exact passage each problem is about. */
+const evaluationWithQuoteSchema = z.object({
+  evaluations: z.array(
+    z.object({
+      criterionKey: z.string(),
+      status: z.enum(["met", "partially_met", "not_met"]),
+      reasoning: z.string().min(1).max(1200),
+      quote: z.string().max(400),
+    })
+  ),
+});
+
+export const EVALUATION_QUOTE_INSTRUCTION = `QUOTE: For every criterion that is not met, set "quote" to the shortest passage the problem is about (one phrase or sentence, under 30 words), copied character-for-character from SECTION CONTENT. Do not paraphrase, shorten with ellipses, or join text from different places. Use an empty string when the criterion is met, or when the problem is missing content with nothing in the section to point at.`;
+
 function generationSettingsForSection(
   providerHint?: string,
   generationOptions: EvalGenerationOptions = DEFAULT_EVAL_GENERATION_OPTIONS,
@@ -176,6 +190,7 @@ type RawEvaluation = {
   criterionKey: string;
   status: string;
   reasoning: string;
+  quote?: string;
 };
 
 /** Parse raw JSON text and extract evaluations, dropping malformed entries. */
@@ -207,6 +222,7 @@ function salvageEvaluations(
     criterionKey: typeof e.criterionKey === "string" ? e.criterionKey : "",
     status: typeof e.status === "string" ? e.status : "not_met",
     reasoning: typeof e.reasoning === "string" ? e.reasoning : "",
+    ...(typeof e.quote === "string" ? { quote: e.quote } : {}),
   }));
 }
 
@@ -215,6 +231,8 @@ export type CriterionEvaluationResult = {
   criterionLabel: string;
   status: CriterionStatus;
   reasoning: string;
+  /** Verbatim passage the problem is about (only when `requestQuotes`). */
+  quote?: string;
 };
 
 /** Exact `system` + `prompt` passed to `generateText` for a sectional evaluation, when an LLM call is made. */
@@ -294,6 +312,7 @@ export function buildCriterionEvaluationLlmPrompts({
   documentType = "investigation_report",
   criteria: criteriaOverride,
   evaluationSystemPrompt,
+  requestQuotes = false,
 }: {
   section: SectionType;
   content: unknown;
@@ -305,6 +324,7 @@ export function buildCriterionEvaluationLlmPrompts({
   documentType?: DocumentType;
   criteria?: CriterionDefinition[];
   evaluationSystemPrompt?: string;
+  requestQuotes?: boolean;
 }): CriterionEvaluationLlmPrompts | null {
   const criteria =
     criteriaOverride ??
@@ -346,7 +366,7 @@ ${criteria
   )
   .join("\n")}
 
-Evaluate each criterion using only the section content above. Use the prior sections as background context to inform your judgment (e.g. whether actions trace to root causes), but do not evaluate them. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.`;
+Evaluate each criterion using only the section content above. Use the prior sections as background context to inform your judgment (e.g. whether actions trace to root causes), but do not evaluate them. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.${requestQuotes ? `\n\n${EVALUATION_QUOTE_INSTRUCTION}` : ""}`;
 
   return { systemPrompt, userPrompt };
 }
@@ -365,6 +385,7 @@ export async function evaluateSection({
   criteria: criteriaOverride,
   evaluationSystemPrompt,
   promptVersion,
+  requestQuotes = false,
 }: {
   section: SectionType;
   content: unknown;
@@ -388,6 +409,8 @@ export async function evaluateSection({
   criteria?: CriterionDefinition[];
   evaluationSystemPrompt?: string;
   promptVersion?: string;
+  /** Ask the model for a verbatim `quote` per failing criterion (review checks). */
+  requestQuotes?: boolean;
 }): Promise<CriterionEvaluationResult[]> {
   const criteria = criteriaOverride ?? criteriaFor(section, documentType);
   if (criteria.length === 0) return [];
@@ -451,6 +474,7 @@ export async function evaluateSection({
     documentType,
     criteria: llmCriteria,
     evaluationSystemPrompt,
+    requestQuotes,
   });
 
   if (!prompts) {
@@ -473,18 +497,16 @@ export async function evaluateSection({
     modelId
   );
 
-  let evaluations: Array<{
-    criterionKey: string;
-    status: string;
-    reasoning: string;
-  }>;
+  let evaluations: RawEvaluation[];
 
   try {
     const { temperature, maxOutputTokens, seed, providerOptions } = generationSettings;
     await assertAiBudgetAvailable();
     const result = await generateText({
       model: resolvedModel,
-      output: Output.object({ schema: evaluationSchema }),
+      output: Output.object({
+        schema: requestQuotes ? evaluationWithQuoteSchema : evaluationSchema,
+      }),
       system: systemPrompt,
       prompt: userPrompt,
       ...(temperature !== undefined ? { temperature } : {}),
@@ -551,6 +573,7 @@ export async function evaluateSection({
       criterionLabel: c.label,
       status,
       reasoning: result.reasoning,
+      ...(requestQuotes && result.quote?.trim() ? { quote: result.quote.trim() } : {}),
     };
   });
 

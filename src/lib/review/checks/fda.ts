@@ -5,6 +5,7 @@ import { isTestStubReview } from "@/lib/test/ai-bypass";
 import type { FdaCriterion } from "../fda-criteria";
 import { FDA_EVAL_SYSTEM_PROMPT, REVIEW_FDA_PROMPT_VERSION } from "../prompts";
 import { upsertCriterionEvaluations } from "../persist";
+import { anchorForQuote } from "../quote-anchor";
 import type { ReviewCheckResult, ReviewRunContext } from "../types";
 
 export function fdaCheckId(criterionKey: string): `fda.${string}` {
@@ -86,6 +87,7 @@ export async function runFdaSectionChecks(
           criteria: group,
           evaluationSystemPrompt: FDA_EVAL_SYSTEM_PROMPT,
           promptVersion: REVIEW_FDA_PROMPT_VERSION,
+          requestQuotes: true,
         });
 
     const contentHash = evaluationContentHash({
@@ -140,6 +142,7 @@ function findingsForFdaResult(args: {
     criterionLabel: string;
     status: ReviewRunContext["evaluations"][number]["status"];
     reasoning: string;
+    quote?: string;
   };
   evaluationId: string | undefined;
 }): ReviewCheckResult {
@@ -169,12 +172,15 @@ function findingsForFdaResult(args: {
       row.status === "open" &&
       row.evaluationId === args.evaluationId
   );
+  const quoted = comment
+    ? null
+    : anchorForQuote(args.ctx, args.section, args.result.quote);
   return {
     findings: [
       {
         section: args.section,
-        contentPath: comment?.contentPath ?? null,
-        anchorText: comment?.anchorText ?? "",
+        contentPath: comment?.contentPath ?? quoted?.contentPath ?? null,
+        anchorText: comment?.anchorText ?? quoted?.anchorText ?? "",
         message: `${args.result.criterionLabel}: ${args.result.reasoning || args.result.status}`,
         severity: args.result.status === "not_met" ? "critical" : "major",
         kind: comment ? "fixable" : "needs_human",

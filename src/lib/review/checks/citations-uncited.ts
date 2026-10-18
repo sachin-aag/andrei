@@ -5,6 +5,7 @@ import {
   type AnchorIndex,
 } from "@/lib/suggestions/locator";
 import { iterReportFields } from "../fields";
+import { locateFieldsForMatch } from "../locate";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 
 /**
@@ -63,14 +64,15 @@ export function uncitedFactFindings(
         const cell = cellForOffset(index, fact.start);
         if (cell && rowCited.has(`${cell.tableIndex}:${cell.row}`)) continue;
       }
+      const located = locateFieldsForMatch(field.text, fact.start, fact.text);
       findings.push({
         section: field.section,
         contentPath: field.contentPath,
-        anchorText: fact.text,
+        anchorText: located.anchorText,
         message: `Uncited ${fact.kind}: “${fact.text}”. Please add a citation or confirm it is not an attachment fact.`,
         severity: "major",
         kind: "needs_human",
-        metadata: { factKind: fact.kind },
+        metadata: { factKind: fact.kind, ...located.metadata },
       });
     }
   }

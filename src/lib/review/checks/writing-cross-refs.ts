@@ -3,6 +3,7 @@ import {
   getReportTableOfContents,
 } from "@/lib/document-types/convergent/table-of-contents";
 import { iterReportFields } from "../fields";
+import { locateFieldsForMatch } from "../locate";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 
 const TABLE_CAPTION_RE = /\bTable\s+(\d+)\./gi;
@@ -37,13 +38,15 @@ export function crossReferenceFindings(
     while ((tableMatch = TABLE_MENTION_RE.exec(field.text)) !== null) {
       const n = Number(tableMatch[1]);
       if (!Number.isInteger(n) || numbered.has(n)) continue;
+      const tableLocated = locateFieldsForMatch(field.text, tableMatch.index, tableMatch[0]);
       findings.push({
         section: field.section,
         contentPath: field.contentPath,
-        anchorText: tableMatch[0],
+        anchorText: tableLocated.anchorText,
         message: `${tableMatch[0]} does not resolve to a filled table in this document.`,
         severity: "minor",
         kind: "needs_human",
+        metadata: tableLocated.metadata,
       });
     }
 
@@ -54,13 +57,15 @@ export function crossReferenceFindings(
       if ([...outlineNums].some((key) => key === n || n.startsWith(`${key}.`) || key.startsWith(`${n}.`))) {
         continue;
       }
+      const sectionLocated = locateFieldsForMatch(field.text, sectionMatch.index, sectionMatch[0]);
       findings.push({
         section: field.section,
         contentPath: field.contentPath,
-        anchorText: sectionMatch[0],
+        anchorText: sectionLocated.anchorText,
         message: `${sectionMatch[0]} does not match a section in this document.`,
         severity: "minor",
         kind: "needs_human",
+        metadata: sectionLocated.metadata,
       });
     }
   }

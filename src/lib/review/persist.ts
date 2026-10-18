@@ -131,6 +131,19 @@ export async function openFindingsForReport(reportId: string) {
     );
 }
 
+export async function openFindingsForCheck(reportId: string, checkId: string) {
+  return db
+    .select()
+    .from(reviewFindings)
+    .where(
+      and(
+        eq(reviewFindings.reportId, reportId),
+        eq(reviewFindings.checkId, checkId),
+        eq(reviewFindings.status, "open")
+      )
+    );
+}
+
 export async function upsertCriterionEvaluations(args: {
   reportId: string;
   sectionId: string;

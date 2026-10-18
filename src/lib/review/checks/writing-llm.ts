@@ -64,7 +64,7 @@ async function runWritingLlmCheck(
     model,
     output: Output.object({ schema: editSchema }),
     system: args.system,
-    prompt: `${prompt}\n\nReturn locatable span edits (anchorText unique in that field). Skip citations, placeholders, and table structure.`,
+    prompt: `${prompt}\n\nReturn locatable span edits. anchorText is copied character-for-character from that FIELD and appears exactly once in it (extend it with neighbouring words until it is unique). deleteText is the exact words inside anchorText to replace; insertText is their replacement. Never paraphrase anchorText or deleteText. Skip citations, placeholders, and table structure.`,
     ...langfuseGenerateTextTelemetry({
       functionId: args.functionId,
       metadata: {
@@ -105,6 +105,10 @@ async function runWritingLlmCheck(
         message: edit.message,
         severity: "minor",
         kind: "needs_human",
+        metadata: {
+          focusText: edit.deleteText,
+          ...(edit.insertText.trim() ? { suggestedText: edit.insertText.trim() } : {}),
+        },
       });
     }
   }

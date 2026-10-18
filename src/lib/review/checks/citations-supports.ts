@@ -18,6 +18,7 @@ import {
 } from "@/lib/attachments/retrieval";
 import { locateProposedEdit } from "../persist-suggestion";
 import { iterReportFields } from "../fields";
+import { locateFieldsForMatch, type ReviewLocateMetadata } from "../locate";
 import { REVIEW_CITATION_PROMPT_VERSION } from "../prompts";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 import {
@@ -55,6 +56,9 @@ export type CitationSupportJob = {
   section: string;
   contentPath: string;
   marker: string;
+  /** Unique phrase around `marker` so the right `[n]` copy highlights. */
+  anchorText: string;
+  locateMetadata: ReviewLocateMetadata;
   citationNumber: number;
   source: string;
   claim: string;
@@ -89,6 +93,7 @@ export function collectCitationSupportJobs(
       if (!isNumericCitationMarker(match[0])) continue;
       const n = citationNumbersFromMarker(match[0])[0];
       if (n == null) continue;
+      const located = locateFieldsForMatch(field.text, match.index, match[0]);
       const source = sourceCitationForNumber(field.text, n);
       if (!source) continue;
       const parsed = parseSourceCitation(source, ctx.attachmentFilenames);
@@ -103,10 +108,11 @@ export function collectCitationSupportJobs(
         unresolved.push({
           section: field.section,
           contentPath: field.contentPath,
-          anchorText: match[0],
+          anchorText: located.anchorText,
           message: `${match[0]} cannot be checked automatically. Please verify ${source}.`,
           severity: "major",
           kind: "needs_human",
+          metadata: located.metadata,
         });
         continue;
       }
@@ -114,6 +120,8 @@ export function collectCitationSupportJobs(
         section: field.section,
         contentPath: field.contentPath,
         marker: match[0],
+        anchorText: located.anchorText,
+        locateMetadata: located.metadata,
         citationNumber: n,
         source,
         claim: claimWindowForCitation(
@@ -147,13 +155,14 @@ function humanFinding(
   return {
     section: job.section,
     contentPath: job.contentPath,
-    anchorText: job.marker,
+    anchorText: job.anchorText,
     message,
     severity,
     kind: "needs_human",
     metadata: {
       citationNumber: job.citationNumber,
       source: job.source,
+      ...job.locateMetadata,
     },
   };
 }
