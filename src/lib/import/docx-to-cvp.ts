@@ -436,6 +436,7 @@ function mergeCvpMetadata(
     version: pick("version"),
     effectiveDate: pick("effectiveDate"),
     reportNo: pick("reportNo"),
+    ccfNo: pick("ccfNo"),
   };
 }
 

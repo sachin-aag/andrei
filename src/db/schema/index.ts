@@ -182,6 +182,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "claim_unsupported",
   "review_check_run",
   "review_finding_verified",
+  "stated_fact_added",
+  "stated_fact_deleted",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -199,6 +201,7 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "attachment",
   "analytics",
   "review",
+  "stated_fact",
 ]);
 
 export const attachmentProcessingStatusEnum = pgEnum(
@@ -1295,6 +1298,48 @@ export const chatMessages = pgTable(
       t.sessionId,
       t.createdAt
     ),
+  })
+);
+
+/**
+ * Engineer-typed statements for one report. Document chat reads the live
+ * rows into the system prompt and the citation keep-list. Soft-deleted rows
+ * stay for the audit trail (`stated_fact_added` / `stated_fact_deleted`).
+ * A row is one sentence, not a recognized equipment id.
+ */
+export const reportStatedFacts = pgTable(
+  "report_stated_facts",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    /** Unused for statement rows. Kept so existing databases do not need a rebuild. */
+    entityText: text("entity_text").notNull().default(""),
+    entityNormalized: text("entity_normalized").notNull().default(""),
+    valueText: text("value_text").notNull(),
+    valueKind: text("value_kind").notNull(),
+    valueNormalized: text("value_normalized").notNull(),
+    /** Sentence the engineer typed, in their language. Not injected into the prompt. */
+    sourceText: text("source_text").notNull(),
+    sourceMessageId: text("source_message_id").references(() => chatMessages.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedBy: text("deleted_by"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => ({
+    reportLiveIdx: index("report_stated_facts_report_live_idx").on(
+      t.reportId,
+      t.deletedAt
+    ),
+    liveUnique: uniqueIndex("report_stated_facts_live_unique")
+      .on(t.reportId, t.entityNormalized, t.valueNormalized)
+      .where(sql`${t.deletedAt} IS NULL`),
   })
 );
 

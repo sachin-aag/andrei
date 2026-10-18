@@ -1,6 +1,6 @@
 import path from "node:path";
 import { CVP_PROMPT_VERSION } from "@/lib/customers/packs";
-import { compact3xperLitreVolumesInDoc } from "@/lib/document-types/3xper-volume-style";
+import { compactCvpCapacitiesInDoc } from "@/lib/document-types/3xper-volume-style";
 import { stripCaptionsOnUnfilledTables } from "@/lib/suggestions/table-operation";
 import { mergeStoredRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
@@ -27,7 +27,10 @@ import {
   CVP_SECTION_LABELS,
   EMPTY_CVP_CONTENT,
   EMPTY_CVP_LEGACY_CONTENT,
+  alignCvpCapacityHeaders,
   alignCvpMacoEquipmentHeaders,
+  ensureCvpQualificationInference,
+  upgradeCvpManufacturingAreaDoc,
   cvpMetadataFrom,
   cvpPrintedDocumentTitle,
   isCvpPersistableSectionKey,
@@ -35,6 +38,7 @@ import {
   type CvpPersistableSectionKey,
   type CvpSectionKey,
 } from "./cvp/sections";
+import { checkCvpRinseVolumeConsistency } from "./cvp/rinse-consistency";
 import { checkNarrativePresent, tableValuesCheck } from "./qsr/deterministic-checks";
 
 function llm(key: string, label: string, description: string): CriterionDefinition {
@@ -45,9 +49,10 @@ function det(
   key: string,
   label: string,
   description: string,
-  check: CriterionDefinition["check"]
+  check: CriterionDefinition["check"],
+  dependsOn?: string[]
 ): CriterionDefinition {
-  return { key, label, description, kind: "deterministic", check };
+  return { key, label, description, kind: "deterministic", check, dependsOn };
 }
 
 function narrativePresent(prefix: string, label: string): CriterionDefinition {
@@ -123,6 +128,13 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
       "Swab and rinse limits are calculated",
       "Are swab limits (MACO ÷ area × swab size) and per-equipment rinse ppm (carryover ÷ rinse volume) recorded from cited MACO, areas and rinse volumes?"
     ),
+    det(
+      "acceptance_limits.rinse_volume_agrees",
+      "Considered rinse volume matches Section 11.0",
+      "For each equipment ID, does the considered rinse volume in Section 9.0 match the rinse volume used for the acceptance limit in Section 11.0?",
+      checkCvpRinseVolumeConsistency,
+      ["cvp_rinse_volume"]
+    ),
   ],
   cvp_methodology: [narrativePresent("methodology", "Methodology")],
   cvp_sampling_procedure: [narrativePresent("sampling_procedure", "Sampling procedure")],
@@ -142,6 +154,7 @@ const CRITERIA: Record<CvpSectionKey, CriterionDefinition[]> = {
       "Is there a sampling block (identity, locations, rationale) for each product-contact equipment listed in Scope? Blank Batch 1 / Batch 2 / Batch 3 result, batch, and observation cells are correct — this is a protocol, not the executed report."
     ),
   ],
+  cvp_process_line: [tableFilled("process_line", "Process line", 3)],
   cvp_nitrosamine: [tableFilled("nitrosamine", "Nitrosamine limits", 7)],
   cvp_manufacturing_area: [
     tableFilled("manufacturing_area", "Manufacturing area", 9),
@@ -171,7 +184,7 @@ function fieldFor(
 }
 
 function emptyContentFor(key: CvpPersistableSectionKey) {
-  if (key === "cvp_pgi" || key === "cvp_process_line") {
+  if (key === "cvp_pgi") {
     return EMPTY_CVP_LEGACY_CONTENT[key];
   }
   return EMPTY_CVP_CONTENT[key];
@@ -192,17 +205,24 @@ function mergeCvpSection(key: string, raw: unknown): unknown {
   }
   const field = fieldFor(key);
   const base = (emptyContentFor(key) as Record<string, unknown>)[field];
-  const compacted = compact3xperLitreVolumesInDoc(
+  const compacted = compactCvpCapacitiesInDoc(
     mergeStoredRichField(raw, field, base, {
       preserveHeadings: true,
     })
   );
-  const aligned =
-    key === "cvp_maco" ? alignCvpMacoEquipmentHeaders(compacted) : compacted;
+  const withCapacity = alignCvpCapacityHeaders(
+    key === "cvp_maco" ? alignCvpMacoEquipmentHeaders(compacted) : compacted
+  );
+  const withSchema =
+    key === "cvp_manufacturing_area"
+      ? upgradeCvpManufacturingAreaDoc(withCapacity)
+      : key === "cvp_qualification_status"
+        ? ensureCvpQualificationInference(withCapacity)
+        : withCapacity;
   const tableDoc =
     key === "cvp_sampling_plan"
-      ? ensureCvpBatchExecutionTable(aligned)
-      : aligned;
+      ? ensureCvpBatchExecutionTable(withSchema)
+      : withSchema;
   const upgraded = ensureCvpTableSectionBoilerplate(key, tableDoc);
   return {
     [field]: stripCaptionsOnUnfilledTables(upgraded, {
@@ -217,7 +237,7 @@ export const cleaningVerificationProtocolDefinition: DocumentTypeDefinition = {
   label: "Cleaning Validation Protocol",
   documentNoun: "cleaning validation protocol",
   documentNoLabel: "Protocol No.",
-  documentNoPlaceholder: "e.g. CVRP-ISM4-26-001",
+  documentNoPlaceholder: "e.g. CVLP-ISM4-26-001",
   wordImport: { kind: "cleaning_verification_protocol" },
   editorProfile: "report_headings",
   evaluation: { kind: "criteria" },
@@ -247,7 +267,7 @@ Do not invent equipment numbers, surface areas, PDE, MACO, or analytical method 
       cvp_nitrosamine:
         "Limit NMT (0.01 ppm) and LOD / LOQ rows should be present. Equipment Name/ID may be listed. Result cells staying blank is correct. Do not require a completed results table or a Validated conclusion.",
       cvp_manufacturing_area:
-        "Area Name / sampled-area rows and a 10 ppm Limit should be present. Results columns staying blank is correct.",
+        "The visual inspection and white wipe-cloth grid (floor, wall, ceiling, AHU, external surface) should be present, with a Production row and a QA row. Observation cells staying blank is correct. A filled older swab table may remain.",
       cvp_overall_results:
         "One row per equipment ID plus a Manufacturing Areas row, with NA only where a test does not apply. Execution result / status / remarks cells staying blank is correct.",
       cvp_recommendations:
@@ -374,6 +394,7 @@ You never write to the document directly — every change is a PROPOSAL the engi
         version: meta.version,
         effectiveDate: meta.effectiveDate,
         reportNo: meta.reportNo,
+        ccfNo: meta.ccfNo,
         documentTitle: cvpPrintedDocumentTitle(meta),
         formNo: CVP_FORM_NO,
         ...xml,

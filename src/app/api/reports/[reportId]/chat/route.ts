@@ -167,6 +167,11 @@ import {
   withUnsupportedChatToolFallback,
 } from "@/lib/ai/chat/unsupported-tool";
 import { rewriteAskAssistantParts } from "@/lib/ai/chat/ask-citation-rewrite";
+import { statedFactsForTurn, type StatedFactRef } from "@/lib/ai/chat/stated-facts";
+import {
+  captureStatedFacts,
+  listLiveStatedFacts,
+} from "@/lib/ai/chat/stated-fact-store";
 import { rewriteUnlandedWriteParts } from "@/lib/ai/chat/unlanded-write-rewrite";
 import {
   buildMentionBlock,
@@ -288,16 +293,21 @@ async function handleChatPost(
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
   const autoContinue = chatUserTurnIsAutoContinue(userMsg?.metadata);
+  let userMessageId: string | null = null;
   if (userMsg) {
     try {
-      await db.insert(chatMessages).values({
-        reportId,
-        sessionId,
-        role: "user",
-        parts: userMsg.parts ?? [],
-        metadata: chatUserTurnMetadata("report", { autoContinue }),
-        authorId: user.id,
-      });
+      const [savedUser] = await db
+        .insert(chatMessages)
+        .values({
+          reportId,
+          sessionId,
+          role: "user",
+          parts: userMsg.parts ?? [],
+          metadata: chatUserTurnMetadata("report", { autoContinue }),
+          authorId: user.id,
+        })
+        .returning({ id: chatMessages.id });
+      userMessageId = savedUser?.id ?? null;
       await touchChatSession(sessionId, userText || null);
     } catch (err) {
       console.error("chat: failed to persist user message", err);
@@ -570,6 +580,29 @@ async function handleChatPost(
     .filter((block) => block.trim().length > 0)
     .join("\n\n");
 
+  let statedFacts: StatedFactRef[] = [];
+  try {
+    if (userMessageId && userText.trim() && !autoContinue) {
+      await captureStatedFacts({
+        reportId,
+        messageId: userMessageId,
+        authorId: user.id,
+        text: userText,
+        sections: mergedSections,
+        reportMetadata:
+          report.metadata &&
+          typeof report.metadata === "object" &&
+          !Array.isArray(report.metadata)
+            ? (report.metadata as Record<string, unknown>)
+            : null,
+        actor: auditActorFromUser(user),
+      });
+    }
+    statedFacts = statedFactsForTurn(await listLiveStatedFacts(reportId));
+  } catch (err) {
+    console.error("chat: stated facts", err);
+  }
+
   const system = buildChatSystemPrompt({
     contextMap,
     criteriaOutline: buildCriteriaOutline(sectionScope, report.documentType),
@@ -584,6 +617,7 @@ async function handleChatPost(
     intent: userIntent.kind,
     switchToAnalytics,
     pendingPlan,
+    statedFacts,
   });
 
   const searchGate = createSearchGate();
@@ -623,6 +657,7 @@ async function handleChatPost(
     reportSections: mergedSections,
     userIntentKind: userIntent.kind,
     turnStartedAtMs,
+    statedFacts,
   });
   const scopedTools: ToolSet =
     mode === "plan"
@@ -904,7 +939,7 @@ async function handleChatPost(
     onError: (error) => {
       const formatted = chatUiStreamErrorText(error);
       if (formatted.recoverable) {
-        console.warn("chat: unavailable tool in stream", {
+        console.warn("chat: recoverable tool error in stream", {
           reportId,
           sessionId,
           error: formatChatLlmError(error),
@@ -1046,6 +1081,8 @@ async function handleChatPost(
               role: "assistant",
               parts: persisted.parts,
             },
+            statedFacts,
+            namedAttachmentIds: pinnedAttachmentIds,
           })
         );
         await db.insert(chatMessages).values({

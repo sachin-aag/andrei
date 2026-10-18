@@ -1837,7 +1837,7 @@ export function ChatPanel({
     ) : null;
 
   return (
-    <div ref={mentionBoundaryRef} className="flex h-full flex-col" aria-busy={initializing}>
+    <div ref={mentionBoundaryRef} className="flex h-full min-h-0 flex-col" aria-busy={initializing}>
       {mountedSessions.map((session) => (
         <ChatSessionHost
           key={session.id}
@@ -1852,7 +1852,7 @@ export function ChatPanel({
         />
       ))}
       {/* Header: session tabs + new chat + history */}
-      <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+      <div className="relative flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />
         {sessionTabs.length > 0 ? (
           <ChatSessionTabs
@@ -1945,7 +1945,7 @@ export function ChatPanel({
       <div
         ref={scrollRef}
         data-testid="chat-message-scroller"
-        className="flex-1 space-y-5 overflow-y-auto p-4"
+        className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4"
         onScroll={onMessagesScroll}
       >
         {hiddenCount > 0 ? (
@@ -2058,7 +2058,7 @@ export function ChatPanel({
 
       {/* Composer */}
       <form
-        className="border-t border-[var(--border)] p-3"
+        className="shrink-0 border-t border-[var(--border)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
         onSubmit={(e) => {
           e.preventDefault();
           if (voiceLockRef.current) return;

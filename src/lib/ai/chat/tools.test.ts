@@ -994,6 +994,26 @@ describe("buildChatTools edit_table", () => {
       })
     ).toBe(true);
   });
+
+  it("accepts the production payload that omitted operation instead of throwing", () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "design_verification",
+    });
+    const input = {
+      targetField: "table",
+      section: "traceability",
+      reasoning:
+        "Populate traceability matrix with requirements from the Solea verification requirements documents.",
+    };
+    expect(accepts(tools, "edit_table", input)).toBe(true);
+    expect(inputSchemaOf(tools, "edit_table").parse(input)).toMatchObject({
+      section: "traceability",
+      targetField: "table",
+      operation: {},
+    });
+  });
 });
 
 describe("buildChatTools document review", () => {
@@ -3531,6 +3551,40 @@ describe("buildChatTools propose edits", () => {
     });
   });
 
+  it("refuses a near-identical redraft even on an explicit rewrite turn", async () => {
+    const filled =
+      "The purpose of this report is to present the testing results obtained following the partial executions of the Solea Model 3 System Design Verification Protocol and Solea Model 3 Hardware Design Verification Protocol, respectively, which verified the Solea Model 3 Perioguide Handpiece (SUB-00448), Perioguide Tip (SUB-00471), CO2 Sensor Housing (SUB-00458), CO2 Sensor Acquisition Module (SUB-00464) and CO2 Sensor Handpiece Adapter (SUB-00468) for release on the Solea Model 3 [1]. The Perioguide project enables a variety of laser periodontal procedures to be performed in a closed periodontal pocket [1]. Citations: [Mechanical Test Report Attachments only.pdf]";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: filled }] }],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      messages: [
+        {
+          id: "u1",
+          role: "user",
+          parts: [{ type: "text", text: "redraft @Purpose section" }],
+        },
+      ],
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: `${filled.slice(0, filled.indexOf(".pdf]"))}.pdf, p. 1]`,
+        reasoning: "Redraft the Purpose section with precise source page citations.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "not_a_rewrite" });
+    expect(String((refused as { hint?: string }).hint)).toMatch(/Rewrite the prose/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("lands insert-it after a 15.N redraft even when coverage looks targeted", async () => {
     const filled =
       "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation. The batch was quarantined pending review.";
@@ -4705,6 +4759,29 @@ describe("buildChatTools propose edits", () => {
     expect(dbInsertMock).not.toHaveBeenCalled();
   });
 
+  it("returns an invalid hint when edit_table omits operation", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "design_verification",
+      actor,
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "traceability",
+        targetField: "table",
+        reasoning:
+          "Populate traceability matrix with requirements from the Solea verification requirements documents.",
+      } as never,
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "invalid" });
+    expect(String((result as { hint?: string }).hint)).toMatch(
+      /kind at the top of operation/
+    );
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
   it("returns section_changed when the field moved after read_section", async () => {
     const tools = buildChatTools({
       reportId: "report-1",
@@ -4835,7 +4912,7 @@ describe("buildChatTools propose edits", () => {
       TEST_TOOL_OPTIONS
     )) as { fields: Array<{ targetField: string; text: string }> };
     expect(read.fields[0]?.targetField).toBe("items.1");
-    expect(read.fields[0]?.text).toContain("10k L");
+    expect(read.fields[0]?.text).toContain("10 KL");
     expect(read.fields[0]?.text).not.toContain("10000 L");
 
     const proposed = await tools.edit_table!.execute!(

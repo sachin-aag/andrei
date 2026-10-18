@@ -16,6 +16,27 @@ export function compact3xperLitreVolumes(text: string): string {
   });
 }
 
+const K_LITRE_RE = /(?<![\w.])(\d+)k L\b/g;
+
+/** Cleaning validation protocol capacities: `10 KL`, not `10k L` or `10000 L`. */
+export function compactCvpCapacities(text: string): string {
+  return compact3xperLitreVolumes(text).replace(
+    K_LITRE_RE,
+    (_, raw: string) => `${raw} KL`
+  );
+}
+
+export function compactCvpCapacitiesInDoc(node: JSONContent): JSONContent {
+  const next: JSONContent = { ...node };
+  if (typeof node.text === "string") {
+    next.text = compactCvpCapacities(node.text);
+  }
+  if (node.content) {
+    next.content = node.content.map(compactCvpCapacitiesInDoc);
+  }
+  return next;
+}
+
 export function compact3xperLitreVolumesInDoc(node: JSONContent): JSONContent {
   const next: JSONContent = { ...node };
   if (typeof node.text === "string") {

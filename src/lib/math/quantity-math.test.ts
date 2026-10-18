@@ -91,6 +91,12 @@ describe("quantityLatexToPlainText", () => {
     expect(quantityLatexToPlainText(String.raw`90^\circ`)).toBe("90°");
     expect(quantityLatexToPlainText("0^circ")).toBe("0°");
     expect(quantityLatexToPlainText("90^{circ}")).toBe("90°");
+    expect(quantityLatexToPlainText("0}^{circ}")).toBe("0°");
+    expect(quantityLatexToPlainText(String.raw`90}^{\circ}`)).toBe("90°");
+    expect(quantityLatexToPlainText("0}circ")).toBe("0°");
+    expect(quantityLatexToPlainText("0}circ,90}circ,180}circ")).toBe(
+      "0°,90°,180°"
+    );
   });
 });
 
@@ -141,6 +147,45 @@ describe("flattenQuantityMathInDoc", () => {
       type: "text",
       text: "0°",
     });
+  });
+
+  it("repairs persisted 0}circ prose from the CVP sampling screenshot", () => {
+    const { doc, samples } = flattenQuantityMathInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "points at 0}circ,90}circ,180}circ, and 270}circ",
+            },
+          ],
+        },
+      ],
+    });
+    expect(samples.length).toBeGreaterThan(0);
+    expect(doc.content?.[0]?.content).toEqual([
+      { type: "text", text: "points at 0°,90°,180°, and 270°" },
+    ]);
+  });
+
+  it("coalesces a leftover superscript circ onto the preceding number", () => {
+    const { doc } = flattenQuantityMathInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "0}" },
+            { type: "text", text: "circ", marks: [{ type: "superscript" }] },
+          ],
+        },
+      ],
+    });
+    expect(doc.content?.[0]?.content).toEqual([
+      { type: "text", text: "0°" },
+    ]);
   });
 });
 
