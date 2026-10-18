@@ -116,7 +116,8 @@ export function buildCanvasTabs(args: {
   tabIds?: readonly CanvasTabId[];
   attachmentLabels: Readonly<Record<string, string>>;
   compare: { from: number; to: number } | null;
-  /** Top-left pane keeps Report and Analytics uncloseable. */
+  /** Top-left pane keeps Report and Analytics uncloseable.
+   *  Report cannot be copied to another pane. */
   pinned?: boolean;
   /** Prefixes test ids so a second pane does not reuse the anchor ids. */
   testIdScope?: string;

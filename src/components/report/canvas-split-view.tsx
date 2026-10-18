@@ -264,17 +264,15 @@ export function CanvasSplitView({
             }
             dragPaneId={tabsDraggable ? pane.id : undefined}
             dragCopiesTab={(tabId) =>
-              anchor &&
-              (tabId === "report" || (tabId === "analytics" && statsEnabled))
+              Boolean(anchor && tabId === "analytics" && statsEnabled)
             }
             onTabDragStart={(tabId) => {
               tabDragRef.current = {
                 paneId: pane.id,
                 tabId,
-                copies:
-                  anchor &&
-                  (tabId === "report" ||
-                    (tabId === "analytics" && statsEnabled)),
+                copies: Boolean(
+                  anchor && tabId === "analytics" && statsEnabled
+                ),
               };
             }}
             onTabDragEnd={() => {

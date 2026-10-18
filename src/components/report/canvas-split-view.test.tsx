@@ -16,7 +16,7 @@ function renderSplit(presentation: "grid" | "single" = "grid") {
     createCanvasLayout(true),
     ANCHOR_PANE_ID,
     "right",
-    "report",
+    "analytics",
     true
   );
   const onSplit = vi.fn();
@@ -43,16 +43,16 @@ function renderSplit(presentation: "grid" | "single" = "grid") {
 }
 
 describe("CanvasSplitView", () => {
-  it("keeps the anchor report pinned and lets the copy close", () => {
+  it("keeps the anchor analytics pinned and lets the copy close", () => {
     renderSplit();
     expect(screen.getByTestId("canvas-pane-anchor")).toBeInTheDocument();
-    expect(screen.getByTestId("report-surface-document")).toBeInTheDocument();
+    expect(screen.getByTestId("report-surface-analytics")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Close Report" })
+      screen.queryByRole("button", { name: "Close Analytics" })
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Close Report" })).toHaveLength(
-      1
-    );
+    expect(
+      screen.getAllByRole("button", { name: "Close Analytics" })
+    ).toHaveLength(1);
   });
 
   it("hides the split menu in the single-pane presentation", async () => {
@@ -65,12 +65,12 @@ describe("CanvasSplitView", () => {
     expect(screen.queryByRole("menuitem", { name: "Split right" })).toBeNull();
   });
 
-  it("offers split directions from the document tab menu", async () => {
+  it("offers split directions from the analytics tab menu", async () => {
     const user = userEvent.setup();
     const { onSplit } = renderSplit("grid");
     await user.pointer({
       keys: "[MouseRight]",
-      target: screen.getByTestId("report-surface-document"),
+      target: screen.getByTestId("report-surface-analytics"),
     });
     expect(await screen.findByRole("menuitem", { name: "Split right" })).toHaveAttribute(
       "aria-disabled",
@@ -79,7 +79,24 @@ describe("CanvasSplitView", () => {
     const splitDown = await screen.findByRole("menuitem", { name: "Split down" });
     expect(splitDown).not.toHaveAttribute("data-disabled");
     await user.click(splitDown);
-    expect(onSplit).toHaveBeenCalledWith(ANCHOR_PANE_ID, "down", "report");
+    expect(onSplit).toHaveBeenCalledWith(ANCHOR_PANE_ID, "down", "analytics");
+  });
+
+  it("does not offer splitting the live report", async () => {
+    const user = userEvent.setup();
+    renderSplit("grid");
+    await user.pointer({
+      keys: "[MouseRight]",
+      target: screen.getByTestId("report-surface-document"),
+    });
+    expect(await screen.findByRole("menuitem", { name: "Split right" })).toHaveAttribute(
+      "aria-disabled",
+      "true"
+    );
+    expect(screen.getByRole("menuitem", { name: "Split down" })).toHaveAttribute(
+      "aria-disabled",
+      "true"
+    );
   });
 
   it("drags a tab from one pane onto the other", () => {
@@ -98,14 +115,14 @@ describe("CanvasSplitView", () => {
       effectAllowed: "move",
       dropEffect: "move",
     };
-    fireEvent.dragStart(screen.getByTestId("pane-1-report-surface-document"), {
+    fireEvent.dragStart(screen.getByTestId("pane-1-report-surface-analytics"), {
       dataTransfer,
     });
     expect(store.has(CANVAS_TAB_DRAG_MIME)).toBe(true);
     const anchor = screen.getByTestId("canvas-pane-anchor");
     fireEvent.dragOver(anchor, { dataTransfer });
     fireEvent.drop(anchor, { dataTransfer });
-    expect(onMoveTab).toHaveBeenCalledWith("pane-1", ANCHOR_PANE_ID, "report");
+    expect(onMoveTab).toHaveBeenCalledWith("pane-1", ANCHOR_PANE_ID, "analytics");
   });
 
   it("does not offer tab dragging in the single-pane presentation", () => {

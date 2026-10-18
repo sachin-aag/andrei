@@ -9,6 +9,7 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -45,7 +46,7 @@ import {
   writeWorkspaceChrome,
 } from "./workspace-chrome-prefs";
 import { CanvasSplitView } from "./canvas-split-view";
-import { ReportMirror } from "./report-mirror";
+import { WorkProductAwayNotice } from "./work-product-away-notice";
 import {
   ANCHOR_PANE_ID,
   attachmentIdsInPane,
@@ -55,6 +56,7 @@ import {
   findPane,
   focusPane,
   listPanes,
+  livePaneForTab,
   moveTabToPane,
   openAttachmentOnPane,
   openTabOnPane,
@@ -381,6 +383,10 @@ export function ReportWorkspace({
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const wasEvaluatingRef = useRef(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsHost, setAnalyticsHost] = useState<HTMLDivElement | null>(null);
+  const bindAnalyticsHost = useCallback((node: HTMLDivElement | null) => {
+    if (node) setAnalyticsHost(node);
+  }, []);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
   const [analyticsAgentBusy, setAnalyticsAgentBusy] = useState(false);
   const [analyticsMentionSheets, setAnalyticsMentionSheets] = useState<
@@ -438,6 +444,7 @@ export function ReportWorkspace({
     findPane(canvasLayout.root, canvasLayout.focusedPaneId) ?? anchor;
   const liveActiveTabId = focusedPane.activeTabId;
   const reportSurface = anchor.activeTabId === "report";
+  const liveAnalyticsPaneId = livePaneForTab(canvasLayout, "analytics")?.id ?? null;
   const analyticsCanEdit = canSaveReportSection(
     { id: currentUserId, role: currentUserRole, email: currentUserEmail },
     report
@@ -645,7 +652,6 @@ export function ReportWorkspace({
   const jumpToSection = useCallback((s: SectionType, jumpId?: string) => {
     setWorkProductView("report");
     const target = paneForReportJump(canvasLayout);
-    const showingMirror = target.id !== ANCHOR_PANE_ID;
     setLayout(
       selectTab(
         openTabOnPane(canvasLayout, target.id, "report", statsEnabled),
@@ -664,11 +670,9 @@ export function ReportWorkspace({
       const root = mainRef.current?.querySelector(
         `[data-canvas-pane-body="${target.id}"]`
       );
-      const el = showingMirror
-        ? root?.querySelector(`[data-mirror-section="${CSS.escape(s)}"]`)
-        : jumpId
-          ? root?.querySelector(`[id="${CSS.escape(jumpId)}"]`)
-          : root?.querySelector(`#${CSS.escape(s)}`);
+      const el = jumpId
+        ? root?.querySelector(`[id="${CSS.escape(jumpId)}"]`)
+        : root?.querySelector(`#${CSS.escape(s)}`);
       if (el) el.scrollIntoView({ behavior: "auto", block: "start" });
     });
   }, [canvasLayout, editorsAllowed, statsEnabled]);
@@ -1359,7 +1363,7 @@ export function ReportWorkspace({
                         scrollable
                         scrollTabId={`${pane.id}-report`}
                       >
-                        <ReportMirror />
+                        <WorkProductAwayNotice product="Report" />
                       </CanvasTabPane>
                     ) : null}
                     {pane.tabIds.includes("analytics") &&
@@ -1372,20 +1376,22 @@ export function ReportWorkspace({
                             : `${pane.id}-analytics-canvas`
                         }
                       >
-                        <StatisticalWorkspace
-                          reportId={report.id}
-                          readOnly={anchorBody ? !analyticsCanEdit : true}
-                          reloadEpoch={analyticsReloadEpoch}
-                          agentBusy={analyticsAgentBusy}
-                          focusApiRef={
-                            anchorBody ? analyticsFocusRef : undefined
-                          }
-                          onMentionSheetsChange={
-                            anchorBody
-                              ? handleAnalyticsMentionSheetsChange
+                        <div
+                          ref={
+                            liveAnalyticsPaneId === pane.id
+                              ? bindAnalyticsHost
                               : undefined
                           }
+                          data-analytics-host={pane.id}
+                          className={
+                            liveAnalyticsPaneId === pane.id
+                              ? "flex h-full min-h-0 min-w-0 flex-1 flex-col"
+                              : "hidden"
+                          }
                         />
+                        {liveAnalyticsPaneId === pane.id ? null : (
+                          <WorkProductAwayNotice product="Analytics" />
+                        )}
                       </CanvasTabPane>
                     ) : null}
                     <AttachmentCanvasStack
@@ -1412,6 +1418,21 @@ export function ReportWorkspace({
               }}
             />
           )}
+          {!showCollapsedWorkProduct &&
+          analyticsOpen &&
+          analyticsHost?.isConnected
+            ? createPortal(
+                <StatisticalWorkspace
+                  reportId={report.id}
+                  readOnly={!analyticsCanEdit}
+                  reloadEpoch={analyticsReloadEpoch}
+                  agentBusy={analyticsAgentBusy}
+                  focusApiRef={analyticsFocusRef}
+                  onMentionSheetsChange={handleAnalyticsMentionSheetsChange}
+                />,
+                analyticsHost
+              )
+            : null}
           {agentChrome ? (
             <WorkspaceResizeHandle
               label="Resize document panel"

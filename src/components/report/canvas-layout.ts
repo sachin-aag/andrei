@@ -4,7 +4,11 @@ import {
   type CanvasTabId,
 } from "./work-product-canvas";
 
-/** The pane that occupies the top-left cell. Report and Analytics stay pinned here. */
+/**
+ * The pane that occupies the top-left cell. The live report editor stays
+ * here. Analytics stays pinned as a tab; the live worksheet follows the
+ * pane where that tab is in front.
+ */
 export const ANCHOR_PANE_ID = "anchor";
 
 export const SPLIT_RATIO_MIN = 0.2;
@@ -107,6 +111,18 @@ function isPinnedTab(
   return tabId === "analytics" && statsEnabled;
 }
 
+/** Pinned Analytics can be copied. A second live Report waits on collaboration. */
+function copiesOnMove(
+  root: LayoutNode,
+  paneId: string,
+  tabId: CanvasTabId,
+  statsEnabled: boolean
+): boolean {
+  return (
+    isAnchorPane(root, paneId) && tabId === "analytics" && statsEnabled
+  );
+}
+
 export function canSplitPane(
   layout: CanvasLayout,
   paneId: string,
@@ -116,6 +132,7 @@ export function canSplitPane(
 ): boolean {
   const pane = findPane(layout.root, paneId);
   if (!pane || !pane.tabIds.includes(tabId)) return false;
+  if (tabId === "report") return false;
   if (ancestorAxes(layout.root, paneId).includes(axisFor(direction))) {
     return false;
   }
@@ -303,13 +320,16 @@ export function openTabOnPane(
     }
     if (existing) return selectTab(layout, existing.id, "history");
   }
+  if (tabId === "report") {
+    return selectTab(layout, anchorPane(layout.root).id, "report");
+  }
   const pane = findPane(layout.root, paneId);
   if (!pane) return layout;
   const root = replacePane(layout.root, paneId, selectOnPane(pane, tabId));
   return finish({ ...layout, root, focusedPaneId: paneId }, statsEnabled);
 }
 
-/** Drag a tab onto another pane. Pinned Report and Analytics on the anchor are copied. */
+/** Drag a tab onto another pane. Pinned Analytics on the anchor is copied. */
 export function moveTabToPane(
   layout: CanvasLayout,
   fromPaneId: string,
@@ -318,10 +338,11 @@ export function moveTabToPane(
   statsEnabled: boolean
 ): CanvasLayout {
   if (fromPaneId === toPaneId) return layout;
+  if (tabId === "report") return layout;
   const source = findPane(layout.root, fromPaneId);
   const target = findPane(layout.root, toPaneId);
   if (!source || !target || !source.tabIds.includes(tabId)) return layout;
-  const copy = isPinnedTab(layout.root, fromPaneId, tabId, statsEnabled);
+  const copy = copiesOnMove(layout.root, fromPaneId, tabId, statsEnabled);
   const opened = openTabOnPane(layout, toPaneId, tabId, statsEnabled);
   if (copy || tabId === "history") return opened;
   return closeTab(opened, fromPaneId, tabId, statsEnabled);
@@ -526,14 +547,28 @@ export function pruneCanvasLayout(
   return finish(base, args.statsEnabled);
 }
 
-export function paneForReportJump(
-  layout: CanvasLayout
-): PaneLeaf {
+export function paneForReportJump(layout: CanvasLayout): PaneLeaf {
+  return anchorPane(layout.root);
+}
+
+/**
+ * The pane that should host the single live instance of `tabId`. Prefers the
+ * focused pane when that tab is in front, then any pane showing it, then the
+ * first pane that still has the tab (usually parked on the anchor).
+ */
+export function livePaneForTab(
+  layout: CanvasLayout,
+  tabId: CanvasTabId
+): PaneLeaf | null {
+  const panes = listPanes(layout.root).filter((pane) =>
+    pane.tabIds.includes(tabId)
+  );
+  if (panes.length === 0) return null;
   const focused = findPane(layout.root, layout.focusedPaneId);
-  if (focused?.activeTabId === "report" && focused.tabIds.includes("report")) {
+  if (focused?.tabIds.includes(tabId) && focused.activeTabId === tabId) {
     return focused;
   }
-  return anchorPane(layout.root);
+  return panes.find((pane) => pane.activeTabId === tabId) ?? panes[0]!;
 }
 
 export function attachmentIdsInPane(pane: PaneLeaf): string[] {

@@ -7,6 +7,7 @@ import {
   closeTab,
   createCanvasLayout,
   listPanes,
+  livePaneForTab,
   moveTabToPane,
   openAttachmentOnPane,
   openTabOnPane,
@@ -36,25 +37,29 @@ describe("canvas layout", () => {
       false
     );
     expect(canSplitPane(layout, ANCHOR_PANE_ID, "right", "report", true)).toBe(
+      false
+    );
+    expect(canSplitPane(layout, ANCHOR_PANE_ID, "right", "analytics", true)).toBe(
       true
     );
   });
 
-  it("copies a pinned report into a new pane and leaves it on the anchor", () => {
+  it("copies pinned analytics into a new pane and leaves it on the anchor", () => {
     const next = splitPane(
       createCanvasLayout(true),
       ANCHOR_PANE_ID,
       "right",
-      "report",
+      "analytics",
       true
     );
     expect(tabs(next, ANCHOR_PANE_ID)).toEqual(["report", "analytics"]);
     expect(anchorPane(next.root).id).toBe(ANCHOR_PANE_ID);
     const copy = listPanes(next.root).find((pane) => pane.id !== ANCHOR_PANE_ID);
-    expect(copy?.tabIds).toEqual(["report"]);
-    expect(copy?.activeTabId).toBe("report");
+    expect(copy?.tabIds).toEqual(["analytics"]);
+    expect(copy?.activeTabId).toBe("analytics");
     expect(next.focusedPaneId).toBe(copy?.id);
-    expect(closeTab(next, copy!.id, "report", true).root.kind).toBe("pane");
+    expect(livePaneForTab(next, "analytics")?.id).toBe(copy?.id);
+    expect(closeTab(next, copy!.id, "analytics", true).root.kind).toBe("pane");
   });
 
   it("moves an attachment into the new pane", () => {
@@ -90,11 +95,12 @@ describe("canvas layout", () => {
 
   it("stops at a 2 by 2 grid", () => {
     let layout = createCanvasLayout(true);
-    layout = splitPane(layout, ANCHOR_PANE_ID, "right", "report", true);
+    layout = splitPane(layout, ANCHOR_PANE_ID, "right", "analytics", true);
     const rightId = layout.focusedPaneId;
-    layout = openTabOnPane(layout, rightId, "analytics", true);
-    layout = splitPane(layout, ANCHOR_PANE_ID, "down", "analytics", true);
-    layout = splitPane(layout, rightId, "down", "analytics", true);
+    layout = openAttachmentOnPane(layout, rightId, "att-1", true);
+    layout = splitPane(layout, rightId, "down", "attachment:att-1", true);
+    layout = openAttachmentOnPane(layout, ANCHOR_PANE_ID, "att-2", true);
+    layout = splitPane(layout, ANCHOR_PANE_ID, "down", "attachment:att-2", true);
     expect(listPanes(layout.root)).toHaveLength(4);
     for (const pane of listPanes(layout.root)) {
       expect(canSplitPane(layout, pane.id, "right", pane.activeTabId, true)).toBe(
@@ -111,7 +117,7 @@ describe("canvas layout", () => {
       createCanvasLayout(true),
       ANCHOR_PANE_ID,
       "down",
-      "report",
+      "analytics",
       true
     );
     const lower = layout.focusedPaneId;
@@ -160,12 +166,10 @@ describe("canvas layout", () => {
     expect(tabs(moved, side)).not.toContain("history");
     const viewingFile = selectTab(moved, side, "attachment:att-1");
     expect(paneForReportJump(viewingFile).id).toBe(ANCHOR_PANE_ID);
-    const onReport = selectTab(
-      openTabOnPane(viewingFile, side, "report", false),
-      side,
-      "report"
-    );
-    expect(paneForReportJump(onReport).id).toBe(side);
+    const onReport = openTabOnPane(viewingFile, side, "report", false);
+    expect(tabs(onReport, side)).not.toContain("report");
+    expect(onReport.focusedPaneId).toBe(ANCHOR_PANE_ID);
+    expect(paneForReportJump(onReport).id).toBe(ANCHOR_PANE_ID);
   });
 
   it("keeps the same layout object when nothing is stale", () => {
@@ -198,10 +202,15 @@ describe("canvas layout", () => {
 
   it("clamps the split ratio", () => {
     const layout = splitPane(
-      createCanvasLayout(false),
+      openAttachmentOnPane(
+        createCanvasLayout(false),
+        ANCHOR_PANE_ID,
+        "att-1",
+        false
+      ),
       ANCHOR_PANE_ID,
       "right",
-      "report",
+      "attachment:att-1",
       false
     );
     const split = layout.root;
@@ -215,7 +224,7 @@ describe("canvas layout", () => {
     });
   });
 
-  it("copies a pinned report when it is dragged to another pane", () => {
+  it("does not copy the live report onto another pane", () => {
     const split = splitPane(
       createCanvasLayout(true),
       ANCHOR_PANE_ID,
@@ -225,10 +234,23 @@ describe("canvas layout", () => {
     );
     const side = listPanes(split.root).find((pane) => pane.id !== ANCHOR_PANE_ID)!;
     const moved = moveTabToPane(split, ANCHOR_PANE_ID, side.id, "report", true);
-    expect(tabs(moved, ANCHOR_PANE_ID)).toEqual(["report", "analytics"]);
-    expect(tabs(moved, side.id)).toEqual(["analytics", "report"]);
-    expect(moved.focusedPaneId).toBe(side.id);
+    expect(moved).toBe(split);
+    expect(tabs(moved, side.id)).toEqual(["analytics"]);
     expect(moveTabToPane(moved, side.id, side.id, "report", true)).toBe(moved);
+  });
+
+  it("hosts live analytics on the pane where that tab is in front", () => {
+    const split = splitPane(
+      createCanvasLayout(true),
+      ANCHOR_PANE_ID,
+      "right",
+      "analytics",
+      true
+    );
+    const side = listPanes(split.root).find((pane) => pane.id !== ANCHOR_PANE_ID)!;
+    expect(livePaneForTab(split, "analytics")?.id).toBe(side.id);
+    const onAnchor = selectTab(split, ANCHOR_PANE_ID, "analytics");
+    expect(livePaneForTab(onAnchor, "analytics")?.id).toBe(ANCHOR_PANE_ID);
   });
 
   it("moves an attachment tab and drops the pane when it was the last tab", () => {
