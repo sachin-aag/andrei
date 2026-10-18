@@ -94,6 +94,7 @@ function setCustomer(id: "demo" | "mj" | "convergent") {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("AppShell brand chrome", () => {
@@ -213,5 +214,82 @@ describe("AppShell primary navigation", () => {
     for (const link of within(nav).getAllByRole("link")) {
       expect(link).toHaveAttribute("data-prefetch", "false");
     }
+  });
+});
+
+describe("AppShell password expiry warning", () => {
+  const warningStatus = {
+    expiresAt: "2026-10-21T00:00:00.000Z",
+    daysRemaining: 4,
+    expired: false,
+    warning: true,
+  };
+
+  it("uses dark amber text on a light banner", () => {
+    render(
+      <AppShell
+        user={engineer}
+        initialUsers={[engineer]}
+        passwordStatus={warningStatus}
+      >
+        <div>main</div>
+      </AppShell>
+    );
+
+    const banner = screen.getByRole("status");
+    expect(banner).toHaveTextContent("Your password expires in 4 days.");
+    expect(banner).toHaveClass("bg-amber-50", "text-amber-950");
+    expect(banner).not.toHaveClass("text-amber-100");
+    expect(banner).not.toHaveClass("text-amber-50");
+    expect(screen.getByRole("link", { name: "Change password" })).toHaveClass(
+      "text-amber-950"
+    );
+    expect(screen.getByRole("button", { name: "Ignore" })).toHaveClass(
+      "text-amber-800"
+    );
+  });
+
+  it("keeps page content in a shrinking pane so the banner cannot clip the bottom", () => {
+    render(
+      <AppShell
+        user={engineer}
+        initialUsers={[engineer]}
+        passwordStatus={warningStatus}
+      >
+        <div data-testid="shell-child">main</div>
+      </AppShell>
+    );
+
+    const child = screen.getByTestId("shell-child");
+    expect(child.parentElement).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "overflow-hidden"
+    );
+    expect(child.closest(".h-dvh")).not.toBeNull();
+    expect(child.closest(".h-screen")).toBeNull();
+  });
+
+  it("hides the warning after Ignore", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppShell
+        user={engineer}
+        initialUsers={[engineer]}
+        passwordStatus={warningStatus}
+      >
+        <div>main</div>
+      </AppShell>
+    );
+
+    await user.click(screen.getByRole("button", { name: "Ignore" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth-pw/dismiss-expiry-warning",
+      { method: "POST" }
+    );
   });
 });

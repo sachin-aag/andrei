@@ -34,7 +34,7 @@ export default async function RootLayout({
       data-customer={pack.id}
       suppressHydrationWarning
     >
-      <body className="min-h-screen font-sans antialiased">
+      <body className="min-h-dvh font-sans antialiased">
         <PostHogProvider
           userId={session?.user?.workspaceUserId}
           email={session?.user?.email}

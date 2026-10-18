@@ -112,7 +112,7 @@ export function AppShell({
         timeoutMinutes={inactivityTimeoutMinutes}
         userId={user.id}
       />
-      <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
+      <div className="flex h-dvh w-full overflow-hidden bg-[var(--background)]">
       <a
         href={`#${mainId}`}
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-[var(--card)] focus:px-3 focus:py-2 focus:text-sm focus:shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
@@ -265,9 +265,12 @@ export function AppShell({
         </div>
       </aside>
 
-      <main id={mainId} className="flex-1 overflow-hidden flex flex-col">
+      <main id={mainId} className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {showPasswordWarning && passwordStatus ? (
-          <div className="border-b border-amber-300/40 bg-amber-500/10 px-6 py-3 text-sm text-amber-100">
+          <div
+            role="status"
+            className="shrink-0 border-b border-amber-300 bg-amber-50 px-6 py-3 text-sm text-amber-950"
+          >
             <div className="flex flex-wrap items-center gap-3">
               <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
               <p className="flex-1">
@@ -276,21 +279,23 @@ export function AppShell({
               </p>
               <Link
                 href="/profile"
-                className="font-medium text-amber-50 underline-offset-4 hover:underline"
+                className="font-medium text-amber-950 underline-offset-4 hover:underline"
               >
                 Change password
               </Link>
               <button
                 type="button"
                 onClick={dismissPasswordWarning}
-                className="text-amber-100/80 underline-offset-4 hover:text-amber-50 hover:underline"
+                className="text-amber-800 underline-offset-4 hover:text-amber-950 hover:underline"
               >
                 Ignore
               </button>
             </div>
           </div>
         ) : null}
-        {children}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
       </main>
       </div>
     </ProductWalkthroughProvider>
