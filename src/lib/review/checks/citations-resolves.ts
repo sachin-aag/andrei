@@ -1,5 +1,7 @@
 import {
+  canonicalizeSourceCitationBracket,
   citationNumbersFromMarker,
+  formatNumericCitationMarker,
   isNumericCitationMarker,
   parseSourceCitation,
 } from "@/lib/placeholders/citation-bracket";
@@ -8,9 +10,13 @@ import {
 } from "@/lib/suggestions/citations-at-end";
 import { iterReportFields } from "../fields";
 import { locateFieldsForMatch } from "../locate";
+import { withProposedEdit } from "../locate-proposed-edit";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 
 const NUMERIC_MARKER_RE = /\[\s*\d+(?:\s*,\s*\d+)*\s*\]/g;
+
+/** Placeholder the Placeholders tab lists until someone adds the source. */
+export const MISSING_CITATION = "<citation>";
 
 export type AttachmentPageIndex = {
   filenames: Set<string>;
@@ -39,6 +45,47 @@ export function attachmentIndexFrom(
   return { filenames, pages };
 }
 
+const CITATIONS_HEADING_LINE_RE = /^#{0,6}[ \t]*citations[ \t]*:?[ \t]*$/gim;
+
+/** Offset just past the last `Citations` heading line, or -1. */
+function citationsBlockStart(text: string): number {
+  let start = -1;
+  CITATIONS_HEADING_LINE_RE.lastIndex = 0;
+  let heading: RegExpExecArray | null;
+  while ((heading = CITATIONS_HEADING_LINE_RE.exec(text)) !== null) {
+    start = heading.index + heading[0].length;
+  }
+  return start;
+}
+
+/**
+ * A Citations line typed as `[3] file.pdf, p. 2` or `3) file.pdf, p. 2`,
+ * which the Citations parser does not read. `canonical` is the `3. [file]`
+ * form it does read.
+ */
+export function looseCitationLine(
+  fieldText: string,
+  n: number
+): { start: number; line: string; canonical: string } | null {
+  const blockStart = citationsBlockStart(fieldText);
+  if (blockStart < 0) return null;
+  const block = fieldText.slice(blockStart);
+  const re = new RegExp(
+    `^[ \\t]*(?:\\[[ \\t]*${n}[ \\t]*\\]|${n}[.)])[ \\t]+(.+?)[ \\t]*$`,
+    "m"
+  );
+  const found = re.exec(block);
+  if (!found) return null;
+  const source = found[1]!.replace(/^\[|\]$/g, "").trim();
+  if (!source) return null;
+  const line = found[0].trim();
+  return {
+    start: blockStart + found.index + found[0].indexOf(line),
+    line,
+    canonical: `${n}. ${canonicalizeSourceCitationBracket(`[${source}]`)}`,
+  };
+}
+
 export function citationResolveFindings(
   ctx: Pick<ReviewRunContext, "documentType" | "sections">,
   index: AttachmentPageIndex
@@ -46,24 +93,60 @@ export function citationResolveFindings(
   const findings: ReviewFindingDraft[] = [];
   for (const field of iterReportFields(ctx.documentType, ctx.sections)) {
     const body = field.text;
+    const blockStart = citationsBlockStart(body);
+    const looseReported = new Set<number>();
     NUMERIC_MARKER_RE.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = NUMERIC_MARKER_RE.exec(body)) !== null) {
       if (!isNumericCitationMarker(match[0])) continue;
+      if (blockStart >= 0 && match.index >= blockStart) continue;
       const located = locateFieldsForMatch(body, match.index, match[0]);
       const numbers = citationNumbersFromMarker(match[0]);
+      const listed = numbers.filter((n) => sourceCitationForNumber(field.text, n));
       for (const n of numbers) {
         const source = sourceCitationForNumber(field.text, n);
+        const loose = source ? null : looseCitationLine(body, n);
+        if (loose) {
+          if (looseReported.has(n)) continue;
+          looseReported.add(n);
+          const lineLocated = locateFieldsForMatch(body, loose.start, loose.line);
+          findings.push(
+            withProposedEdit(
+              ctx,
+              {
+                section: field.section,
+                contentPath: field.contentPath,
+                anchorText: lineLocated.anchorText,
+                message: `Citations line “${loose.line}” is not in the “${loose.canonical}” form, so ${formatNumericCitationMarker([n])} does not resolve.`,
+                severity: "critical",
+                kind: "needs_human",
+                metadata: { citationNumber: n, ...lineLocated.metadata },
+              },
+              { deleteText: loose.line, insertText: loose.canonical }
+            )
+          );
+          continue;
+        }
         if (!source) {
-          findings.push({
-            section: field.section,
-            contentPath: field.contentPath,
-            anchorText: located.anchorText,
-            message: `${match[0]} has no matching line in the Citations list.`,
-            severity: "critical",
-            kind: "needs_human",
-            metadata: { citationNumber: n, ...located.metadata },
-          });
+          const kept = formatNumericCitationMarker(listed);
+          findings.push(
+            withProposedEdit(
+              ctx,
+              {
+                section: field.section,
+                contentPath: field.contentPath,
+                anchorText: located.anchorText,
+                message: `${match[0]} has no matching line in the Citations list.`,
+                severity: "critical",
+                kind: "needs_human",
+                metadata: { citationNumber: n, ...located.metadata },
+              },
+              {
+                deleteText: match[0],
+                insertText: kept ? `${kept} ${MISSING_CITATION}` : MISSING_CITATION,
+              }
+            )
+          );
           continue;
         }
         const parsed = parseSourceCitation(source, [...index.filenames]);

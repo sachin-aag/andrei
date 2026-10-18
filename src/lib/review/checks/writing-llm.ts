@@ -5,7 +5,7 @@ import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { assertAiBudgetAvailable, recordAiUsage } from "@/lib/ai/usage";
 import { CRITERIA_EVAL_GOOGLE_MODEL_ID } from "@/lib/ai/evaluate";
 import { isTestStubReview } from "@/lib/test/ai-bypass";
-import { locateProposedEdit } from "../persist-suggestion";
+import { locateProposedEdit } from "../locate-proposed-edit";
 import { iterReportFields } from "../fields";
 import { REVIEW_WRITING_PROMPT_VERSION } from "../prompts";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";

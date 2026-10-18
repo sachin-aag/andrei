@@ -11,6 +11,7 @@ import {
   persistRedraftComment,
   releaseCommentToQueue,
 } from "./persist-suggestion";
+import { draftFixForFinding } from "./draft-fix";
 import { proposedEditFromMetadata } from "./proposed-edit";
 import type { ReviewFindingDto } from "./ui";
 import type { ReviewRunContext } from "./types";
@@ -226,12 +227,25 @@ export async function applyReviewFindingAsTrackedChange(args: {
       criterionKey: metadata.criterionKey,
       evaluationId: metadata.evaluationId,
     });
+  } else if (row.section && row.contentPath) {
+    commentId = await draftFixForFinding({
+      ctx: args.ctx,
+      finding: {
+        checkId: row.checkId,
+        section: row.section,
+        contentPath: row.contentPath,
+        anchorText: row.anchorText,
+        message: row.message,
+        severity: row.severity,
+        metadata,
+      },
+    });
   }
 
   if (!commentId) {
     throw new ApplyReviewFindingError(
       422,
-      "Could not generate a tracked-change suggestion for this finding."
+      "Could not draft a change that fits this text. Edit it by hand, then dismiss the finding."
     );
   }
 

@@ -71,6 +71,74 @@ describe("citation review checks", () => {
     expect(findings.every((row) => row.severity === "critical")).toBe(true);
   });
 
+  it("proposes a <citation> placeholder for a marker with no Citations line", () => {
+    const findings = citationResolveFindings(
+      {
+        documentType: "investigation_report",
+        sections: {
+          define: {
+            narrative: {
+              type: "doc",
+              content: [
+                para("Batch BN-99 failed on 12 Jan 2024 [1, 2]."),
+                para("Citations:"),
+                para("1. [protocol.pdf, p. 2]"),
+              ],
+            },
+          },
+        },
+      },
+      attachmentIndexFrom([{ filename: "protocol.pdf", pageNumber: 2 }])
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      kind: "fixable",
+      severity: "critical",
+      metadata: {
+        citationNumber: 2,
+        focusText: "[1, 2]",
+        proposedEdit: {
+          kind: "ai_fix",
+          deleteText: "[1, 2]",
+          insertText: "[1] <citation>",
+        },
+      },
+    });
+  });
+
+  it("rewrites a loose `[1] file` Citations line once instead of dropping the markers", () => {
+    const findings = citationResolveFindings(
+      {
+        documentType: "investigation_report",
+        sections: {
+          define: {
+            narrative: {
+              type: "doc",
+              content: [
+                para("Residues stay below the acceptance limits [1]."),
+                para("Results comply with the protocol limits [1]."),
+                para("Citations"),
+                para("[1] cleaning-sop.pdf, p. 2"),
+              ],
+            },
+          },
+        },
+      },
+      attachmentIndexFrom([{ filename: "cleaning-sop.pdf", pageNumber: 2 }])
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      kind: "fixable",
+      metadata: {
+        citationNumber: 1,
+        proposedEdit: {
+          deleteText: "[1] cleaning-sop.pdf, p. 2",
+          insertText: "1. [cleaning-sop.pdf, p. 2]",
+        },
+      },
+    });
+  });
+
   it("accepts a ready attachment page", () => {
     const findings = citationResolveFindings(
       { documentType: "investigation_report", sections },

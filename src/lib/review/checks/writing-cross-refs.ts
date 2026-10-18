@@ -4,6 +4,7 @@ import {
 } from "@/lib/document-types/convergent/table-of-contents";
 import { iterReportFields } from "../fields";
 import { locateFieldsForMatch } from "../locate";
+import { withProposedEdit } from "../locate-proposed-edit";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
 
 const TABLE_CAPTION_RE = /\bTable\s+(\d+)\./gi;
@@ -39,15 +40,21 @@ export function crossReferenceFindings(
       const n = Number(tableMatch[1]);
       if (!Number.isInteger(n) || numbered.has(n)) continue;
       const tableLocated = locateFieldsForMatch(field.text, tableMatch.index, tableMatch[0]);
-      findings.push({
-        section: field.section,
-        contentPath: field.contentPath,
-        anchorText: tableLocated.anchorText,
-        message: `${tableMatch[0]} does not resolve to a filled table in this document.`,
-        severity: "minor",
-        kind: "needs_human",
-        metadata: tableLocated.metadata,
-      });
+      findings.push(
+        withProposedEdit(
+          ctx,
+          {
+            section: field.section,
+            contentPath: field.contentPath,
+            anchorText: tableLocated.anchorText,
+            message: `${tableMatch[0]} does not resolve to a filled table in this document.`,
+            severity: "minor",
+            kind: "needs_human",
+            metadata: tableLocated.metadata,
+          },
+          { deleteText: tableMatch[0], insertText: "Table <table number>" }
+        )
+      );
     }
 
     SECTION_MENTION_RE.lastIndex = 0;
@@ -58,15 +65,21 @@ export function crossReferenceFindings(
         continue;
       }
       const sectionLocated = locateFieldsForMatch(field.text, sectionMatch.index, sectionMatch[0]);
-      findings.push({
-        section: field.section,
-        contentPath: field.contentPath,
-        anchorText: sectionLocated.anchorText,
-        message: `${sectionMatch[0]} does not match a section in this document.`,
-        severity: "minor",
-        kind: "needs_human",
-        metadata: sectionLocated.metadata,
-      });
+      findings.push(
+        withProposedEdit(
+          ctx,
+          {
+            section: field.section,
+            contentPath: field.contentPath,
+            anchorText: sectionLocated.anchorText,
+            message: `${sectionMatch[0]} does not match a section in this document.`,
+            severity: "minor",
+            kind: "needs_human",
+            metadata: sectionLocated.metadata,
+          },
+          { deleteText: sectionMatch[0], insertText: "Section <section number>" }
+        )
+      );
     }
   }
   return findings;

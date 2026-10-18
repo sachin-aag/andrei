@@ -26,6 +26,36 @@ describe("writing review checks", () => {
     expect(findings.some((row) => row.anchorText === "Table 4")).toBe(true);
     expect(findings.every((row) => row.severity === "minor")).toBe(true);
   });
+
+  it("proposes number placeholders for unresolved Table and Section mentions", () => {
+    const findings = crossReferenceFindings({
+      documentType: "investigation_report",
+      sections: {
+        measure: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "See Table 4 and Section 99.4 for details." },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    const edits = findings.map((row) => row.metadata?.proposedEdit);
+    expect(findings.every((row) => row.kind === "fixable")).toBe(true);
+    expect(edits).toEqual([
+      expect.objectContaining({ deleteText: "Table 4", insertText: "Table <table number>" }),
+      expect.objectContaining({
+        deleteText: "Section 99.4",
+        insertText: "Section <section number>",
+      }),
+    ]);
+  });
 });
 
 describe("review content hash", () => {

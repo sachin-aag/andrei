@@ -16,7 +16,7 @@ import {
   readDocumentPage,
   searchReportDocuments,
 } from "@/lib/attachments/retrieval";
-import { locateProposedEdit } from "../persist-suggestion";
+import { locateProposedEdit } from "../locate-proposed-edit";
 import { iterReportFields } from "../fields";
 import { locateFieldsForMatch, type ReviewLocateMetadata } from "../locate";
 import { REVIEW_CITATION_PROMPT_VERSION } from "../prompts";

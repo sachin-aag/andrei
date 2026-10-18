@@ -12,9 +12,9 @@ vi.mock("@/db", () => ({ db: { insert, select, update } }));
 
 import {
   dismissReviewCreatedComments,
-  locateProposedEdit,
   persistLocatedEdit,
 } from "@/lib/review/persist-suggestion";
+import { locateProposedEdit } from "@/lib/review/locate-proposed-edit";
 import { commentReleasedToQueue } from "@/lib/review/proposed-edit";
 import type { ReviewRunContext } from "@/lib/review/types";
 
