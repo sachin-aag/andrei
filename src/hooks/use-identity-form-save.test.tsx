@@ -172,6 +172,21 @@ describe("useIdentityFormSave", () => {
     );
   });
 
+  it("does not register identity flush when the form is read-only", () => {
+    renderHook(() =>
+      useIdentityFormSave({
+        reportId: "r1",
+        reportUpdatedAt: "2026-10-01T15:00:00.000Z",
+        readOnly: true,
+        incoming: { documentNo: "", meta: { cycleNo: "" } },
+        toPatch: (v) => ({ documentNo: v.documentNo, metadata: v.meta }),
+        applyToReport: vi.fn(),
+      })
+    );
+
+    expect(flushState.registerSectionFlush).not.toHaveBeenCalled();
+  });
+
   it("does not persist a keystroke until the debounce elapses", async () => {
     const applyToReport = vi.fn();
     const { result } = renderHook(() =>

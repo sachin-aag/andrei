@@ -82,9 +82,9 @@ describe("CanvasSplitView", () => {
     expect(onSplit).toHaveBeenCalledWith(ANCHOR_PANE_ID, "down", "analytics");
   });
 
-  it("does not offer splitting the live report", async () => {
+  it("offers split down on the live report when the row is already split", async () => {
     const user = userEvent.setup();
-    renderSplit("grid");
+    const { onSplit } = renderSplit("grid");
     await user.pointer({
       keys: "[MouseRight]",
       target: screen.getByTestId("report-surface-document"),
@@ -93,10 +93,10 @@ describe("CanvasSplitView", () => {
       "aria-disabled",
       "true"
     );
-    expect(screen.getByRole("menuitem", { name: "Split down" })).toHaveAttribute(
-      "aria-disabled",
-      "true"
-    );
+    const splitDown = screen.getByRole("menuitem", { name: "Split down" });
+    expect(splitDown).not.toHaveAttribute("data-disabled");
+    await user.click(splitDown);
+    expect(onSplit).toHaveBeenCalledWith(ANCHOR_PANE_ID, "down", "report");
   });
 
   it("drags a tab from one pane onto the other", () => {

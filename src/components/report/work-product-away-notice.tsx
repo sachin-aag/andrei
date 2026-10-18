@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Shown when a pane has Report or Analytics in front but is not hosting the
- * live editor. Two live copies of the same surface need collaboration.
+ * Shown when a pane has Analytics in front but is not hosting the live
+ * worksheet. Report copies use `ReportDocumentReplica` instead.
  */
 export function WorkProductAwayNotice({
   product,

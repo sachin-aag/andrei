@@ -84,15 +84,14 @@ export function useIdentityFormSave<T>(opts: {
     markPersistedRef.current = markPersisted;
   }, [incoming, applyToReport, toPatch, value, markPersisted]);
 
-  useEffect(
-    () =>
-      registerSectionFlush(
-        CHAT_IDENTITY_SECTION as SectionType,
-        flush,
-        needsFlush
-      ),
-    [flush, needsFlush, registerSectionFlush]
-  );
+  useEffect(() => {
+    if (readOnly) return;
+    return registerSectionFlush(
+      CHAT_IDENTITY_SECTION as SectionType,
+      flush,
+      needsFlush
+    );
+  }, [flush, needsFlush, registerSectionFlush, readOnly]);
 
   const update = useCallback((updater: (prev: T) => T) => {
     const next = updater(valueRef.current);

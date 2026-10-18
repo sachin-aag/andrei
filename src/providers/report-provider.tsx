@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
@@ -1529,6 +1530,54 @@ export function useReportEditors() {
   const ctx = useContext(ReportEditorsContext);
   if (!ctx) throw new Error("useReportEditors must be used within ReportProvider");
   return ctx;
+}
+
+function noopUnregister() {
+  return () => {};
+}
+
+function noopSetActiveField() {}
+
+function noopSetActiveEditor() {}
+
+/**
+ * Nested read-only report: same live content, no editor registry, no
+ * autosave flush, no track-changes typing. Used for a split-pane copy of
+ * the document while the top-left pane keeps the live editor.
+ */
+export function ReportViewOnlyOverride({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const data = useReportData();
+  const editors = useReportEditors();
+  const dataValue = useMemo<ReportDataContextValue>(
+    () => ({
+      ...data,
+      readOnly: true,
+      trackChangesMode: false,
+      registerSectionFlush: noopUnregister,
+    }),
+    [data]
+  );
+  const editorsValue = useMemo<ReportEditorsContextValue>(
+    () => ({
+      ...editors,
+      registerEditor: noopUnregister,
+      registerLiveEditorSync: noopUnregister,
+      setActiveField: noopSetActiveField,
+      setActiveEditor: noopSetActiveEditor,
+    }),
+    [editors]
+  );
+  return (
+    <ReportDataContext.Provider value={dataValue}>
+      <ReportEditorsContext.Provider value={editorsValue}>
+        {children}
+      </ReportEditorsContext.Provider>
+    </ReportDataContext.Provider>
+  );
 }
 
 export function useReportEditorTick() {

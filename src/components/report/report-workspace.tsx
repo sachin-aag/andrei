@@ -46,6 +46,7 @@ import {
   writeWorkspaceChrome,
 } from "./workspace-chrome-prefs";
 import { CanvasSplitView } from "./canvas-split-view";
+import { ReportDocumentReplica } from "./report-document-replica";
 import { WorkProductAwayNotice } from "./work-product-away-notice";
 import {
   ANCHOR_PANE_ID,
@@ -1358,13 +1359,16 @@ export function ReportWorkspace({
                     </ReviewGutterPaintedProvider>
                     </CanvasTabPane>
                     ) : pane.tabIds.includes("report") ? (
-                      <CanvasTabPane
+                      <ReportDocumentReplica
+                        paneId={pane.id}
                         active={pane.activeTabId === "report"}
-                        scrollable
-                        scrollTabId={`${pane.id}-report`}
-                      >
-                        <WorkProductAwayNotice product="Report" />
-                      </CanvasTabPane>
+                        editorsAllowed={editorsAllowed}
+                        workspaceSectionList={workspaceSectionList}
+                        sectionEditors={sectionEditors}
+                        documentType={documentType}
+                        continuousDocument={continuousDocument}
+                        documentWidth={documentWidth}
+                      />
                     ) : null}
                     {pane.tabIds.includes("analytics") &&
                     (anchorBody ? analyticsOpen : true) ? (

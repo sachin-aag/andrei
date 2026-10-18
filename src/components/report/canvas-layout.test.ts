@@ -37,7 +37,7 @@ describe("canvas layout", () => {
       false
     );
     expect(canSplitPane(layout, ANCHOR_PANE_ID, "right", "report", true)).toBe(
-      false
+      true
     );
     expect(canSplitPane(layout, ANCHOR_PANE_ID, "right", "analytics", true)).toBe(
       true
@@ -167,8 +167,8 @@ describe("canvas layout", () => {
     const viewingFile = selectTab(moved, side, "attachment:att-1");
     expect(paneForReportJump(viewingFile).id).toBe(ANCHOR_PANE_ID);
     const onReport = openTabOnPane(viewingFile, side, "report", false);
-    expect(tabs(onReport, side)).not.toContain("report");
-    expect(onReport.focusedPaneId).toBe(ANCHOR_PANE_ID);
+    expect(tabs(onReport, side)).toContain("report");
+    expect(onReport.focusedPaneId).toBe(side);
     expect(paneForReportJump(onReport).id).toBe(ANCHOR_PANE_ID);
   });
 
@@ -224,7 +224,7 @@ describe("canvas layout", () => {
     });
   });
 
-  it("does not copy the live report onto another pane", () => {
+  it("copies the pinned report onto another pane and leaves it on the anchor", () => {
     const split = splitPane(
       createCanvasLayout(true),
       ANCHOR_PANE_ID,
@@ -233,10 +233,17 @@ describe("canvas layout", () => {
       true
     );
     const side = listPanes(split.root).find((pane) => pane.id !== ANCHOR_PANE_ID)!;
+    const copied = splitPane(split, ANCHOR_PANE_ID, "down", "report", true);
+    expect(tabs(copied, ANCHOR_PANE_ID)).toEqual(["report", "analytics"]);
+    const lower = listPanes(copied.root).find(
+      (pane) => pane.id !== ANCHOR_PANE_ID && pane.id !== side.id
+    );
+    expect(lower?.tabIds).toEqual(["report"]);
     const moved = moveTabToPane(split, ANCHOR_PANE_ID, side.id, "report", true);
-    expect(moved).toBe(split);
-    expect(tabs(moved, side.id)).toEqual(["analytics"]);
+    expect(tabs(moved, ANCHOR_PANE_ID)).toContain("report");
+    expect(tabs(moved, side.id)).toEqual(["analytics", "report"]);
     expect(moveTabToPane(moved, side.id, side.id, "report", true)).toBe(moved);
+    expect(paneForReportJump(moved).id).toBe(ANCHOR_PANE_ID);
   });
 
   it("hosts live analytics on the pane where that tab is in front", () => {

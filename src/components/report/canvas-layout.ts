@@ -6,8 +6,9 @@ import {
 
 /**
  * The pane that occupies the top-left cell. The live report editor stays
- * here. Analytics stays pinned as a tab; the live worksheet follows the
- * pane where that tab is in front.
+ * here. Report and Analytics stay pinned as tabs; a Report copy in another
+ * pane is view-only. The live worksheet follows the pane where Analytics
+ * is in front.
  */
 export const ANCHOR_PANE_ID = "anchor";
 
@@ -111,16 +112,14 @@ function isPinnedTab(
   return tabId === "analytics" && statsEnabled;
 }
 
-/** Pinned Analytics can be copied. A second live Report waits on collaboration. */
+/** Pinned Report and Analytics copy; other tabs move. */
 function copiesOnMove(
   root: LayoutNode,
   paneId: string,
   tabId: CanvasTabId,
   statsEnabled: boolean
 ): boolean {
-  return (
-    isAnchorPane(root, paneId) && tabId === "analytics" && statsEnabled
-  );
+  return isPinnedTab(root, paneId, tabId, statsEnabled);
 }
 
 export function canSplitPane(
@@ -132,7 +131,6 @@ export function canSplitPane(
 ): boolean {
   const pane = findPane(layout.root, paneId);
   if (!pane || !pane.tabIds.includes(tabId)) return false;
-  if (tabId === "report") return false;
   if (ancestorAxes(layout.root, paneId).includes(axisFor(direction))) {
     return false;
   }
@@ -320,16 +318,13 @@ export function openTabOnPane(
     }
     if (existing) return selectTab(layout, existing.id, "history");
   }
-  if (tabId === "report") {
-    return selectTab(layout, anchorPane(layout.root).id, "report");
-  }
   const pane = findPane(layout.root, paneId);
   if (!pane) return layout;
   const root = replacePane(layout.root, paneId, selectOnPane(pane, tabId));
   return finish({ ...layout, root, focusedPaneId: paneId }, statsEnabled);
 }
 
-/** Drag a tab onto another pane. Pinned Analytics on the anchor is copied. */
+/** Drag a tab onto another pane. Pinned Report and Analytics on the anchor are copied. */
 export function moveTabToPane(
   layout: CanvasLayout,
   fromPaneId: string,
@@ -338,7 +333,6 @@ export function moveTabToPane(
   statsEnabled: boolean
 ): CanvasLayout {
   if (fromPaneId === toPaneId) return layout;
-  if (tabId === "report") return layout;
   const source = findPane(layout.root, fromPaneId);
   const target = findPane(layout.root, toPaneId);
   if (!source || !target || !source.tabIds.includes(tabId)) return layout;
@@ -547,6 +541,7 @@ export function pruneCanvasLayout(
   return finish(base, args.statsEnabled);
 }
 
+/** Contents / section jumps always land on the live editor, not a view-only copy. */
 export function paneForReportJump(layout: CanvasLayout): PaneLeaf {
   return anchorPane(layout.root);
 }
