@@ -54,9 +54,12 @@ import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
   createReviewLocateHighlightExtension,
+  REVIEW_LOCATE_BLOCK_CLASS,
   REVIEW_LOCATE_CLASS,
   REVIEW_LOCATE_REFRESH_META,
+  type ReviewLocatePaint,
 } from "@/lib/tiptap/review-locate-highlight";
+import { reviewLocateMatchesField } from "@/lib/review/locate";
 import {
   citationRefreshMeta,
   createCitationHighlightExtension,
@@ -455,13 +458,15 @@ export function TiptapSectionField({
   const tablePreviewSuggestionIdRef = useRef<string | null>(null);
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
-  const reviewLocateNeedleRef = useRef<string | null>(null);
-  const paintedLocateNeedleRef = useRef<string | null>(null);
-  reviewLocateNeedleRef.current =
-    reviewLocate &&
-    reviewLocate.section === section &&
-    reviewLocate.contentPath === contentPath
-      ? reviewLocate.needle
+  const reviewLocatePaintRef = useRef<ReviewLocatePaint | null>(null);
+  const paintedLocateKeyRef = useRef<string | null>(null);
+  reviewLocatePaintRef.current =
+    reviewLocate && reviewLocateMatchesField(reviewLocate, section, contentPath)
+      ? {
+          anchor: reviewLocate.anchor,
+          needle: reviewLocate.needle,
+          occurrence: reviewLocate.occurrence,
+        }
       : null;
   const handlersRef = useRef<CommentHighlightHandlers>({
     onCommentActivate: () => {},
@@ -547,7 +552,7 @@ export function TiptapSectionField({
   const reviewLocateExtension = useMemo(
     () =>
       // eslint-disable-next-line react-hooks/refs -- ProseMirror reads this getter on refresh, not during render
-      createReviewLocateHighlightExtension(() => reviewLocateNeedleRef.current),
+      createReviewLocateHighlightExtension(() => reviewLocatePaintRef.current),
     []
   );
 
@@ -1423,18 +1428,25 @@ export function TiptapSectionField({
 
   useEffect(() => {
     if (!editor) return;
-    const needle = reviewLocateNeedleRef.current;
-    if (needle === paintedLocateNeedleRef.current) return;
-    paintedLocateNeedleRef.current = needle;
-    editor.view.dispatch(
-      editor.state.tr
-        .setMeta(REVIEW_LOCATE_REFRESH_META, true)
-        .setMeta("addToHistory", false)
-    );
-    if (!needle) return;
+    const paint = reviewLocatePaintRef.current;
+    const key =
+      paint && reviewLocate
+        ? `${reviewLocate.findingId}\u0000${paint.anchor}\u0000${paint.needle}\u0000${paint.occurrence ?? ""}`
+        : null;
+    if (key !== paintedLocateKeyRef.current) {
+      paintedLocateKeyRef.current = key;
+      editor.view.dispatch(
+        editor.state.tr
+          .setMeta(REVIEW_LOCATE_REFRESH_META, true)
+          .setMeta("addToHistory", false)
+      );
+    }
+    if (!paint) return;
     // After the section jump scrolls the heading to the top, center the phrase.
     const timer = window.setTimeout(() => {
-      const mark = editor.view.dom.querySelector(`.${REVIEW_LOCATE_CLASS}`);
+      const mark =
+        editor.view.dom.querySelector(`.${REVIEW_LOCATE_CLASS}`) ??
+        editor.view.dom.querySelector(`.${REVIEW_LOCATE_BLOCK_CLASS}`);
       (mark ?? editor.view.dom).scrollIntoView({
         behavior: "smooth",
         block: "center",

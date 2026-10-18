@@ -11,27 +11,37 @@ const card: ReviewFindingCardModel = {
   kicker: "Objectivity",
   title: "Subjective acceptance criterion",
   body: 'TM-02 passes if readings are "acceptable to the R&D Engineer".',
-  replacement: "Measured force within ±5 g of the applied reference load",
+  suggestion: {
+    kind: "replacement",
+    deleteText: "acceptable to the R&D Engineer",
+    insertText: "Measured force within ±5 g of the applied reference load",
+  },
+  primary: "apply",
   locate: {
     section: "measure",
     contentPath: "narrative",
+    anchor: "acceptable to the R&D Engineer",
     needle: "acceptable to the R&D Engineer",
   },
-  applyCommentId: "c1",
-  canApplyTrackedChange: true,
 };
+
+function actionNames(): string[] {
+  return screen.getAllByRole("button").map((button) => button.textContent ?? "");
+}
 
 describe("ReviewFindingCard", () => {
   it("highlights in the document and promotes the suggestion", async () => {
     const user = userEvent.setup();
     const onShow = vi.fn();
-    const onApply = vi.fn();
+    const onPrimary = vi.fn();
+    const onDismiss = vi.fn();
     render(
       <ReviewFindingCard
         severity="critical"
         card={card}
         onShowInDocument={onShow}
-        onApplyTrackedChange={onApply}
+        onPrimary={onPrimary}
+        onDismiss={onDismiss}
       />
     );
 
@@ -44,6 +54,108 @@ describe("ReviewFindingCard", () => {
     expect(onShow).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole("button", { name: "Apply as tracked change" }));
-    expect(onApply).toHaveBeenCalledOnce();
+    expect(onPrimary).toHaveBeenCalledOnce();
+    expect(onShow).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("shows in the document when the card itself is clicked", async () => {
+    const user = userEvent.setup();
+    const onShow = vi.fn();
+    render(
+      <ReviewFindingCard severity="major" card={card} onShowInDocument={onShow} />
+    );
+    await user.click(screen.getByText("Subjective acceptance criterion"));
+    expect(onShow).toHaveBeenCalledOnce();
+  });
+
+  it("orders the actions the same way on a fixable card", () => {
+    render(
+      <ReviewFindingCard
+        severity="major"
+        card={card}
+        onShowInDocument={vi.fn()}
+        onPrimary={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(actionNames()).toEqual([
+      "Apply as tracked change",
+      "Show in document",
+      "Dismiss",
+    ]);
+  });
+
+  it("keeps the same layout for a finding with no automatic fix", () => {
+    render(
+      <ReviewFindingCard
+        severity="major"
+        card={{
+          ...card,
+          suggestion: { kind: "manual", suggestedText: null },
+          primary: "verify",
+        }}
+        onShowInDocument={vi.fn()}
+        onPrimary={vi.fn()}
+        onDismiss={vi.fn()}
+      />
+    );
+    expect(screen.getByText("Needs your review")).toBeInTheDocument();
+    expect(actionNames()).toEqual(["Mark verified", "Show in document", "Dismiss"]);
+  });
+
+  it("labels each suggestion kind in the same box", () => {
+    const { rerender } = render(
+      <ReviewFindingCard
+        severity="minor"
+        card={{ ...card, suggestion: { kind: "draft_on_apply" } }}
+      />
+    );
+    expect(screen.getByText("AI fix")).toBeInTheDocument();
+
+    rerender(
+      <ReviewFindingCard
+        severity="minor"
+        card={{ ...card, suggestion: { kind: "multi_part" }, primary: "view" }}
+        onPrimary={vi.fn()}
+      />
+    );
+    expect(screen.getByText("Suggested change")).toBeInTheDocument();
+    expect(screen.getByText("In document")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "View tracked change" })
+    ).toBeInTheDocument();
+
+    rerender(
+      <ReviewFindingCard
+        severity="minor"
+        card={{
+          ...card,
+          suggestion: { kind: "manual", suggestedText: "Prerequisites" },
+          primary: "verify",
+        }}
+      />
+    );
+    expect(screen.getByText("Suggested wording")).toBeInTheDocument();
+    expect(screen.getByText("Prerequisites")).toBeInTheDocument();
+  });
+
+  it("disables Show in document when there is no place to highlight", () => {
+    render(<ReviewFindingCard severity="minor" card={{ ...card, locate: null }} />);
+    expect(screen.getByRole("button", { name: "Show in document" })).toBeDisabled();
+  });
+
+  it("explains a fallback highlight only while the card is active", () => {
+    const hint = "This finding is about the whole section, so the section is highlighted.";
+    const { rerender } = render(
+      <ReviewFindingCard severity="minor" card={card} locateHint={hint} />
+    );
+    expect(screen.queryByText(hint)).toBeNull();
+    rerender(
+      <ReviewFindingCard severity="minor" card={card} located locateHint={hint} />
+    );
+    expect(screen.getByText(hint)).toBeInTheDocument();
   });
 });

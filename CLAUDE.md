@@ -137,7 +137,18 @@ category tabs are All checks | Report | FDA | Citations | Writing, ordered
 with Critical findings first. Each finding is Critical (red), Major (amber),
 or Minor (blue); the same counts sit at the top of Review, on each category
 tab, and on each check card. Issues are `fixable` (`ai_fix` / `ai_grammar`)
-or `needs_human` (Mark verified / Dismiss). Runs are manual. Placeholders
+or `needs_human`. Every finding renders the same `ReviewFindingCard`
+(`reviewFindingCardModel` in `finding-card.ts`): a suggestion box that is
+always present (replacement / AI drafts on apply / multi-part / needs review),
+one main button (Apply as tracked change → View tracked change once in the
+document, or Mark verified), Show in document, and Dismiss. Clicking the card
+is Show in document. The yellow highlight (`src/lib/review/locate.ts`) paints
+the exact span (`focusText` inside a unique `anchorText`, or `focusOccurrence`
+for identical cells), else the whole field, else the whole section — never
+just a scroll. Report / FDA checks ask the evaluator for a verbatim `quote`
+(`requestQuotes`) to anchor findings. Dismissing a finding closes its held
+suggestion; a `live:` criteria finding is dismissed by bypassing the
+evaluation. Runs are manual. Placeholders
 are their own tab. Header **Run all checks** opens Review and runs every
 `run`-kind check; per-section **Run criteria** on `SectionShell` is unchanged.
 FDA criteria live in `fda-criteria.ts` with keys prefixed `fda.` and

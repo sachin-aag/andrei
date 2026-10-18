@@ -2,12 +2,22 @@ import { Extension } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { uniqueTextSpan } from "@/lib/suggestions/locator";
+import {
+  findReviewLocateSpan,
+  type ReviewLocateTarget,
+} from "@/lib/review/locate";
 
 const reviewLocateKey = new PluginKey<DecorationSet>("reviewLocateHighlight");
 
 export const REVIEW_LOCATE_REFRESH_META = "reviewLocateRefresh";
 export const REVIEW_LOCATE_CLASS = "review-locate-highlight";
+export const REVIEW_LOCATE_BLOCK_CLASS = "review-locate-block";
+
+/** What this field should paint: a span, or the whole field when both are empty. */
+export type ReviewLocatePaint = Pick<
+  ReviewLocateTarget,
+  "anchor" | "needle" | "occurrence"
+>;
 
 /**
  * Plain text of a ProseMirror doc with a position per character.
@@ -44,15 +54,13 @@ export function collectPmPlainText(doc: PMNode): {
   return { text, posAt };
 }
 
-/** One in-block range for a unique needle, or null when it is missing, repeated, or split across blocks. */
-export function findNeedleRangeInPmDoc(
+/** One in-block range for the target, or null when it is missing, repeated, or split across blocks. */
+export function findReviewLocateRangeInPmDoc(
   doc: PMNode,
-  needle: string
+  target: ReviewLocatePaint
 ): { from: number; to: number } | null {
-  const trimmed = needle.trim();
-  if (!trimmed) return null;
   const { text, posAt } = collectPmPlainText(doc);
-  const span = uniqueTextSpan(text, trimmed);
+  const span = findReviewLocateSpan(text, target);
   if (!span) return null;
 
   let from = -1;
@@ -68,20 +76,36 @@ export function findNeedleRangeInPmDoc(
   return { from, to };
 }
 
+function wholeFieldDecorations(doc: PMNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.forEach((node, offset) => {
+    decorations.push(
+      Decoration.node(offset, offset + node.nodeSize, {
+        class: REVIEW_LOCATE_BLOCK_CLASS,
+      })
+    );
+  });
+  return DecorationSet.create(doc, decorations);
+}
+
+/** Exact span when it still locates; otherwise the whole field, never nothing. */
 export function buildReviewLocateDecorations(
   doc: PMNode,
-  needle: string | null
+  target: ReviewLocatePaint | null
 ): DecorationSet {
-  if (!needle) return DecorationSet.empty;
-  const range = findNeedleRangeInPmDoc(doc, needle);
-  if (!range) return DecorationSet.empty;
+  if (!target) return DecorationSet.empty;
+  if (!target.anchor.trim() && !target.needle.trim()) {
+    return wholeFieldDecorations(doc);
+  }
+  const range = findReviewLocateRangeInPmDoc(doc, target);
+  if (!range) return wholeFieldDecorations(doc);
   return DecorationSet.create(doc, [
     Decoration.inline(range.from, range.to, { class: REVIEW_LOCATE_CLASS }),
   ]);
 }
 
 export function createReviewLocateHighlightExtension(
-  getNeedle: () => string | null
+  getTarget: () => ReviewLocatePaint | null
 ) {
   return Extension.create({
     name: "reviewLocateHighlight",
@@ -91,11 +115,11 @@ export function createReviewLocateHighlightExtension(
           key: reviewLocateKey,
           state: {
             init(_, state) {
-              return buildReviewLocateDecorations(state.doc, getNeedle());
+              return buildReviewLocateDecorations(state.doc, getTarget());
             },
             apply(tr, prev, _old, state) {
               if (tr.docChanged || tr.getMeta(REVIEW_LOCATE_REFRESH_META)) {
-                return buildReviewLocateDecorations(state.doc, getNeedle());
+                return buildReviewLocateDecorations(state.doc, getTarget());
               }
               return prev.map(tr.mapping, tr.doc);
             },

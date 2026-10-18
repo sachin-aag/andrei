@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { observeRouteHandler } from "@/lib/observability/langfuse";
+import { dismissHeldReviewComment } from "@/lib/review/persist-suggestion";
 
 const bodySchema = z.object({
   status: z.enum(["verified", "dismissed", "open"]),
@@ -60,6 +61,9 @@ async function handlePatch(
     .where(eq(reviewFindings.id, findingId))
     .returning();
 
+  const dismissedCommentId =
+    nextStatus === "open" ? null : await dismissHeldReviewComment(row.commentId);
+
   if (nextStatus === "verified") {
     await recordAuditEvent({
       actor: auditActorFromUser(access.user),
@@ -73,5 +77,5 @@ async function handlePatch(
     });
   }
 
-  return NextResponse.json({ finding: updated });
+  return NextResponse.json({ finding: updated, dismissedCommentId });
 }

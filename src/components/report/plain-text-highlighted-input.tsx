@@ -41,7 +41,10 @@ import {
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
-import { uniqueTextSpan } from "@/lib/suggestions/locator";
+import {
+  findReviewLocateSpan,
+  reviewLocateMatchesField,
+} from "@/lib/review/locate";
 import { cn } from "@/lib/utils";
 
 const fieldTypography =
@@ -101,19 +104,18 @@ export function PlainTextHighlightedInput({
   const fieldSection =
     fieldDot >= 0 ? (fieldAnchor.slice(0, fieldDot) as SectionType) : null;
   const fieldContentPath = fieldDot >= 0 ? fieldAnchor.slice(fieldDot + 1) : "";
+  const locateTargetsField = Boolean(
+    fieldSection &&
+      reviewLocateMatchesField(reviewLocate, fieldSection, fieldContentPath)
+  );
   const locateSpan = useMemo(() => {
-    if (!reviewLocate || !fieldSection) return null;
-    if (
-      reviewLocate.section !== fieldSection ||
-      reviewLocate.contentPath !== fieldContentPath
-    ) {
-      return null;
-    }
-    return uniqueTextSpan(value, reviewLocate.needle);
-  }, [reviewLocate, fieldSection, fieldContentPath, value]);
+    if (!reviewLocate || !locateTargetsField) return null;
+    return findReviewLocateSpan(value, reviewLocate);
+  }, [reviewLocate, locateTargetsField, value]);
+  const locateWholeField = locateTargetsField && !locateSpan;
 
   useEffect(() => {
-    if (!locateSpan) return;
+    if (!locateTargetsField) return;
     const timer = window.setTimeout(() => {
       const mark = shellRef.current?.querySelector(".review-locate-highlight");
       (mark ?? shellRef.current)?.scrollIntoView({
@@ -122,7 +124,7 @@ export function PlainTextHighlightedInput({
       });
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [locateSpan, reviewLocate?.findingId]);
+  }, [locateTargetsField, locateSpan, reviewLocate]);
   const useMirrorOverlay =
     hasPlaceholders || mirrorContent != null || locateSpan != null;
   const focusedFromPos =
@@ -423,7 +425,7 @@ export function PlainTextHighlightedInput({
         "relative",
         useMirrorOverlay && "grid",
         useMirrorOverlay && className,
-        locateSpan && "ring-2 ring-yellow-300/90",
+        (locateSpan || locateWholeField) && "rounded-md ring-2 ring-yellow-300/90",
         useMirrorOverlay &&
           suggestionActive &&
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
@@ -440,6 +442,7 @@ export function PlainTextHighlightedInput({
           aria-hidden
           className={cn(
             "pointer-events-none col-start-1 row-start-1 rounded-md border border-transparent bg-[var(--input)] shadow-sm",
+            locateWholeField && "bg-yellow-100",
             fieldTypography
           )}
         >
@@ -479,7 +482,8 @@ export function PlainTextHighlightedInput({
             : cn(
                 "text-sm leading-relaxed resize-none overflow-hidden",
                 locateSpan && "selection:bg-yellow-300",
-                className
+                className,
+                locateWholeField && "bg-yellow-100"
               )
         }
         style={

@@ -5,32 +5,36 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import {
   canGenerateReviewSuggestion,
+  commentReleasedToQueue,
   proposedEditFromMetadata,
 } from "./proposed-edit";
+import type { ReviewLocateTarget } from "./locate";
 import type { ReviewCheckDto, ReviewFindingDto } from "./ui";
 
-export type ReviewLocateTarget = {
-  section: string;
-  contentPath: string;
-  needle: string;
-};
+export type {
+  ReviewLocateHighlight,
+  ReviewLocateTarget,
+} from "./locate";
 
-export type ReviewLocateHighlight = ReviewLocateTarget & {
-  findingId: string;
-};
+/** What the suggestion box on every card says. */
+export type ReviewCardSuggestion =
+  | { kind: "replacement"; deleteText: string; insertText: string }
+  | { kind: "draft_on_apply" }
+  | { kind: "multi_part" }
+  | { kind: "manual"; suggestedText: string | null };
+
+/** The one main button on every card. */
+export type ReviewCardPrimaryAction = "apply" | "view" | "verify";
 
 export type ReviewFindingCardModel = {
   location: string;
   kicker: string | null;
   title: string;
   body: string;
-  replacement: string | null;
-  /** One phrase in one field. Null when the finding is split or has no anchor. */
+  suggestion: ReviewCardSuggestion;
+  primary: ReviewCardPrimaryAction;
+  /** Null only when the finding is not tied to a section. */
   locate: ReviewLocateTarget | null;
-  /** Open single-span AI suggestion to promote into the tracked-change queue. */
-  applyCommentId: string | null;
-  /** Finding can persist or generate a tracked-change suggestion. */
-  canApplyTrackedChange: boolean;
 };
 
 type CardComment = {
@@ -40,6 +44,7 @@ type CardComment = {
   content: string;
   anchorText: string;
   contentPath: string | null;
+  evaluationId?: string | null;
 };
 
 function splitTitleBody(
@@ -77,11 +82,9 @@ function secondSpanPresent(payload: ParsedAiFixPayload): boolean {
 }
 
 /** A tracked change that touches one span in one field. */
-function singleSpanSuggestion(comment: CardComment): {
-  needle: string;
-  replacement: string | null;
-} | null {
-  if (comment.status !== "open" || !isAiSuggestionKind(comment.kind)) return null;
+function singleSpanSuggestion(
+  comment: CardComment
+): { deleteText: string; insertText: string } | null {
   if (comment.kind === "ai_redraft") return null;
   const payload = parseAiFixCommentContent(comment.content);
   if (
@@ -94,10 +97,35 @@ function singleSpanSuggestion(comment: CardComment): {
   ) {
     return null;
   }
-  const needle = payload.deleteText.trim() || comment.anchorText.trim();
-  if (!needle) return null;
-  const replacement = payload.insertText.trim();
-  return { needle, replacement: replacement || null };
+  const deleteText = payload.deleteText.trim();
+  const insertText = payload.insertText.trim();
+  if (!deleteText && !insertText) return null;
+  return { deleteText, insertText };
+}
+
+/** Held = Review created it and it is not in the document queue yet. */
+function commentIsHeld(comment: CardComment): boolean {
+  return !comment.evaluationId && !commentReleasedToQueue(comment.content);
+}
+
+function findingLocate(finding: ReviewFindingDto): ReviewLocateTarget | null {
+  if (!finding.section) return null;
+  if (!finding.contentPath) {
+    return { section: finding.section, contentPath: null, anchor: "", needle: "" };
+  }
+  const { focusText, focusOccurrence } = finding.metadata;
+  return {
+    section: finding.section,
+    contentPath: finding.contentPath,
+    anchor: finding.anchorText,
+    needle: typeof focusText === "string" ? focusText : "",
+    ...(typeof focusOccurrence === "number" ? { occurrence: focusOccurrence } : {}),
+  };
+}
+
+function suggestedTextFromMetadata(metadata: Record<string, unknown>): string | null {
+  const text = metadata.suggestedText;
+  return typeof text === "string" && text.trim() ? text.trim() : null;
 }
 
 export function reviewFindingCardModel(args: {
@@ -108,9 +136,10 @@ export function reviewFindingCardModel(args: {
   criterionLabel: string | null;
   comment: CardComment | null;
 }): ReviewFindingCardModel {
+  const { finding } = args;
   const criterionKey =
-    typeof args.finding.metadata.criterionKey === "string"
-      ? args.finding.metadata.criterionKey
+    typeof finding.metadata.criterionKey === "string"
+      ? finding.metadata.criterionKey
       : null;
   const head = [args.sectionNumber != null ? `§${args.sectionNumber}` : null, criterionKey]
     .filter((part): part is string => Boolean(part))
@@ -121,49 +150,81 @@ export function reviewFindingCardModel(args: {
       : args.sectionLabel
     : head || args.check?.label || "Review";
 
-  const { title, body } = splitTitleBody(
-    args.finding.message,
-    args.criterionLabel
-  );
+  const { title, body } = splitTitleBody(finding.message, args.criterionLabel);
   const kicker =
     args.check &&
     args.check.label !== title &&
     !args.check.label.endsWith(" criteria")
       ? args.check.label
       : null;
+  const base = { location, kicker, title, body };
 
-  const proposed = proposedEditFromMetadata(args.finding.metadata);
-  const span = args.comment ? singleSpanSuggestion(args.comment) : null;
-  const section = args.finding.section;
-  const contentPath =
-    args.comment?.contentPath ?? args.finding.contentPath ?? null;
-  const fallbackNeedle =
-    proposed?.deleteText.trim() ||
-    proposed?.anchorText.trim() ||
-    args.finding.anchorText.trim();
-  const locate =
-    section && contentPath
-      ? span
-        ? { section, contentPath, needle: span.needle }
-        : !args.comment && fallbackNeedle
-          ? { section, contentPath, needle: fallbackNeedle }
-          : null
+  const comment =
+    args.comment &&
+    args.comment.status === "open" &&
+    isAiSuggestionKind(args.comment.kind)
+      ? args.comment
       : null;
-  const replacement =
-    span?.replacement ?? (proposed?.insertText.trim() || null);
-  const applyCommentId = span && args.comment ? args.comment.id : null;
-  const canApplyTrackedChange = args.comment
-    ? Boolean(applyCommentId)
-    : Boolean(proposed || canGenerateReviewSuggestion(args.finding));
+
+  if (comment) {
+    const section = finding.section;
+    const contentPath = comment.contentPath ?? finding.contentPath ?? null;
+    const span = singleSpanSuggestion(comment);
+    const locate: ReviewLocateTarget | null = section
+      ? span && contentPath
+        ? {
+            section,
+            contentPath,
+            anchor: comment.anchorText,
+            needle: span.deleteText,
+          }
+        : { section, contentPath, anchor: "", needle: "" }
+      : null;
+    return {
+      ...base,
+      suggestion: span
+        ? { kind: "replacement", ...span }
+        : { kind: "multi_part" },
+      primary: commentIsHeld(comment) ? "apply" : "view",
+      locate,
+    };
+  }
+
+  const proposed = proposedEditFromMetadata(finding.metadata);
+  if (proposed && finding.section && finding.contentPath) {
+    return {
+      ...base,
+      suggestion: {
+        kind: "replacement",
+        deleteText: proposed.deleteText.trim(),
+        insertText: proposed.insertText.trim(),
+      },
+      primary: "apply",
+      locate: {
+        section: finding.section,
+        contentPath: finding.contentPath,
+        anchor: proposed.anchorText,
+        needle: proposed.deleteText,
+      },
+    };
+  }
+
+  if (canGenerateReviewSuggestion(finding)) {
+    return {
+      ...base,
+      suggestion: { kind: "draft_on_apply" },
+      primary: "apply",
+      locate: findingLocate(finding),
+    };
+  }
 
   return {
-    location,
-    kicker,
-    title,
-    body,
-    replacement,
-    locate,
-    applyCommentId,
-    canApplyTrackedChange,
+    ...base,
+    suggestion: {
+      kind: "manual",
+      suggestedText: suggestedTextFromMetadata(finding.metadata),
+    },
+    primary: "verify",
+    locate: findingLocate(finding),
   };
 }

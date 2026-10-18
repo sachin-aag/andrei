@@ -7,16 +7,20 @@ import {
   REVIEW_LOCATE_CLASS,
   REVIEW_LOCATE_REFRESH_META,
   createReviewLocateHighlightExtension,
+  type ReviewLocatePaint,
 } from "./review-locate-highlight";
 
 describe("review locate highlight in the editor", () => {
   it("paints one yellow phrase and clears it when the needle goes away", () => {
-    let needle: string | null = "acceptable to the R&D Engineer";
+    let target: ReviewLocatePaint | null = {
+      anchor: "",
+      needle: "acceptable to the R&D Engineer",
+    };
     const editor = new Editor({
       element: document.createElement("div"),
       extensions: [
         StarterKit.configure({ heading: false }),
-        createReviewLocateHighlightExtension(() => needle),
+        createReviewLocateHighlightExtension(() => target),
       ],
       content: {
         type: "doc",
@@ -37,7 +41,7 @@ describe("review locate highlight in the editor", () => {
     const marked = editor.view.dom.querySelector(`.${REVIEW_LOCATE_CLASS}`);
     expect(marked?.textContent).toBe("acceptable to the R&D Engineer");
 
-    needle = null;
+    target = null;
     editor.view.dispatch(
       editor.state.tr.setMeta(REVIEW_LOCATE_REFRESH_META, true)
     );

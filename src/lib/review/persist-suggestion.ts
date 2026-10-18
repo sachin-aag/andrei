@@ -27,6 +27,7 @@ import type { ReviewFindingDraft } from "./types";
 import type { ReviewRunContext } from "./types";
 import type { ReviewSeverity } from "./severity";
 import {
+  commentReleasedToQueue,
   withReleasedToQueue,
   type ProposedReviewEdit,
 } from "./proposed-edit";
@@ -232,6 +233,35 @@ export async function releaseCommentToQueue(commentId: string): Promise<void> {
     .update(comments)
     .set({ content: withReleasedToQueue(row.content, true) })
     .where(eq(comments.id, commentId));
+}
+
+/**
+ * A dismissed or verified finding must not leave its held suggestion behind:
+ * once the finding closes, nothing hides that comment from the document queue.
+ */
+export async function dismissHeldReviewComment(
+  commentId: string | null
+): Promise<string | null> {
+  if (!commentId) return null;
+  const [row] = await db
+    .select({ id: comments.id, content: comments.content })
+    .from(comments)
+    .where(
+      and(
+        eq(comments.id, commentId),
+        eq(comments.status, "open"),
+        isNull(comments.evaluationId)
+      )
+    );
+  if (!row || commentReleasedToQueue(row.content)) return null;
+  await db
+    .update(comments)
+    .set({
+      status: "dismissed",
+      content: withResolutionReason(row.content, "review_finding_closed"),
+    })
+    .where(eq(comments.id, row.id));
+  return row.id;
 }
 
 /** Drop review-created suggestion comments when that check is re-run. */

@@ -401,6 +401,20 @@ html[data-customer="3xper"] {
   border-radius: 2px;
 }
 
+/* Whole-field / whole-section fallback: same yellow, lighter, with a margin bar. */
+.review-locate-block {
+  background-color: rgb(254 240 138 / 0.55);
+  box-shadow: -6px 0 0 0 rgb(250 204 21);
+  border-radius: 2px;
+}
+
+.review-locate-section {
+  background-color: rgb(254 249 195 / 0.6);
+  outline: 2px solid rgb(250 204 21 / 0.9);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
+
 .comment-thread-bubble {
   display: inline-flex;
   vertical-align: middle;
@@ -1232,6 +1246,15 @@ body:has([data-suggestion-preview-held]) {
 
 .ProseMirror .citation-ref-n:hover {
   color: var(--brand-600);
+}
+
+/* Review "Show in document" must win over the grey citation bubble. */
+.ProseMirror .citation-ref.review-locate-highlight,
+.ProseMirror .review-locate-highlight .citation-ref,
+.ProseMirror .citation-ref .review-locate-highlight {
+  color: var(--foreground);
+  background: rgb(250 204 21 / 0.9);
+  box-shadow: 0 0 0 2px rgb(250 204 21 / 0.9);
 }
 
 .ProseMirror span.suggestion-insert .citation-ref,

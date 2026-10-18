@@ -71,6 +71,7 @@ import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
+import { reviewLocateScope } from "@/lib/review/locate";
 import {
   gutterAnchorIdForComment,
   scrollToCommentFieldAnchor,
@@ -288,8 +289,12 @@ export function ReportWorkspace({
   }, []);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
+  const { suggestionsFocus, clearSuggestionsFocus, isEvaluating, reviewLocate } =
     useReportEvaluations();
+  const reviewLocateSection =
+    reviewLocate && reviewLocateScope(reviewLocate) === "section"
+      ? reviewLocate.section
+      : null;
   const {
     activeAttachmentId,
     attachments,
@@ -1228,6 +1233,7 @@ export function ReportWorkspace({
                               key={s}
                               id={s}
                               title={section.label}
+                              highlighted={reviewLocateSection === s}
                               eager={index < 1}
                               onMounted={handleSectionMounted}
                               style={

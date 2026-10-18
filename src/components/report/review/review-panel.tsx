@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { CheckCircle2, Loader2, Play } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -20,9 +20,15 @@ import {
   type ReviewFindingDto,
   type ReviewSeverityCounts,
 } from "@/lib/review";
-import { useReportData, useReportEvaluations, useReportComments } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportData,
+  useReportEvaluations,
+  useReportSections,
+} from "@/providers/report-provider";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { reviewFindingCardModel } from "@/lib/review/finding-card";
+import { reviewFieldText, reviewLocateHint } from "@/lib/review/locate";
 import { ReviewFindingCard } from "./review-finding-card";
 import type { SectionType } from "@/db/schema";
 import {
@@ -283,39 +289,6 @@ function ReviewRunAll({
   );
 }
 
-function ReviewVerifyActions({ finding }: { finding: ReviewFindingDto }) {
-  const {
-    actions: { patchFinding },
-    state: { canRun },
-  } = useReview();
-  if (finding.kind !== "needs_human" || !canRun || finding.id.startsWith("live:")) {
-    return null;
-  }
-  return (
-    <div className="mt-2 flex items-center gap-1.5">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="h-6 px-2 text-[10px]"
-        onClick={() => void patchFinding(finding.id, "verified")}
-      >
-        <CheckCircle2 className="size-3" />
-        Mark verified
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="h-6 px-2 text-[10px]"
-        onClick={() => void patchFinding(finding.id, "dismissed")}
-      >
-        Dismiss
-      </Button>
-    </div>
-  );
-}
-
 function ReviewIssueRow({
   finding,
   onJumpToComment,
@@ -333,9 +306,10 @@ function ReviewIssueRow({
   } = useReportEvaluations();
   const { comments } = useReportComments();
   const { report } = useReportData();
+  const { sections } = useReportSections();
   const {
     state: { applyingFindingId, checks, canRun },
-    actions: { applyTrackedChange },
+    actions: { applyTrackedChange, patchFinding },
   } = useReview();
   const check = checks.find((row) => row.id === finding.checkId) ?? null;
   const workspaceSections = getWorkspaceSections(report.documentType);
@@ -369,42 +343,62 @@ function ReviewIssueRow({
     criterionLabel: evaluation?.criterionLabel ?? null,
     comment,
   });
+  const located = reviewLocate?.findingId === finding.id;
+  const locate = card.locate;
+  const locateHint =
+    located && locate
+      ? reviewLocateHint(
+          locate,
+          locate.contentPath
+            ? reviewFieldText(sections[locate.section], locate.section, locate.contentPath)
+            : null
+        )
+      : null;
+
+  const showInDocument = locate
+    ? () => {
+        setReviewLocate({ findingId: finding.id, ...locate });
+        void onJumpToSection(locate.section as SectionType);
+      }
+    : undefined;
+
+  const openTrackedChange = (commentId: string) => {
+    setReviewLocate(null);
+    promoteSuggestionToQueueHead(commentId);
+    onJumpToComment(commentId);
+  };
+
+  const primary = !canRun
+    ? undefined
+    : card.primary === "verify"
+      ? () => {
+          if (located) setReviewLocate(null);
+          void patchFinding(finding.id, "verified");
+        }
+      : () => {
+          void (async () => {
+            const commentId = await applyTrackedChange(finding.id);
+            if (commentId) openTrackedChange(commentId);
+          })();
+        };
+
+  const dismiss = canRun
+    ? () => {
+        if (located) setReviewLocate(null);
+        void patchFinding(finding.id, "dismissed");
+      }
+    : undefined;
 
   return (
     <ReviewFindingCard
       severity={finding.severity}
       card={card}
-      located={reviewLocate?.findingId === finding.id}
-      onShowInDocument={
-        card.locate
-          ? () => {
-              const locate = card.locate;
-              if (!locate) return;
-              setReviewLocate({
-                findingId: finding.id,
-                section: locate.section,
-                contentPath: locate.contentPath,
-                needle: locate.needle,
-              });
-              void onJumpToSection(locate.section as SectionType);
-            }
-          : undefined
-      }
-      applying={applyingFindingId === finding.id}
-      onApplyTrackedChange={
-        card.canApplyTrackedChange && canRun
-          ? () => {
-              void (async () => {
-                const commentId = await applyTrackedChange(finding.id);
-                if (!commentId) return;
-                setReviewLocate(null);
-                promoteSuggestionToQueueHead(commentId);
-                onJumpToComment(commentId);
-              })();
-            }
-          : undefined
-      }
-      extra={<ReviewVerifyActions finding={finding} />}
+      located={located}
+      busy={applyingFindingId === finding.id}
+      locateHint={locateHint}
+      onShowInDocument={showInDocument}
+      onPrimary={primary}
+      onDismiss={dismiss}
     />
   );
 }
@@ -604,7 +598,7 @@ function ReviewPanel({
         <div className="min-w-0 space-y-1.5">
           <h2 className="text-sm font-semibold">Review</h2>
           <p className="text-[11px] text-[var(--muted-foreground)]">
-            Run checks, then open a card. Show in document highlights the phrase. Apply as tracked change is the only way a suggestion appears in the document.
+            Run checks, then click a card to highlight it in the document. Apply as tracked change is the only way a suggestion appears in the document.
           </p>
           <ReviewSeverityStats />
         </div>
@@ -627,5 +621,4 @@ export const Review = {
   CheckCard: ReviewCheckCard,
   IssueList: ReviewIssueList,
   IssueRow: ReviewIssueRow,
-  VerifyActions: ReviewVerifyActions,
 };

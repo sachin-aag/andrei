@@ -204,17 +204,51 @@ export function useReviewChecks() {
 
   const patchFinding = useCallback(
     async (findingId: string, status: "verified" | "dismissed") => {
-      const res = await fetch(
-        `/api/reports/${report.id}/review/findings/${findingId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
+      const livePrefix = "live:";
+      if (findingId.startsWith(livePrefix)) {
+        // Live criteria rows are evaluations, not stored findings: bypass the criterion.
+        const evaluationId = findingId.slice(livePrefix.length);
+        const res = await fetch(
+          `/api/reports/${report.id}/evaluations/${encodeURIComponent(evaluationId)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bypassed: true }),
+          }
+        );
+        if (!res.ok) {
+          toast.error("Could not update that finding.");
+          return;
         }
-      );
-      if (!res.ok) {
-        toast.error("Could not update that finding.");
-        return;
+        setEvaluations((prev) =>
+          prev.map((row) =>
+            row.id === evaluationId ? { ...row, bypassed: true } : row
+          )
+        );
+      } else {
+        const res = await fetch(
+          `/api/reports/${report.id}/review/findings/${findingId}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
+          }
+        );
+        if (!res.ok) {
+          toast.error("Could not update that finding.");
+          return;
+        }
+        const data = (await res.json().catch(() => ({}))) as {
+          dismissedCommentId?: string | null;
+        };
+        const dismissedCommentId = data.dismissedCommentId;
+        if (dismissedCommentId) {
+          setComments((prev) =>
+            prev.map((row) =>
+              row.id === dismissedCommentId ? { ...row, status: "dismissed" } : row
+            )
+          );
+        }
       }
       setFindings((prev) => prev.filter((row) => row.id !== findingId));
       setReviewFindings((prev) => prev.filter((row) => row.id !== findingId));
@@ -234,7 +268,7 @@ export function useReviewChecks() {
         })
       );
     },
-    [findings, report.id, setReviewFindings]
+    [findings, report.id, setComments, setEvaluations, setReviewFindings]
   );
 
   return {
