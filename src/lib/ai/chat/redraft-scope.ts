@@ -4,6 +4,15 @@ import { REDRAFT_COVERAGE_THRESHOLD } from "@/lib/ai/chat/propose-edit";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 
 /**
+ * A `draft_field` that removes this little of a filled field is a citation
+ * or wording tweak, not a rewrite — even when the engineer said "redraft".
+ * Whole-field strike in review for a page-number change looks broken.
+ * Explicit rewrite turns still skip the 50% {@link REDRAFT_COVERAGE_THRESHOLD}
+ * gate so a 15.N boilerplate-heavy replace can land.
+ */
+export const TRIVIAL_REDRAFT_COVERAGE = 0.05;
+
+/**
  * Fraction of the current field a `draft_field` replacement actually removes.
  *
  * Mirrors the `propose_edit` coverage measure so the two tools meet at
@@ -65,8 +74,14 @@ export function classifyRedraftScope(args: {
   return { kind: "targeted_edit", coverage };
 }
 
-export function redraftTooSmallHint(coverage: number): string {
+export function redraftTooSmallHint(
+  coverage: number,
+  options?: { rewriteRequested?: boolean }
+): string {
   const percent = Math.round(coverage * 100);
+  if (options?.rewriteRequested) {
+    return `The engineer asked to rewrite this field, but this replacement keeps ${100 - percent}% of it — it is not a rewrite. Rewrite the prose. For a small citation or wording change, call read_section, then propose_edit.`;
+  }
   return `This replacement keeps ${100 - percent}% of the field — it is a targeted edit, not a rewrite, and draft_field would strike the whole field in review. Call read_section, then propose_edit. Nearby wording in the same field belongs in one call (span the unchanged words between); distant paragraphs can be separate. Use edit_table for table cells. Only use draft_field here if the engineer asked to rewrite or replace the whole field.`;
 }
 

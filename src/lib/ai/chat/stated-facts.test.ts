@@ -43,6 +43,16 @@ describe("extractStatedFactCandidates", () => {
     );
   });
 
+  it("drops a rewrite or insert-the-suggestion command, not a fact that follows", () => {
+    expect(extractStatedFactCandidates("redraft @Purpose section")).toEqual([]);
+    expect(extractStatedFactCandidates("insert the suggestion")).toEqual([]);
+    expect(
+      extractStatedFactCandidates(
+        "redraft the purpose section. URS-13 operating range is −15 °C."
+      ).map((row) => row.text)
+    ).toEqual(["URS-13 operating range is −15 °C."]);
+  });
+
   it("keeps a statement that follows a question", () => {
     const rows = extractStatedFactCandidates(
       "What about the jacket? URS-13 operating range is −15 °C."
