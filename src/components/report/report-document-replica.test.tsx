@@ -32,11 +32,18 @@ vi.mock("./report-workspace-loading", () => ({
 vi.mock("./canvas-tab-pane", () => ({
   CanvasTabPane: ({
     children,
+    header,
     testId,
   }: {
     children: ReactNode;
+    header?: ReactNode;
     testId?: string;
-  }) => <div data-testid={testId}>{children}</div>,
+  }) => (
+    <div data-testid={testId}>
+      {header}
+      {children}
+    </div>
+  ),
 }));
 
 describe("ReportDocumentReplica", () => {

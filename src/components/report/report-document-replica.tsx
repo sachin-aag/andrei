@@ -7,6 +7,7 @@ import { CanvasTabPane } from "./canvas-tab-pane";
 import { LazyWorkspaceSection } from "./lazy-workspace-section";
 import { ReportHeader } from "./report-header";
 import { ReportWorkspaceLoading } from "./report-workspace-loading";
+import { WorkProductViewOnlyBanner } from "./work-product-view-only-banner";
 import type { SectionEditorMap } from "./section-editor-loaders";
 import {
   documentCanvasWidthClass,
@@ -42,62 +43,53 @@ export function ReportDocumentReplica({
       scrollable
       scrollTabId={`${paneId}-report`}
       testId={`${paneId}-report-document-canvas`}
+      header={<WorkProductViewOnlyBanner product="Report" />}
     >
       <ReportViewOnlyOverride>
-        <div className="flex min-h-0 flex-1 flex-col">
-          <p
-            className="shrink-0 border-b border-[var(--border)] bg-[var(--muted)] px-6 py-2 text-sm text-[var(--muted-foreground)]"
-            data-testid="report-view-only-banner"
-          >
-            View only. Edits stay in the top-left report.
-          </p>
+        <div
+          className={cn(
+            "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+            documentCanvasWidthClass({
+              continuousDocument,
+              reviewGutterVisible: false,
+            })
+          )}
+          style={
+            continuousDocument ? undefined : documentColumnStyle(documentWidth)
+          }
+        >
           <div
+            id={`${paneId}-report-document-sheet`}
             className={cn(
-              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-              documentCanvasWidthClass({
-                continuousDocument,
-                reviewGutterVisible: false,
-              })
+              "relative space-y-10 min-w-0",
+              documentType === "quality_risk_assessment" && "qra-document"
             )}
-            style={
-              continuousDocument
-                ? undefined
-                : documentColumnStyle(documentWidth)
-            }
           >
+            <ReportHeader />
             <div
-              id={`${paneId}-report-document-sheet`}
               className={cn(
-                "relative space-y-10 min-w-0",
-                documentType === "quality_risk_assessment" && "qra-document"
+                "min-w-0",
+                continuousDocument ? "space-y-4" : "space-y-10"
               )}
             >
-              <ReportHeader />
-              <div
-                className={cn(
-                  "min-w-0",
-                  continuousDocument ? "space-y-4" : "space-y-10"
-                )}
-              >
-                {editorsAllowed ? (
-                  workspaceSectionList.map((section, index) => {
-                    const Editor = sectionEditors?.[section.key];
-                    if (!Editor) return null;
-                    return (
-                      <LazyWorkspaceSection
-                        key={section.key}
-                        id={`${paneId}-${section.key}`}
-                        title={section.label}
-                        eager={index < 1}
-                      >
-                        <Editor />
-                      </LazyWorkspaceSection>
-                    );
-                  })
-                ) : (
-                  <ReportWorkspaceLoading />
-                )}
-              </div>
+              {editorsAllowed ? (
+                workspaceSectionList.map((section, index) => {
+                  const Editor = sectionEditors?.[section.key];
+                  if (!Editor) return null;
+                  return (
+                    <LazyWorkspaceSection
+                      key={section.key}
+                      id={`${paneId}-${section.key}`}
+                      title={section.label}
+                      eager={index < 1}
+                    >
+                      <Editor />
+                    </LazyWorkspaceSection>
+                  );
+                })
+              ) : (
+                <ReportWorkspaceLoading />
+              )}
             </div>
           </div>
         </div>

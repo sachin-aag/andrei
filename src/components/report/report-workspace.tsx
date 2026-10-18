@@ -47,7 +47,7 @@ import {
 } from "./workspace-chrome-prefs";
 import { CanvasSplitView } from "./canvas-split-view";
 import { ReportDocumentReplica } from "./report-document-replica";
-import { WorkProductAwayNotice } from "./work-product-away-notice";
+import { WorkProductViewOnlyBanner } from "./work-product-view-only-banner";
 import {
   ANCHOR_PANE_ID,
   attachmentIdsInPane,
@@ -1379,6 +1379,11 @@ export function ReportWorkspace({
                             ? "report-analytics-canvas"
                             : `${pane.id}-analytics-canvas`
                         }
+                        header={
+                          liveAnalyticsPaneId === pane.id ? undefined : (
+                            <WorkProductViewOnlyBanner product="Analytics" />
+                          )
+                        }
                       >
                         <div
                           ref={
@@ -1393,9 +1398,6 @@ export function ReportWorkspace({
                               : "hidden"
                           }
                         />
-                        {liveAnalyticsPaneId === pane.id ? null : (
-                          <WorkProductAwayNotice product="Analytics" />
-                        )}
                       </CanvasTabPane>
                     ) : null}
                     <AttachmentCanvasStack

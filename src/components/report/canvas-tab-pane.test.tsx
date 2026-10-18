@@ -58,13 +58,34 @@ describe("CanvasTabPane", () => {
     expect(screen.getByText("Report body")).toBeInTheDocument();
   });
 
+  function paneScroller(testId = "pane") {
+    return screen.getByTestId(testId).querySelector("[data-canvas-pane-scroll]");
+  }
+
   it("makes the pane the scroller when scrollable", () => {
     render(
       <CanvasTabPane active scrollable testId="pane">
         body
       </CanvasTabPane>
     );
-    expect(screen.getByTestId("pane")).toHaveClass("overflow-auto");
+    expect(screen.getByTestId("pane")).not.toHaveClass("overflow-auto");
+    expect(paneScroller()).toHaveClass("overflow-auto");
+  });
+
+  it("keeps a header pinned outside the scroller", () => {
+    render(
+      <CanvasTabPane
+        active
+        scrollable
+        testId="pane"
+        header={<p data-testid="pinned-header">View only</p>}
+      >
+        body
+      </CanvasTabPane>
+    );
+    const header = screen.getByTestId("pinned-header");
+    expect(screen.getByTestId("pane")).toContainElement(header);
+    expect(paneScroller()).not.toContainElement(header);
   });
 
   it("keeps scrollTop when parked and shown again without remounting", () => {
@@ -74,14 +95,15 @@ describe("CanvasTabPane", () => {
       </CanvasTabPane>
     );
     const pane = screen.getByTestId("pane");
-    pane.scrollTop = 240;
+    const scroller = paneScroller() as HTMLElement;
+    scroller.scrollTop = 240;
 
     rerender(
       <CanvasTabPane active={false} scrollable testId="pane">
         <div style={{ height: 2000 }}>tall</div>
       </CanvasTabPane>
     );
-    expect(pane.scrollTop).toBe(240);
+    expect(scroller.scrollTop).toBe(240);
     expect(pane).toHaveAttribute("data-canvas-pane", "parked");
     expect(pane).not.toHaveAttribute("hidden");
     expect(pane).not.toHaveClass("hidden");
@@ -91,7 +113,7 @@ describe("CanvasTabPane", () => {
         <div style={{ height: 2000 }}>tall</div>
       </CanvasTabPane>
     );
-    expect(pane.scrollTop).toBe(240);
+    expect(scroller.scrollTop).toBe(240);
     expect(pane).toHaveAttribute("data-canvas-pane", "active");
   });
 
@@ -104,7 +126,7 @@ describe("CanvasTabPane", () => {
         </CanvasTabPane>
       </CanvasTabScrollProvider>
     );
-    expect(screen.getByTestId("pane").scrollTop).toBe(360);
+    expect(paneScroller()!.scrollTop).toBe(360);
   });
 
   it("persists scrollTop when the pane is scrolled", async () => {
@@ -115,9 +137,9 @@ describe("CanvasTabPane", () => {
         </CanvasTabPane>
       </CanvasTabScrollProvider>
     );
-    const pane = screen.getByTestId("pane");
-    pane.scrollTop = 88;
-    pane.dispatchEvent(new Event("scroll"));
+    const scroller = paneScroller() as HTMLElement;
+    scroller.scrollTop = 88;
+    scroller.dispatchEvent(new Event("scroll"));
     await waitFor(() => {
       expect(readCanvasTabScrollTop("user-a", "report-a", "report")).toBe(88);
     });
