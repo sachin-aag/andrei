@@ -33,8 +33,13 @@ const PRIMARY_LABEL: Record<ReviewCardPrimaryAction, string> = {
   none: "Apply as tracked change",
 };
 
-const NOTHING_TO_APPLY =
-  "This finding is not about one passage, so there is no exact change to make.";
+export const NO_SUGGESTION_HINT =
+  "No suggestion was automatically available. Human review is needed.";
+
+const NO_PLACE_HINT = "This finding is about the whole document, not one place in it.";
+
+/** Apply and Show in document share one width so the row reads the same on every card. */
+const ACTION_WIDTH = "w-44";
 
 function busyLabel(card: ReviewFindingCardModel): string {
   return card.suggestion.kind === "draft_on_apply" ? "Drafting…" : "Applying…";
@@ -80,24 +85,24 @@ function suggestionCopy(suggestion: ReviewCardSuggestion): {
         text: "Edits more than one place. The changes show as tracked changes in the document.",
       };
     case "draft_on_apply":
+      return {
+        tone: "ai",
+        label: "AI fix",
+        text: "Drafted from the criterion when you apply it.",
+      };
+    case "none":
       return suggestion.suggestedText
         ? {
-            tone: "ai",
+            tone: "manual",
             label: "Suggested wording",
             text: suggestion.suggestedText,
-            note: "The AI places this in the document when you apply it.",
+            note: "It could not be matched to the text, so make this edit by hand.",
           }
         : {
-            tone: "ai",
-            label: "AI fix",
-            text: "The AI drafts an exact change when you apply it. Anything it cannot confirm becomes a <placeholder>.",
+            tone: "manual",
+            label: "Needs your review",
+            text: NO_SUGGESTION_HINT,
           };
-    case "none":
-      return {
-        tone: "manual",
-        label: "Nothing to apply",
-        text: `${NOTHING_TO_APPLY} Dismiss it once it is handled.`,
-      };
   }
 }
 
@@ -133,7 +138,7 @@ function SuggestionBox({
       <p
         className={cn(
           "mt-1 text-sm leading-snug text-[var(--foreground)]",
-          copy.tone === "manual" && "text-xs text-[var(--muted-foreground)]",
+          copy.tone === "manual" && !copy.note && "text-xs text-[var(--muted-foreground)]",
           copy.struck && "line-through decoration-red-500/70"
         )}
       >
@@ -168,7 +173,7 @@ export function ReviewFindingCard({
   locateHint?: string | null;
   /** Omitted when the finding is not tied to a section. */
   onShowInDocument?: () => void;
-  /** Omitted when the viewer cannot edit or there is nothing to apply. */
+  /** Omitted when the viewer cannot edit or no suggestion was prepared. */
   onPrimary?: () => void;
   onDismiss?: () => void;
 }) {
@@ -220,49 +225,51 @@ export function ReviewFindingCard({
         suggestion={card.suggestion}
         inDocument={card.primary === "view"}
       />
-      {/* Fixed two rows so every card lays out the same at any panel width. */}
-      <div className="mt-3 space-y-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="success"
-          className="w-full gap-1.5"
-          onClick={onPrimary}
-          disabled={busy || !onPrimary}
-          title={card.primary === "none" ? NOTHING_TO_APPLY : undefined}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span
+          className="inline-flex"
+          title={card.primary === "none" ? NO_SUGGESTION_HINT : undefined}
+          data-testid="review-finding-primary"
         >
-          {busy ? busyLabel(card) : PRIMARY_LABEL[card.primary]}
-        </Button>
-        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="success"
+            className={ACTION_WIDTH}
+            onClick={onPrimary}
+            disabled={busy || !onPrimary}
+          >
+            {busy ? busyLabel(card) : PRIMARY_LABEL[card.primary]}
+          </Button>
+        </span>
+        <span
+          className="inline-flex"
+          title={onShowInDocument ? undefined : NO_PLACE_HINT}
+        >
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="gap-1.5 bg-[var(--card)]"
+            className={cn(ACTION_WIDTH, "gap-1.5 bg-[var(--card)]")}
             onClick={onShowInDocument}
             disabled={!onShowInDocument}
-            title={
-              onShowInDocument
-                ? undefined
-                : "This finding is about the whole document, not one place in it."
-            }
           >
             <Crosshair className="size-3.5" aria-hidden="true" />
             Show in document
           </Button>
-          {onDismiss ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="text-[var(--muted-foreground)]"
-              onClick={onDismiss}
-              disabled={busy}
-            >
-              Dismiss
-            </Button>
-          ) : null}
-        </div>
+        </span>
+        {onDismiss ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto text-[var(--muted-foreground)]"
+            onClick={onDismiss}
+            disabled={busy}
+          >
+            Dismiss
+          </Button>
+        ) : null}
       </div>
       {located && locateHint ? (
         <p

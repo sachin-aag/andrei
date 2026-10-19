@@ -139,15 +139,19 @@ or Minor (blue); the same counts sit at the top of Review, on each category
 tab, and on each check card. Issues are `fixable` (`ai_fix` / `ai_grammar`)
 or `needs_human`. Every finding renders the same `ReviewFindingCard`
 (`reviewFindingCardModel` in `finding-card.ts`): a suggestion box that is
-always present (replacement / AI drafts on apply / multi-part / nothing to
-apply), and the same three buttons: Apply as tracked change (→ View tracked
-change once in the document; disabled only when the finding has no field),
-Show in document, and Dismiss. Checks store an exact `proposedEdit` when the
-fix is obvious (`withProposedEdit` in `locate-proposed-edit.ts`: missing
-Citations line → `<citation>`, unknown Table/Section → `<… number>`); any
-other finding tied to a field is drafted on Apply by `draft-fix.ts`, which
-may cite only retrieved pages and inserts a `<placeholder>` instead of
-guessing. Clicking the card
+always present (replacement / multi-part / needs your review), and the same
+buttons in one row: Apply as tracked change and Show in document (equal
+width), then Dismiss. Suggestions are prepared while checks run
+(`prepare-suggestions.ts`), so Apply only places them: checks store an exact
+`proposedEdit` when the fix is obvious (`withProposedEdit` in
+`locate-proposed-edit.ts`: missing Citations line → `<citation>`, unknown
+Table/Section → `<… number>`); other field findings are drafted by
+`draft-fix.ts` (cites only retrieved pages, `<placeholder>` instead of
+guessing); report / FDA criteria get one AI Check pass per section saved as
+held comments (no `evaluationId`). A finding left without a suggestion shows
+Apply disabled with "No suggestion was automatically available. Human review
+is needed." Only `live:` criteria (from AI Check, not a run) draft on Apply.
+Clicking the card
 is Show in document. The yellow highlight (`src/lib/review/locate.ts`) paints
 the exact span (`focusText` inside a unique `anchorText`, or `focusOccurrence`
 for identical cells), else the whole field, else the whole section — never

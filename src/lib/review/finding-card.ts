@@ -19,11 +19,11 @@ export type {
 /** What the suggestion box on every card says. */
 export type ReviewCardSuggestion =
   | { kind: "replacement"; deleteText: string; insertText: string }
-  | { kind: "draft_on_apply"; suggestedText: string | null }
+  | { kind: "draft_on_apply" }
   | { kind: "multi_part" }
-  | { kind: "none" };
+  | { kind: "none"; suggestedText: string | null };
 
-/** The one main button on every card. "none" shows it disabled with the reason. */
+/** The one main button on every card. "none" shows it disabled: no suggestion was prepared. */
 export type ReviewCardPrimaryAction = "apply" | "view" | "none";
 
 export type ReviewFindingCardModel = {
@@ -209,16 +209,12 @@ export function reviewFindingCardModel(args: {
     };
   }
 
-  if (
-    canGenerateReviewSuggestion(finding) ||
-    (finding.section && finding.contentPath)
-  ) {
+  // Live criteria come from AI Check, not a Review run, so nothing was
+  // prepared for them; Apply drafts from the criterion.
+  if (finding.id.startsWith("live:") && canGenerateReviewSuggestion(finding)) {
     return {
       ...base,
-      suggestion: {
-        kind: "draft_on_apply",
-        suggestedText: suggestedTextFromMetadata(finding.metadata),
-      },
+      suggestion: { kind: "draft_on_apply" },
       primary: "apply",
       locate: findingLocate(finding),
     };
@@ -226,7 +222,10 @@ export function reviewFindingCardModel(args: {
 
   return {
     ...base,
-    suggestion: { kind: "none" },
+    suggestion: {
+      kind: "none",
+      suggestedText: suggestedTextFromMetadata(finding.metadata),
+    },
     primary: "none",
     locate: findingLocate(finding),
   };

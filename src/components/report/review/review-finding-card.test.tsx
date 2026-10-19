@@ -3,7 +3,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { ReviewFindingCard } from "./review-finding-card";
+import { NO_SUGGESTION_HINT, ReviewFindingCard } from "./review-finding-card";
 import type { ReviewFindingCardModel } from "@/lib/review/finding-card";
 
 const card: ReviewFindingCardModel = {
@@ -71,6 +71,15 @@ describe("ReviewFindingCard", () => {
     expect(onShow).toHaveBeenCalledOnce();
   });
 
+  it("gives Apply and Show in document the same width", () => {
+    render(<ReviewFindingCard severity="major" card={card} onShowInDocument={vi.fn()} />);
+    const apply = screen.getByRole("button", { name: "Apply as tracked change" });
+    const show = screen.getByRole("button", { name: "Show in document" });
+    expect(apply.className).toContain("w-44");
+    expect(show.className).toContain("w-44");
+    expect(apply.className).not.toContain("w-full");
+  });
+
   it("orders the actions the same way on a fixable card", () => {
     render(
       <ReviewFindingCard
@@ -88,16 +97,24 @@ describe("ReviewFindingCard", () => {
     ]);
   });
 
-  it("keeps the same buttons, disabled, when there is nothing to apply", () => {
+  it("keeps the same buttons, disabled with a hover reason, when no suggestion was prepared", () => {
     render(
       <ReviewFindingCard
         severity="major"
-        card={{ ...card, suggestion: { kind: "none" }, primary: "none" }}
+        card={{
+          ...card,
+          suggestion: { kind: "none", suggestedText: null },
+          primary: "none",
+        }}
         onShowInDocument={vi.fn()}
         onDismiss={vi.fn()}
       />
     );
-    expect(screen.getByText("Nothing to apply")).toBeInTheDocument();
+    expect(screen.getByText("Needs your review")).toBeInTheDocument();
+    expect(screen.getByTestId("review-finding-primary")).toHaveAttribute(
+      "title",
+      NO_SUGGESTION_HINT
+    );
     expect(actionNames()).toEqual([
       "Apply as tracked change",
       "Show in document",
@@ -112,7 +129,7 @@ describe("ReviewFindingCard", () => {
     const { rerender } = render(
       <ReviewFindingCard
         severity="minor"
-        card={{ ...card, suggestion: { kind: "draft_on_apply", suggestedText: null } }}
+        card={{ ...card, suggestion: { kind: "draft_on_apply" } }}
       />
     );
     expect(screen.getByText("AI fix")).toBeInTheDocument();
@@ -135,15 +152,13 @@ describe("ReviewFindingCard", () => {
         severity="minor"
         card={{
           ...card,
-          suggestion: { kind: "draft_on_apply", suggestedText: "Prerequisites" },
+          suggestion: { kind: "none", suggestedText: "Prerequisites" },
+          primary: "none",
         }}
       />
     );
     expect(screen.getByText("Suggested wording")).toBeInTheDocument();
     expect(screen.getByText("Prerequisites")).toBeInTheDocument();
-    expect(
-      screen.getByText("The AI places this in the document when you apply it.")
-    ).toBeInTheDocument();
   });
 
   it("disables Show in document when there is no place to highlight", () => {
