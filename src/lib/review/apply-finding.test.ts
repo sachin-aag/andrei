@@ -162,52 +162,37 @@ describe("applyReviewFindingAsTrackedChange", () => {
     expect(insert).toHaveBeenCalled();
   });
 
-  it("drafts a released suggestion for a check finding with no stored edit", async () => {
-    vi.stubEnv("ALLOW_TEST_STUB_REVIEW", "true");
-    const findingRow = {
-      id: "f2",
-      reportId: "r1",
-      checkId: "citations.uncited",
-      runId: "run1",
-      section: "define",
-      contentPath: "narrative",
-      anchorText: "batch BN100 was",
-      message: "Uncited batch: “BN100”.",
-      severity: "major",
-      kind: "needs_human",
-      commentId: null,
-      status: "open",
-      metadata: { focusText: "BN100" },
-    };
-    select
-      .mockReturnValueOnce({
-        from: vi.fn(() => ({
-          where: vi.fn().mockResolvedValue([findingRow]),
-        })),
-      })
-      .mockReturnValueOnce({
-        from: vi.fn(() => ({
-          where: vi.fn().mockResolvedValue([]),
-        })),
-      });
-    const set = vi.fn(() => ({
-      where: vi.fn(() => ({
-        returning: vi.fn().mockResolvedValue([{ ...findingRow, commentId: "new" }]),
+  it("refuses quickly when the run prepared no suggestion", async () => {
+    select.mockReturnValueOnce({
+      from: vi.fn(() => ({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "f2",
+            reportId: "r1",
+            checkId: "citations.external_refs",
+            runId: "run1",
+            section: "define",
+            contentPath: "narrative",
+            anchorText: "BN100",
+            message: "Please verify BN100.",
+            severity: "major",
+            kind: "needs_human",
+            commentId: null,
+            status: "open",
+            metadata: { criterionKey: "define.problem", evaluationId: "e1" },
+          },
+        ]),
       })),
-    }));
-    update.mockReturnValue({ set });
+    });
 
-    try {
-      const result = await applyReviewFindingAsTrackedChange({
-        ctx: ctx(),
-        findingId: "f2",
-      });
-      expect(result.commentId).toEqual(expect.any(String));
-      expect(insert).toHaveBeenCalled();
-      expect(set).toHaveBeenCalledWith(expect.objectContaining({ kind: "fixable" }));
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    await expect(
+      applyReviewFindingAsTrackedChange({ ctx: ctx(), findingId: "f2" })
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "No suggestion was automatically available. Human review is needed.",
+    });
+    expect(generateSuggestionsForSection).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("generates a released suggestion for a live criterion with no comment yet", async () => {

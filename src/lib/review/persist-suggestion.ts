@@ -119,6 +119,7 @@ export async function persistRedraftComment(args: {
   markdown: string;
   reasoning: string;
   evaluationId?: string | null;
+  releasedToQueue?: boolean;
 }): Promise<string | null> {
   const sectionRow = args.ctx.sectionRows.find(
     (row) => row.section === args.section
@@ -146,7 +147,7 @@ export async function persistRedraftComment(args: {
     authorId: AI_AUTHOR_ID,
     content: withReleasedToQueue(
       serializeAiRedraftCommentContent(payload),
-      true
+      args.releasedToQueue !== false
     ),
     anchorText: "",
     contentPath: args.contentPath,

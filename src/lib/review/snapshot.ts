@@ -24,7 +24,7 @@ function saltForCheck(checkId: string): string {
   if (checkId.startsWith("fda.")) return REVIEW_FDA_PROMPT_VERSION;
   if (checkId.startsWith("citations.")) return REVIEW_CITATION_PROMPT_VERSION;
   if (checkId.startsWith("writing.")) return REVIEW_WRITING_PROMPT_VERSION;
-  return "report-v2";
+  return "report-v3";
 }
 
 /** Overlay live failing criteria onto a never-run Report card. */

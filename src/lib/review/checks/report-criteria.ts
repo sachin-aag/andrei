@@ -212,7 +212,12 @@ function findingsFromCriteriaResults(args: {
       severity: result.status === "not_met" ? ("critical" as const) : ("major" as const),
       kind: comment ? ("fixable" as const) : ("needs_human" as const),
       commentId: comment?.id ?? null,
-      metadata: { criterionKey: result.criterionKey, evaluationId, quote },
+      metadata: {
+        criterionKey: result.criterionKey,
+        criterionLabel: result.criterionLabel,
+        evaluationId,
+        quote,
+      },
     });
   }
   return findings;

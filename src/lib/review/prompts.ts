@@ -1,11 +1,11 @@
 /** Bump when FDA clause prompts change so cached runs go stale. */
-export const REVIEW_FDA_PROMPT_VERSION = "fda-v2";
+export const REVIEW_FDA_PROMPT_VERSION = "fda-v3";
 
 /** Bump when citation LLM checks change. */
-export const REVIEW_CITATION_PROMPT_VERSION = "citation-v5";
+export const REVIEW_CITATION_PROMPT_VERSION = "citation-v6";
 
 /** Bump when writing LLM checks change. */
-export const REVIEW_WRITING_PROMPT_VERSION = "writing-v3";
+export const REVIEW_WRITING_PROMPT_VERSION = "writing-v4";
 
 /** Bump when the on-apply fix drafter prompt changes. */
 export const REVIEW_DRAFT_FIX_PROMPT_VERSION = "draft-fix-v1";

@@ -187,6 +187,7 @@ function findingsForFdaResult(args: {
         commentId: comment?.id ?? null,
         metadata: {
           criterionKey: args.result.criterionKey,
+          criterionLabel: args.result.criterionLabel,
           evaluationId: args.evaluationId,
         },
       },

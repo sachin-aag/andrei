@@ -1,17 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { comments, reviewFindings } from "@/db/schema";
-import { generateSuggestionsForSection } from "@/lib/ai/suggest";
 import { effectiveStatus } from "@/lib/ai/criteria-view";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
-import { mergeSectionForType } from "@/lib/document-types";
 import type { CommentRecord } from "@/types/report";
-import {
-  persistLocatedEdit,
-  persistRedraftComment,
-  releaseCommentToQueue,
-} from "./persist-suggestion";
-import { draftFixForFinding } from "./draft-fix";
+import { persistLocatedEdit, releaseCommentToQueue } from "./persist-suggestion";
+import { criterionSuggestionComments } from "./prepare-suggestions";
 import { proposedEditFromMetadata } from "./proposed-edit";
 import type { ReviewFindingDto } from "./ui";
 import type { ReviewRunContext } from "./types";
@@ -79,22 +73,10 @@ async function generateForCriterion(args: {
     (row) => row.id === args.evaluationId
   );
   if (!evaluation) return null;
-  const sectionContent =
-    args.section === "cover_page"
-      ? args.ctx.report.metadata
-      : (args.ctx.sections[args.section] ??
-        mergeSectionForType(args.ctx.documentType, args.section, {}));
-  const { suggestions } = await generateSuggestionsForSection({
+  const comments = await criterionSuggestionComments({
+    ctx: args.ctx,
     section: args.section,
-    content: sectionContent,
-    reportContext: {
-      deviationNo: args.ctx.report.documentNo,
-      date: args.ctx.report.date,
-    },
-    reportId: args.ctx.report.id,
-    documentType: args.ctx.documentType,
-    allSections: args.ctx.sections,
-    gapCriteria: [
+    gaps: [
       {
         criterionKey: args.criterionKey,
         criterionLabel: evaluation.criterionLabel,
@@ -103,36 +85,9 @@ async function generateForCriterion(args: {
         status: effectiveStatus(evaluation),
       },
     ],
+    held: false,
   });
-  const first = suggestions[0];
-  if (!first) return null;
-  if (first.redraftMarkdown?.trim()) {
-    return persistRedraftComment({
-      ctx: args.ctx,
-      section: args.section,
-      contentPath: first.targetField,
-      markdown: first.redraftMarkdown.trim(),
-      reasoning: first.reasoning,
-      evaluationId: first.evaluationId,
-    });
-  }
-  const persisted = await persistLocatedEdit({
-    ctx: args.ctx,
-    section: args.section,
-    contentPath: first.targetField,
-    edit: {
-      anchorText: first.anchorText,
-      deleteText: first.deleteText,
-      insertText: first.insertText,
-      scope: first.scope,
-      second: first.second,
-    },
-    reasoning: first.reasoning,
-    kind: "ai_fix",
-    evaluationId: first.evaluationId,
-    releasedToQueue: true,
-  });
-  return persisted?.commentId ?? null;
+  return comments.get(evaluation.id) ?? null;
 }
 
 export async function applyReviewFindingAsTrackedChange(args: {
@@ -216,36 +171,12 @@ export async function applyReviewFindingAsTrackedChange(args: {
       releasedToQueue: true,
     });
     commentId = persisted?.commentId ?? null;
-  } else if (
-    row.section &&
-    typeof metadata.criterionKey === "string" &&
-    typeof metadata.evaluationId === "string"
-  ) {
-    commentId = await generateForCriterion({
-      ctx: args.ctx,
-      section: row.section,
-      criterionKey: metadata.criterionKey,
-      evaluationId: metadata.evaluationId,
-    });
-  } else if (row.section && row.contentPath) {
-    commentId = await draftFixForFinding({
-      ctx: args.ctx,
-      finding: {
-        checkId: row.checkId,
-        section: row.section,
-        contentPath: row.contentPath,
-        anchorText: row.anchorText,
-        message: row.message,
-        severity: row.severity,
-        metadata,
-      },
-    });
   }
 
   if (!commentId) {
     throw new ApplyReviewFindingError(
       422,
-      "Could not draft a change that fits this text. Edit it by hand, then dismiss the finding."
+      "No suggestion was automatically available. Human review is needed."
     );
   }
 

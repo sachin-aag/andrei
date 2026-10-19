@@ -19,7 +19,9 @@ import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { checkById } from "./catalog";
 import { reviewContentHash } from "./content-hash";
 import { fdaCriteriaForDocumentType, type FdaCriterion } from "./fda-criteria";
+import { mapPool } from "./map-pool";
 import { finishReviewRun, latestRunsByCheck, startReviewRun } from "./persist";
+import { prepareFindingSuggestions } from "./prepare-suggestions";
 import {
   REVIEW_CITATION_PROMPT_VERSION,
   REVIEW_FDA_PROMPT_VERSION,
@@ -34,7 +36,7 @@ function saltForCheck(checkId: string): string {
   if (checkId.startsWith("fda.")) return REVIEW_FDA_PROMPT_VERSION;
   if (checkId.startsWith("citations.")) return REVIEW_CITATION_PROMPT_VERSION;
   if (checkId.startsWith("writing.")) return REVIEW_WRITING_PROMPT_VERSION;
-  return "report-v2";
+  return "report-v3";
 }
 
 export function shouldSkipFreshCheck(args: {
@@ -80,26 +82,6 @@ export function reviewAttachmentPageJoin() {
     reportAttachmentPageJoin(),
     eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
   );
-}
-
-async function mapPool<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>
-): Promise<void> {
-  const executing: Promise<void>[] = [];
-  for (const item of items) {
-    const task = Promise.resolve().then(() => fn(item));
-    executing.push(task);
-    const drop = task.then(() => {
-      executing.splice(executing.indexOf(task), 1);
-    });
-    void drop;
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-    }
-  }
-  await Promise.all(executing);
 }
 
 export async function loadReviewRunContext(args: {
@@ -200,11 +182,16 @@ async function persistCheckOutcome(args: {
     });
     return "failed";
   }
+  const findings = await prepareFindingSuggestions({
+    ctx: args.ctx,
+    checkId: args.checkId,
+    findings: args.result.findings,
+  });
   await finishReviewRun({
     runId,
     reportId: args.ctx.report.id,
     checkId: args.checkId,
-    findings: args.result.findings,
+    findings,
   });
   await recordAuditEvent({
     actor: auditActorFromUser(args.ctx.user),
@@ -213,7 +200,7 @@ async function persistCheckOutcome(args: {
     entityId: runId,
     reportId: args.ctx.report.id,
     summary: `Ran review check ${def?.label ?? args.checkId}`,
-    newValue: { checkId: args.checkId, issueCount: args.result.findings.length },
+    newValue: { checkId: args.checkId, issueCount: findings.length },
   });
   return "ran";
 }

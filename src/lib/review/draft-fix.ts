@@ -12,9 +12,9 @@ import { isTestStubReview } from "@/lib/test/ai-bypass";
 import type { SuggestionEdit } from "@/lib/suggestions/locator";
 import { iterReportFields } from "./fields";
 import { findReviewLocateSpan } from "./locate";
-import { persistLocatedEdit } from "./persist-suggestion";
+import { locateProposedEdit } from "./locate-proposed-edit";
 import { REVIEW_DRAFT_FIX_PROMPT_VERSION } from "./prompts";
-import { coerceReviewSeverity } from "./severity";
+import { proposedEditFromMetadata, type ProposedReviewEdit } from "./proposed-edit";
 import type { ReviewRunContext } from "./types";
 
 export const REVIEW_DRAFT_FIX_SYSTEM_PROMPT = `You fix one review finding in a pharmaceutical quality report with the smallest possible edit.
@@ -72,7 +72,7 @@ export function claimAround(fieldText: string, finding: ReviewFindingToDraft): s
 }
 
 async function evidenceFor(
-  ctx: ReviewRunContext,
+  ctx: Pick<ReviewRunContext, "report">,
   query: string
 ): Promise<Evidence[]> {
   try {
@@ -142,7 +142,7 @@ export function stubDraftEdit(
 }
 
 async function modelDraft(
-  ctx: ReviewRunContext,
+  ctx: Pick<ReviewRunContext, "report">,
   prompt: string
 ): Promise<z.infer<typeof draftSchema> | null> {
   const model = resolveGoogleLanguageModel(CRITERIA_EVAL_GOOGLE_MODEL_ID, {
@@ -172,14 +172,14 @@ async function modelDraft(
 }
 
 /**
- * Drafts one tracked change for a finding that no check could fix on its
- * own, so every finding tied to a field can be applied. Returns the new
- * suggestion comment id, or null when no draft lands on the text.
+ * Drafts one exact edit for a finding no check could fix on its own. Runs
+ * while checks run, so Apply only has to place it. Null when no draft lands
+ * on the text.
  */
-export async function draftFixForFinding(args: {
-  ctx: ReviewRunContext;
+export async function draftEditForFinding(args: {
+  ctx: Pick<ReviewRunContext, "documentType" | "sections" | "report">;
   finding: ReviewFindingToDraft;
-}): Promise<string | null> {
+}): Promise<ProposedReviewEdit | null> {
   const { ctx, finding } = args;
   const field = iterReportFields(ctx.documentType, ctx.sections).find(
     (row) =>
@@ -187,23 +187,21 @@ export async function draftFixForFinding(args: {
   );
   if (!field) return null;
 
-  const persist = async (edit: SuggestionEdit, reasoning: string) =>
-    (
-      await persistLocatedEdit({
+  const locate = (edit: SuggestionEdit): ProposedReviewEdit | null =>
+    proposedEditFromMetadata(
+      locateProposedEdit({
         ctx,
         section: finding.section,
         contentPath: finding.contentPath,
         edit,
-        reasoning,
+        reasoning: finding.message,
         kind: "ai_fix",
-        severity: coerceReviewSeverity(finding.severity),
-        releasedToQueue: true,
-      })
-    )?.commentId ?? null;
+      })?.metadata
+    );
 
   if (isTestStubReview()) {
     const edit = stubDraftEdit(field.text, finding);
-    return edit ? persist(edit, finding.message) : null;
+    return edit ? locate(edit) : null;
   }
 
   const evidence = finding.checkId.startsWith("citations.")
@@ -217,15 +215,12 @@ export async function draftFixForFinding(args: {
       buildDraftFixPrompt({ finding, fieldText: field.text, evidence, retryNote })
     );
     if (!draft || !draft.deleteText.trim()) return null;
-    const commentId = await persist(
-      {
-        anchorText: draft.anchorText,
-        deleteText: draft.deleteText,
-        insertText: draft.insertText,
-      },
-      draft.reasoning.trim() || finding.message
-    );
-    if (commentId) return commentId;
+    const located = locate({
+      anchorText: draft.anchorText,
+      deleteText: draft.deleteText,
+      insertText: draft.insertText,
+    });
+    if (located) return located;
     retryNote = `Your previous anchorText "${draft.anchorText}" was not found exactly once in FIELD, or deleteText was not inside it. Copy both character-for-character from FIELD.`;
   }
   return null;
