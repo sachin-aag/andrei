@@ -6,6 +6,12 @@ import {
 } from "@/lib/review/checks/citations-resolves";
 import { uncitedFactFindings } from "@/lib/review/checks/citations-uncited";
 import { externalRefFindings } from "@/lib/review/checks/citations-external";
+import { serializeAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import { applySuggestionToContent } from "@/lib/suggestions/accept-suggestion";
+import { flattenForAnchor } from "@/lib/suggestions/locator";
+import { acceptSuggestionMarksById } from "@/lib/tiptap/suggestion-inject";
+import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narrative-doc";
+import type { CommentRecord } from "@/types/report";
 
 function para(text: string): JSONContent {
   return { type: "paragraph", content: [{ type: "text", text }] };
@@ -59,6 +65,19 @@ const sections = {
       ],
     },
   },
+};
+
+const misplacedDoc: JSONContent = {
+  type: "doc",
+  content: [
+    tableDoc(["Equipment", "IQ"], [["GLR-1302", "IQP/GLR-1302-00 [1]"]]),
+    para("Citations:"),
+    {
+      type: "orderedList",
+      content: [{ type: "listItem", content: [para("[ISM3 CV data sheet.xlsx, p. 3]")] }],
+    },
+    para("Inference: All equipment is qualified [1]."),
+  ],
 };
 
 describe("citation review checks", () => {
@@ -137,6 +156,104 @@ describe("citation review checks", () => {
         },
       },
     });
+  });
+
+  it("resolves markers against a Citations list that text follows and offers to move it", () => {
+    const findings = citationResolveFindings(
+      {
+        documentType: "investigation_report",
+        sections: {
+          define: {
+            narrative: misplacedDoc,
+          },
+        },
+      },
+      attachmentIndexFrom([{ filename: "ISM3 CV data sheet.xlsx", pageNumber: 3 }])
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      kind: "fixable",
+      severity: "major",
+      metadata: {
+        citationListMisplaced: true,
+        proposedEdit: {
+          deleteText:
+            "Citations:\n[ISM3 CV data sheet.xlsx, p. 3]\nInference: All equipment is qualified [1].",
+          insertText:
+            "Inference: All equipment is qualified [1].\n\nCitations:\n1. [ISM3 CV data sheet.xlsx, p. 3]",
+        },
+      },
+    });
+    expect(findings.some((row) => row.message.includes("no matching line"))).toBe(false);
+
+    const edit = findings[0]!.metadata!.proposedEdit as {
+      anchorText: string;
+      deleteText: string;
+      insertText: string;
+    };
+    const comment = {
+      id: "move-citations",
+      reportId: "r1",
+      parentId: null,
+      sectionId: "s1",
+      section: "define",
+      authorId: "ai",
+      content: serializeAiFixCommentContent({ ...edit, reasoning: "move" }),
+      anchorText: edit.anchorText,
+      contentPath: "narrative",
+      fromPos: null,
+      toPos: null,
+      status: "open",
+      kind: "ai_fix",
+      source: "ai",
+      externalAuthorName: null,
+      externalAuthorInitials: null,
+      externalCommentId: null,
+      externalCreatedAt: null,
+      locked: false,
+      evaluationId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    } as CommentRecord;
+    const applied = applySuggestionToContent({
+      section: "define",
+      comment,
+      sectionContent: { narrative: misplacedDoc },
+      applyMode: "tracked_change",
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const accepted = finalizeNarrativeDocAfterSuggestion(
+      acceptSuggestionMarksById(applied.nextSection.narrative as JSONContent, comment.id)
+    );
+    expect(flattenForAnchor(accepted).text).toBe(
+      "Equipment\nIQ\nGLR-1302\nIQP/GLR-1302-00 [1]\nInference: All equipment is qualified [1].\n\nCitations:\n1. [ISM3 CV data sheet.xlsx, p. 3]"
+    );
+  });
+
+  it("flags a misplaced Citations list without an edit when a table follows it", () => {
+    const findings = citationResolveFindings(
+      {
+        documentType: "investigation_report",
+        sections: {
+          define: {
+            narrative: {
+              type: "doc",
+              content: [
+                para("Residues stay below the limits [1]."),
+                para("Citations:"),
+                para("1. [cleaning-sop.pdf, p. 2]"),
+                tableDoc(["Swab", "Result"], [["S-1", "Pass"]]),
+              ],
+            },
+          },
+        },
+      },
+      attachmentIndexFrom([{ filename: "cleaning-sop.pdf", pageNumber: 2 }])
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.kind).toBe("needs_human");
+    expect(findings[0]!.metadata?.citationListMisplaced).toBe(true);
+    expect(findings[0]!.metadata?.proposedEdit).toBeUndefined();
   });
 
   it("accepts a ready attachment page", () => {

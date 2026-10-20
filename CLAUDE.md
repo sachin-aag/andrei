@@ -144,8 +144,9 @@ buttons in one row: Apply as tracked change and Show in document (equal
 width), then Dismiss. Suggestions are prepared while checks run
 (`prepare-suggestions.ts`), so Apply only places them: checks store an exact
 `proposedEdit` when the fix is obvious (`withProposedEdit` in
-`locate-proposed-edit.ts`: missing Citations line → `<citation>`, unknown
-Table/Section → `<… number>`); other field findings are drafted by
+`locate-proposed-edit.ts`: missing Citations line → `<citation>`, a
+Citations list with text below it → one "move the text above the list" edit
+(its markers still resolve), unknown Table/Section → `<… number>`); other field findings are drafted by
 `draft-fix.ts` (cites only retrieved pages, `<placeholder>` instead of
 guessing); report / FDA criteria get one AI Check pass per section saved as
 held comments (no `evaluationId`). A finding left without a suggestion shows

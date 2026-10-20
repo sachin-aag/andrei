@@ -6,9 +6,13 @@ import {
   parseSourceCitation,
 } from "@/lib/placeholders/citation-bracket";
 import {
+  blocksAfterCitationList,
+  formatCitationList,
+  misplacedCitationListInText,
   sourceCitationForNumber,
+  type MisplacedCitationList,
 } from "@/lib/suggestions/citations-at-end";
-import { iterReportFields } from "../fields";
+import { iterReportFields, type ReviewField } from "../fields";
 import { locateFieldsForMatch } from "../locate";
 import { withProposedEdit } from "../locate-proposed-edit";
 import type { ReviewCheckResult, ReviewFindingDraft, ReviewRunContext } from "../types";
@@ -86,6 +90,42 @@ export function looseCitationLine(
   };
 }
 
+/**
+ * Move the text below a misplaced Citations list above it. Rich fields only
+ * get the edit when that text is plain paragraphs, which a text edit can
+ * rebuild without losing structure.
+ */
+function misplacedListFinding(
+  ctx: Pick<ReviewRunContext, "sections">,
+  field: ReviewField,
+  misplaced: MisplacedCitationList
+): ReviewFindingDraft {
+  const deleteText = field.text.slice(misplaced.start).trimEnd();
+  const located = locateFieldsForMatch(field.text, misplaced.start, deleteText);
+  const finding: ReviewFindingDraft = {
+    section: field.section,
+    contentPath: field.contentPath,
+    anchorText: located.anchorText,
+    message:
+      "The Citations list is not at the end of this field, so its numbers are not linked to the [n] markers. Move the text below it above the list.",
+    severity: "major",
+    kind: "needs_human",
+    metadata: { citationListMisplaced: true, ...located.metadata },
+  };
+  const movable =
+    !field.rich ||
+    (field.doc != null &&
+      blocksAfterCitationList(field.doc).every((block) => block.type === "paragraph"));
+  if (!movable) return finding;
+  const after = field.rich
+    ? misplaced.after.split(/\n+/).map((line) => line.trim()).filter(Boolean).join("\n\n")
+    : misplaced.after;
+  return withProposedEdit(ctx, finding, {
+    deleteText,
+    insertText: `${after}\n\n${formatCitationList(misplaced.entries)}`,
+  });
+}
+
 export function citationResolveFindings(
   ctx: Pick<ReviewRunContext, "documentType" | "sections">,
   index: AttachmentPageIndex
@@ -93,18 +133,28 @@ export function citationResolveFindings(
   const findings: ReviewFindingDraft[] = [];
   for (const field of iterReportFields(ctx.documentType, ctx.sections)) {
     const body = field.text;
-    const blockStart = citationsBlockStart(body);
+    const misplaced = misplacedCitationListInText(body);
+    const misplacedSources = new Map(
+      (misplaced?.entries ?? []).map(({ number, source }) => [number, source])
+    );
+    const sourceFor = (n: number) =>
+      sourceCitationForNumber(body, n) ?? misplacedSources.get(n) ?? null;
+    const blockStart = misplaced ? misplaced.start : citationsBlockStart(body);
+    const blockEnd = misplaced ? misplaced.listEnd : body.length;
+    if (misplaced) findings.push(misplacedListFinding(ctx, field, misplaced));
     const looseReported = new Set<number>();
     NUMERIC_MARKER_RE.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = NUMERIC_MARKER_RE.exec(body)) !== null) {
       if (!isNumericCitationMarker(match[0])) continue;
-      if (blockStart >= 0 && match.index >= blockStart) continue;
+      if (blockStart >= 0 && match.index >= blockStart && match.index < blockEnd) {
+        continue;
+      }
       const located = locateFieldsForMatch(body, match.index, match[0]);
       const numbers = citationNumbersFromMarker(match[0]);
-      const listed = numbers.filter((n) => sourceCitationForNumber(field.text, n));
+      const listed = numbers.filter((n) => sourceFor(n));
       for (const n of numbers) {
-        const source = sourceCitationForNumber(field.text, n);
+        const source = sourceFor(n);
         const loose = source ? null : looseCitationLine(body, n);
         if (loose) {
           if (looseReported.has(n)) continue;

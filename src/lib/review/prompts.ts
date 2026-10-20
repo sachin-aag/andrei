@@ -2,7 +2,7 @@
 export const REVIEW_FDA_PROMPT_VERSION = "fda-v3";
 
 /** Bump when citation LLM checks change. */
-export const REVIEW_CITATION_PROMPT_VERSION = "citation-v6";
+export const REVIEW_CITATION_PROMPT_VERSION = "citation-v7";
 
 /** Bump when writing LLM checks change. */
 export const REVIEW_WRITING_PROMPT_VERSION = "writing-v4";
