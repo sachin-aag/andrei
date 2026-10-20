@@ -1,49 +1,34 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import {
-  FileQuestion,
   ListChecks,
   MessageSquare,
   PanelRightClose,
   PanelRightOpen,
+  PenLine,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
-import { useReportPlaceholders, useReportComments, useReportData } from "@/providers/report-provider";
+import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
+import {
+  countFindingSeverities,
+  REVIEW_SEVERITY_CHIP_CLASS,
+  worstSeverity,
+} from "@/lib/review";
+import { CommentsPanelContent } from "./comments-panel";
+import { ChatPanel } from "./chat-panel";
+import { Review, useReview } from "./review";
+import { PlaceholdersPanel } from "./placeholders-panel";
 import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
-import { getEvaluatableSections } from "@/lib/document-types";
 import { COLLAPSED_RAIL_PX } from "./workspace-layout";
 
-const PlaceholdersPanelContent = dynamic(
-  () =>
-    import("./placeholders-panel").then((mod) => mod.PlaceholdersPanelContent),
-  { ssr: false }
-);
-const CriteriaPanelContent = dynamic(
-  () => import("./criteria-sheet").then((mod) => mod.CriteriaPanelContent),
-  { ssr: false }
-);
-const CommentsPanelContent = dynamic(
-  () => import("./criteria-sheet").then((mod) => mod.CommentsPanelContent),
-  { ssr: false }
-);
-const ChatPanel = dynamic(
-  () => import("./chat-panel").then((mod) => mod.ChatPanel),
-  { ssr: false }
-);
-
-export type SidebarTab =
-  | "assistant"
-  | "placeholders"
-  | "criteria"
-  | "comments";
+export type SidebarTab = "assistant" | "review" | "placeholders" | "comments";
 
 type Props = {
   collapsed: boolean;
@@ -55,7 +40,6 @@ type Props = {
   onJumpToComment: (commentId: string) => void;
   hideCollapse?: boolean;
   chrome?: WorkspaceChrome;
-  initialCriteriaSection?: SectionType;
   workProductView?: WorkProductView;
   statsEnabled?: boolean;
   onAnalyticsSettled?: () => void;
@@ -68,8 +52,8 @@ type Props = {
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
   { value: "assistant", label: "Assistant", icon: Sparkles },
-  { value: "placeholders", label: "Placeholders", icon: FileQuestion },
-  { value: "criteria", label: "Criteria", icon: ListChecks },
+  { value: "review", label: "Review", icon: ListChecks },
+  { value: "placeholders", label: "Placeholders", icon: PenLine },
   { value: "comments", label: "Comments", icon: MessageSquare },
 ];
 
@@ -83,7 +67,6 @@ export function ReportSidebar({
   onJumpToComment,
   hideCollapse = false,
   chrome = "agent",
-  initialCriteriaSection,
   workProductView = "report",
   statsEnabled = false,
   onAnalyticsSettled,
@@ -124,27 +107,36 @@ export function ReportSidebar({
   const parkChat = !chatVisible || holdChatPark;
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
-  const { report } = useReportData();
-  const showCriteria = getEvaluatableSections(report.documentType).length > 0;
-  const visibleTabs = showCriteria
-    ? TABS
-    : TABS.filter((tab) => tab.value !== "criteria");
+  const {
+    state: { findings },
+  } = useReview();
+  const visibleTabs = TABS;
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
+  const reviewCounts = countFindingSeverities(findings);
+  const reviewWorst = worstSeverity(reviewCounts);
 
   const tabBadge = (tab: SidebarTab): number | null => {
+    if (tab === "review") {
+      const count = reviewCounts.critical + reviewCounts.major + reviewCounts.minor;
+      return count > 0 ? count : openSuggestionCount > 0 ? openSuggestionCount : null;
+    }
     if (tab === "placeholders" && pendingPlaceholders.length > 0) {
       return pendingPlaceholders.length;
-    }
-    if (tab === "criteria" && openSuggestionCount > 0) {
-      return openSuggestionCount;
     }
     if (tab === "comments" && rootCommentCount > 0) {
       return rootCommentCount;
     }
     return null;
+  };
+
+  const tabBadgeClass = (tab: SidebarTab): string => {
+    if (tab === "review" && reviewWorst) {
+      return REVIEW_SEVERITY_CHIP_CLASS[reviewWorst];
+    }
+    return "bg-amber-500 text-white";
   };
 
   const activeTabDef =
@@ -212,7 +204,12 @@ export function ReportSidebar({
           >
             <ActiveTabIcon className="size-4" aria-hidden="true" />
             {activeTabBadge != null ? (
-              <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+              <span
+                className={cn(
+                  "absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full text-[8px] font-bold",
+                  tabBadgeClass(activeTabDef.value)
+                )}
+              >
                 {activeTabBadge}
               </span>
             ) : null}
@@ -250,7 +247,8 @@ export function ReportSidebar({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
+                      "ml-0.5 flex size-4 items-center justify-center rounded-full text-[9px] font-bold",
+                      tabBadgeClass(tab.value),
                       badge == null && "invisible"
                     )}
                   >
@@ -268,7 +266,7 @@ export function ReportSidebar({
           changes so the thread, composer prefs, and rendered markdown are
           not reset. Hide with visibility (not display:none) so the scroller
           keeps its layout box and scrollTop through the width animation.
-          Criteria / Placeholders / Comments share this flex-1 box; parked
+          Review / Placeholders / Comments share this flex-1 box; parked
           chat is position:absolute so it does not steal the top half. */}
       <div
         className={cn(
@@ -309,16 +307,14 @@ export function ReportSidebar({
             className="h-full min-h-0 overflow-y-auto p-4 min-w-0"
             data-testid="sidebar-tab-panel"
           >
-            {activeTab === "placeholders" && (
-              <PlaceholdersPanelContent
-                onJumpToPlaceholder={onJumpToPlaceholder}
+            {activeTab === "review" && (
+              <Review.Panel
+                onJumpToComment={onJumpToComment}
+                onJumpToSection={onJumpToSection}
               />
             )}
-            {activeTab === "criteria" && (
-              <CriteriaPanelContent
-                onJumpToSection={onJumpToSection}
-                initialSection={initialCriteriaSection}
-              />
+            {activeTab === "placeholders" && (
+              <PlaceholdersPanel onJumpToPlaceholder={onJumpToPlaceholder} />
             )}
             {activeTab === "comments" && (
               <CommentsPanelContent onJumpToComment={onJumpToComment} />

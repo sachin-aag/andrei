@@ -519,6 +519,20 @@
       "when": 1789591200000,
       "tag": "0072_report_stated_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789591200001,
+      "tag": "0071_review_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1789591200002,
+      "tag": "0072_review_finding_severity",
+      "breakpoints": true
     }
   ]
 }

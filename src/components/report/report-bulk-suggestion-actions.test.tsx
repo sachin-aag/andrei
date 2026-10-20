@@ -96,6 +96,7 @@ vi.mock("@/providers/report-provider", () => ({
   }),
   useReportEvaluations: () => ({
     evaluations: [],
+    suggestionQueueComments: mockState.comments,
     beginSuggestionApplyTransition: vi.fn(),
     endSuggestionApplyTransition: vi.fn(),
   }),

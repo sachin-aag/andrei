@@ -84,7 +84,7 @@ export async function expandReportSidebar(page: Page): Promise<void> {
 
 export async function openReportSidebarTab(
   page: Page,
-  tab: "assistant" | "placeholders" | "criteria" | "comments"
+  tab: "assistant" | "review" | "comments"
 ): Promise<void> {
   await expandReportSidebar(page);
   const label = tab.charAt(0).toUpperCase() + tab.slice(1);

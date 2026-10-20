@@ -199,7 +199,7 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 | shows all DMAIC and structural sections | Define–Control + Documents / Attachments / Approvals |
 | wraps prose and 2-column table cells instead of growing the editor | Mixed paragraph + label/description table stays within the field; col 1 is not a 4.5rem strip |
 | typing triggers auto-save status | Saving… → Saved |
-| sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
+| sidebar tabs switch panels | Review categories (All checks / Report / placeholders), stubbed Run all, Comments |
 | collapses and expands sidebar | Collapse / expand controls |
 | shows the review margin when Comments is on and keeps it with the assistant open | Comments switch only; gutter stays with expanded Assistant (1920px) |
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |

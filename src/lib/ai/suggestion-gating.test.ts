@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   canSuggestFixes,
-  gapCriteriaForSection,
   countOpenAiSuggestions,
+  gapCriteriaForSection,
+  isAiSuggestionKind,
   nextOpenSuggestionAfterResolve,
   openAiSuggestionIds,
   parseAiFixCommentContent,
@@ -57,6 +58,12 @@ const baseComment = (overrides: Partial<CommentRecord>): CommentRecord => ({
 });
 
 describe("suggestion-gating", () => {
+  it("treats ai_grammar as an AI suggestion kind", () => {
+    expect(isAiSuggestionKind("ai_grammar")).toBe(true);
+    expect(isAiSuggestionKind("ai_fix")).toBe(true);
+    expect(isAiSuggestionKind("human")).toBe(false);
+  });
+
   it("gap criteria excludes rows with open ai_fix", () => {
     const evaluations = [baseEval({})];
     const comments = [baseComment({})];

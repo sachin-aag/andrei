@@ -32,10 +32,11 @@ import {
   warmupAllLazyWorkspaceSections,
 } from "./lazy-workspace-section";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
+import { Review } from "./review";
 import { ReportWorkspaceLoading } from "./report-workspace-loading";
 import {
   shouldCollapseAssistantOnSuggestionFocus,
-  shouldRevealCriteriaTab,
+  shouldRevealReviewTab,
   type WorkspaceChrome,
   type WorkProductView,
 } from "./workspace-chrome";
@@ -88,6 +89,7 @@ import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
+import { reviewLocateScope } from "@/lib/review/locate";
 import {
   gutterAnchorIdForComment,
   scrollToCommentFieldAnchor,
@@ -305,8 +307,12 @@ export function ReportWorkspace({
   }, []);
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
+  const { suggestionsFocus, clearSuggestionsFocus, isEvaluating, reviewLocate } =
     useReportEvaluations();
+  const reviewLocateSection =
+    reviewLocate && reviewLocateScope(reviewLocate) === "section"
+      ? reviewLocate.section
+      : null;
   const {
     activeAttachmentId,
     attachments,
@@ -316,9 +322,6 @@ export function ReportWorkspace({
     documentOpenEpoch,
     previewPageFor,
   } = useReportAttachments();
-  const [criteriaFocusSection, setCriteriaFocusSection] = useState<
-    SectionType | undefined
-  >();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
@@ -469,7 +472,7 @@ export function ReportWorkspace({
   }, []);
 
   useEffect(() => {
-    const justFinished = shouldRevealCriteriaTab({
+    const justFinished = shouldRevealReviewTab({
       wasEvaluating: wasEvaluatingRef.current,
       isEvaluating,
       chrome,
@@ -477,7 +480,7 @@ export function ReportWorkspace({
     });
     wasEvaluatingRef.current = isEvaluating;
     if (justFinished) {
-      setSidebarTab("criteria");
+      setSidebarTab("review");
     }
   }, [chrome, isEvaluating, workProductView]);
 
@@ -700,7 +703,6 @@ export function ReportWorkspace({
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
-      setCriteriaFocusSection(section);
       // Leave the assistant as the engineer left it. Collapsing it after
       // Suggest fixes or a document-chrome chat proposal hid the thread as
       // soon as the edit landed. Review margin stays opt-in via the Comments
@@ -1020,6 +1022,7 @@ export function ReportWorkspace({
 
   return (
     <CanvasTabScrollProvider userId={currentUserId} reportId={report.id}>
+    <Review.Provider>
     <div className="flex h-full min-h-0 flex-col">
       <ElectronicSignatureDialog
         open={signDialog != null}
@@ -1071,6 +1074,7 @@ export function ReportWorkspace({
         chrome={chrome}
         onChromeChange={handleChromeChange}
         workProductView={workProductView}
+        onOpenReview={() => setSidebarTab("review")}
       />
 
       {reportSurface ? <ReportEditorToolbar /> : null}
@@ -1326,6 +1330,7 @@ export function ReportWorkspace({
                                   key={s}
                                   id={s}
                                   title={section.label}
+                                  highlighted={reviewLocateSection === s}
                                   eager={index < 1}
                                   onMounted={handleSectionMounted}
                                   style={
@@ -1488,7 +1493,6 @@ export function ReportWorkspace({
               onJumpToSection={jumpToSection}
               onJumpToPlaceholder={handleJumpToPlaceholder}
               onJumpToComment={jumpToComment}
-              initialCriteriaSection={criteriaFocusSection}
               workProductView={workProductView}
               statsEnabled={statsEnabled}
               onAnalyticsSettled={() =>
@@ -1522,6 +1526,7 @@ export function ReportWorkspace({
         </div>
       </div>
     </div>
+    </Review.Provider>
     </CanvasTabScrollProvider>
   );
 }

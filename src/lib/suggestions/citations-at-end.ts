@@ -649,6 +649,104 @@ export function citationNumbersFromDoc(doc: JSONContent): Set<number> {
   return citationMarkerNumbersFromDoc(doc);
 }
 
+/**
+ * Start index of a trailing Citations:/References: list, or `-1` when the
+ * field has none. Body `[n]` markers stay in the prefix so parked citations
+ * can still resolve.
+ */
+export function trailingCitationListStart(text: string): number {
+  const split = splitTrailingCitationBlock(text);
+  if (!split.heading && split.lines.length === 0) return -1;
+  return split.body.length;
+}
+
+export type MisplacedCitationList = {
+  /** Offset of the Citations heading line. */
+  start: number;
+  /** Offset just past the last citation line of the list. */
+  listEnd: number;
+  /** Heading plus citation lines, as they appear in the field. */
+  listText: string;
+  /** Text between the list and the end of the field, trimmed. */
+  after: string;
+  entries: Array<{ number: number; source: string }>;
+};
+
+/**
+ * A Citations:/References: list that other text follows, so the trailing-list
+ * parser does not see it. `null` when the list already ends the field.
+ */
+export function misplacedCitationListInText(
+  text: string
+): MisplacedCitationList | null {
+  const trailing = splitTrailingCitationBlock(text);
+  if (trailing.heading || trailing.lines.length > 0) return null;
+
+  const lines = text.split("\n");
+  const offsets: number[] = [];
+  let at = 0;
+  for (const line of lines) {
+    offsets.push(at);
+    at += line.length + 1;
+  }
+
+  let heading = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (isCitationBlockHeading(lines[i]!)) heading = i;
+  }
+  if (heading < 0) return null;
+
+  let last = heading;
+  const citationLines: string[] = [];
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trim()) continue;
+    if (!isCitationOnlyLine(line)) break;
+    citationLines.push(line);
+    last = i;
+  }
+  if (citationLines.length === 0) return null;
+
+  const start = offsets[heading]!;
+  const listEnd = offsets[last]! + lines[last]!.length;
+  const after = text.slice(listEnd).trim();
+  if (!after) return null;
+  return {
+    start,
+    listEnd,
+    listText: text.slice(start, listEnd),
+    after,
+    entries: numberingFromTrailingLines(citationLines).entries(),
+  };
+}
+
+/** Rewrite `{ number, source }` rows as a `Citations:` block. */
+export function formatCitationList(
+  entries: ReadonlyArray<{ number: number; source: string }>
+): string {
+  return [
+    CITATIONS_HEADING,
+    ...[...entries]
+      .sort((a, b) => a.number - b.number)
+      .map(({ number, source }) => numberedCitationLine(number, source)),
+  ].join("\n");
+}
+
+/** Body blocks that sit below a TipTap field's Citations list. */
+export function blocksAfterCitationList(doc: JSONContent): JSONContent[] {
+  if (doc.type !== "doc" || !Array.isArray(doc.content)) return [];
+  const start = findBibliographyStart(doc.content);
+  if (start === null) return [];
+  return doc.content
+    .slice(start)
+    .filter(
+      (block) =>
+        !isCitationHeadingParagraph(block) &&
+        !isEmptyParagraphBlock(block) &&
+        !isCitationOnlyBlock(block)
+    );
+}
+
 /** Drop a trailing Citations:/References: block from plain text. */
 export function stripTrailingCitationBlockFromText(text: string): string {
   const split = splitTrailingCitationBlock(text);

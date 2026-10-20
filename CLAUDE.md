@@ -128,6 +128,44 @@ The subsystems below are small enough to stay resident.
 
 **Content hash:** `evaluationContentHash()` in `evaluation-content-hash.ts` — cleaned section content + `dependsOn` sections + `promptVersion`. Bumping the type’s prompt version invalidates cached evals.
 
+## Subsystem: Review mode
+
+**Entry point:** `src/lib/review/` — client UI imports `ui.ts` (labels / DTOs only); runners and DB live in `server.ts`. Routes: `GET/POST /api/reports/[id]/review`. Run all POSTs one category at a time (`reviewRunWaves`); the runner skips completed same-hash runs, batches FDA criteria by target section, and batches citation-support judgements (8 at a time, cap 24). `maxDuration` is 120.
+
+The right sidebar is Assistant | Review | Placeholders | Comments. Review
+category tabs are All checks | Report | FDA | Citations | Writing, ordered
+with Critical findings first. Each finding is Critical (red), Major (amber),
+or Minor (blue); the same counts sit at the top of Review, on each category
+tab, and on each check card. Issues are `fixable` (`ai_fix` / `ai_grammar`)
+or `needs_human`. Every finding renders the same `ReviewFindingCard`
+(`reviewFindingCardModel` in `finding-card.ts`): a suggestion box that is
+always present (replacement / multi-part / needs your review), and the same
+buttons in one row: Apply as tracked change and Show in document (equal
+width), then Dismiss. Suggestions are prepared while checks run
+(`prepare-suggestions.ts`), so Apply only places them: checks store an exact
+`proposedEdit` when the fix is obvious (`withProposedEdit` in
+`locate-proposed-edit.ts`: missing Citations line → `<citation>`, a
+Citations list with text below it → one "move the text above the list" edit
+(its markers still resolve), unknown Table/Section → `<… number>`); other field findings are drafted by
+`draft-fix.ts` (cites only retrieved pages, `<placeholder>` instead of
+guessing); report / FDA criteria get one AI Check pass per section saved as
+held comments (no `evaluationId`). A finding left without a suggestion shows
+Apply disabled with "No suggestion was automatically available. Human review
+is needed." Only `live:` criteria (from AI Check, not a run) draft on Apply.
+Clicking the card
+is Show in document. The yellow highlight (`src/lib/review/locate.ts`) paints
+the exact span (`focusText` inside a unique `anchorText`, or `focusOccurrence`
+for identical cells), else the whole field, else the whole section — never
+just a scroll. Report / FDA checks ask the evaluator for a verbatim `quote`
+(`requestQuotes`) to anchor findings. Dismissing a finding closes its held
+suggestion; a `live:` criteria finding is dismissed by bypassing the
+evaluation. Runs are manual. Placeholders
+are their own tab. Header **Run all checks** opens Review and runs every
+`run`-kind check; per-section **Run criteria** on `SectionShell` is unchanged.
+FDA criteria live in `fda-criteria.ts` with keys prefixed `fda.` and
+`REVIEW_FDA_PROMPT_VERSION`. `generic_document` still shows Review (Citations
++ Writing only). Stub: `ALLOW_TEST_STUB_REVIEW`.
+
 ## Subsystem: AI Suggestions
 
 **Entry point:** `generateSuggestionsForSection()` in `src/lib/ai/suggest.ts`

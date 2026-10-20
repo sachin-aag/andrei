@@ -53,6 +53,14 @@ import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
+  createReviewLocateHighlightExtension,
+  REVIEW_LOCATE_BLOCK_CLASS,
+  REVIEW_LOCATE_CLASS,
+  REVIEW_LOCATE_REFRESH_META,
+  type ReviewLocatePaint,
+} from "@/lib/tiptap/review-locate-highlight";
+import { reviewLocateMatchesField } from "@/lib/review/locate";
+import {
   citationRefreshMeta,
   createCitationHighlightExtension,
   type CitationOpenHandlers,
@@ -431,6 +439,7 @@ export function TiptapSectionField({
     suggestionApplyTransition,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
+    reviewLocate,
   } = useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
   const sectionsRef = useRef(sections);
@@ -449,6 +458,16 @@ export function TiptapSectionField({
   const tablePreviewSuggestionIdRef = useRef<string | null>(null);
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
+  const reviewLocatePaintRef = useRef<ReviewLocatePaint | null>(null);
+  const paintedLocateKeyRef = useRef<string | null>(null);
+  reviewLocatePaintRef.current =
+    reviewLocate && reviewLocateMatchesField(reviewLocate, section, contentPath)
+      ? {
+          anchor: reviewLocate.anchor,
+          needle: reviewLocate.needle,
+          occurrence: reviewLocate.occurrence,
+        }
+      : null;
   const handlersRef = useRef<CommentHighlightHandlers>({
     onCommentActivate: () => {},
     onCommentHover: () => {},
@@ -529,6 +548,13 @@ export function TiptapSectionField({
     );
     /* eslint-enable react-hooks/refs */
   }, [getCitationHandlers, getKnownCitationFilenames, getKnownAttachmentIds]);
+
+  const reviewLocateExtension = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror reads this getter on refresh, not during render
+      createReviewLocateHighlightExtension(() => reviewLocatePaintRef.current),
+    []
+  );
 
   const filteredRanges = useMemo(() => {
     return comments
@@ -636,6 +662,7 @@ export function TiptapSectionField({
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
         citationHighlightExtension,
+        reviewLocateExtension,
       ],
       content: normalizeRichField(value, richFieldOptions),
       editable,
@@ -652,7 +679,7 @@ export function TiptapSectionField({
         onChangeRef.current(json);
       },
     },
-    [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
+    [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension, reviewLocateExtension]
   );
 
   useEffect(() => {
@@ -1404,6 +1431,35 @@ export function TiptapSectionField({
       }
     };
   }, [editor, activeCommentId, filteredRanges]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const paint = reviewLocatePaintRef.current;
+    const key =
+      paint && reviewLocate
+        ? `${reviewLocate.findingId}\u0000${paint.anchor}\u0000${paint.needle}\u0000${paint.occurrence ?? ""}`
+        : null;
+    if (key !== paintedLocateKeyRef.current) {
+      paintedLocateKeyRef.current = key;
+      editor.view.dispatch(
+        editor.state.tr
+          .setMeta(REVIEW_LOCATE_REFRESH_META, true)
+          .setMeta("addToHistory", false)
+      );
+    }
+    if (!paint) return;
+    // After the section jump scrolls the heading to the top, center the phrase.
+    const timer = window.setTimeout(() => {
+      const mark =
+        editor.view.dom.querySelector(`.${REVIEW_LOCATE_CLASS}`) ??
+        editor.view.dom.querySelector(`.${REVIEW_LOCATE_BLOCK_CLASS}`);
+      (mark ?? editor.view.dom).scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [editor, reviewLocate, section, contentPath]);
 
   useEffect(() => {
     if (!editor) return;

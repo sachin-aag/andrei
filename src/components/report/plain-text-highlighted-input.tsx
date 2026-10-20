@@ -35,11 +35,16 @@ import {
   useReportComments,
   useReportData,
   useReportEditors,
+  useReportEvaluations,
   useReportPlaceholders,
   type SuggestionApplyMode,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
+import {
+  findReviewLocateSpan,
+  reviewLocateMatchesField,
+} from "@/lib/review/locate";
 import { cn } from "@/lib/utils";
 
 const fieldTypography =
@@ -88,17 +93,40 @@ export function PlainTextHighlightedInput({
   const shellRef = useRef<HTMLDivElement>(null);
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const { setActiveField } = useReportEditors();
+  const { reviewLocate } = useReportEvaluations();
   const { report, workspaceMode, currentUserId, getSectionId } = useReportData();
   const { setComments, setActiveCommentId } = useReportComments();
   const { getUser } = useUserDirectory();
   const segments = useMemo(() => splitPlainTextWithPlaceholders(value), [value]);
   const hasPlaceholders = segments.some((s) => s.kind === "placeholder");
-  const useMirrorOverlay = hasPlaceholders || mirrorContent != null;
 
   const fieldDot = fieldAnchor.indexOf(".");
   const fieldSection =
     fieldDot >= 0 ? (fieldAnchor.slice(0, fieldDot) as SectionType) : null;
   const fieldContentPath = fieldDot >= 0 ? fieldAnchor.slice(fieldDot + 1) : "";
+  const locateTargetsField = Boolean(
+    fieldSection &&
+      reviewLocateMatchesField(reviewLocate, fieldSection, fieldContentPath)
+  );
+  const locateSpan = useMemo(() => {
+    if (!reviewLocate || !locateTargetsField) return null;
+    return findReviewLocateSpan(value, reviewLocate);
+  }, [reviewLocate, locateTargetsField, value]);
+  const locateWholeField = locateTargetsField && !locateSpan;
+
+  useEffect(() => {
+    if (!locateTargetsField) return;
+    const timer = window.setTimeout(() => {
+      const mark = shellRef.current?.querySelector(".review-locate-highlight");
+      (mark ?? shellRef.current)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [locateTargetsField, locateSpan, reviewLocate]);
+  const useMirrorOverlay =
+    hasPlaceholders || mirrorContent != null || locateSpan != null;
   const focusedFromPos =
     fieldSection && fieldContentPath && focusedPanelPlaceholderId
       ? fromPosFromPlaceholderId(
@@ -397,6 +425,7 @@ export function PlainTextHighlightedInput({
         "relative",
         useMirrorOverlay && "grid",
         useMirrorOverlay && className,
+        (locateSpan || locateWholeField) && "rounded-md ring-2 ring-yellow-300/90",
         useMirrorOverlay &&
           suggestionActive &&
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
@@ -413,15 +442,31 @@ export function PlainTextHighlightedInput({
           aria-hidden
           className={cn(
             "pointer-events-none col-start-1 row-start-1 rounded-md border border-transparent bg-[var(--input)] shadow-sm",
+            locateWholeField && "bg-yellow-100",
             fieldTypography
           )}
         >
-          {mirrorContent ?? (
-            <PlainTextPlaceholderSpans
-              text={value}
-              focusedFromPos={focusedFromPos}
-            />
-          )}
+          {mirrorContent ??
+            (locateSpan ? (
+              <>
+                <PlainTextPlaceholderSpans
+                  text={value.slice(0, locateSpan.start)}
+                />
+                <mark className="review-locate-highlight">
+                  {value.slice(locateSpan.start, locateSpan.end)}
+                </mark>
+                <PlainTextPlaceholderSpans
+                  text={value.slice(locateSpan.end)}
+                  baseOffset={locateSpan.end}
+                  focusedFromPos={focusedFromPos}
+                />
+              </>
+            ) : (
+              <PlainTextPlaceholderSpans
+                text={value}
+                focusedFromPos={focusedFromPos}
+              />
+            ))}
         </div>
       ) : null}
       <Textarea
@@ -436,7 +481,9 @@ export function PlainTextHighlightedInput({
               )
             : cn(
                 "text-sm leading-relaxed resize-none overflow-hidden",
-                className
+                locateSpan && "selection:bg-yellow-300",
+                className,
+                locateWholeField && "bg-yellow-100"
               )
         }
         style={

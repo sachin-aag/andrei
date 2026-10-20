@@ -1,6 +1,7 @@
 "use client";
 
 import { SectionErrorBoundary } from "@/components/report/section-error-boundary";
+import { cn } from "@/lib/utils";
 import {
   startTransition,
   useEffect,
@@ -403,6 +404,7 @@ export function resetLazyWorkspaceMountQueue() {
 export function LazyWorkspaceSection({
   id,
   title,
+  highlighted = false,
   eager = false,
   style,
   onMounted,
@@ -410,6 +412,8 @@ export function LazyWorkspaceSection({
 }: {
   id: string;
   title: string;
+  /** Review "Show in document" for a finding about the whole section. */
+  highlighted?: boolean;
   eager?: boolean;
   style?: CSSProperties;
   onMounted?: (id: string) => void;
@@ -504,7 +508,13 @@ export function LazyWorkspaceSection({
   }, [eager, mounted, id]);
 
   return (
-    <section ref={ref} id={id} style={style} className="min-h-32">
+    <section
+      ref={ref}
+      id={id}
+      style={style}
+      className={cn("min-h-32", highlighted && "review-locate-section")}
+      data-review-locate={highlighted ? "section" : undefined}
+    >
       {mounted ? (
         <SectionErrorBoundary section={id} title={title}>
           {children}
