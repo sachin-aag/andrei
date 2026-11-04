@@ -163,4 +163,35 @@ describe("ReportList type filters", () => {
       "/reports/ir-1/review"
     );
   });
+
+  it("offers the document-review prototype on demo", () => {
+    render(
+      <ReportList
+        reports={[report({ id: "ir-1", documentType: "investigation_report" })]}
+        currentUserId="eng-1"
+        userRole="engineer"
+        usersById={usersById}
+      />
+    );
+
+    expect(screen.getByTestId("review-prototype-card")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open review/i })).toHaveAttribute(
+      "href",
+      "/review-mockup"
+    );
+  });
+
+  it("hides the document-review prototype on Convergent", () => {
+    vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
+    render(
+      <ReportList
+        reports={[report({ id: "dv-1", documentType: "design_verification" })]}
+        currentUserId="eng-1"
+        userRole="engineer"
+        usersById={usersById}
+      />
+    );
+
+    expect(screen.queryByTestId("review-prototype-card")).not.toBeInTheDocument();
+  });
 });

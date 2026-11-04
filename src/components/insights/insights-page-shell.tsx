@@ -33,6 +33,7 @@ export async function InsightsPageShell({
     { href: "/insights/pitfalls", label: "Common Pitfalls" },
     { href: "/insights/doc-insights", label: "Doc Insights" },
     { href: "/insights/management", label: "Management Report" },
+    { href: "/review-mockup", label: "Document review" },
   ];
 
   return (
