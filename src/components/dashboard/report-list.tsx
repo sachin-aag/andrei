@@ -14,8 +14,6 @@ import { visibleManagerNames } from "@/lib/reports/hidden-expert-reviewer";
 import { reportWorkspacePath } from "@/lib/reports/workspace-path";
 import type { DocumentType } from "@/db/schema";
 import type { UserRole } from "@/lib/auth/roles";
-import { getCustomerPack } from "@/lib/customers/packs";
-import { ReviewPrototypeCard } from "@/components/dashboard/review-prototype-card";
 
 type DashboardReport = ReportCardData;
 
@@ -59,7 +57,6 @@ export function ReportList({
 
   return (
     <div className="grid gap-3">
-      {getCustomerPack().insightsEnabled ? <ReviewPrototypeCard /> : null}
       {availableTypes.length > 1 ? (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-[var(--muted-foreground)]">Type:</span>
