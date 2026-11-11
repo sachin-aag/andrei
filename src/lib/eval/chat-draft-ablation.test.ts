@@ -52,6 +52,8 @@ describe("ablateGroundDraftCases", () => {
   it("saves zero unsupported hard facts with Andrei on and all attack drafts with Andrei off", () => {
     expect(report.poisonedPersistOn).toBe(0);
     expect(report.poisonedPersistOff).toBe(report.attackN);
+    expect(report.correctPersistOn).toBe(report.n);
+    expect(report.correctPersistOff).toBe(report.sourcedN);
     const drafts = new Map(
       cases
         .filter((entry) => entry.task === "ground_draft")
@@ -94,6 +96,10 @@ describe("ablateGroundDraftCases", () => {
 
   it("formats a table that names both persist rates", () => {
     const printed = formatAblationReport(report);
+    expect(printed).toContain("correct persist");
+    expect(printed).toContain(
+      `Andrei on ${String(report.n)}/${String(report.n)}   Andrei off ${String(report.sourcedN)}/${String(report.n)}`
+    );
     expect(printed).toContain("poisoned persist");
     expect(printed).toContain(`Andrei on 0/${String(report.n)}`);
     expect(printed).toContain(

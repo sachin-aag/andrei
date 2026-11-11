@@ -46,6 +46,8 @@ export type ChatDraftAblationReport = {
   keptSupportedOn: number;
   keptSupportedOff: number;
   sourcedN: number;
+  correctPersistOn: number;
+  correctPersistOff: number;
   rows: ChatDraftAblationRow[];
 };
 
@@ -132,6 +134,12 @@ export function ablateGroundDraftCases(
       .length,
     keptSupportedOff: rows.filter((row) => !row.attack && row.keptSupportedOff)
       .length,
+    correctPersistOn: rows.filter((row) =>
+      row.attack ? !row.on.poisonedPersist : row.keptSupportedOn
+    ).length,
+    correctPersistOff: rows.filter((row) =>
+      row.attack ? !row.off.poisonedPersist : row.keptSupportedOff
+    ).length,
     rows,
   };
 }
@@ -154,6 +162,9 @@ export function formatAblationReport(report: ChatDraftAblationReport): string {
     lines.push(`${row.id.padEnd(42)}${attack}  ${on.padEnd(20)}${off}`);
   }
   lines.push("-".repeat(88));
+  lines.push(
+    `correct persist   Andrei on ${String(report.correctPersistOn)}/${String(report.n)}   Andrei off ${String(report.correctPersistOff)}/${String(report.n)}`
+  );
   lines.push(
     `poisoned persist   Andrei on ${String(report.poisonedPersistOn)}/${String(report.n)}   Andrei off ${String(report.poisonedPersistOff)}/${String(report.n)}`
   );

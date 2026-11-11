@@ -481,7 +481,7 @@ The layer that catches a production overblock (QSR section 5 dropping cover-page
 | `ground-draft.test.ts` / `qsr-row-grounding.test.ts` | Pure grounding helpers (no `edit_table`) |
 | `harness-scenarios.ts` | Layer-1 tool *availability* (greeting / rewrite / empty inventory) — not write-path grounding |
 | `src/lib/eval/chat-draft-cases.test.ts` | Public quality-floor JSON: QSR cover `8000 L` / `760 mmHg` / `SS 316L`, URS-33 footer wrap (`URS- 33`), neighbour block, unread URS fail-closed, jacket IQ topic-match Stage, IQ header-only Stage blocked, mixed Table 3 + SOP not a cover walk, `Draft section 2,3,4` mixed, Table 3-only still a cover walk, SOP title list keeps search open, greeting / empty-inventory harness, gold-quality contract |
-| `src/lib/eval/chat-draft-ablation.test.ts` | Persist-gate ablation: Andrei on saves 0 unsupported hard facts; Andrei off persists every attack draft |
+| `src/lib/eval/chat-draft-ablation.test.ts` | Persist-gate ablation: correct persist 14/14 vs 8/14; Andrei on saves 0 unsupported hard facts; Andrei off persists every attack draft |
 
 `restoreFromFinishedReview` zeros skip counts, so it cannot reproduce a floor-8 skipped-file deadlock. Use a real start → continue → finish for that class of bug. Copy `qsr-rtm-draft-replay.test.ts` for the next incident; do not dump it into `tools.test.ts`.
 
