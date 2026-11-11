@@ -2,6 +2,7 @@
  * Retrieval eval harness.
  *
  *   pnpm retrieval-eval -- --dry-run
+ *   pnpm retrieval-eval -- --ablation
  *   pnpm retrieval-eval -- --from-gcs
  *   pnpm retrieval-eval -- --live
  *   pnpm retrieval-eval -- --report-id <id>
@@ -13,6 +14,10 @@
  * change), `--from-gcs` generates locally and continues. Missing objects
  * still fail. `--live` generates the same PDFs locally (no bucket) for a
  * laptop run. `--report-id` searches an already-ingested report (no ingest).
+ *
+ * `--ablation` ranks the generated corpus locally (prefix-900 vs
+ * match-centered + IDF). No ingest, no Vertex. Wrong page never gets to
+ * persist — that save check is `pnpm chat-eval -- --ablation`.
  *
  * `--dry-run` and `--report-id` merge gitignored
  * `retrieval-cases.local.json` when that file exists (copy
@@ -32,6 +37,11 @@ import {
   excerptHitAtK,
   type RetrievalEvalCase,
 } from "@/lib/attachments/retrieval-metrics";
+import {
+  ablateRetrievalCases,
+  formatRetrievalAblationReport,
+} from "@/lib/eval/retrieval-ablation";
+import { loadRetrievalCorpusPages } from "./retrieval-corpus";
 
 config({ path: ".env" });
 config({ path: ".env.local", override: true });
@@ -44,6 +54,7 @@ const RUNS_DIR = path.join(here, "retrieval-runs");
 export type RetrievalEvalCliArgs = {
   reportId: string | null;
   dryRun: boolean;
+  ablation: boolean;
   fromGcs: boolean;
   live: boolean;
   outPath: string | null;
@@ -53,6 +64,7 @@ export type RetrievalEvalCliArgs = {
 export function parseRetrievalEvalArgs(argv: string[]): RetrievalEvalCliArgs {
   let reportId: string | null = null;
   let dryRun = false;
+  let ablation = false;
   let fromGcs = false;
   let live = false;
   let outPath: string | null = null;
@@ -61,6 +73,7 @@ export function parseRetrievalEvalArgs(argv: string[]): RetrievalEvalCliArgs {
     const arg = argv[i]!;
     if (arg === "--") continue;
     if (arg === "--dry-run") dryRun = true;
+    else if (arg === "--ablation") ablation = true;
     else if (arg === "--from-gcs") fromGcs = true;
     else if (arg === "--live") live = true;
     else if (arg === "--report-id" && argv[i + 1]) {
@@ -80,13 +93,16 @@ export function parseRetrievalEvalArgs(argv: string[]): RetrievalEvalCliArgs {
   if (live && reportId) {
     throw new Error("Pass only one of --live or --report-id");
   }
-  if (!reportId && !fromGcs && !live) dryRun = true;
-  return { reportId, dryRun, fromGcs, live, outPath, limit };
+  if (ablation && (fromGcs || live || reportId)) {
+    throw new Error("Pass --ablation without --from-gcs, --live, or --report-id");
+  }
+  if (!reportId && !fromGcs && !live && !ablation) dryRun = true;
+  return { reportId, dryRun, ablation, fromGcs, live, outPath, limit };
 }
 
-/** Overlay is a laptop path. CI `--from-gcs` / `--live` stay on the public set. */
+/** Overlay is a laptop path. CI `--from-gcs` / `--live` / `--ablation` stay on the public set. */
 export function shouldLoadLocalOverlay(args: RetrievalEvalCliArgs): boolean {
-  return !args.fromGcs && !args.live;
+  return !args.fromGcs && !args.live && !args.ablation;
 }
 
 /** Local overlay wins on id collision and may add cases. Missing overlay is a no-op. */
@@ -260,6 +276,25 @@ async function resolveReportId(args: RetrievalEvalCliArgs): Promise<string> {
 export async function runRetrievalEval(argv: string[]): Promise<void> {
   const args = parseRetrievalEvalArgs(argv);
   const cases = loadRetrievalEvalCases(args);
+  if (args.ablation) {
+    const report = ablateRetrievalCases({
+      cases,
+      pages: await loadRetrievalCorpusPages(),
+    });
+    console.log(formatRetrievalAblationReport(report));
+    fs.mkdirSync(RUNS_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const dest =
+      args.outPath ?? path.join(RUNS_DIR, `ablation-${stamp}.json`);
+    fs.writeFileSync(dest, JSON.stringify(report, null, 2));
+    console.log(`wrote ${dest}`);
+    if (report.correctOn < report.n) {
+      throw new Error(
+        `retrieval ablation: Andrei on ${String(report.correctOn)}/${String(report.n)} right page + excerpt`
+      );
+    }
+    return;
+  }
   if (args.dryRun) {
     console.log(`retrieval-eval dry-run: ${cases.length} cases valid`);
     for (const entry of cases) {

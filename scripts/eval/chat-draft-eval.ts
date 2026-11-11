@@ -3,15 +3,24 @@
  *
  *   pnpm chat-eval -- --dry-run
  *   pnpm chat-eval -- --replay
+ *   pnpm chat-eval -- --ablation
+ *   pnpm chat-eval -- --live
  *   pnpm chat-eval -- --sync
  *   pnpm chat-eval -- --experiment
  *
  * Git owns the cases (`scripts/eval/chat-draft-cases.json`). Langfuse holds
  * the dataset + experiment runs so prompt/gate changes can be compared in
  * the Datasets UI. `--replay` is the merge gate (no LLM, no Langfuse keys).
+ * `--ablation` prints three separate evals (do not average): persist (same
+ * Gemini draft, save check on vs off), retrieval (right page + excerpt on
+ * the synthetic corpus), search-before-write (6 of the 20 floor cases —
+ * policy lock, not a Gemini run).
+ * `--live` is the same-model study: current system prompt + step policy vs
+ * a minimal system prompt with write tools advertised. Needs Gemini
+ * credentials (Vertex ADC/WIF, Studio, or Gateway); OPENAI_API_KEY is an
+ * emergency fallback and must not be quoted as Gemini.
  * `--experiment` upserts the hosted dataset then `runExperiment`.
  * `--sync` / `--experiment` skip cleanly when LANGFUSE_* keys are missing.
- * Live Gemini Agent turns are not wired yet (`--live` errors on purpose).
  */
 
 import { config } from "dotenv";
@@ -20,7 +29,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Evaluator, RunEvaluator } from "@langfuse/client";
 import { CHAT_PROMPT_VERSION } from "@/lib/ai/chat/system-prompt";
+import { parseRetrievalCases } from "@/lib/attachments/retrieval-metrics";
 import { isLangfuseEnabled } from "@/lib/observability/langfuse";
+import {
+  formatAndreiBenchScoreboard,
+  type AndreiBenchAblation,
+} from "@/lib/eval/andrei-bench";
+import {
+  ablateGroundDraftCases,
+  formatAblationReport,
+} from "@/lib/eval/chat-draft-ablation";
 import {
   CHAT_DRAFT_DATASET_NAME,
   mergeChatDraftCases,
@@ -32,6 +50,20 @@ import {
   type ChatDraftCaseScore,
   type ChatDraftEvalCase,
 } from "@/lib/eval/chat-draft-cases";
+import {
+  ablateRetrievalCases,
+  formatRetrievalAblationReport,
+} from "@/lib/eval/retrieval-ablation";
+import {
+  ablateSearchBeforeWrite,
+  formatSearchBeforeWriteReport,
+} from "@/lib/eval/search-before-write";
+import {
+  formatLiveAblationReport,
+  runLiveAblation,
+  type LiveAblationReport,
+} from "@/lib/eval/live-gemini-ablation";
+import { loadRetrievalCorpusPages } from "./retrieval-corpus";
 
 config({ path: ".env" });
 config({ path: ".env.local", override: true });
@@ -39,6 +71,7 @@ config({ path: ".env.local", override: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_CASES = path.join(here, "chat-draft-cases.json");
 const LOCAL_CASES = path.join(here, "chat-draft-cases.local.json");
+const RETRIEVAL_CASES = path.join(here, "retrieval-cases.json");
 const RUNS_DIR = path.join(here, "chat-draft-runs");
 
 export function loadChatDraftEvalCases(): ChatDraftEvalCase[] {
@@ -85,6 +118,22 @@ function writeRun(scores: ChatDraftCaseScore[]): string {
   return outPath;
 }
 
+function writeAblationRun(report: AndreiBenchAblation): string {
+  fs.mkdirSync(RUNS_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replaceAll(":", "-");
+  const outPath = path.join(RUNS_DIR, `ablation-${stamp}.json`);
+  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+  return outPath;
+}
+
+function writeLiveRun(report: LiveAblationReport): string {
+  fs.mkdirSync(RUNS_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replaceAll(":", "-");
+  const outPath = path.join(RUNS_DIR, `live-${stamp}.json`);
+  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+  return outPath;
+}
+
 function missingLangfuseMessage(): string {
   return "Langfuse keys missing (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY). Replay still ran locally. Skip --sync / --experiment or add keys from Langfuse → Settings → API Keys.";
 }
@@ -98,7 +147,7 @@ async function ensureLangfuseDataset(
     await client.api.datasets.create({
       name: CHAT_DRAFT_DATASET_NAME,
       description:
-        "Git-owned chat draft quality floor (QSR section 5 grounding, mixed-identity page plans, identity-incomplete search hits, layer-1 harness). Source: scripts/eval/chat-draft-cases.json.",
+        "Git-owned Andrei Bench quality floor. scripts/eval/chat-draft-cases.json is source of truth; this dataset is the experiment log. Do not edit items only in Langfuse.",
     });
     console.log(`created Langfuse dataset ${CHAT_DRAFT_DATASET_NAME}`);
   } catch (err) {
@@ -215,12 +264,74 @@ async function main(): Promise<void> {
   const args = parseChatDraftEvalArgs(process.argv.slice(2));
   const cases = loadChatDraftEvalCases();
 
-  if (args.dryRun && !args.replay && !args.sync && !args.experiment) {
+  if (
+    args.dryRun &&
+    !args.replay &&
+    !args.sync &&
+    !args.experiment &&
+    !args.ablation &&
+    !args.live
+  ) {
     console.log(`chat-eval dry-run: ${cases.length} case(s)`);
     for (const entry of cases) {
       console.log(`  ${entry.task.padEnd(22)} ${entry.id}`);
     }
     return;
+  }
+
+  if (args.ablation) {
+    const persist = ablateGroundDraftCases(cases);
+    const retrieval = ablateRetrievalCases({
+      cases: parseRetrievalCases(
+        JSON.parse(fs.readFileSync(RETRIEVAL_CASES, "utf8"))
+      ),
+      pages: await loadRetrievalCorpusPages(),
+    });
+    const searchBeforeWrite = ablateSearchBeforeWrite(cases);
+    const report: AndreiBenchAblation = {
+      persist,
+      retrieval,
+      searchBeforeWrite,
+    };
+    console.log(formatAblationReport(persist));
+    console.log("");
+    console.log(formatRetrievalAblationReport(retrieval));
+    console.log("");
+    console.log(formatSearchBeforeWriteReport(searchBeforeWrite));
+    console.log("");
+    console.log(formatAndreiBenchScoreboard(report));
+    const outPath = writeAblationRun(report);
+    console.log(`wrote ${outPath}`);
+    if (persist.poisonedPersistOn > 0) {
+      process.exitCode = 1;
+      console.error(
+        `ablation leak: ${String(persist.poisonedPersistOn)} gated draft(s) still saved an unsupported fact`
+      );
+    }
+    if (retrieval.correctOn < retrieval.n) {
+      process.exitCode = 1;
+      console.error(
+        `retrieval ablation: Andrei on ${String(retrieval.correctOn)}/${String(retrieval.n)} right page + excerpt`
+      );
+    }
+    if (searchBeforeWrite.correctOn < searchBeforeWrite.n) {
+      process.exitCode = 1;
+      console.error(
+        `search-before-write ablation: Andrei on ${String(searchBeforeWrite.correctOn)}/${String(searchBeforeWrite.n)} looked first`
+      );
+    }
+    if (!args.replay && !args.sync && !args.experiment && !args.live) return;
+  }
+
+  if (args.live) {
+    const live = await runLiveAblation();
+    console.log(formatLiveAblationReport(live));
+    const outPath = writeLiveRun(live);
+    console.log(`wrote ${outPath}`);
+    if (live.rows.some((row) => row.on.error || row.off.error)) {
+      process.exitCode = 1;
+    }
+    if (!args.replay && !args.sync && !args.experiment) return;
   }
 
   let scores: ChatDraftCaseScore[] = [];

@@ -37,6 +37,19 @@ describe("parseRetrievalEvalArgs", () => {
       parseRetrievalEvalArgs(["--from-gcs", "--report-id", "abc"])
     ).toThrow(/only one/);
   });
+
+  it("selects local ranking ablation without ingest", () => {
+    expect(parseRetrievalEvalArgs(["--ablation"])).toMatchObject({
+      dryRun: false,
+      ablation: true,
+      fromGcs: false,
+      live: false,
+      reportId: null,
+    });
+    expect(() =>
+      parseRetrievalEvalArgs(["--ablation", "--from-gcs"])
+    ).toThrow(/ablation/);
+  });
 });
 
 describe("shouldLoadLocalOverlay", () => {
@@ -47,13 +60,16 @@ describe("shouldLoadLocalOverlay", () => {
     ).toBe(true);
   });
 
-  it("skips overlay on --from-gcs and --live", () => {
+  it("skips overlay on --from-gcs, --live, and --ablation", () => {
     expect(
       shouldLoadLocalOverlay(parseRetrievalEvalArgs(["--from-gcs"]))
     ).toBe(false);
     expect(shouldLoadLocalOverlay(parseRetrievalEvalArgs(["--live"]))).toBe(
       false
     );
+    expect(
+      shouldLoadLocalOverlay(parseRetrievalEvalArgs(["--ablation"]))
+    ).toBe(false);
   });
 });
 

@@ -213,7 +213,7 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 Always-on summary only. Full policy: `.cursor/rules/chat-and-attachments.mdc`
 and `.claude/skills/chat-subsystem`. Grounding incidents replay
 `edit_table` / `draft_rtm_table` (`qsr-rtm-draft-replay.test.ts`) and
-`pnpm chat-eval -- --replay`.
+`pnpm chat-eval -- --replay` / `--ablation`.
 
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
   File-set questions use `list_attachments`; facts *inside* a PDF use
