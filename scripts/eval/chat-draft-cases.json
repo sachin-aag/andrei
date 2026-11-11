@@ -99,6 +99,7 @@
     "id": "qsr-rtm-neighbour-urs37-blocked",
     "task": "ground_draft",
     "passCriteria": "URS-37 process temperature must not land on the URS-5 jacket row.",
+    "notes": "QSR row-window incident: process temperature sitting next to the jacket row. Same gold as ground-draft.test.ts neighbour cases.",
     "input": {
       "text": "15–130 °C",
       "context": "URS-5 Jacket temperature",
@@ -121,6 +122,7 @@
     "id": "qsr-rtm-fail-closed-unread-urs",
     "task": "ground_draft",
     "passCriteria": "An attached unread URS fails closed instead of inventing row facts.",
+    "notes": "Fail-closed when a URS is attached but no page quote was retrieved. The filename is not evidence.",
     "input": {
       "text": "URS-5 Jacket temperature 20-25 °C",
       "section": "qsr_rtm_safety",
@@ -164,6 +166,7 @@
     "id": "qsr-rtm-iq-header-only-stage-blocked",
     "task": "ground_draft",
     "passCriteria": "IQ Stage for URS-1 does not persist from a protocol running header that only repeats Capacity/Size.",
+    "notes": "IQ running header repeats Capacity/Size 8000 L. That is not an executed Stage for URS-1.",
     "input": {
       "text": "IQ",
       "context": "URS-1\nReactor Capacity",

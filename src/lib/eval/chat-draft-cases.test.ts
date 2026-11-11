@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ANDREI_BENCH_VERSION,
   mergeChatDraftCases,
   parseChatDraftCases,
   parseChatDraftEvalArgs,
@@ -125,6 +126,24 @@ describe("chat-draft-cases.json", () => {
     );
     expect(scored.passed).toBe(false);
     expect(scored.failures.some((row) => row.includes("keepSearchOpen"))).toBe(true);
+  });
+
+  it("keeps gold quality: incident notes, sourced needles, attack traps", () => {
+    expect(ANDREI_BENCH_VERSION).toMatch(/^\d{4}-\d{2}$/);
+    const ground = cases.filter((entry) => entry.task === "ground_draft");
+    const families = new Set(
+      ground.map((entry) => entry.id.split("-")[0] ?? entry.id)
+    );
+    expect(families.has("qsr")).toBe(true);
+    expect(families.has("cvp")).toBe(true);
+    for (const entry of ground) {
+      if (entry.expected.blocked) {
+        expect(entry.notes?.trim().length ?? 0).toBeGreaterThan(20);
+      } else {
+        expect(entry.expected.mustContain?.length ?? 0).toBeGreaterThan(0);
+        expect(entry.expected.unsupportedMustBeEmpty).toBe(true);
+      }
+    }
   });
 
   it("lets a local overlay replace a public id", () => {

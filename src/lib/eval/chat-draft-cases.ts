@@ -18,8 +18,12 @@ import {
   CHAT_USER_INTENTS,
   type ChatUserIntentKind,
 } from "@/lib/ai/chat/user-intent";
+import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 
 export const CHAT_DRAFT_DATASET_NAME = "chat-draft-quality-floor";
+
+/** Frozen label for published persist-gate numbers. Bump when the public gold set is snapshotted, not on every incident. */
+export const ANDREI_BENCH_VERSION = "2026-11";
 
 export type ChatDraftPage = {
   filename: string;
@@ -508,30 +512,36 @@ function ledgerFromPages(pages: ChatDraftPage[]): CitationPageLedger {
   return ledger;
 }
 
+export function runGroundDraftWithPolicy(
+  entry: ChatDraftGroundDraftCase,
+  policy: UnsupportedFactPolicy
+): ChatDraftCaseOutput {
+  const grounded = groundDraftText({
+    text: entry.input.text,
+    ledger: ledgerFromPages(entry.input.pages),
+    policy,
+    context: entry.input.context,
+    grounding: {
+      section: entry.input.section,
+      attachedFilenames: entry.input.attachedFilenames,
+      tableCol: entry.input.tableCol,
+      latestUserMessageText: entry.input.latestUserMessageText,
+      recentAssistantTexts: entry.input.recentAssistantTexts,
+    },
+  });
+  return {
+    id: entry.id,
+    task: entry.task,
+    blocked: grounded.blocked,
+    text: grounded.text,
+    unsupported: grounded.unsupported.map((fact) => fact.text),
+  };
+}
+
 export function runChatDraftCase(entry: ChatDraftEvalCase): ChatDraftCaseOutput {
   switch (entry.task) {
-    case "ground_draft": {
-      const grounded = groundDraftText({
-        text: entry.input.text,
-        ledger: ledgerFromPages(entry.input.pages),
-        policy: entry.input.policy ?? "block",
-        context: entry.input.context,
-        grounding: {
-          section: entry.input.section,
-          attachedFilenames: entry.input.attachedFilenames,
-          tableCol: entry.input.tableCol,
-          latestUserMessageText: entry.input.latestUserMessageText,
-          recentAssistantTexts: entry.input.recentAssistantTexts,
-        },
-      });
-      return {
-        id: entry.id,
-        task: entry.task,
-        blocked: grounded.blocked,
-        text: grounded.text,
-        unsupported: grounded.unsupported.map((fact) => fact.text),
-      };
-    }
+    case "ground_draft":
+      return runGroundDraftWithPolicy(entry, entry.input.policy ?? "block");
     case "harness": {
       const scenario = HARNESS_SCENARIOS.find(
         (row) => row.id === entry.input.scenarioId
@@ -756,6 +766,7 @@ export type ChatDraftEvalCliArgs = {
   replay: boolean;
   sync: boolean;
   experiment: boolean;
+  ablation: boolean;
   live: boolean;
 };
 
@@ -764,6 +775,7 @@ export function parseChatDraftEvalArgs(argv: string[]): ChatDraftEvalCliArgs {
   let replay = false;
   let sync = false;
   let experiment = false;
+  let ablation = false;
   let live = false;
   for (const arg of argv) {
     if (arg === "--") continue;
@@ -771,6 +783,7 @@ export function parseChatDraftEvalArgs(argv: string[]): ChatDraftEvalCliArgs {
     else if (arg === "--replay") replay = true;
     else if (arg === "--sync") sync = true;
     else if (arg === "--experiment") experiment = true;
+    else if (arg === "--ablation") ablation = true;
     else if (arg === "--live") live = true;
     else if (arg.startsWith("-")) {
       throw new Error(`Unknown flag ${arg}`);
@@ -778,9 +791,9 @@ export function parseChatDraftEvalArgs(argv: string[]): ChatDraftEvalCliArgs {
   }
   if (live) {
     throw new Error(
-      "Live Gemini Agent turns are not wired yet. Use --replay for the quality floor, --sync / --experiment to push that floor to Langfuse."
+      "Live Gemini Agent turns are not wired yet. Use --replay for the quality floor, --ablation for the persist-gate contrast, --sync / --experiment to push that floor to Langfuse."
     );
   }
-  if (!replay && !sync && !experiment) dryRun = true;
-  return { dryRun, replay, sync, experiment, live };
+  if (!replay && !sync && !experiment && !ablation) dryRun = true;
+  return { dryRun, replay, sync, experiment, ablation, live };
 }

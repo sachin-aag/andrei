@@ -3,12 +3,15 @@
  *
  *   pnpm chat-eval -- --dry-run
  *   pnpm chat-eval -- --replay
+ *   pnpm chat-eval -- --ablation
  *   pnpm chat-eval -- --sync
  *   pnpm chat-eval -- --experiment
  *
  * Git owns the cases (`scripts/eval/chat-draft-cases.json`). Langfuse holds
  * the dataset + experiment runs so prompt/gate changes can be compared in
  * the Datasets UI. `--replay` is the merge gate (no LLM, no Langfuse keys).
+ * `--ablation` holds each gold Gemini draft fixed and contrasts persist with
+ * the fail-closed gate on vs identity persist (Andrei off). No live model.
  * `--experiment` upserts the hosted dataset then `runExperiment`.
  * `--sync` / `--experiment` skip cleanly when LANGFUSE_* keys are missing.
  * Live Gemini Agent turns are not wired yet (`--live` errors on purpose).
@@ -21,6 +24,11 @@ import { fileURLToPath } from "node:url";
 import type { Evaluator, RunEvaluator } from "@langfuse/client";
 import { CHAT_PROMPT_VERSION } from "@/lib/ai/chat/system-prompt";
 import { isLangfuseEnabled } from "@/lib/observability/langfuse";
+import {
+  ablateGroundDraftCases,
+  formatAblationReport,
+  type ChatDraftAblationReport,
+} from "@/lib/eval/chat-draft-ablation";
 import {
   CHAT_DRAFT_DATASET_NAME,
   mergeChatDraftCases,
@@ -85,6 +93,14 @@ function writeRun(scores: ChatDraftCaseScore[]): string {
   return outPath;
 }
 
+function writeAblationRun(report: ChatDraftAblationReport): string {
+  fs.mkdirSync(RUNS_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replaceAll(":", "-");
+  const outPath = path.join(RUNS_DIR, `ablation-${stamp}.json`);
+  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+  return outPath;
+}
+
 function missingLangfuseMessage(): string {
   return "Langfuse keys missing (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY). Replay still ran locally. Skip --sync / --experiment or add keys from Langfuse → Settings → API Keys.";
 }
@@ -98,7 +114,7 @@ async function ensureLangfuseDataset(
     await client.api.datasets.create({
       name: CHAT_DRAFT_DATASET_NAME,
       description:
-        "Git-owned chat draft quality floor (QSR section 5 grounding, mixed-identity page plans, identity-incomplete search hits, layer-1 harness). Source: scripts/eval/chat-draft-cases.json.",
+        "Git-owned Andrei Bench quality floor. scripts/eval/chat-draft-cases.json is source of truth; this dataset is the experiment log. Do not edit items only in Langfuse.",
     });
     console.log(`created Langfuse dataset ${CHAT_DRAFT_DATASET_NAME}`);
   } catch (err) {
@@ -215,12 +231,26 @@ async function main(): Promise<void> {
   const args = parseChatDraftEvalArgs(process.argv.slice(2));
   const cases = loadChatDraftEvalCases();
 
-  if (args.dryRun && !args.replay && !args.sync && !args.experiment) {
+  if (args.dryRun && !args.replay && !args.sync && !args.experiment && !args.ablation) {
     console.log(`chat-eval dry-run: ${cases.length} case(s)`);
     for (const entry of cases) {
       console.log(`  ${entry.task.padEnd(22)} ${entry.id}`);
     }
     return;
+  }
+
+  if (args.ablation) {
+    const report = ablateGroundDraftCases(cases);
+    console.log(formatAblationReport(report));
+    const outPath = writeAblationRun(report);
+    console.log(`wrote ${outPath}`);
+    if (report.poisonedPersistOn > 0) {
+      process.exitCode = 1;
+      console.error(
+        `ablation leak: ${String(report.poisonedPersistOn)} gated draft(s) still saved an unsupported fact`
+      );
+    }
+    if (!args.replay && !args.sync && !args.experiment) return;
   }
 
   let scores: ChatDraftCaseScore[] = [];
