@@ -13,11 +13,16 @@ import {
   lexicalMatchScore,
   takeRankedHits,
 } from "@/lib/attachments/retrieval-query";
-import {
-  DEFAULT_SNIPPET_CHARS,
-  truncateSnippet,
-} from "@/lib/attachments/retrieval";
 import { ANDREI_BENCH_VERSION } from "@/lib/eval/chat-draft-cases";
+
+/** Same window as production search excerpts. Kept local so this eval does not import the DB-backed retrieval module. */
+const SNIPPET_CHARS = 900;
+
+function prefixSnippet(text: string): string {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (cleaned.length <= SNIPPET_CHARS) return cleaned;
+  return `${cleaned.slice(0, SNIPPET_CHARS).trimEnd()}...`;
+}
 
 export const RETRIEVAL_ABLATION_K = 5;
 
@@ -140,7 +145,7 @@ export function naiveRetrievalHits(
     .map((page, index) => ({
       filename: page.filename,
       pageNumber: page.pageNumber,
-      text: truncateSnippet(page.text, DEFAULT_SNIPPET_CHARS),
+      text: prefixSnippet(page.text),
       index,
       score: lexicalMatchScore(page.text, query),
     }))
@@ -171,11 +176,7 @@ export function andreiRetrievalHits(
   return ranked.map((hit) => ({
     filename: hit.filename,
     pageNumber: hit.pageNumber,
-    text: buildMatchCenteredSnippet(
-      hit.text ?? "",
-      query,
-      DEFAULT_SNIPPET_CHARS
-    ),
+    text: buildMatchCenteredSnippet(hit.text ?? "", query, SNIPPET_CHARS),
   }));
 }
 
