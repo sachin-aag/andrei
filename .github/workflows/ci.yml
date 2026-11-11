@@ -103,7 +103,9 @@ jobs:
 
   e2e:
     name: E2E (Playwright)
-    runs-on: ubuntu-latest
+    # Playwright 1.60 has no ubuntu26.04 browser package. GitHub's
+    # ubuntu-latest became 26.04 in Nov 2026; pin until we bump Playwright.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: pgvector/pgvector:pg16
