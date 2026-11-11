@@ -22,7 +22,7 @@ import type { UnsupportedFactPolicy } from "@/lib/customers/packs";
 
 export const CHAT_DRAFT_DATASET_NAME = "chat-draft-quality-floor";
 
-/** Frozen label for published persist-gate numbers. Bump when the public gold set is snapshotted, not on every incident. */
+/** Frozen label for published Andrei Bench numbers (persist, retrieval, search-before-write). Bump when the public gold set is snapshotted, not on every incident. */
 export const ANDREI_BENCH_VERSION = "2026-11";
 
 export type ChatDraftPage = {
@@ -791,7 +791,7 @@ export function parseChatDraftEvalArgs(argv: string[]): ChatDraftEvalCliArgs {
   }
   if (live) {
     throw new Error(
-      "Live Gemini Agent turns are not wired yet. Use --replay for the quality floor, --ablation for the persist-gate contrast, --sync / --experiment to push that floor to Langfuse."
+          "Live Gemini Agent turns are not wired yet. Use --replay for the quality floor, --ablation for persist / retrieval / search-before-write contrasts, --sync / --experiment to push that floor to Langfuse."
     );
   }
   if (!replay && !sync && !experiment && !ablation) dryRun = true;

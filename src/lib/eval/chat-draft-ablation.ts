@@ -146,7 +146,7 @@ export function ablateGroundDraftCases(
 
 export function formatAblationReport(report: ChatDraftAblationReport): string {
   const lines = [
-    `chat-eval ablation  bench=${report.benchVersion}  prompt=${report.promptVersion}  n=${String(report.n)} ground_draft (${String(report.attackN)} attack, ${String(report.sourcedN)} sourced)`,
+    `persist ablation  bench=${report.benchVersion}  prompt=${report.promptVersion}  n=${String(report.n)} ground_draft (${String(report.attackN)} attack, ${String(report.sourcedN)} sourced)`,
     "",
     "id".padEnd(42) + "attack  on persist          off persist",
     "-".repeat(88),

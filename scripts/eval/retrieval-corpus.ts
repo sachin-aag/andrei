@@ -50,6 +50,29 @@ export type CorpusFile = {
   bytes: Buffer;
 };
 
+export type RetrievalCorpusPage = {
+  filename: string;
+  pageNumber: number;
+  text: string;
+};
+
+/** Flattened born-digital pages for the local ranking ablation (no ingest). */
+export async function loadRetrievalCorpusPages(): Promise<RetrievalCorpusPage[]> {
+  const files = await buildRetrievalCorpus();
+  const pages: RetrievalCorpusPage[] = [];
+  for (const file of files) {
+    const layer = await readPdfTextLayer(file.bytes);
+    for (const page of layer.pages) {
+      pages.push({
+        filename: file.filename,
+        pageNumber: page.pageNumber,
+        text: page.text.replace(/\s+/g, " ").trim(),
+      });
+    }
+  }
+  return pages;
+}
+
 /**
  * Search excerpts are 900 characters. Page 2 starts with this many header
  * lines so a prefix truncation cannot reach the required-equipment row.

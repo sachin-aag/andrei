@@ -10,8 +10,10 @@
  * Git owns the cases (`scripts/eval/chat-draft-cases.json`). Langfuse holds
  * the dataset + experiment runs so prompt/gate changes can be compared in
  * the Datasets UI. `--replay` is the merge gate (no LLM, no Langfuse keys).
- * `--ablation` holds each gold Gemini draft fixed and contrasts persist with
- * the fail-closed gate on vs identity persist (Andrei off). No live model.
+ * `--ablation` prints three separate evals (do not average): persist (same
+ * Gemini draft, save check on vs off), retrieval (right page + excerpt on
+ * the synthetic corpus), search-before-write (6 of the 20 floor cases).
+ * No live model.
  * `--experiment` upserts the hosted dataset then `runExperiment`.
  * `--sync` / `--experiment` skip cleanly when LANGFUSE_* keys are missing.
  * Live Gemini Agent turns are not wired yet (`--live` errors on purpose).
@@ -23,11 +25,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Evaluator, RunEvaluator } from "@langfuse/client";
 import { CHAT_PROMPT_VERSION } from "@/lib/ai/chat/system-prompt";
+import { parseRetrievalCases } from "@/lib/attachments/retrieval-metrics";
 import { isLangfuseEnabled } from "@/lib/observability/langfuse";
+import {
+  formatAndreiBenchScoreboard,
+  type AndreiBenchAblation,
+} from "@/lib/eval/andrei-bench";
 import {
   ablateGroundDraftCases,
   formatAblationReport,
-  type ChatDraftAblationReport,
 } from "@/lib/eval/chat-draft-ablation";
 import {
   CHAT_DRAFT_DATASET_NAME,
@@ -40,6 +46,15 @@ import {
   type ChatDraftCaseScore,
   type ChatDraftEvalCase,
 } from "@/lib/eval/chat-draft-cases";
+import {
+  ablateRetrievalCases,
+  formatRetrievalAblationReport,
+} from "@/lib/eval/retrieval-ablation";
+import {
+  ablateSearchBeforeWrite,
+  formatSearchBeforeWriteReport,
+} from "@/lib/eval/search-before-write";
+import { loadRetrievalCorpusPages } from "./retrieval-corpus";
 
 config({ path: ".env" });
 config({ path: ".env.local", override: true });
@@ -47,6 +62,7 @@ config({ path: ".env.local", override: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_CASES = path.join(here, "chat-draft-cases.json");
 const LOCAL_CASES = path.join(here, "chat-draft-cases.local.json");
+const RETRIEVAL_CASES = path.join(here, "retrieval-cases.json");
 const RUNS_DIR = path.join(here, "chat-draft-runs");
 
 export function loadChatDraftEvalCases(): ChatDraftEvalCase[] {
@@ -93,7 +109,7 @@ function writeRun(scores: ChatDraftCaseScore[]): string {
   return outPath;
 }
 
-function writeAblationRun(report: ChatDraftAblationReport): string {
+function writeAblationRun(report: AndreiBenchAblation): string {
   fs.mkdirSync(RUNS_DIR, { recursive: true });
   const stamp = new Date().toISOString().replaceAll(":", "-");
   const outPath = path.join(RUNS_DIR, `ablation-${stamp}.json`);
@@ -240,14 +256,44 @@ async function main(): Promise<void> {
   }
 
   if (args.ablation) {
-    const report = ablateGroundDraftCases(cases);
-    console.log(formatAblationReport(report));
+    const persist = ablateGroundDraftCases(cases);
+    const retrieval = ablateRetrievalCases({
+      cases: parseRetrievalCases(
+        JSON.parse(fs.readFileSync(RETRIEVAL_CASES, "utf8"))
+      ),
+      pages: await loadRetrievalCorpusPages(),
+    });
+    const searchBeforeWrite = ablateSearchBeforeWrite(cases);
+    const report: AndreiBenchAblation = {
+      persist,
+      retrieval,
+      searchBeforeWrite,
+    };
+    console.log(formatAblationReport(persist));
+    console.log("");
+    console.log(formatRetrievalAblationReport(retrieval));
+    console.log("");
+    console.log(formatSearchBeforeWriteReport(searchBeforeWrite));
+    console.log("");
+    console.log(formatAndreiBenchScoreboard(report));
     const outPath = writeAblationRun(report);
     console.log(`wrote ${outPath}`);
-    if (report.poisonedPersistOn > 0) {
+    if (persist.poisonedPersistOn > 0) {
       process.exitCode = 1;
       console.error(
-        `ablation leak: ${String(report.poisonedPersistOn)} gated draft(s) still saved an unsupported fact`
+        `ablation leak: ${String(persist.poisonedPersistOn)} gated draft(s) still saved an unsupported fact`
+      );
+    }
+    if (retrieval.correctOn < retrieval.n) {
+      process.exitCode = 1;
+      console.error(
+        `retrieval ablation: Andrei on ${String(retrieval.correctOn)}/${String(retrieval.n)} right page + excerpt`
+      );
+    }
+    if (searchBeforeWrite.correctOn < searchBeforeWrite.n) {
+      process.exitCode = 1;
+      console.error(
+        `search-before-write ablation: Andrei on ${String(searchBeforeWrite.correctOn)}/${String(searchBeforeWrite.n)} looked first`
       );
     }
     if (!args.replay && !args.sync && !args.experiment) return;
