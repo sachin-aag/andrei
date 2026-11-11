@@ -17,7 +17,7 @@ import {
  * placeholders, no fail-closed. That is naive “same model, no harness”.
  *
  * Re-calling Gemini would be a different experiment (naive generation).
- * Headless Agent turns are still `--live` and not wired.
+ * Headless same-model turns are `pnpm chat-eval -- --live`.
  */
 export type ChatDraftAblationArm = {
   blocked: boolean;

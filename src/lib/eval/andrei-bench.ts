@@ -17,6 +17,6 @@ export function formatAndreiBenchScoreboard(
     `correct persist            Andrei on ${String(persist.correctPersistOn)}/${String(persist.n)}   Andrei off ${String(persist.correctPersistOff)}/${String(persist.n)}`,
     `right page + excerpt       Andrei on ${String(retrieval.correctOn)}/${String(retrieval.n)}   Andrei off ${String(retrieval.correctOff)}/${String(retrieval.n)}`,
     `looked before writing      Andrei on ${String(searchBeforeWrite.correctOn)}/${String(searchBeforeWrite.n)}   Andrei off ${String(searchBeforeWrite.correctOff)}/${String(searchBeforeWrite.n)}`,
-    "Do not average these. Persist is the GxP-record slide. Retrieval is a separate eval. Search-before-write is 6 of the 20 floor cases and is not on the persist slide.",
+    "Do not average these. Persist is the GxP-record slide. Retrieval is a separate eval. Search-before-write is the policy lock on 6 of the 20 floor cases — not a Gemini run, not on the persist slide. Same-model Gemini/base is `pnpm chat-eval -- --live`.",
   ].join("\n");
 }

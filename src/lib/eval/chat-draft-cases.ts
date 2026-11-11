@@ -567,7 +567,7 @@ export function runChatDraftCase(entry: ChatDraftEvalCase): ChatDraftCaseOutput 
         id: entry.id,
         task: entry.task,
         skipped:
-          "Live Gemini turns are not in this runner yet. Use --replay for the quality floor; add a headless Agent turn later.",
+          "JSON `live` tasks stay out of `--replay`. Use `pnpm chat-eval -- --live` for the same-model harness study.",
       };
     case "page_plan": {
       const laterObjective = entry.input.laterObjective;
@@ -789,11 +789,6 @@ export function parseChatDraftEvalArgs(argv: string[]): ChatDraftEvalCliArgs {
       throw new Error(`Unknown flag ${arg}`);
     }
   }
-  if (live) {
-    throw new Error(
-          "Live Gemini Agent turns are not wired yet. Use --replay for the quality floor, --ablation for persist / retrieval / search-before-write contrasts, --sync / --experiment to push that floor to Langfuse."
-    );
-  }
-  if (!replay && !sync && !experiment && !ablation) dryRun = true;
+  if (!replay && !sync && !experiment && !ablation && !live) dryRun = true;
   return { dryRun, replay, sync, experiment, ablation, live };
 }

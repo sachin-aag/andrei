@@ -27,10 +27,12 @@ describe("parseChatDraftEvalArgs ablation", () => {
     });
   });
 
-  it("still rejects --live when ablation is also requested", () => {
-    expect(() => parseChatDraftEvalArgs(["--ablation", "--live"])).toThrow(
-      /not wired/i
-    );
+  it("allows --live next to --ablation", () => {
+    expect(parseChatDraftEvalArgs(["--ablation", "--live"])).toMatchObject({
+      dryRun: false,
+      ablation: true,
+      live: true,
+    });
   });
 });
 

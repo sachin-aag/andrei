@@ -406,8 +406,10 @@ search hits, greeting / empty-inventory harness). Pushing
 that same set to Langfuse (`--experiment` upserts dataset
 `chat-draft-quality-floor` then `runExperiment`) makes runs comparable
 across `CHAT_PROMPT_VERSION` without waiting for a live Agent turn.
-Headless Gemini (`--live`) is not wired — do not treat a quiet Langfuse
-project as a merge gate for prompt diet.
+Headless same-model turns are `pnpm chat-eval -- --live`: Andrei on =
+current system prompt + step policy; base = minimal system prompt +
+every write tool advertised. Not a CI merge gate. Do not treat a quiet
+Langfuse project as a merge gate for prompt diet.
 
 This is F1's second half. Same scenarios every time, budgets that fail
 closed. Dual metric: cost may fall; quality may not.

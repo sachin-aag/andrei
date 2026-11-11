@@ -176,7 +176,7 @@ export function formatSearchBeforeWriteReport(
     `looked before writing  Andrei on ${String(report.correctOn)}/${String(report.n)}   Andrei off ${String(report.correctOff)}/${String(report.n)}`
   );
   lines.push(
-    "Not on the persist slide. A hello must not write; an empty table must look in the files first; a mixed Table 3 + SOP ask must not collapse onto cover pages."
+    "Not on the persist slide. This is the policy lock (which tools are advertised), not a Gemini run. `pnpm chat-eval -- --live` is the same-model study with a minimal system prompt."
   );
   return lines.join("\n");
 }

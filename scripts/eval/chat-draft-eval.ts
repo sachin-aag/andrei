@@ -4,6 +4,7 @@
  *   pnpm chat-eval -- --dry-run
  *   pnpm chat-eval -- --replay
  *   pnpm chat-eval -- --ablation
+ *   pnpm chat-eval -- --live
  *   pnpm chat-eval -- --sync
  *   pnpm chat-eval -- --experiment
  *
@@ -12,11 +13,14 @@
  * the Datasets UI. `--replay` is the merge gate (no LLM, no Langfuse keys).
  * `--ablation` prints three separate evals (do not average): persist (same
  * Gemini draft, save check on vs off), retrieval (right page + excerpt on
- * the synthetic corpus), search-before-write (6 of the 20 floor cases).
- * No live model.
+ * the synthetic corpus), search-before-write (6 of the 20 floor cases —
+ * policy lock, not a Gemini run).
+ * `--live` is the same-model study: current system prompt + step policy vs
+ * a minimal system prompt with write tools advertised. Needs Gemini
+ * credentials (Vertex ADC/WIF, Studio, or Gateway); OPENAI_API_KEY is an
+ * emergency fallback and must not be quoted as Gemini.
  * `--experiment` upserts the hosted dataset then `runExperiment`.
  * `--sync` / `--experiment` skip cleanly when LANGFUSE_* keys are missing.
- * Live Gemini Agent turns are not wired yet (`--live` errors on purpose).
  */
 
 import { config } from "dotenv";
@@ -54,6 +58,11 @@ import {
   ablateSearchBeforeWrite,
   formatSearchBeforeWriteReport,
 } from "@/lib/eval/search-before-write";
+import {
+  formatLiveAblationReport,
+  runLiveAblation,
+  type LiveAblationReport,
+} from "@/lib/eval/live-gemini-ablation";
 import { loadRetrievalCorpusPages } from "./retrieval-corpus";
 
 config({ path: ".env" });
@@ -113,6 +122,14 @@ function writeAblationRun(report: AndreiBenchAblation): string {
   fs.mkdirSync(RUNS_DIR, { recursive: true });
   const stamp = new Date().toISOString().replaceAll(":", "-");
   const outPath = path.join(RUNS_DIR, `ablation-${stamp}.json`);
+  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+  return outPath;
+}
+
+function writeLiveRun(report: LiveAblationReport): string {
+  fs.mkdirSync(RUNS_DIR, { recursive: true });
+  const stamp = new Date().toISOString().replaceAll(":", "-");
+  const outPath = path.join(RUNS_DIR, `live-${stamp}.json`);
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
   return outPath;
 }
@@ -247,7 +264,14 @@ async function main(): Promise<void> {
   const args = parseChatDraftEvalArgs(process.argv.slice(2));
   const cases = loadChatDraftEvalCases();
 
-  if (args.dryRun && !args.replay && !args.sync && !args.experiment && !args.ablation) {
+  if (
+    args.dryRun &&
+    !args.replay &&
+    !args.sync &&
+    !args.experiment &&
+    !args.ablation &&
+    !args.live
+  ) {
     console.log(`chat-eval dry-run: ${cases.length} case(s)`);
     for (const entry of cases) {
       console.log(`  ${entry.task.padEnd(22)} ${entry.id}`);
@@ -295,6 +319,17 @@ async function main(): Promise<void> {
       console.error(
         `search-before-write ablation: Andrei on ${String(searchBeforeWrite.correctOn)}/${String(searchBeforeWrite.n)} looked first`
       );
+    }
+    if (!args.replay && !args.sync && !args.experiment && !args.live) return;
+  }
+
+  if (args.live) {
+    const live = await runLiveAblation();
+    console.log(formatLiveAblationReport(live));
+    const outPath = writeLiveRun(live);
+    console.log(`wrote ${outPath}`);
+    if (live.rows.some((row) => row.on.error || row.off.error)) {
+      process.exitCode = 1;
     }
     if (!args.replay && !args.sync && !args.experiment) return;
   }

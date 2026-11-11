@@ -44,8 +44,15 @@ describe("parseChatDraftEvalArgs", () => {
     });
   });
 
-  it("rejects --live until a headless Agent turn exists", () => {
-    expect(() => parseChatDraftEvalArgs(["--live"])).toThrow(/not wired/i);
+  it("selects --live without implying Langfuse or dry-run", () => {
+    expect(parseChatDraftEvalArgs(["--live"])).toMatchObject({
+      dryRun: false,
+      replay: false,
+      sync: false,
+      experiment: false,
+      ablation: false,
+      live: true,
+    });
   });
 });
 
