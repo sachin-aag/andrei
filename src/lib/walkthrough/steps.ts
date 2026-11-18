@@ -124,7 +124,7 @@ export function stepsForRole(
             ? "Start here: pick a template"
             : "Start here: create a report",
           body: copy.documentTemplatesEnabled
-            ? "New Report opens the template gallery. Choose Supply Chain, Design, Operations, or Quality, then pick a document tile to start a draft. Give it a document number and optionally assign reviewers."
+            ? "New Report opens the template gallery. Choose Supply Chain, Design, Operations, Quality, or M&A Integration, then pick a document tile to start a draft. Give it a document number and optionally assign reviewers."
             : `New Report opens a draft. Give it a document number and optionally assign reviewers. You can also import an existing Word file when that is enabled. The next cards appear once you open the report.`,
           startHere: true,
           href: copy.documentTemplatesEnabled ? "/templates" : "/",

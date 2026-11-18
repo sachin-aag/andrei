@@ -5,6 +5,7 @@ export const DEMO_TEMPLATE_SECTION_IDS = [
   "design",
   "operations",
   "quality",
+  "ma_integration",
 ] as const;
 
 export type DemoTemplateSectionId = (typeof DEMO_TEMPLATE_SECTION_IDS)[number];
@@ -35,6 +36,12 @@ export const DEMO_TEMPLATE_SECTIONS: readonly DemoTemplateSection[] = [
     id: "quality",
     title: "Quality",
     subtitle: "CAPA, deviations, and change control",
+  },
+  {
+    id: "ma_integration",
+    title: "M&A Integration",
+    subtitle:
+      "Post-acquisition transfer of QMS documents, design files, and manufacturing records",
   },
 ];
 
@@ -744,6 +751,340 @@ Evidence the change was implemented and any follow-up CAPA.
 `,
 };
 
+const DOCUMENT_TEMPLATE_TRANSFER: DemoDocumentTemplate = {
+  id: "document-template-transfer",
+  section: "ma_integration",
+  title: "Document & Template Transfer",
+  description:
+    "Moving SOPs, work instructions, forms and templates into the acquirer's QMS, remapping document numbering, formats and approval workflows. Highest-volume item.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-DOC-2026-001",
+  outlineMarkdown: `# Document & Template Transfer
+
+## 1. Purpose and scope
+Which acquired-site documents move into the acquirer QMS and which stay local or retire.
+
+## 2. Inventory
+- Document type (SOP, WI, form, template, policy)
+- Legacy document number and title
+- Owner / department
+- Effective and next-review dates
+- Controlled copies / training links
+
+## 3. Numbering and format map
+Legacy number → acquirer number; Word/PDF template remapping; header/footer and approval-block rules.
+
+## 4. Approval workflow
+Who reviews and approves each remapped document under the acquirer QMS.
+
+## 5. Migration plan
+Batch order, owners, target go-live, and training cutover.
+
+## 6. Gaps and retirements
+Documents with no acquirer equivalent, obsolete items, and temporary dual-control periods.
+
+## 7. Close-out
+Evidence all in-scope documents are live or retired, with training complete.
+`,
+};
+
+const DHF_DMR_TRANSFER: DemoDocumentTemplate = {
+  id: "dhf-dmr-transfer",
+  section: "ma_integration",
+  title: "DHF & DMR Transfer",
+  description:
+    "Design inputs/outputs, V&V, traceability, drawings, specs, BOMs re-indexed into acquirer PLM/QMS.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-DHF-2026-001",
+  outlineMarkdown: `# DHF & DMR Transfer
+
+## 1. Purpose and products
+Product families whose design history and device master records move to the acquirer.
+
+## 2. DHF inventory
+Design inputs/outputs, risk files, V&V protocols/reports, labeling, and traceability matrices.
+
+## 3. DMR inventory
+Drawings, specs, BOMs, manufacturing/inspection procedures, and approved component lists.
+
+## 4. Re-indexing map
+Legacy IDs → acquirer PLM/QMS IDs; revision and status rules.
+
+## 5. Completeness check
+Missing or superseded design artifacts; open V&V or transfer gaps.
+
+## 6. Ownership and access
+Who owns each record after cutover; vault/PLM permissions.
+
+## 7. Close-out
+Sign-off that DHF/DMR content is complete and searchable in the acquirer systems.
+`,
+};
+
+const RISK_FILE_TRANSFER: DemoDocumentTemplate = {
+  id: "risk-file-transfer",
+  section: "ma_integration",
+  title: "Risk File Transfer",
+  description:
+    "DFMEA/PFMEA/hazard analysis reformatted to acquirer ISO 14971 methodology and scales; re-link to requirements/controls.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-RISK-2026-001",
+  outlineMarkdown: `# Risk File Transfer
+
+## 1. Purpose and scope
+Products and processes whose DFMEA, PFMEA, and hazard analyses move to the acquirer method.
+
+## 2. Source risk files
+List of risk documents, revision, and last review date at the acquired site.
+
+## 3. Methodology alignment
+Acquirer ISO 14971 scales, severity/occurrence/detectability definitions, and residual-risk criteria vs legacy.
+
+## 4. Reformatting plan
+How each failure mode / hazard maps into the acquirer template; what stays narrative vs tabular.
+
+## 5. Requirements and controls re-link
+Trace each risk item to design/process requirements and existing controls.
+
+## 6. Residual risk and gaps
+Where scores change under the new scales; actions before acceptance.
+
+## 7. Close-out
+Approved risk files live in the acquirer QMS with owners and next review dates.
+`,
+};
+
+const ECO_MIGRATION: DemoDocumentTemplate = {
+  id: "eco-migration",
+  section: "ma_integration",
+  title: "ECO Migration",
+  description:
+    "Open/in-flight ECO/ECN, change history, impact assessments; align change classification rules.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-ECO-2026-001",
+  outlineMarkdown: `# ECO Migration
+
+## 1. Purpose and cutover date
+When open ECO/ECN work stops on the legacy system and continues under the acquirer change process.
+
+## 2. Open / in-flight changes
+Legacy ECO/ECN number, title, status, owner, and target implementation date.
+
+## 3. Change history snapshot
+Closed changes that must remain searchable for design and regulatory history.
+
+## 4. Classification alignment
+Legacy change classes → acquirer classes; impact-assessment fields that must be remapped.
+
+## 5. Impact assessments to carry forward
+Quality, regulatory, validation, labeling, inventory, and training impacts still open.
+
+## 6. Migration actions
+Which ECOs close before cutover, which reopen as acquirer changes, and owners.
+
+## 7. Close-out
+No orphaned open changes; acquirer change control owns all remaining work.
+`,
+};
+
+const SUPPLIER_VENDOR_TRANSFER: DemoDocumentTemplate = {
+  id: "supplier-vendor-transfer",
+  section: "ma_integration",
+  title: "Supplier & Vendor Transfer",
+  description:
+    "Re-qualify or grandfather suppliers onto ASL; supplier files, audits, scorecards.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-SUP-2026-001",
+  outlineMarkdown: `# Supplier & Vendor Transfer
+
+## 1. Purpose and scope
+Suppliers of materials, components, or services moving onto the acquirer ASL.
+
+## 2. Supplier inventory
+Legal name, site, commodities, criticality, and current approval status.
+
+## 3. Grandfather vs re-qualify
+Criteria for accepting existing approvals vs requiring new questionnaires/audits.
+
+## 4. Supplier files to transfer
+Quality agreements, certificates, audit reports, scorecards, and change-notification history.
+
+## 5. ASL mapping
+Legacy supplier codes → acquirer ASL entries; purchasing and incoming-inspection links.
+
+## 6. Open actions
+Pending audits, CAPAs on suppliers, and qualification gaps before go-live.
+
+## 7. Close-out
+ASL live; purchasing and quality agree which suppliers are approved to buy from.
+`,
+};
+
+const QUALITY_AGREEMENT_TRANSFER: DemoDocumentTemplate = {
+  id: "quality-agreement-transfer",
+  section: "ma_integration",
+  title: "Quality Agreement Transfer",
+  description:
+    "Re-paper supplier quality agreements onto acquirer template (usually one per supplier).",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-QA-2026-001",
+  outlineMarkdown: `# Quality Agreement Transfer
+
+## 1. Purpose
+Re-paper supplier quality agreements onto the acquirer template, typically one agreement per supplier.
+
+## 2. Supplier list
+Suppliers needing a new or amended quality agreement; priority by criticality and spend.
+
+## 3. Legacy agreement summary
+Key obligations, notification windows, audit rights, and complaint/CAPA interfaces.
+
+## 4. Acquirer template gaps
+Clauses that differ (change control, records retention, right of access, sub-tier flow-down).
+
+## 5. Negotiation and signing plan
+Owners, legal/quality reviewers, and target execution dates.
+
+## 6. Interim controls
+How supply continues while agreements are unsigned.
+
+## 7. Close-out
+Executed agreements filed; ASL and purchasing references updated.
+`,
+};
+
+const EQUIPMENT_QUALIFICATION_TRANSFER: DemoDocumentTemplate = {
+  id: "equipment-qualification-transfer",
+  section: "ma_integration",
+  title: "Equipment Qualification",
+  description:
+    "Equipment inventory, calibration, maintenance, IQ/OQ/PQ protocols/reports, gap assessment vs acquirer validation standards.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-EQ-2026-001",
+  outlineMarkdown: `# Equipment Qualification Transfer
+
+## 1. Purpose and sites
+Equipment at acquired sites that must meet acquirer qualification and metrology standards.
+
+## 2. Equipment inventory
+Asset ID, description, location, criticality, and current qualification status.
+
+## 3. Calibration and maintenance
+Schedules, providers, last/next due dates, and out-of-tolerance history.
+
+## 4. IQ / OQ / PQ package
+Existing protocols and reports; what is complete vs missing.
+
+## 5. Gap assessment
+Where legacy validation falls short of acquirer standards; required re-qualification.
+
+## 6. Remediation plan
+Tasks, owners, and dates for calibration catch-up and qualification gaps.
+
+## 7. Close-out
+Equipment released for use under acquirer controls with current status recorded.
+`,
+};
+
+const PROCESS_TEST_METHOD_TRANSFER: DemoDocumentTemplate = {
+  id: "process-test-method-transfer",
+  section: "ma_integration",
+  title: "Process & Test Method Transfer",
+  description:
+    "Process validation, TMV, gauge R&R, software validation for production/test systems.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-PTM-2026-001",
+  outlineMarkdown: `# Process & Test Method Transfer
+
+## 1. Purpose and scope
+Processes and test methods transferring with the product into the acquirer manufacturing/QMS stack.
+
+## 2. Process validation status
+PV protocols/reports, acceptance criteria, and remaining open runs.
+
+## 3. Test method validation
+TMV packages, gauge R&R results, and methods that need re-validation.
+
+## 4. Production and test software
+Systems in scope for software validation; version and configuration baseline.
+
+## 5. Acquirer standard gaps
+Where legacy evidence does not meet acquirer PV/TMV/CSV requirements.
+
+## 6. Transfer and remediation plan
+Owners, protocols to rewrite, and cutover sequence.
+
+## 7. Close-out
+Validated processes and methods released; residual actions tracked.
+`,
+};
+
+const PART_BOM_MIGRATION: DemoDocumentTemplate = {
+  id: "part-bom-migration",
+  section: "ma_integration",
+  title: "Part & BOM Migration",
+  description:
+    "Part numbers, revisions, BOM structures, AMLs into ERP/PLM; resolve number conflicts.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-BOM-2026-001",
+  outlineMarkdown: `# Part & BOM Migration
+
+## 1. Purpose and systems
+Legacy ERP/PLM sources and the acquirer targets for parts, revisions, BOMs, and AMLs.
+
+## 2. Part number inventory
+Legacy PN, description, revision, UoM, and lifecycle status.
+
+## 3. Conflict resolution
+Duplicate or colliding numbers; rename / alias / dual-number rules.
+
+## 4. BOM structures
+Multi-level BOMs to migrate; effective dates and alternate BOMs.
+
+## 5. Approved manufacturer lists
+AML entries, preferred suppliers, and links to drawings/specs.
+
+## 6. Migration waves
+Pilot vs full cutover; data owners and validation checks.
+
+## 7. Close-out
+Parts and BOMs live in acquirer ERP/PLM; purchasing and manufacturing confirm readiness.
+`,
+};
+
+const COMPLAINT_CAPA_MIGRATION: DemoDocumentTemplate = {
+  id: "complaint-capa-migration",
+  section: "ma_integration",
+  title: "Complaint & CAPA Migration",
+  description:
+    "Open/closed CAPAs, NCRs, complaint history; re-baseline open items for ongoing investigation/regulatory reporting.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. MA-CAPA-2026-001",
+  outlineMarkdown: `# Complaint & CAPA Migration
+
+## 1. Purpose and regulatory context
+Complaint, NCR, and CAPA records that must stay available for investigation and reporting after close.
+
+## 2. Open items
+Open CAPAs, NCRs, and complaints with owners, due dates, and current phase.
+
+## 3. Closed history
+Volume and retention of closed records needed for trending and regulatory history.
+
+## 4. Re-baseline plan
+How open items map into the acquirer system; new numbers, statuses, and investigation owners.
+
+## 5. Reporting interfaces
+MDR/vigilance and management-review feeds that must not break during cutover.
+
+## 6. Data migration checks
+Completeness, attachment links, and cross-references to product/lot/serial data.
+
+## 7. Close-out
+Open items active in the acquirer QMS; closed history searchable; QA confirms reporting continuity.
+`,
+};
+
 export const BLANK_DOCUMENT_TEMPLATE: DemoDocumentTemplate = {
   id: "blank-document",
   section: "design",
@@ -779,6 +1120,16 @@ export const DEMO_DOCUMENT_TEMPLATES: readonly DemoDocumentTemplate[] = [
   CAPA,
   DEVIATIONS,
   CHANGE_CONTROL,
+  DOCUMENT_TEMPLATE_TRANSFER,
+  DHF_DMR_TRANSFER,
+  RISK_FILE_TRANSFER,
+  ECO_MIGRATION,
+  SUPPLIER_VENDOR_TRANSFER,
+  QUALITY_AGREEMENT_TRANSFER,
+  EQUIPMENT_QUALIFICATION_TRANSFER,
+  PROCESS_TEST_METHOD_TRANSFER,
+  PART_BOM_MIGRATION,
+  COMPLAINT_CAPA_MIGRATION,
   BLANK_DOCUMENT_TEMPLATE,
 ];
 
