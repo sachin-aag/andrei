@@ -46,10 +46,23 @@ describe("demo document templates", () => {
     );
   });
 
-  it("puts vendor qualification in Supply Chain", () => {
+  it("lists Supply Chain templates in auditor-logical order", () => {
     const supply = listedDemoTemplatesInSection("supply_chain");
-    expect(supply.map((t) => t.id)).toEqual(["vendor-qualification"]);
-    expect(supply[0]?.documentType).toBe("generic_document");
+    expect(supply.map((t) => t.id)).toEqual([
+      "supplier-control-procedure",
+      "supplier-risk-classification",
+      "approved-supplier-list",
+      "vendor-qualification",
+      "vendor-qualification-report",
+      "supplier-audit-report",
+      "quality-agreement",
+      "purchase-order-purchasing-data",
+      "incoming-inspection-coc-coa",
+      "supplier-corrective-action-request",
+    ]);
+    expect(supply.every((t) => t.documentType === "generic_document")).toBe(
+      true
+    );
   });
 
   it("maps design verification and deviations to structured types", () => {

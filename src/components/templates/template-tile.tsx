@@ -30,7 +30,16 @@ import type { DemoDocumentTemplate } from "@/lib/document-templates";
 import { cn } from "@/lib/utils";
 
 const TEMPLATE_ICONS: Record<string, React.ElementType> = {
+  "supplier-control-procedure": BookCheck,
+  "supplier-risk-classification": AlertTriangle,
+  "approved-supplier-list": ListChecks,
   "vendor-qualification": Shield,
+  "vendor-qualification-report": FileCheck,
+  "supplier-audit-report": FileSearch,
+  "quality-agreement": FileText,
+  "purchase-order-purchasing-data": ClipboardList,
+  "incoming-inspection-coc-coa": CheckSquare,
+  "supplier-corrective-action-request": AlertCircle,
   "user-requirements": ClipboardList,
   "design-specs": FileText,
   "cad-models": Grid3X3,
