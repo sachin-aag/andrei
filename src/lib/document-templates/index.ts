@@ -16,6 +16,7 @@ export {
   DEMO_TEMPLATE_SECTION_IDS,
   DEMO_TEMPLATE_SECTIONS,
   demoTemplateById,
+  demoTemplateHasPlaceholderWordExport,
   demoTemplateMetadata,
   demoTemplateTitleFromMetadata,
   listedDemoTemplates,
