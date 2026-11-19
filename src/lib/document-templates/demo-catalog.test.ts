@@ -28,13 +28,31 @@ describe("demo document templates", () => {
     expect(isDocumentTemplatesEnabled(XPER_PACK)).toBe(false);
   });
 
-  it("lists four gallery sections", () => {
+  it("lists five gallery sections", () => {
     expect(DEMO_TEMPLATE_SECTIONS.map((section) => section.id)).toEqual([
       "supply_chain",
       "design",
       "operations",
       "quality",
+      "ma_integration",
     ]);
+  });
+
+  it("lists M&A Integration templates in order as generic documents", () => {
+    const ma = listedDemoTemplatesInSection("ma_integration");
+    expect(ma.map((t) => t.id)).toEqual([
+      "document-template-transfer",
+      "dhf-dmr-transfer",
+      "risk-file-transfer",
+      "eco-migration",
+      "supplier-vendor-transfer",
+      "quality-agreement-transfer",
+      "equipment-qualification-transfer",
+      "process-test-method-transfer",
+      "part-bom-migration",
+      "complaint-capa-migration",
+    ]);
+    expect(ma.every((t) => t.documentType === "generic_document")).toBe(true);
   });
 
   it("hides the blank document from section grids", () => {

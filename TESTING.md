@@ -180,7 +180,7 @@ Engineer steps include Document \| Agent chrome, Analytics, and the Document vau
 
 | Test | What it verifies |
 |------|------------------|
-| opens the template gallery from New Report | Demo New Report → `/templates` with Supply Chain (SOP through SCAR), Design, Operations, and Quality open |
+| opens the template gallery from New Report | Demo New Report → `/templates` with Supply Chain (SOP through SCAR), Design, Operations, Quality, and M&A Integration open |
 | opens create dialog from a template tile | Deviations dialog fields and actions |
 | shows toast when deviation number is empty | Sonner validation |
 | shows toast for duplicate deviation number | Duplicate guard |

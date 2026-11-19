@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Factory, Package, PenTool, ShieldCheck } from "lucide-react";
+import { Combine, Factory, Package, PenTool, ShieldCheck } from "lucide-react";
 import { CreateReportDialog } from "@/components/dashboard/create-report-button";
 import { TemplateTile } from "@/components/templates/template-tile";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ const SECTION_ICONS = {
   design: PenTool,
   operations: Factory,
   quality: ShieldCheck,
+  ma_integration: Combine,
 } as const;
 
 export function TemplateGallery({
