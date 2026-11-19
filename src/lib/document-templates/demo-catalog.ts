@@ -84,6 +84,114 @@ export function templatePreviewLines(
   return [template.title];
 }
 
+const SUPPLIER_CONTROL_PROCEDURE: DemoDocumentTemplate = {
+  id: "supplier-control-procedure",
+  section: "supply_chain",
+  title: "Supplier Control Procedure",
+  description:
+    "Foundation SOP that defines how every other supply-chain document is used.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. SOP-SC-001",
+  outlineMarkdown: `# Supplier Control Procedure
+
+## 1. Purpose
+Define the process for selecting, qualifying, approving, monitoring, and disqualifying suppliers of materials, components, and services that affect product quality.
+
+## 2. Scope
+Applies to all purchased items and outsourced processes that can influence finished-product quality, safety, or regulatory compliance. Excludes general facilities services unless they touch product or controlled environments.
+
+## 3. Responsibilities
+- Purchasing / Supply Chain: issue POs with purchasing data; maintain the ASL
+- Quality: risk classification, qualification, audits, incoming inspection oversight, SCARs
+- Engineering: specifications, drawings, and technical acceptance criteria
+- Receiving: execute incoming inspection and hold nonconforming lots
+
+## 4. Related documents
+Map this SOP to the Approved Supplier List, Vendor Qualification / Report, Supplier Risk Classification, Supplier Audit Report, Quality Agreement, Purchase Order / purchasing data, Incoming Inspection with CoC/CoA, and SCAR forms.
+
+## 5. Supplier lifecycle
+Selection → risk classification → qualification → ASL listing → purchasing → incoming verification → ongoing monitoring → requalification or disqualification.
+
+## 6. Risk-based controls
+Criticality drives audit frequency, inspection level, quality-agreement requirement, and whether a full vendor qualification report is mandatory before first purchase.
+
+## 7. Records and retention
+List required records (ASL, qualification files, audit reports, CoC/CoA, SCARs) and retention periods aligned to the site quality system.
+`,
+};
+
+const SUPPLIER_RISK_CLASSIFICATION: DemoDocumentTemplate = {
+  id: "supplier-risk-classification",
+  section: "supply_chain",
+  title: "Supplier Risk Classification",
+  description:
+    "Criticality assessment that drives audit frequency, inspection levels, and agreement requirements.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. SRC-2026-001",
+  outlineMarkdown: `# Supplier Risk Classification / Criticality Assessment
+
+## 1. Purpose
+Classify each supplier and purchased item by criticality so audit frequency, incoming inspection depth, and quality-agreement requirements are risk-based.
+
+## 2. Supplier and item under assessment
+Legal name, site, material / component / service, and intended use in the product or process.
+
+## 3. Classification criteria
+Score impact on product quality / safety, regulatory exposure, sole-source status, complexity of the process, and history of nonconformances.
+
+## 4. Criticality rating
+
+| Factor | Score (1–5) | Rationale |
+| --- | --- | --- |
+| Quality / safety impact |  |  |
+| Regulatory / patient risk |  |  |
+| Supply criticality |  |  |
+| Process complexity |  |  |
+| Performance history |  |  |
+
+Overall class: Critical / Major / Minor.
+
+## 5. Control requirements by class
+State required audit interval, incoming inspection level, CoC/CoA expectations, and whether a quality agreement is mandatory.
+
+## 6. Approval
+Quality and supply-chain sign-off of the assigned class and the resulting control plan.
+`,
+};
+
+const APPROVED_SUPPLIER_LIST: DemoDocumentTemplate = {
+  id: "approved-supplier-list",
+  section: "supply_chain",
+  title: "Approved Supplier List",
+  description:
+    "Controlled record of who is qualified for what materials, components, or services.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. ASL-001",
+  outlineMarkdown: `# Approved Supplier List (ASL)
+
+## 1. Purpose
+Maintain the controlled list of suppliers approved to supply specific materials, components, or services.
+
+## 2. ASL entry fields
+
+| Supplier | Site | Item / service | Spec / drawing rev | Criticality | Qualification status | Quality agreement | Next audit | Restrictions |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |  |  |  |
+
+## 3. Status definitions
+Approved, Conditional (with named restrictions), Suspended, and Disqualified — and which statuses may receive purchase orders.
+
+## 4. Change control
+How additions, scope expansions, suspensions, and removals are requested, justified, and approved.
+
+## 5. Review cadence
+Periodic ASL review (e.g. annual) against SCAR trends, audit results, and incoming inspection performance.
+
+## 6. Approval
+Quality and supply-chain approval of this ASL revision.
+`,
+};
+
 const VENDOR_QUALIFICATION: DemoDocumentTemplate = {
   id: "vendor-qualification",
   section: "supply_chain",
@@ -117,6 +225,207 @@ Overall grade (Excellent / Good / Fair / Poor) and remaining actions before appr
 
 ## 7. Approval
 Names, roles, and dates for engineering, quality, and supply chain.
+`,
+};
+
+const VENDOR_QUALIFICATION_REPORT: DemoDocumentTemplate = {
+  id: "vendor-qualification-report",
+  section: "supply_chain",
+  title: "Vendor Qualification Report",
+  description:
+    "Documented rationale and evidence for approving a supplier before first purchase.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. VQR-2026-001",
+  outlineMarkdown: `# Vendor Qualification Report
+
+## 1. Purpose
+Document the evaluation evidence and decision to approve (or reject) a supplier before first purchase of the scoped item or service.
+
+## 2. Scope
+Supplier, site, material / component / service, specification revision, and proposed ASL status.
+
+## 3. Evaluation inputs
+Questionnaire responses, certificates, prior audit reports, sample / first-article results, and risk classification.
+
+## 4. Findings and gaps
+Open issues, required CAPAs or SCARs before approval, and any conditional restrictions.
+
+## 5. Decision
+Approved / Conditional / Rejected, with the rationale and effective date for purchasing.
+
+## 6. Follow-up
+Actions that must complete before unrestricted ASL listing, with owners and due dates.
+
+## 7. Approval
+Quality, engineering, and supply-chain signatures.
+`,
+};
+
+const SUPPLIER_AUDIT_REPORT: DemoDocumentTemplate = {
+  id: "supplier-audit-report",
+  section: "supply_chain",
+  title: "Supplier Audit Report",
+  description:
+    "Objective evidence from a supplier audit, including findings and CAPA follow-up.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. SAR-2026-001",
+  outlineMarkdown: `# Supplier Audit Report
+
+## 1. Purpose
+Record objective evidence from an on-site or remote supplier audit of a critical (or otherwise scheduled) supplier.
+
+## 2. Audit details
+Supplier, site, audit dates, audit type (initial / surveillance / for-cause), lead auditor, and standards / procedures audited against.
+
+## 3. Scope and agenda
+Processes, products, and quality-system elements covered; areas deferred and why.
+
+## 4. Observations and findings
+
+| ID | Clause / process | Finding | Severity (Critical / Major / Minor / Observation) | Evidence |
+| --- | --- | --- | --- | --- |
+|  |  |  |  |  |
+
+## 5. CAPA follow-up
+Supplier response due date, acceptance of proposed CAPAs, and verification plan for effectiveness.
+
+## 6. Overall conclusion
+Acceptable / Conditionally acceptable / Unacceptable, and impact on ASL status or purchasing holds.
+
+## 7. Distribution and approval
+Audit team and quality approval; copy to supply chain and the supplier as applicable.
+`,
+};
+
+const QUALITY_AGREEMENT: DemoDocumentTemplate = {
+  id: "quality-agreement",
+  section: "supply_chain",
+  title: "Quality Agreement",
+  description:
+    "Defines responsibilities for change notification, nonconformances, audits, and record access.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. QA-2026-001",
+  outlineMarkdown: `# Quality Agreement
+
+## 1. Parties and purpose
+Name the manufacturer and supplier, and state that this agreement allocates quality responsibilities for the listed products or services.
+
+## 2. Scope of supply
+Products, materials, or services covered, including applicable specifications and sites of manufacture.
+
+## 3. Change notification
+What changes require prior written notice or approval (process, site, materials, test methods, subcontractors) and the notice period.
+
+## 4. Nonconformances and complaints
+How deviations, OOS results, and customer complaints are reported, investigated, and closed; right to reject or return.
+
+## 5. Audits and right of access
+Audit rights for the manufacturer (and competent authorities), frequency expectations, and access to relevant quality records.
+
+## 6. Documentation and retention
+Certificates of analysis / conformance, batch records access, retention periods, and language of records.
+
+## 7. Term, amendments, and signatures
+Effective date, review cycle, amendment process, and authorized signatories for both parties.
+`,
+};
+
+const PURCHASE_ORDER_PURCHASING_DATA: DemoDocumentTemplate = {
+  id: "purchase-order-purchasing-data",
+  section: "supply_chain",
+  title: "Purchase Order with Purchasing Data",
+  description:
+    "Where requirements legally reach the supplier — specs, drawings, and revision control.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. PO-2026-001",
+  outlineMarkdown: `# Purchase Order with Purchasing Data
+
+## 1. Purpose
+Capture the purchasing data that must appear on (or be referenced by) the purchase order so quality requirements legally reach the supplier.
+
+## 2. Order identity
+PO number, buyer, supplier ASL status, ship-to, need date, and related quality agreement reference.
+
+## 3. Line items and purchasing data
+
+| Line | Part / description | Spec / drawing | Revision | Qty | Inspection / CoC/CoA required | Special instructions |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |  |
+
+## 4. Quality requirements
+Incoming inspection level, certificate requirements, shelf-life / remaining life, packaging, and labeling.
+
+## 5. Change and revision control
+Supplier must manufacture and certify to the listed revision; unauthorized substitutions are not accepted.
+
+## 6. Acceptance
+Buyer and quality confirmation that purchasing data is complete before PO release.
+`,
+};
+
+const INCOMING_INSPECTION_COC_COA: DemoDocumentTemplate = {
+  id: "incoming-inspection-coc-coa",
+  section: "supply_chain",
+  title: "Incoming Inspection with CoC/CoA",
+  description:
+    "Lot-by-lot evidence that received product meets specification, with CoC/CoA.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. IIR-2026-001",
+  outlineMarkdown: `# Incoming Inspection Records with CoC/CoA
+
+## 1. Purpose
+Document lot-by-lot verification that received material or components meet specification, including review of the supplier Certificate of Conformance / Analysis.
+
+## 2. Receipt identity
+PO number, supplier, part number, revision, lot / batch, quantity received, and date received.
+
+## 3. Certificate review
+CoC / CoA document number, attributes certified, and whether results meet the purchasing specification.
+
+## 4. Inspection plan and results
+
+| Characteristic | Method | Sample size | Spec limit | Result | Pass / Fail |
+| --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |
+
+## 5. Disposition
+Accept, Conditional accept (with hold notes), or Reject / quarantine — and SCAR / NCR references if failed.
+
+## 6. Sign-off
+Inspector and quality review signatures and dates.
+`,
+};
+
+const SUPPLIER_CORRECTIVE_ACTION_REQUEST: DemoDocumentTemplate = {
+  id: "supplier-corrective-action-request",
+  section: "supply_chain",
+  title: "Supplier Corrective Action Request",
+  description:
+    "Formal request for a supplier to investigate and correct a quality issue, with effectiveness follow-up.",
+  documentType: "generic_document",
+  documentNoPlaceholder: "e.g. SCAR-2026-001",
+  outlineMarkdown: `# Supplier Corrective Action Request (SCAR)
+
+## 1. Purpose
+Request that a supplier investigate a nonconformance or systemic quality issue and implement corrective action with evidence of effectiveness.
+
+## 2. Issue description
+What was found, where (incoming inspection, in-process, complaint), affected lots / POs, and severity.
+
+## 3. Containment
+Immediate actions required of the supplier (stop ship, sort, recall of WIP) and confirmation due date.
+
+## 4. Root cause
+Supplier investigation method and documented root cause; manufacturer review of adequacy.
+
+## 5. Corrective and preventive actions
+Actions, owners, target dates, and objective evidence to be submitted.
+
+## 6. Effectiveness check
+How and when effectiveness will be verified (e.g. next N lots, re-audit), and SCAR closure criteria.
+
+## 7. Closure
+Open / Closed / Escalated (ASL impact), with quality approval.
 `,
 };
 
@@ -1039,7 +1348,16 @@ export const BLANK_DOCUMENT_TEMPLATE: DemoDocumentTemplate = {
 };
 
 export const DEMO_DOCUMENT_TEMPLATES: readonly DemoDocumentTemplate[] = [
+  SUPPLIER_CONTROL_PROCEDURE,
+  SUPPLIER_RISK_CLASSIFICATION,
+  APPROVED_SUPPLIER_LIST,
   VENDOR_QUALIFICATION,
+  VENDOR_QUALIFICATION_REPORT,
+  SUPPLIER_AUDIT_REPORT,
+  QUALITY_AGREEMENT,
+  PURCHASE_ORDER_PURCHASING_DATA,
+  INCOMING_INSPECTION_COC_COA,
+  SUPPLIER_CORRECTIVE_ACTION_REQUEST,
   USER_REQUIREMENTS,
   DESIGN_SPECS,
   DFMEA,
