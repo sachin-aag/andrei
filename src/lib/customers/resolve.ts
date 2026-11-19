@@ -1,4 +1,4 @@
-export type CustomerId = "mj" | "demo" | "convergent" | "3xper";
+export type CustomerId = "mj" | "demo" | "convergent" | "3xper" | "ami";
 
 export type CustomerEnv = {
   ANDREI_CUSTOMER?: string;
@@ -13,13 +13,14 @@ function parseCustomerId(raw: string | undefined): CustomerId | undefined {
     value === "mj" ||
     value === "demo" ||
     value === "convergent" ||
-    value === "3xper"
+    value === "3xper" ||
+    value === "ami"
   ) {
     return value;
   }
   if (!value) return undefined;
   throw new Error(
-    `Invalid customer id "${raw}". Expected mj, demo, convergent, or 3xper (ANDREI_CUSTOMER / NEXT_PUBLIC_ANDREI_CUSTOMER).`
+    `Invalid customer id "${raw}". Expected mj, demo, convergent, 3xper, or ami (ANDREI_CUSTOMER / NEXT_PUBLIC_ANDREI_CUSTOMER).`
   );
 }
 
@@ -29,7 +30,8 @@ function parseDeployScope(raw: string | undefined): CustomerId | undefined {
     value === "mj" ||
     value === "demo" ||
     value === "convergent" ||
-    value === "3xper"
+    value === "3xper" ||
+    value === "ami"
   ) {
     return value;
   }

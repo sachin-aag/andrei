@@ -1,3 +1,4 @@
+import { attachDatabasePool } from "@vercel/functions";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import pg from "pg";
 
@@ -62,6 +63,9 @@ export function createDrizzleDb<TSchema extends Record<string, unknown>>(
     // Serverless: keep the pool tiny so warm instances don't exhaust Neon.
     max: isLocalDatabaseUrl(url) ? 10 : 1,
   });
+  if (process.env.VERCEL) {
+    attachDatabasePool(pgPool);
+  }
   return drizzlePg(pgPool, { schema });
 }
 

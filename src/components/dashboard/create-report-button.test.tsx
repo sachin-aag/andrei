@@ -53,6 +53,7 @@ import {
   getCustomerPack,
   MJ_PACK,
   XPER_PACK,
+  AMI_PACK,
 } from "@/lib/customers/packs";
 
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
@@ -391,6 +392,22 @@ describe("CreateReportDialog", () => {
     expect(
       screen.queryByText(/drop pdfs or word docs/i)
     ).not.toBeInTheDocument();
+  });
+
+  it("locks Investigation Report when Ami has only that type", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(AMI_PACK);
+    const user = userEvent.setup();
+    render(<DialogHarness />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+
+    expect(
+      screen.getByRole("heading", { name: /create investigation report/i })
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/document type/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Investigation Report")).toBeInTheDocument();
+    expect(screen.getByLabelText(/deviation number/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/existing report/i)).toBeInTheDocument();
   });
 
   it("shows a Word upload field for Cleaning Validation Protocol on 3xper", async () => {

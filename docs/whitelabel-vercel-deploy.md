@@ -4,15 +4,15 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 
 **Future stand-up:** follow [Add a customer](#add-a-customer). Do not copy a prior pack’s markdown file. Pack-only notes stay next to the pack (today: [3xper](./3xper-deployment.md)).
 
-| | MJ | Demo | Convergent | 3xper |
-|--|----|------|------------|-------|
-| **Vercel** | `andrei-v2` | `andrei-demo` | `andrei-convergent` | `andrei-3xper` |
-| **Git production branch** | `main` | `main` | `main` | `main` |
-| **Pack** | `mj` | `demo` | `convergent` | `3xper` |
-| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com | https://3xper.andreihealth.com |
-| **Neon** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) | `andrei-3xper` (`dark-salad-24878113`) |
-| **GCS_BUCKET** | `andrei-493614-attachments` (shared) | same shared bucket | same shared bucket | `andrei-493614-3xper-attachments` |
-| **What users see** | MJ criteria, MJ Word template, Word import, QRA + ELR, no DV, no conclusion | Andrei branding, investigation + DV + Document, Templates gallery | Convergent branding, Solea DV only | 3xper branding, vendor qualification only |
+| | MJ | Demo | Convergent | 3xper | Ami |
+|--|----|------|------------|-------|-----|
+| **Vercel** | `andrei-v2` | `andrei-demo` | `andrei-convergent` | `andrei-3xper` | `andrei-ami` |
+| **Git production branch** | `main` | `main` | `main` | `main` | `main` |
+| **Pack** | `mj` | `demo` | `convergent` | `3xper` | `ami` |
+| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com | https://3xper.andreihealth.com | https://ami.andreihealth.com |
+| **Neon** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) | `andrei-3xper` (`dark-salad-24878113`) | `andrei-ami` (`wispy-bonus-55749532`) |
+| **GCS_BUCKET** | `andrei-493614-attachments` (shared) | same shared bucket | same shared bucket | `andrei-493614-3xper-attachments` | `andrei-493614-ami-attachments` |
+| **What users see** | MJ criteria, MJ Word template, Word import, QRA + ELR, no DV, no conclusion | Andrei branding, investigation + DV + Document, Templates gallery | Convergent branding, Solea DV only | 3xper branding, vendor qualification only | Ami branding, investigation only (MJ-based DMAIC Word, no conclusion) |
 
 Release valve: **the same git SHA on all Production deploys**. Pack env chooses the overlay. There is no long-lived product branch.
 
@@ -47,6 +47,7 @@ Set on **each** project → Settings → Environment Variables → Production, P
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
 | **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 | **andrei-3xper** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `3xper` |
+| **andrei-ami** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `ami` |
 
 **Neon preview branching:** keep **Create a branch for each preview deployment** **on** for every customer project. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle). When you add a pack, add its Neon project id to `CUSTOMER_NEON_PREVIEW_PROJECTS` in `src/lib/db/neon-preview-projects.ts` (GitHub `NEON_PROJECT_ID_{SLUG}` is an optional override, not required for cleanup).
 
@@ -231,6 +232,20 @@ MJ `promptVersion` is `mj-sop-dp-qa-008-v2`. Existing evaluations go stale on cu
 
 Keep Neon **Create a branch for each preview deployment** on. Convergent `promptVersion` is `convergent-dv-v5`.
 
+### andrei-ami (Production + Preview)
+
+Stood up with [Add a customer](#add-a-customer) (`slug=ami`). Manual dashboard steps: [ami-standup.md](./ami-standup.md). `promptVersion` is `ami-investigation-v1`. Investigation Report is the only enabled type.
+
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `ami` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `ami` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `ami` |
+| `DATABASE_URL` | Neon **andrei-ami** pooled URL |
+| `AUTH_URL` | `https://ami.andreihealth.com` (do not leave `https://andrei-ami.vercel.app`) |
+| Vertex / AI / Resend | **Link** team shared vars |
+| `GCS_BUCKET` | `andrei-493614-ami-attachments` (`infra/gcs` tenant `ami`) |
+
 ### andrei-3xper (Production + Preview)
 
 Stood up with [Add a customer](#add-a-customer) (`slug=3xper`). Pack/product notes: [3xper-deployment.md](./3xper-deployment.md). `promptVersion` is `3xper-vq-f04-v1`.
@@ -353,7 +368,7 @@ Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporar
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
-| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com` / `https://3xper.andreihealth.com`). Add that Origin to **that pack’s** GCS bucket CORS (`infra/gcs` `tenants` + `terraform apply`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
+| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com` / `https://3xper.andreihealth.com` / `https://ami.andreihealth.com`). Add that Origin to **that pack’s** GCS bucket CORS (`infra/gcs` `tenants` + `terraform apply`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
 | Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after setting `AUTH_URL`. |
 | `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |
 | AI Check stale on MJ day one | Expected `promptVersion` bump; re-run AI Check |

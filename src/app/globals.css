@@ -126,6 +126,34 @@ html[data-customer="3xper"] {
   --brand-900: #041a33;
 }
 
+/* Ami Lifesciences — orange #fa7618 / teal #24aeb1 from amilifesciences.com */
+html[data-customer="ami"] {
+  --foreground: #071c35;
+  --card-foreground: #071c35;
+  --popover-foreground: #071c35;
+  --primary: #fa7618;
+  --secondary: #fff7f0;
+  --secondary-foreground: #192436;
+  --muted: #fff7f0;
+  --muted-foreground: #5c6570;
+  --accent: #24aeb1;
+  --accent-foreground: #ffffff;
+  --border: #eadfd6;
+  --ring: #ff9a4d;
+
+  --brand: #fa7618;
+  --brand-50: #fff4ec;
+  --brand-100: #ffe4d1;
+  --brand-200: #ffc8a3;
+  --brand-300: #ffa66b;
+  --brand-400: #ff8a3d;
+  --brand-500: #fa7618;
+  --brand-600: #e05f0c;
+  --brand-700: #b3470a;
+  --brand-800: #192436;
+  --brand-900: #0c121c;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -41,10 +41,11 @@ export function CreateReportDialog({
   template = null,
 }: CreateReportDialogProps) {
   const availableTypes = listDocumentTypes();
+  const soleType = availableTypes.length === 1 ? availableTypes[0]! : null;
   const lockedType = template?.documentType ?? null;
   const [pickedDocumentType, setPickedDocumentType] = useState<
     DocumentType | ""
-  >("");
+  >(soleType?.key ?? "");
   const documentType = lockedType ?? pickedDocumentType;
   const [documentNo, setDocumentNo] = useState("");
   const [managerIds, setManagerIds] = useState<string[]>([]);
@@ -83,7 +84,7 @@ export function CreateReportDialog({
         : `Starts a new ${selectedType.label.toLowerCase()} as a draft.`;
 
   const resetForm = () => {
-    setPickedDocumentType("");
+    setPickedDocumentType(soleType?.key ?? "");
     setDocumentNo("");
     setManagerIds([]);
     setDraftFile(null);
@@ -281,6 +282,11 @@ export function CreateReportDialog({
               <div className="grid gap-1">
                 <Label>Template</Label>
                 <p className="text-sm">{template.title}</p>
+              </div>
+            ) : soleType ? (
+              <div className="grid gap-1">
+                <Label>Document type</Label>
+                <p className="text-sm">{soleType.label}</p>
               </div>
             ) : (
               <div className="grid gap-2">

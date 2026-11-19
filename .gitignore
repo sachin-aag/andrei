@@ -151,3 +151,4 @@ docs/sample_files/Investigation_Report_DS_*.docx
 .claude/settings.local.json
 .claude/*.doctor-backup
 .claude/**/*.doctor-backup
+.neon

@@ -58,8 +58,8 @@ export type CustomerPack = {
    * When true, document citations are numbered at the claim and parked at
    * the end of each section field. New edits that add a source citation keep
    * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
-   * Citations:. On for every pack (demo, MJ, Convergent). Generic (blank)
-   * documents also set the document-type flag. Enables the Export without
+   * Citations:. On for every pack. Generic (blank) documents also set the
+   * document-type flag. Enables the Export without
    * citations DOCX option (trailing citation blocks and matching markers
    * are dropped). There is no inline `[filename, p. N]` citation style.
    */
@@ -71,12 +71,12 @@ export type CustomerPack = {
   expertReviewEnabled: boolean;
   /**
    * Report Analytics tab (worksheet, sixpack, measurement scatter).
-   * On for demo, MJ, Convergent, and 3xper.
+   * On for every live pack.
    */
   statisticalAnalysisEnabled: boolean;
   /**
    * Primary-nav Insights dashboards (`/insights`). Demo only for now;
-   * MJ, Convergent, and 3xper hide the link and redirect the routes home.
+   * other packs hide the link and redirect the routes home.
    */
   insightsEnabled: boolean;
   /**
@@ -208,6 +208,7 @@ export const VQ_PROMPT_VERSION = "3xper-vq-f04-v1";
 export const QSR_PROMPT_VERSION = "3xper-qsr-f06-v3";
 export const CVP_PROMPT_VERSION = "3xper-cvp-f08-v5";
 export const FIR_PROMPT_VERSION = "mj-fir-sop-017-f01-r01-v1";
+export const AMI_PROMPT_VERSION = "ami-investigation-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
@@ -302,6 +303,57 @@ export const XPER_PACK: CustomerPack = {
   branding: XPER_BRANDING,
 };
 
+const AMI_BRANDING: CustomerBranding = {
+  productName: "Ami Lifesciences Pvt. Ltd.",
+  productNameShort: "Ami Lifesciences",
+  documentReviewTitle: "Ami Lifesciences — Investigation Report",
+  documentReviewDescription:
+    "AI document review and drafting for Ami Lifesciences investigation reports",
+  tagline: "API · Vadodara",
+  shellTagline: "Quality Investigations",
+  logoSrc: "/logo-ami.png",
+  logoWhiteSrc: "/logo-ami-white.png",
+  logoMarkSrc: "/logo-ami-mark.png",
+  logoAlt: "Ami Lifesciences logo",
+  logoLayout: "wordmark",
+  heroLogoSrc: "/logo-ami.png",
+  heroLogoOnWhite: true,
+  auditExportTitle: "Ami Lifesciences — Audit Trail Export",
+  passwordResetSubject: "Reset your password — Ami Lifesciences",
+  loginHeadline: "Investigation Reporting,\naccelerated.",
+  loginSubhead:
+    "Draft DMAIC deviation reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export.",
+  loginFooter: "Ami Lifesciences Pvt. Ltd.",
+  aiAttribution: "by Andrei",
+};
+
+/**
+ * Ami Lifesciences pilot. Investigation Report only — DMAIC Word chrome
+ * cloned from MJ's SOP/DP/QA/008 form, with Ami header/footer and no
+ * invented Ami SOP number. Shared investigation criteria (not MJ Emp. ID
+ * / F04 overlays). Conclusion stays hidden because the MJ-based template
+ * has no `{@conclusionNarrativeXml}` slot.
+ */
+export const AMI_PACK: CustomerPack = {
+  id: "ami",
+  enabledDocumentTypes: ["investigation_report"],
+  hiddenInvestigationSections: ["conclusion"],
+  investigationTemplateFile: "ami-investigation-report-template.docx",
+  promptVersion: AMI_PROMPT_VERSION,
+  evaluationSystemPrompt: COMMON_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: {},
+  criterionDescriptionOverrides: {},
+  wordImportEnabled: true,
+  citationsAtEndOfSection: true,
+  expertReviewEnabled: false,
+  statisticalAnalysisEnabled: true,
+  insightsEnabled: false,
+  documentTemplatesEnabled: false,
+  voiceInputLanguageCodes: VOICE_INPUT_ENGLISH_CODES,
+  unsupportedFactPolicy: "block",
+  branding: AMI_BRANDING,
+};
+
 export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerPack {
   switch (id) {
     case "demo":
@@ -312,6 +364,8 @@ export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerP
       return CONVERGENT_PACK;
     case "3xper":
       return XPER_PACK;
+    case "ami":
+      return AMI_PACK;
     default: {
       const exhaustive: never = id;
       return exhaustive;

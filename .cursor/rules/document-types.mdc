@@ -16,13 +16,14 @@ alwaysApply: false
 
 # Document types
 
-Reports are `investigation_report`, `failure_investigation_report` (MJ
+Reports are `investigation_report` (demo, MJ, Ami), `failure_investigation_report` (MJ
 Investigation Report DS, `fir_*`), `design_verification`,
 `mechanical_design_verification`, `quality_risk_assessment`,
 `equipment_lifecycle_report`, `generic_document` (demo pack only), or
 `vendor_qualification` / `qualification_summary_report` /
 `cleaning_verification_protocol` (3xper pack only; user-facing label
-**Cleaning Validation Protocol**, three consecutive batches). The registry is
+**Cleaning Validation Protocol**, three consecutive batches). Ami enables
+investigation only (MJ-based DMAIC Word, shared criteria, no conclusion). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 

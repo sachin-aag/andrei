@@ -22,7 +22,7 @@ vi.mock("next/image", () => ({
 import { BrandLogo } from "./brand-logo";
 import { BrandLockup } from "./brand-lockup";
 
-function setCustomer(id: "demo" | "mj" | "convergent" | "3xper") {
+function setCustomer(id: "demo" | "mj" | "convergent" | "3xper" | "ami") {
   vi.stubEnv("ANDREI_CUSTOMER", id);
   vi.stubEnv("NEXT_PUBLIC_ANDREI_CUSTOMER", id);
   vi.stubEnv("ANDREI_VERCEL_DEPLOY_SCOPE", id);
@@ -73,6 +73,15 @@ describe("BrandLogo", () => {
     render(<BrandLogo />);
     const img = screen.getByRole("img", { name: "3xper logo" });
     expect(img).toHaveAttribute("src", "/logo-3xper.png");
+    expect(img).toHaveAttribute("width", "176");
+    expect(img).toHaveAttribute("height", "40");
+  });
+
+  it("renders a wide Ami Lifesciences wordmark", () => {
+    setCustomer("ami");
+    render(<BrandLogo />);
+    const img = screen.getByRole("img", { name: "Ami Lifesciences logo" });
+    expect(img).toHaveAttribute("src", "/logo-ami.png");
     expect(img).toHaveAttribute("width", "176");
     expect(img).toHaveAttribute("height", "40");
   });

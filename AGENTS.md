@@ -22,11 +22,11 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, and 3xper Innoventure — **ten** `documentType`s (pack-gated):
+Pharmaceutical quality documents for M.J. Biopharm, Convergent Dental, 3xper Innoventure, and Ami Lifesciences — **ten** `documentType`s (pack-gated):
 
 | `documentType` | Noun | Packs | Sections |
 |----------------|------|-------|----------|
-| `investigation_report` | deviation (MJ: Investigation Report DP) | demo, MJ | DMAIC + conclusion + attachments/approvals |
+| `investigation_report` | deviation (MJ: Investigation Report DP) | demo, MJ, Ami | DMAIC + conclusion + attachments/approvals (MJ and Ami hide conclusion) |
 | `failure_investigation_report` | Investigation Report DS | MJ | SOP/QA/017-F01 (`fir_*` keys); not DMAIC |
 | `design_verification` | design verification | demo, Convergent | demo: cover page + 10 sections; Convergent: 9 Solea DV sections |
 | `mechanical_design_verification` | mechanical DV | Convergent | 14-section Solea mechanical DV |
@@ -131,7 +131,7 @@ Neon HTTP cannot `db.transaction()` (ingest + folder moves).
 Local default is **demo** (Andrei branding, design verification, conclusion).
 Set both `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same
 value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set.
-See `docs/whitelabel-vercel-deploy.md` (new pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer); 3xper product notes: `docs/3xper-deployment.md`).
+See `docs/whitelabel-vercel-deploy.md` (new pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer); 3xper product notes: `docs/3xper-deployment.md`; Ami stand-up: `docs/ami-standup.md`).
 
 ```bash
 ANDREI_CUSTOMER=mj

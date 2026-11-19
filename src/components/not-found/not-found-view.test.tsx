@@ -21,7 +21,7 @@ vi.mock("next/image", () => ({
 
 import { NotFoundView } from "./not-found-view";
 
-function setCustomer(id: "demo" | "mj" | "convergent" | "3xper") {
+function setCustomer(id: "demo" | "mj" | "convergent" | "3xper" | "ami") {
   vi.stubEnv("ANDREI_CUSTOMER", id);
   vi.stubEnv("NEXT_PUBLIC_ANDREI_CUSTOMER", id);
   vi.stubEnv("ANDREI_VERCEL_DEPLOY_SCOPE", id);

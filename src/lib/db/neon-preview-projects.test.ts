@@ -8,13 +8,19 @@ import {
 describe("CUSTOMER_NEON_PREVIEW_PROJECTS", () => {
   it("includes 3xper with the production Neon project id", () => {
     expect(CUSTOMER_NEON_PREVIEW_PROJECTS.map((project) => project.label)).toEqual(
-      ["mj", "demo", "convergent", "3xper"]
+      ["mj", "demo", "convergent", "3xper", "ami"]
     );
     expect(
       CUSTOMER_NEON_PREVIEW_PROJECTS.find((project) => project.label === "3xper")
     ).toMatchObject({
       id: "dark-salad-24878113",
       envVar: "NEON_PROJECT_ID_3XPER",
+    });
+    expect(
+      CUSTOMER_NEON_PREVIEW_PROJECTS.find((project) => project.label === "ami")
+    ).toMatchObject({
+      id: "wispy-bonus-55749532",
+      envVar: "NEON_PROJECT_ID_AMI",
     });
   });
 });
@@ -34,6 +40,7 @@ describe("resolveNeonPreviewProjectIds", () => {
       { label: "demo", id: "bold-field-45608643" },
       { label: "convergent", id: "cold-thunder-36255681" },
       { label: "3xper", id: "dark-salad-24878113" },
+      { label: "ami", id: "wispy-bonus-55749532" },
     ]);
   });
 
