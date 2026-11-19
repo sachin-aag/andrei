@@ -48,7 +48,13 @@ test.describe("create report", () => {
       page.getByRole("heading", { name: /^Quality$/i })
     ).toBeVisible();
     await expect(
+      page.getByRole("button", { name: /^Supplier Control Procedure$/i })
+    ).toBeVisible();
+    await expect(
       page.getByRole("button", { name: /^Vendor Qualification$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Supplier Corrective Action Request$/i })
     ).toBeVisible();
   });
 
