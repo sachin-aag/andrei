@@ -802,6 +802,16 @@ export function listedDemoTemplatesInSection(
   return listedDemoTemplates().filter((template) => template.section === section);
 }
 
+/**
+ * Dedicated Word forms exist only for investigation (Deviations) and design
+ * verification. Every other gallery template is a generic-document outline.
+ */
+export function demoTemplateHasPlaceholderWordExport(
+  template: Pick<DemoDocumentTemplate, "documentType">
+): boolean {
+  return template.documentType === "generic_document";
+}
+
 export type DemoTemplateMetadata = {
   demoTemplateId: string;
   demoTemplateTitle: string;

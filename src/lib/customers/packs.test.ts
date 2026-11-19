@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import { getInvestigationCriteriaBySection } from "@/lib/ai/criteria";
@@ -65,6 +66,15 @@ describe("customer packs (demo)", () => {
     ]);
     expect(isDocumentTypeEnabled("design_verification")).toBe(true);
     expect(isDocumentTypeEnabled("generic_document")).toBe(true);
+  });
+
+  it("ships a Word template for every demo document type", () => {
+    for (const def of listDocumentTypes()) {
+      expect(
+        fs.existsSync(def.export.templatePath),
+        `${def.key} template missing: ${def.export.templatePath}`
+      ).toBe(true);
+    }
   });
 
   it("describes investigation, design verification, and documents on the demo dashboard", () => {
