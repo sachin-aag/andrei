@@ -48,7 +48,16 @@ test.describe("create report", () => {
       page.getByRole("heading", { name: /^Quality$/i })
     ).toBeVisible();
     await expect(
+      page.getByRole("heading", { name: /^M&A Integration$/i })
+    ).toBeVisible();
+    await expect(
       page.getByRole("button", { name: /^Vendor Qualification$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Document & Template Transfer$/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Complaint & CAPA Migration$/i })
     ).toBeVisible();
   });
 
