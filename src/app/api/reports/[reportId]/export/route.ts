@@ -18,6 +18,7 @@ import {
 } from "@/lib/reports/managers";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 function requestedOmitCitations(req: Request): boolean {
   const value = new URL(req.url).searchParams.get("omitCitations");

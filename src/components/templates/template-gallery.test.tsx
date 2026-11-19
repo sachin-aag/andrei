@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TemplateGallery } from "@/components/templates/template-gallery";
 import {
   DEMO_TEMPLATE_SECTIONS,
+  demoTemplateHasPlaceholderWordExport,
   listedDemoTemplatesInSection,
 } from "@/lib/document-templates";
 
@@ -37,6 +38,42 @@ describe("TemplateGallery", () => {
         expect(
           screen.getByRole("button", { name: template.title })
         ).toBeInTheDocument();
+      }
+    }
+  });
+
+  it("marks gallery outlines that do not have a Word form", () => {
+    render(<TemplateGallery managers={managers} />);
+
+    const vendor = screen.getByRole("button", { name: /^Vendor Qualification$/i });
+    expect(
+      within(vendor).getByRole("img", { name: "Placeholder" })
+    ).toBeInTheDocument();
+
+    const designVerification = screen.getByRole("button", {
+      name: /^Design Verification Testing$/i,
+    });
+    expect(
+      within(designVerification).queryByRole("img", { name: "Placeholder" })
+    ).toBeNull();
+
+    const deviations = screen.getByRole("button", { name: /^Deviations$/i });
+    expect(
+      within(deviations).queryByRole("img", { name: "Placeholder" })
+    ).toBeNull();
+
+    for (const section of DEMO_TEMPLATE_SECTIONS) {
+      for (const template of listedDemoTemplatesInSection(section.id)) {
+        const tile = screen.getByRole("button", { name: template.title });
+        if (demoTemplateHasPlaceholderWordExport(template)) {
+          expect(
+            within(tile).getByRole("img", { name: "Placeholder" })
+          ).toBeInTheDocument();
+        } else {
+          expect(
+            within(tile).queryByRole("img", { name: "Placeholder" })
+          ).toBeNull();
+        }
       }
     }
   });

@@ -24,7 +24,11 @@ import {
   Shield,
   Stethoscope,
 } from "lucide-react";
-import type { DemoDocumentTemplate } from "@/lib/document-templates";
+import { PlaceholderHint } from "@/components/templates/placeholder-hint";
+import {
+  demoTemplateHasPlaceholderWordExport,
+  type DemoDocumentTemplate,
+} from "@/lib/document-templates";
 import { cn } from "@/lib/utils";
 
 const TEMPLATE_ICONS: Record<string, React.ElementType> = {
@@ -63,6 +67,7 @@ export function TemplateTile({
   onSelect: (template: DemoDocumentTemplate) => void;
 }) {
   const Icon = TEMPLATE_ICONS[template.id] ?? FallbackIcon;
+  const placeholder = demoTemplateHasPlaceholderWordExport(template);
 
   return (
     <button
@@ -70,11 +75,14 @@ export function TemplateTile({
       aria-label={template.title}
       onClick={() => onSelect(template)}
       className={cn(
-        "group flex flex-col items-center justify-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-5 text-center transition-colors",
+        "group relative flex flex-col items-center justify-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-5 text-center transition-colors",
         "hover:border-[var(--brand-500)] hover:bg-[var(--secondary)]",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
       )}
     >
+      {placeholder ? (
+        <PlaceholderHint className="absolute right-1.5 top-1.5" />
+      ) : null}
       <Icon
         className="size-7 shrink-0 text-[var(--foreground)] opacity-75 transition-opacity group-hover:opacity-100"
         aria-hidden="true"
