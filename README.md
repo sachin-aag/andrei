@@ -43,8 +43,9 @@ Which types and sections appear is a **customer pack** decision, not a feature f
 | `mj` | `ANDREI_CUSTOMER=mj` | MJ branding, SOP/DP/QA/008 criteria and Word template, Word import, investigation only (no conclusion, no design verification) |
 | `convergent` | `ANDREI_CUSTOMER=convergent` | Convergent Dental branding, design verification only (9-section Solea DV template) |
 | `3xper` | `ANDREI_CUSTOMER=3xper` | 3xper Innoventure branding, vendor qualification only (QAD-SOP-MS-001-F04) |
+| `ami` | `ANDREI_CUSTOMER=ami` | Ami Lifesciences branding, investigation only (MJ-based DMAIC Word template, no conclusion) |
 
-Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Live projects and the stand-up checklist: [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md). 3xper product notes: [docs/3xper-deployment.md](docs/3xper-deployment.md).
+Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Live projects and the stand-up checklist: [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md). 3xper product notes: [docs/3xper-deployment.md](docs/3xper-deployment.md). Ami stand-up: [docs/ami-standup.md](docs/ami-standup.md).
 
 ---
 
@@ -105,6 +106,7 @@ ANDREI_CUSTOMER=mj
 NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 # or: ANDREI_CUSTOMER=convergent and NEXT_PUBLIC_ANDREI_CUSTOMER=convergent
 # or: ANDREI_CUSTOMER=3xper and NEXT_PUBLIC_ANDREI_CUSTOMER=3xper
+# or: ANDREI_CUSTOMER=ami and NEXT_PUBLIC_ANDREI_CUSTOMER=ami
 ```
 
 ---
@@ -133,7 +135,7 @@ Copy `.env.example` and fill `.env.local`. The important ones:
 | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | AI Check, suggestions, chat. |
 | `GOOGLE_VERTEX_PROJECT` | **Required** for PDF/DOCX extract and ingest embeddings (CSV/XLSX parse locally). Pair with WIF on Vercel. |
 | `GCS_BUCKET` | Production attachment bytes (one bucket per pack on Vercel; see [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer)). |
-| `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo`, `mj`, `convergent`, or `3xper`). |
+| `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo`, `mj`, `convergent`, `3xper`, or `ami`). |
 | `SITE_ACCESS_PASSWORD` | Optional site-wide gate at `/unlock`. Unset = disabled. |
 
 **Never set `ALLOW_TEST_*` on Vercel.** Playwright injects those locally (`ALLOW_TEST_LOGIN`, skip-eval/suggest, stub ingest/chat, local attachment storage).

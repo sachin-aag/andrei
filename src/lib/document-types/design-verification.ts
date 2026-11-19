@@ -601,6 +601,7 @@ export function buildDesignVerificationDefinition(
     case "demo":
     case "mj":
     case "3xper":
+    case "ami":
       return defaultDesignVerificationDefinition;
     default: {
       const exhaustive: never = pack.id;

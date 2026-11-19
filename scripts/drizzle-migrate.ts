@@ -9,6 +9,7 @@ import {
   databaseHost,
   handleDatabaseScriptAuthFailure,
   loadDatabaseUrlOrExit,
+  resolveMigrationDatabaseUrlFromEnv,
 } from "@/lib/db/run-database-script";
 import { runPendingMigrations } from "@/lib/db/run-pending-migrations";
 
@@ -24,7 +25,7 @@ if (!process.env.DATABASE_URL) {
   }
 }
 
-const url = loadDatabaseUrlOrExit();
+const url = resolveMigrationDatabaseUrlFromEnv() ?? loadDatabaseUrlOrExit();
 
 async function main() {
   const dbUrl = url;

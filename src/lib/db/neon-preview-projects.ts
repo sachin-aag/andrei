@@ -29,6 +29,11 @@ export const CUSTOMER_NEON_PREVIEW_PROJECTS = [
     id: "dark-salad-24878113",
     envVar: "NEON_PROJECT_ID_3XPER",
   },
+  {
+    label: "ami",
+    id: "wispy-bonus-55749532",
+    envVar: "NEON_PROJECT_ID_AMI",
+  },
 ] as const;
 
 export type NeonPreviewProject = {

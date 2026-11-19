@@ -1,6 +1,6 @@
 # Neon + Vercel integration setup
 
-**Customer projects:** every pack Vercel app (`andrei-v2`, `andrei-demo`, `andrei-convergent`, `andrei-3xper`, and each new `andrei-{slug}`) keeps **Create a branch for each preview deployment** **on**. Each git ref gets an isolated Neon `preview/<git-branch>` database. Production stays on the project's default Neon branch. New pack: [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer).
+**Customer projects:** every pack Vercel app (`andrei-v2`, `andrei-demo`, `andrei-convergent`, `andrei-3xper`, `andrei-ami`, and each new `andrei-{slug}`) keeps **Create a branch for each preview deployment** **on**. Each git ref gets an isolated Neon `preview/<git-branch>` database. Production stays on the project's default Neon branch. New pack: [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer). Ami: [ami-standup.md](./ami-standup.md).
 
 A leftover password from a deleted preview compute fails `vercel:build` with `28P01`. Delete that Neon `preview/…` branch and redeploy so Neon injects a fresh URL. Do not turn preview branching off, and do not hand-edit Neon-logo `DATABASE_URL` rows.
 
@@ -25,6 +25,7 @@ Every git ref builds on **every** customer Vercel project, so each ref can creat
 | `NEON_PROJECT_ID_DEMO` | Variable (optional override) | `bold-field-45608643` |
 | `NEON_PROJECT_ID_CONVERGENT` | Variable (optional override) | `cold-thunder-36255681` |
 | `NEON_PROJECT_ID_3XPER` | Variable (optional override) | `dark-salad-24878113` |
+| `NEON_PROJECT_ID_AMI` | Variable (optional override) | `wispy-bonus-55749532` |
 
 A fifth pack: add the Neon project id to `CUSTOMER_NEON_PREVIEW_PROJECTS` (see [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer)). GitHub `NEON_PROJECT_ID_*` vars override those defaults when set; they are not required for cleanup to run.
 

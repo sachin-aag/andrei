@@ -6,6 +6,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 - Demo: `https://demo.andreihealth.com`
 - Convergent: `https://convergent.andreihealth.com`
 - 3xper: `https://3xper.andreihealth.com`
+- Ami: `https://ami.andreihealth.com`
 
 Successful logins from a non-`@andreihealth.com` address also email `sachin@andreihealth.com` and `aditya@andreihealth.com` (skipped when `ALLOW_TEST_LOGIN` is on).
 

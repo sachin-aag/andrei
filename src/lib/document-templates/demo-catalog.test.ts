@@ -4,6 +4,7 @@ import {
   MJ_PACK,
   CONVERGENT_PACK,
   XPER_PACK,
+  AMI_PACK,
 } from "@/lib/customers/packs";
 import {
   BLANK_DOCUMENT_TEMPLATE,
@@ -26,6 +27,7 @@ describe("demo document templates", () => {
     expect(isDocumentTemplatesEnabled(MJ_PACK)).toBe(false);
     expect(isDocumentTemplatesEnabled(CONVERGENT_PACK)).toBe(false);
     expect(isDocumentTemplatesEnabled(XPER_PACK)).toBe(false);
+    expect(isDocumentTemplatesEnabled(AMI_PACK)).toBe(false);
   });
 
   it("lists four gallery sections", () => {

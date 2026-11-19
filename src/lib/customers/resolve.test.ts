@@ -63,4 +63,8 @@ describe("resolveCustomerId", () => {
   it("accepts 3xper as a customer id", () => {
     expect(resolveCustomerId({ ANDREI_CUSTOMER: "3xper" })).toBe("3xper");
   });
+
+  it("accepts ami as a customer id", () => {
+    expect(resolveCustomerId({ ANDREI_CUSTOMER: "ami" })).toBe("ami");
+  });
 });

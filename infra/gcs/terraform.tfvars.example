@@ -26,6 +26,13 @@ tenants = {
       "http://localhost:3000",
     ]
   }
+  ami = {
+    cors_origins = [
+      "https://ami.andreihealth.com",
+      "https://andrei-ami.vercel.app",
+      "http://localhost:3000",
+    ]
+  }
 }
 
 # staging_temp_age_days = 7

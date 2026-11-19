@@ -17,8 +17,9 @@ WIF trust (`GCP_WIF_AUDIENCE`, OIDC) is **not** managed here — that already ex
 |-----|--------|----------------|
 | `shared` | `andrei-493614-attachments` (existing; do not rename) | `andrei-v2`, `andrei-demo`, `andrei-convergent` |
 | `3xper` | `andrei-493614-3xper-attachments` | `andrei-3xper` |
+| `ami` | `andrei-493614-ami-attachments` | `andrei-ami` |
 
-A fifth customer is a new `tenants` map entry + `terraform apply` + that project's `GCS_BUCKET`. That is step 6 of [Add a customer](../../docs/whitelabel-vercel-deploy.md#add-a-customer). Do not add their Origin to the shared bucket.
+A further customer is a new `tenants` map entry + `terraform apply` + that project's `GCS_BUCKET`. That is step 6 of [Add a customer](../../docs/whitelabel-vercel-deploy.md#add-a-customer). Do not add their Origin to the shared bucket.
 
 ## Prerequisites
 
@@ -70,11 +71,12 @@ The rest of stand-up (Vercel, Neon, auth, shared env, domain) is [Add a customer
 
 ## CORS
 
-GCS CORS origins must be **exact** (no `*.vercel.app`). Terraform is the source of truth (`tenants.*.cors_origins`). `cors.json` / `cors-3xper.json` are gsutil snapshots of the same lists:
+GCS CORS origins must be **exact** (no `*.vercel.app`). Terraform is the source of truth (`tenants.*.cors_origins`). `cors.json` / `cors-3xper.json` / `cors-ami.json` are gsutil snapshots of the same lists:
 
 ```bash
 gsutil cors set cors.json gs://andrei-493614-attachments
 gsutil cors set cors-3xper.json gs://andrei-493614-3xper-attachments
+gsutil cors set cors-ami.json gs://andrei-493614-ami-attachments
 ```
 
 When you add a custom domain, add that Origin to **that tenant** and re-apply. Preview URLs the same way.

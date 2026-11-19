@@ -20,6 +20,15 @@ export function resolveDatabaseUrlFromEnv(): string | null {
   return process.env.DATABASE_URL?.trim() || null;
 }
 
+/** Direct (non-pooler) URL when present — required for schema migrations on Neon. */
+export function resolveMigrationDatabaseUrlFromEnv(): string | null {
+  return (
+    process.env.DATABASE_URL_UNPOOLED?.trim() ||
+    process.env.DATABASE_URL?.trim() ||
+    null
+  );
+}
+
 export function loadDatabaseUrlOrExit(): string {
   const url = resolveDatabaseUrlFromEnv();
   if (url) return url;
