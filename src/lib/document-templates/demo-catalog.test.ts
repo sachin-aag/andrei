@@ -10,6 +10,7 @@ import {
   DEMO_DOCUMENT_TEMPLATES,
   DEMO_TEMPLATE_SECTIONS,
   demoTemplateById,
+  demoTemplateHasPlaceholderWordExport,
   demoTemplateMetadata,
   demoTemplateTitleFromMetadata,
   isDocumentTemplatesEnabled,
@@ -74,6 +75,22 @@ describe("demo document templates", () => {
     );
     expect(demoTemplateById("design-verification")?.outlineMarkdown).toBeUndefined();
     expect(demoTemplateById("deviations")?.outlineMarkdown).toBeUndefined();
+  });
+
+  it("treats only Deviations and Design Verification as real Word export", () => {
+    const ready = listedDemoTemplates().filter(
+      (template) => !demoTemplateHasPlaceholderWordExport(template)
+    );
+    expect(ready.map((template) => template.id).toSorted()).toEqual([
+      "design-verification",
+      "deviations",
+    ]);
+    expect(
+      demoTemplateHasPlaceholderWordExport(demoTemplateById("capa")!)
+    ).toBe(true);
+    expect(
+      demoTemplateHasPlaceholderWordExport(BLANK_DOCUMENT_TEMPLATE)
+    ).toBe(true);
   });
 
   it("gives every listed template a title, description, and preview lines", () => {

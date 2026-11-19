@@ -110,6 +110,15 @@ import { VQ_SECTION_KEYS } from "@/lib/document-types/vq/sections";
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
 
+export function readExportTemplate(templatePath: string): Buffer {
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(
+      `DOCX export template is missing: ${templatePath}. This file must be in git so production can export.`
+    );
+  }
+  return fs.readFileSync(templatePath);
+}
+
 function isTiptapDoc(value: unknown): value is JSONContent {
   return (
     !!value &&
@@ -634,7 +643,7 @@ export async function generateReportDocx({
     });
   }
 
-  const templateContent = fs.readFileSync(
+  const templateContent = readExportTemplate(
     getDocumentType("investigation_report").export.templatePath
   );
   const zip = new PizZip(templateContent);
@@ -699,7 +708,7 @@ async function generateGenericDocumentDocx({
   comments: ReportDocxComment[];
   electronicSignatures: DocxAuditSignature[];
 }): Promise<Buffer> {
-  const templateContent = fs.readFileSync(
+  const templateContent = readExportTemplate(
     getDocumentType("generic_document").export.templatePath
   );
   const zip = new PizZip(templateContent);
@@ -766,7 +775,7 @@ async function generateDesignVerificationDocx({
   electronicSignatures: DocxAuditSignature[];
   citationsAppendixXml?: string;
 }): Promise<Buffer> {
-  const templateContent = fs.readFileSync(
+  const templateContent = readExportTemplate(
     getDocumentType(documentType).export.templatePath
   );
   const zip = new PizZip(templateContent);
