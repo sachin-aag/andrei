@@ -180,36 +180,6 @@ Each spec item traces to one or more user needs.
 `,
 };
 
-const CAD_MODELS: DemoDocumentTemplate = {
-  id: "cad-models",
-  section: "design",
-  title: "CAD Models",
-  description:
-    "Index of CAD models, drawings, and revision control for the design.",
-  documentType: "generic_document",
-  documentNoPlaceholder: "e.g. CAD-2026-001",
-  outlineMarkdown: `# CAD Models
-
-## 1. Purpose
-Record the controlled CAD models and drawings that define the product.
-
-## 2. Model index
-
-| Part / assembly | File name | Revision | Format | Owner | Released |
-| --- | --- | --- | --- | --- | --- |
-|  |  |  |  |  |  |
-
-## 3. Drawing package
-List controlled drawings (exploded views, assembly, inspection).
-
-## 4. Configuration and variants
-Options, colorways, or country variants and which model set applies.
-
-## 5. Change history
-ECO / DCR references that last touched the models.
-`,
-};
-
 const DFMEA: DemoDocumentTemplate = {
   id: "dfmea",
   section: "design",
@@ -365,33 +335,6 @@ Materials, utilities, and waste at each major step.
 
 ## 5. Critical steps
 Steps that affect product quality or that feed the PFMEA and process validation.
-`,
-};
-
-const TOOLS_FIXTURES: DemoDocumentTemplate = {
-  id: "tools-fixtures-equipment",
-  section: "operations",
-  title: "Tools, Fixtures & Equipment",
-  description:
-    "List of manufacturing tools, fixtures, and equipment used on the line.",
-  documentType: "generic_document",
-  documentNoPlaceholder: "e.g. TFE-2026-001",
-  outlineMarkdown: `# Tools, Fixtures & Equipment
-
-## 1. Purpose
-Controlled list of tools, fixtures, and equipment for this process.
-
-## 2. Equipment list
-
-| ID | Description | Manufacturer / model | Process step | Qualification status |
-| --- | --- | --- | --- | --- |
-|  |  |  |  |  |
-
-## 3. Fixtures and tooling
-Custom fixtures, molds, and jigs with drawing numbers and calibration needs.
-
-## 4. Maintenance and calibration
-PM frequency and calibration interval, or a pointer to the site program.
 `,
 };
 
@@ -1099,14 +1042,12 @@ export const DEMO_DOCUMENT_TEMPLATES: readonly DemoDocumentTemplate[] = [
   VENDOR_QUALIFICATION,
   USER_REQUIREMENTS,
   DESIGN_SPECS,
-  CAD_MODELS,
   DFMEA,
   DESIGN_TEST_METHODS,
   TEST_METHOD_VALIDATION,
   DESIGN_VERIFICATION,
   DESIGN_VALIDATION,
   PROCESS_FLOW,
-  TOOLS_FIXTURES,
   EQ_PLAN,
   EQ_REPORT,
   GOI,
