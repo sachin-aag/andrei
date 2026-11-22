@@ -356,8 +356,8 @@ describe("/api/reports", () => {
     const headingTexts = (sectionRows[0]?.content.narrative?.content ?? [])
       .filter((node) => node.type === "heading")
       .map((node) => node.content?.[0]?.text);
-    expect(headingTexts).toContain("CAPA");
-    expect(headingTexts).toContain("1. Description");
+    expect(headingTexts).toContain("Corrective and Preventive Action (CAPA)");
+    expect(headingTexts).toContain("1. Problem Description & Initiation");
     expect(recordSectionVersion).toHaveBeenCalledTimes(1);
   });
 

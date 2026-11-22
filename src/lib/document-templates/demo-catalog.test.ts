@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import {
   DEMO_PACK,
@@ -7,19 +8,31 @@ import {
   AMI_PACK,
 } from "@/lib/customers/packs";
 import {
+  findPlaceholders,
+  isActionablePlaceholderAngle,
+} from "@/lib/placeholders/find";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import {
   BLANK_DOCUMENT_TEMPLATE,
   DEMO_DOCUMENT_TEMPLATES,
   DEMO_TEMPLATE_SECTIONS,
   demoTemplateById,
-  demoTemplateHasPlaceholderWordExport,
   demoTemplateMetadata,
   demoTemplateTitleFromMetadata,
+  isDemoTemplateExportReady,
   isDocumentTemplatesEnabled,
   listedDemoTemplates,
   listedDemoTemplatesInSection,
   resolveEnabledDemoTemplate,
   templatePreviewLines,
 } from "./index";
+
+function walkNodes(node: JSONContent, visit: (n: JSONContent) => void): void {
+  visit(node);
+  for (const child of node.content ?? []) {
+    walkNodes(child, visit);
+  }
+}
 
 describe("demo document templates", () => {
   it("is on for demo and off for other packs", () => {
@@ -97,20 +110,92 @@ describe("demo document templates", () => {
     expect(demoTemplateById("deviations")?.outlineMarkdown).toBeUndefined();
   });
 
-  it("treats only Deviations and Design Verification as real Word export", () => {
-    const ready = listedDemoTemplates().filter(
-      (template) => !demoTemplateHasPlaceholderWordExport(template)
+  it("marks the first three templates of every section and structured types as export-ready", () => {
+    for (const section of DEMO_TEMPLATE_SECTIONS) {
+      const firstThree = listedDemoTemplatesInSection(section.id).slice(0, 3);
+      expect(firstThree).toHaveLength(3);
+      for (const template of firstThree) {
+        expect(isDemoTemplateExportReady(template)).toBe(true);
+      }
+    }
+
+    const ready = listedDemoTemplates().filter((template) =>
+      isDemoTemplateExportReady(template)
     );
     expect(ready.map((template) => template.id).toSorted()).toEqual([
+      "approved-supplier-list",
+      "capa",
+      "change-control",
+      "design-specs",
       "design-verification",
       "deviations",
+      "dfmea",
+      "dhf-dmr-transfer",
+      "document-template-transfer",
+      "equipment-qualification-plan",
+      "equipment-qualification-report",
+      "process-flow-diagram",
+      "risk-file-transfer",
+      "supplier-control-procedure",
+      "supplier-risk-classification",
+      "user-requirements",
     ]);
     expect(
-      demoTemplateHasPlaceholderWordExport(demoTemplateById("capa")!)
-    ).toBe(true);
-    expect(
-      demoTemplateHasPlaceholderWordExport(BLANK_DOCUMENT_TEMPLATE)
-    ).toBe(true);
+      isDemoTemplateExportReady(demoTemplateById("vendor-qualification")!)
+    ).toBe(false);
+    expect(isDemoTemplateExportReady(BLANK_DOCUMENT_TEMPLATE)).toBe(false);
+  });
+
+  it("converts every complete generic template into a rich TipTap document with valid placeholders", () => {
+    const completeGeneric = listedDemoTemplates().filter(
+      (template) =>
+        template.documentType === "generic_document" &&
+        isDemoTemplateExportReady(template)
+    );
+    expect(completeGeneric).toHaveLength(14);
+
+    for (const template of completeGeneric) {
+      const md = template.outlineMarkdown ?? "";
+      const doc = markdownToDoc(md, { headingNodes: true });
+      const headings: number[] = [];
+      let tableCount = 0;
+
+      walkNodes(doc, (node) => {
+        if (node.type === "heading") {
+          headings.push(Number(node.attrs?.level ?? 0));
+        }
+        if (node.type === "table") {
+          tableCount += 1;
+        }
+      });
+
+      expect(headings.filter((level) => level === 1), template.id).toHaveLength(1);
+      expect(
+        headings.filter((level) => level === 2).length,
+        template.id
+      ).toBeGreaterThanOrEqual(5);
+      expect(
+        headings.every((level) => level >= 1 && level <= 3),
+        `${template.id} uses only H1-H3`
+      ).toBe(true);
+      expect(tableCount, template.id).toBeGreaterThanOrEqual(3);
+
+      const rawAngles = md.match(/<[^<>]+>/g) ?? [];
+      expect(rawAngles.length, template.id).toBeGreaterThanOrEqual(10);
+      for (const token of rawAngles) {
+        expect(
+          isActionablePlaceholderAngle(token),
+          `${template.id}: invalid placeholder token ${token}`
+        ).toBe(true);
+        expect(
+          token.length,
+          `${template.id}: placeholder chip too wide (${token})`
+        ).toBeLessThanOrEqual(30);
+      }
+
+      const placeholders = findPlaceholders(doc, "body", "narrative");
+      expect(placeholders.length, template.id).toBe(rawAngles.length);
+    }
   });
 
   it("gives every listed template a title, description, and preview lines", () => {

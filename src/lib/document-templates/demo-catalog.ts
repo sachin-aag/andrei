@@ -1,4 +1,28 @@
 import type { DocumentType } from "@/db/schema";
+import {
+  APPROVED_SUPPLIER_LIST_TEMPLATE,
+  SUPPLIER_CONTROL_PROCEDURE_TEMPLATE,
+  SUPPLIER_RISK_CLASSIFICATION_TEMPLATE,
+} from "./templates/supply-chain";
+import {
+  DESIGN_SPECS_TEMPLATE,
+  DFMEA_TEMPLATE,
+  USER_REQUIREMENTS_TEMPLATE,
+} from "./templates/design";
+import {
+  EQUIPMENT_QUALIFICATION_PLAN_TEMPLATE,
+  EQUIPMENT_QUALIFICATION_REPORT_TEMPLATE,
+  PROCESS_FLOW_DIAGRAM_TEMPLATE,
+} from "./templates/operations";
+import {
+  CAPA_TEMPLATE,
+  CHANGE_CONTROL_TEMPLATE,
+} from "./templates/quality";
+import {
+  DHF_DMR_TRANSFER_TEMPLATE,
+  DOCUMENT_TEMPLATE_TRANSFER_TEMPLATE,
+  RISK_FILE_TRANSFER_TEMPLATE,
+} from "./templates/ma-integration";
 
 export const DEMO_TEMPLATE_SECTION_IDS = [
   "supply_chain",
@@ -58,6 +82,8 @@ export type DemoDocumentTemplate = {
   previewLines?: readonly string[];
   /** Hidden from section grids (header actions such as Blank document). */
   listed?: boolean;
+  /** Full, ready-to-draft TipTap template with clean Word export. */
+  complete?: boolean;
 };
 
 function headings(markdown: string, limit = 5): string[] {
@@ -92,32 +118,8 @@ const SUPPLIER_CONTROL_PROCEDURE: DemoDocumentTemplate = {
     "Foundation SOP that defines how every other supply-chain document is used.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. SOP-SC-001",
-  outlineMarkdown: `# Supplier Control Procedure
-
-## 1. Purpose
-Define the process for selecting, qualifying, approving, monitoring, and disqualifying suppliers of materials, components, and services that affect product quality.
-
-## 2. Scope
-Applies to all purchased items and outsourced processes that can influence finished-product quality, safety, or regulatory compliance. Excludes general facilities services unless they touch product or controlled environments.
-
-## 3. Responsibilities
-- Purchasing / Supply Chain: issue POs with purchasing data; maintain the ASL
-- Quality: risk classification, qualification, audits, incoming inspection oversight, SCARs
-- Engineering: specifications, drawings, and technical acceptance criteria
-- Receiving: execute incoming inspection and hold nonconforming lots
-
-## 4. Related documents
-Map this SOP to the Approved Supplier List, Vendor Qualification / Report, Supplier Risk Classification, Supplier Audit Report, Quality Agreement, Purchase Order / purchasing data, Incoming Inspection with CoC/CoA, and SCAR forms.
-
-## 5. Supplier lifecycle
-Selection → risk classification → qualification → ASL listing → purchasing → incoming verification → ongoing monitoring → requalification or disqualification.
-
-## 6. Risk-based controls
-Criticality drives audit frequency, inspection level, quality-agreement requirement, and whether a full vendor qualification report is mandatory before first purchase.
-
-## 7. Records and retention
-List required records (ASL, qualification files, audit reports, CoC/CoA, SCARs) and retention periods aligned to the site quality system.
-`,
+  complete: true,
+  outlineMarkdown: SUPPLIER_CONTROL_PROCEDURE_TEMPLATE,
 };
 
 const SUPPLIER_RISK_CLASSIFICATION: DemoDocumentTemplate = {
@@ -128,35 +130,8 @@ const SUPPLIER_RISK_CLASSIFICATION: DemoDocumentTemplate = {
     "Criticality assessment that drives audit frequency, inspection levels, and agreement requirements.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. SRC-2026-001",
-  outlineMarkdown: `# Supplier Risk Classification / Criticality Assessment
-
-## 1. Purpose
-Classify each supplier and purchased item by criticality so audit frequency, incoming inspection depth, and quality-agreement requirements are risk-based.
-
-## 2. Supplier and item under assessment
-Legal name, site, material / component / service, and intended use in the product or process.
-
-## 3. Classification criteria
-Score impact on product quality / safety, regulatory exposure, sole-source status, complexity of the process, and history of nonconformances.
-
-## 4. Criticality rating
-
-| Factor | Score (1–5) | Rationale |
-| --- | --- | --- |
-| Quality / safety impact |  |  |
-| Regulatory / patient risk |  |  |
-| Supply criticality |  |  |
-| Process complexity |  |  |
-| Performance history |  |  |
-
-Overall class: Critical / Major / Minor.
-
-## 5. Control requirements by class
-State required audit interval, incoming inspection level, CoC/CoA expectations, and whether a quality agreement is mandatory.
-
-## 6. Approval
-Quality and supply-chain sign-off of the assigned class and the resulting control plan.
-`,
+  complete: true,
+  outlineMarkdown: SUPPLIER_RISK_CLASSIFICATION_TEMPLATE,
 };
 
 const APPROVED_SUPPLIER_LIST: DemoDocumentTemplate = {
@@ -167,29 +142,8 @@ const APPROVED_SUPPLIER_LIST: DemoDocumentTemplate = {
     "Controlled record of who is qualified for what materials, components, or services.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. ASL-001",
-  outlineMarkdown: `# Approved Supplier List (ASL)
-
-## 1. Purpose
-Maintain the controlled list of suppliers approved to supply specific materials, components, or services.
-
-## 2. ASL entry fields
-
-| Supplier | Site | Item / service | Spec / drawing rev | Criticality | Qualification status | Quality agreement | Next audit | Restrictions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-|  |  |  |  |  |  |  |  |  |
-
-## 3. Status definitions
-Approved, Conditional (with named restrictions), Suspended, and Disqualified — and which statuses may receive purchase orders.
-
-## 4. Change control
-How additions, scope expansions, suspensions, and removals are requested, justified, and approved.
-
-## 5. Review cadence
-Periodic ASL review (e.g. annual) against SCAR trends, audit results, and incoming inspection performance.
-
-## 6. Approval
-Quality and supply-chain approval of this ASL revision.
-`,
+  complete: true,
+  outlineMarkdown: APPROVED_SUPPLIER_LIST_TEMPLATE,
 };
 
 const VENDOR_QUALIFICATION: DemoDocumentTemplate = {
@@ -437,26 +391,8 @@ const USER_REQUIREMENTS: DemoDocumentTemplate = {
     "Capture intended use, user needs, and design inputs from the clinical or customer side.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. URS-2026-001",
-  outlineMarkdown: `# User Requirements Specification
-
-## 1. Purpose and intended use
-Who uses the product, in what setting, and for what clinical or operational job.
-
-## 2. User needs
-Numbered user needs (UN-001 …). Each need should be testable or traced to a design input.
-
-## 3. Use environment
-Operating, storage, and transport conditions; users and training assumptions.
-
-## 4. Safety and essential performance
-Hazards the design must control; essential performance the user depends on.
-
-## 5. Regulatory and standards
-Applicable regulations, standards, and labeling requirements.
-
-## 6. Traceability
-How each user need maps to design inputs and later verification.
-`,
+  complete: true,
+  outlineMarkdown: USER_REQUIREMENTS_TEMPLATE,
 };
 
 const DESIGN_SPECS: DemoDocumentTemplate = {
@@ -467,26 +403,8 @@ const DESIGN_SPECS: DemoDocumentTemplate = {
     "System and component specifications that implement the user requirements.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. SPEC-2026-001",
-  outlineMarkdown: `# Design Specification
-
-## 1. Scope
-System-level specification and the component specs it contains.
-
-## 2. System specifications
-Quantitative design outputs (dimensions, materials, software, interfaces, power).
-
-## 3. Component specifications
-One subsection per major component or subsystem, with drawing / part numbers.
-
-## 4. Interface requirements
-Mechanical, electrical, fluidic, and data interfaces between components.
-
-## 5. Acceptance criteria
-How a unit is judged to meet this specification, including allowed failure rates where relevant.
-
-## 6. Traceability to user requirements
-Each spec item traces to one or more user needs.
-`,
+  complete: true,
+  outlineMarkdown: DESIGN_SPECS_TEMPLATE,
 };
 
 const DFMEA: DemoDocumentTemplate = {
@@ -497,26 +415,8 @@ const DFMEA: DemoDocumentTemplate = {
     "Design failure mode and effects analysis for the product and its components.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. DFMEA-2026-001",
-  outlineMarkdown: `# Design FMEA
-
-## 1. Scope
-Product, revision, and the functions covered by this analysis.
-
-## 2. Team and method
-Participants, severity / occurrence / detection scales, and RPN thresholds.
-
-## 3. Failure mode analysis
-
-| Item / function | Potential failure mode | Potential effects | Sev | Potential causes | Occ | Current controls | Det | RPN | Recommended actions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-|  |  |  |  |  |  |  |  |  |  |
-
-## 4. High-RPN actions
-Actions, owners, and target dates for items above the RPN threshold.
-
-## 5. Residual risk
-Whether remaining risk is acceptable for design verification and validation.
-`,
+  complete: true,
+  outlineMarkdown: DFMEA_TEMPLATE,
 };
 
 const DESIGN_TEST_METHODS: DemoDocumentTemplate = {
@@ -628,23 +528,8 @@ const PROCESS_FLOW: DemoDocumentTemplate = {
     "Manufacturing process flow from incoming material through finished goods.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. PFD-2026-001",
-  outlineMarkdown: `# Process Flow Diagram
-
-## 1. Purpose
-Describe the manufacturing process at the level used for validation and PFMEA.
-
-## 2. Process overview
-Start and end points, batch vs continuous, and the facility / line.
-
-## 3. Flow
-Numbered steps (incoming → process → in-process test → packaging → release). Note inspection points.
-
-## 4. Inputs and outputs
-Materials, utilities, and waste at each major step.
-
-## 5. Critical steps
-Steps that affect product quality or that feed the PFMEA and process validation.
-`,
+  complete: true,
+  outlineMarkdown: PROCESS_FLOW_DIAGRAM_TEMPLATE,
 };
 
 const EQ_PLAN: DemoDocumentTemplate = {
@@ -655,26 +540,8 @@ const EQ_PLAN: DemoDocumentTemplate = {
     "Plan for IQ / OQ / PQ of manufacturing or laboratory equipment.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. EQP-2026-001",
-  outlineMarkdown: `# Equipment Qualification Plan
-
-## 1. Purpose and scope
-Equipment identity, installed location, and the qualification approach (IQ / OQ / PQ).
-
-## 2. Responsibilities
-Engineering, quality, and the equipment owner.
-
-## 3. IQ protocol summary
-Installation checks, utilities, software, and documentation.
-
-## 4. OQ protocol summary
-Operating ranges, alarms, and challenge tests.
-
-## 5. PQ protocol summary
-Process-representative runs and acceptance criteria.
-
-## 6. Deliverables
-Which reports, deviations, and change records this plan will produce.
-`,
+  complete: true,
+  outlineMarkdown: EQUIPMENT_QUALIFICATION_PLAN_TEMPLATE,
 };
 
 const EQ_REPORT: DemoDocumentTemplate = {
@@ -685,23 +552,8 @@ const EQ_REPORT: DemoDocumentTemplate = {
     "Report of IQ / OQ / PQ execution and the qualified status of the equipment.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. EQR-2026-001",
-  outlineMarkdown: `# Equipment Qualification Report
-
-## 1. Purpose
-Record the executed qualification and the resulting qualified state.
-
-## 2. Equipment identity
-ID, model, serial, location, and software version.
-
-## 3. IQ / OQ / PQ summary
-What was executed, deviations, and whether acceptance criteria were met.
-
-## 4. Deviations and changes
-Open items that affect the qualified state.
-
-## 5. Conclusion
-Qualified / not qualified, with the approved operating range.
-`,
+  complete: true,
+  outlineMarkdown: EQUIPMENT_QUALIFICATION_REPORT_TEMPLATE,
 };
 
 const GOI: DemoDocumentTemplate = {
@@ -940,26 +792,8 @@ const CAPA: DemoDocumentTemplate = {
     "Corrective and preventive action record — investigation, actions, and effectiveness.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. CAPA-2026-001",
-  outlineMarkdown: `# CAPA
-
-## 1. Description
-What happened, when it was detected, and how it was reported.
-
-## 2. Immediate actions
-Containment and any product hold.
-
-## 3. Investigation
-Root cause method, evidence, and the identified cause.
-
-## 4. Corrective actions
-What will prevent recurrence, owners, and target dates.
-
-## 5. Preventive actions
-System-level changes beyond the original event.
-
-## 6. Effectiveness check
-How and when effectiveness will be verified.
-`,
+  complete: true,
+  outlineMarkdown: CAPA_TEMPLATE,
 };
 
 const DEVIATIONS: DemoDocumentTemplate = {
@@ -981,26 +815,8 @@ const CHANGE_CONTROL: DemoDocumentTemplate = {
     "Evaluate, approve, and implement a change to product, process, or documentation.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. CC-2026-001",
-  outlineMarkdown: `# Change Control
-
-## 1. Change description
-What is changing (product, process, document, supplier) and why.
-
-## 2. Current vs proposed
-State before and after, with drawing / document / process references.
-
-## 3. Impact assessment
-Quality, regulatory, validation, labeling, inventory, and training impact.
-
-## 4. Implementation plan
-Tasks, owners, effective date, and documents to revise.
-
-## 5. Approval
-Roles that must approve before implementation.
-
-## 6. Close-out
-Evidence the change was implemented and any follow-up CAPA.
-`,
+  complete: true,
+  outlineMarkdown: CHANGE_CONTROL_TEMPLATE,
 };
 
 const DOCUMENT_TEMPLATE_TRANSFER: DemoDocumentTemplate = {
@@ -1011,33 +827,8 @@ const DOCUMENT_TEMPLATE_TRANSFER: DemoDocumentTemplate = {
     "Moving SOPs, work instructions, forms and templates into the acquirer's QMS, remapping document numbering, formats and approval workflows. Highest-volume item.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. MA-DOC-2026-001",
-  outlineMarkdown: `# Document & Template Transfer
-
-## 1. Purpose and scope
-Which acquired-site documents move into the acquirer QMS and which stay local or retire.
-
-## 2. Inventory
-- Document type (SOP, WI, form, template, policy)
-- Legacy document number and title
-- Owner / department
-- Effective and next-review dates
-- Controlled copies / training links
-
-## 3. Numbering and format map
-Legacy number → acquirer number; Word/PDF template remapping; header/footer and approval-block rules.
-
-## 4. Approval workflow
-Who reviews and approves each remapped document under the acquirer QMS.
-
-## 5. Migration plan
-Batch order, owners, target go-live, and training cutover.
-
-## 6. Gaps and retirements
-Documents with no acquirer equivalent, obsolete items, and temporary dual-control periods.
-
-## 7. Close-out
-Evidence all in-scope documents are live or retired, with training complete.
-`,
+  complete: true,
+  outlineMarkdown: DOCUMENT_TEMPLATE_TRANSFER_TEMPLATE,
 };
 
 const DHF_DMR_TRANSFER: DemoDocumentTemplate = {
@@ -1048,29 +839,8 @@ const DHF_DMR_TRANSFER: DemoDocumentTemplate = {
     "Design inputs/outputs, V&V, traceability, drawings, specs, BOMs re-indexed into acquirer PLM/QMS.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. MA-DHF-2026-001",
-  outlineMarkdown: `# DHF & DMR Transfer
-
-## 1. Purpose and products
-Product families whose design history and device master records move to the acquirer.
-
-## 2. DHF inventory
-Design inputs/outputs, risk files, V&V protocols/reports, labeling, and traceability matrices.
-
-## 3. DMR inventory
-Drawings, specs, BOMs, manufacturing/inspection procedures, and approved component lists.
-
-## 4. Re-indexing map
-Legacy IDs → acquirer PLM/QMS IDs; revision and status rules.
-
-## 5. Completeness check
-Missing or superseded design artifacts; open V&V or transfer gaps.
-
-## 6. Ownership and access
-Who owns each record after cutover; vault/PLM permissions.
-
-## 7. Close-out
-Sign-off that DHF/DMR content is complete and searchable in the acquirer systems.
-`,
+  complete: true,
+  outlineMarkdown: DHF_DMR_TRANSFER_TEMPLATE,
 };
 
 const RISK_FILE_TRANSFER: DemoDocumentTemplate = {
@@ -1081,29 +851,8 @@ const RISK_FILE_TRANSFER: DemoDocumentTemplate = {
     "DFMEA/PFMEA/hazard analysis reformatted to acquirer ISO 14971 methodology and scales; re-link to requirements/controls.",
   documentType: "generic_document",
   documentNoPlaceholder: "e.g. MA-RISK-2026-001",
-  outlineMarkdown: `# Risk File Transfer
-
-## 1. Purpose and scope
-Products and processes whose DFMEA, PFMEA, and hazard analyses move to the acquirer method.
-
-## 2. Source risk files
-List of risk documents, revision, and last review date at the acquired site.
-
-## 3. Methodology alignment
-Acquirer ISO 14971 scales, severity/occurrence/detectability definitions, and residual-risk criteria vs legacy.
-
-## 4. Reformatting plan
-How each failure mode / hazard maps into the acquirer template; what stays narrative vs tabular.
-
-## 5. Requirements and controls re-link
-Trace each risk item to design/process requirements and existing controls.
-
-## 6. Residual risk and gaps
-Where scores change under the new scales; actions before acceptance.
-
-## 7. Close-out
-Approved risk files live in the acquirer QMS with owners and next review dates.
-`,
+  complete: true,
+  outlineMarkdown: RISK_FILE_TRANSFER_TEMPLATE,
 };
 
 const ECO_MIGRATION: DemoDocumentTemplate = {
@@ -1413,13 +1162,14 @@ export function listedDemoTemplatesInSection(
 }
 
 /**
- * Dedicated Word forms exist only for investigation (Deviations) and design
- * verification. Every other gallery template is a generic-document outline.
+ * True when a gallery template is complete and exports cleanly to Word as this
+ * form: either a dedicated structured document type (Deviations, Design
+ * Verification) or a full TipTap template marked `complete: true`.
  */
-export function demoTemplateHasPlaceholderWordExport(
-  template: Pick<DemoDocumentTemplate, "documentType">
+export function isDemoTemplateExportReady(
+  template: Pick<DemoDocumentTemplate, "documentType" | "complete">
 ): boolean {
-  return template.documentType === "generic_document";
+  return template.documentType !== "generic_document" || template.complete === true;
 }
 
 export type DemoTemplateMetadata = {
