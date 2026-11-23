@@ -4,7 +4,12 @@ import type { JSONContent } from "@tiptap/core";
 import PizZip from "pizzip";
 import { describe, expect, it } from "vitest";
 import { reports } from "@/db/schema";
+import {
+  isDemoTemplateExportReady,
+  listedDemoTemplates,
+} from "@/lib/document-templates";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
@@ -116,5 +121,33 @@ describe("generic document DOCX export", () => {
     expect(xml).toContain("<w:del ");
     expect(xml).toContain("DOC-100");
     expect(settings).toContain("<w:trackRevisions");
+  });
+
+  it("exports every complete demo TipTap template to valid Word XML", async () => {
+    const completeGeneric = listedDemoTemplates().filter(
+      (template) =>
+        template.documentType === "generic_document" &&
+        isDemoTemplateExportReady(template)
+    );
+    expect(completeGeneric).toHaveLength(14);
+
+    for (const template of completeGeneric) {
+      const narrative = markdownToDoc(template.outlineMarkdown!, {
+        headingNodes: true,
+      });
+      const buf = await generateReportDocx({
+        report: genericReport({ documentNo: `DOC-${template.id}` }),
+        sections: bodySection(narrative),
+      });
+      const zip = new PizZip(buf);
+      const xml = zip.file("word/document.xml")?.asText() ?? "";
+
+      expect(xml, template.id).toContain('<w:pStyle w:val="Heading1"/>');
+      expect(xml, template.id).toContain('<w:pStyle w:val="Heading2"/>');
+      expect(xml, template.id).toContain("<w:tbl>");
+      expect(xml, template.id).toContain(`DOC-${template.id}`);
+      expect(xml, template.id).not.toContain("## ");
+      expect(xml, template.id).not.toContain("| --- |");
+    }
   });
 });

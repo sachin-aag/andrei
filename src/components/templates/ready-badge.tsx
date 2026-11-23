@@ -1,6 +1,6 @@
 "use client";
 
-import { Info } from "lucide-react";
+import { Check } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -9,10 +9,9 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export const PLACEHOLDER_WORD_EXPORT_HINT =
-  "Placeholder. Word export is not this form yet.";
+export const TEMPLATE_READY_HINT = "Complete template with Word export.";
 
-export function PlaceholderHint({
+export function TemplateReadyBadge({
   className,
 }: {
   className?: string;
@@ -23,20 +22,20 @@ export function PlaceholderHint({
         <TooltipTrigger asChild>
           <span
             role="img"
-            aria-label="Placeholder"
-            data-testid="template-placeholder-hint"
+            aria-label="Complete template"
+            data-testid="template-ready-badge"
             className={cn(
-              "inline-flex size-5 items-center justify-center text-[var(--destructive)]",
+              "inline-flex size-4 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-[color-mix(in_srgb,var(--success)_78%,var(--muted-foreground))]",
               className
             )}
             onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            <Info className="size-3.5" aria-hidden="true" strokeWidth={2.25} />
+            <Check className="size-2.5" aria-hidden="true" strokeWidth={2.5} />
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-left">
-          {PLACEHOLDER_WORD_EXPORT_HINT}
+          {TEMPLATE_READY_HINT}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

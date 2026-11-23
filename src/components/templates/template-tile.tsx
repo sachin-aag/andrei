@@ -2,11 +2,12 @@
 
 import {
   AlertCircle,
+  AlertOctagon,
   AlertTriangle,
   ArrowRightLeft,
   BarChart2,
   BookCheck,
-  CheckCircle2,
+  Building2,
   CheckSquare,
   ClipboardCheck,
   ClipboardList,
@@ -14,19 +15,27 @@ import {
   FileCheck2,
   FileCog,
   FileSearch,
+  FileSignature,
+  FileStack,
   FileText,
   FlaskConical,
+  FolderSync,
   GitBranch,
+  GitPullRequest,
+  Layers,
   LayoutDashboard,
   ListChecks,
   MonitorCheck,
+  Package,
   RefreshCcw,
   Shield,
+  ShieldAlert,
   Stethoscope,
+  Wrench,
 } from "lucide-react";
-import { PlaceholderHint } from "@/components/templates/placeholder-hint";
+import { TemplateReadyBadge } from "@/components/templates/ready-badge";
 import {
-  demoTemplateHasPlaceholderWordExport,
+  isDemoTemplateExportReady,
   type DemoDocumentTemplate,
 } from "@/lib/document-templates";
 import { cn } from "@/lib/utils";
@@ -63,10 +72,20 @@ const TEMPLATE_ICONS: Record<string, React.ElementType> = {
   capa: RefreshCcw,
   deviations: ListChecks,
   "change-control": MonitorCheck,
+  "document-template-transfer": FileStack,
+  "dhf-dmr-transfer": FolderSync,
+  "risk-file-transfer": ShieldAlert,
+  "eco-migration": GitPullRequest,
+  "supplier-vendor-transfer": Building2,
+  "quality-agreement-transfer": FileSignature,
+  "equipment-qualification-transfer": Wrench,
+  "process-test-method-transfer": Layers,
+  "part-bom-migration": Package,
+  "complaint-capa-migration": AlertOctagon,
   "blank-document": FileText,
 };
 
-const FallbackIcon = CheckCircle2;
+const FallbackIcon = FileText;
 
 export function TemplateTile({
   template,
@@ -76,7 +95,7 @@ export function TemplateTile({
   onSelect: (template: DemoDocumentTemplate) => void;
 }) {
   const Icon = TEMPLATE_ICONS[template.id] ?? FallbackIcon;
-  const placeholder = demoTemplateHasPlaceholderWordExport(template);
+  const ready = isDemoTemplateExportReady(template);
 
   return (
     <button
@@ -89,8 +108,8 @@ export function TemplateTile({
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
       )}
     >
-      {placeholder ? (
-        <PlaceholderHint className="absolute right-1.5 top-1.5" />
+      {ready ? (
+        <TemplateReadyBadge className="absolute right-2 top-2" />
       ) : null}
       <Icon
         className="size-7 shrink-0 text-[var(--foreground)] opacity-75 transition-opacity group-hover:opacity-100"

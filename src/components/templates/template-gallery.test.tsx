@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TemplateGallery } from "@/components/templates/template-gallery";
 import {
   DEMO_TEMPLATE_SECTIONS,
-  demoTemplateHasPlaceholderWordExport,
+  isDemoTemplateExportReady,
   listedDemoTemplatesInSection,
 } from "@/lib/document-templates";
 
@@ -42,36 +42,43 @@ describe("TemplateGallery", () => {
     }
   });
 
-  it("marks gallery outlines that do not have a Word form", () => {
+  it("shows a subtle ready tick on export-ready templates only", () => {
     render(<TemplateGallery managers={managers} />);
 
     const vendor = screen.getByRole("button", { name: /^Vendor Qualification$/i });
     expect(
-      within(vendor).getByRole("img", { name: "Placeholder" })
+      within(vendor).queryByTestId("template-ready-badge")
+    ).toBeNull();
+
+    const supplierSop = screen.getByRole("button", {
+      name: /^Supplier Control Procedure$/i,
+    });
+    expect(
+      within(supplierSop).getByRole("img", { name: "Complete template" })
     ).toBeInTheDocument();
 
     const designVerification = screen.getByRole("button", {
       name: /^Design Verification Testing$/i,
     });
     expect(
-      within(designVerification).queryByRole("img", { name: "Placeholder" })
-    ).toBeNull();
+      within(designVerification).getByRole("img", { name: "Complete template" })
+    ).toBeInTheDocument();
 
     const deviations = screen.getByRole("button", { name: /^Deviations$/i });
     expect(
-      within(deviations).queryByRole("img", { name: "Placeholder" })
-    ).toBeNull();
+      within(deviations).getByRole("img", { name: "Complete template" })
+    ).toBeInTheDocument();
 
     for (const section of DEMO_TEMPLATE_SECTIONS) {
       for (const template of listedDemoTemplatesInSection(section.id)) {
         const tile = screen.getByRole("button", { name: template.title });
-        if (demoTemplateHasPlaceholderWordExport(template)) {
+        if (isDemoTemplateExportReady(template)) {
           expect(
-            within(tile).getByRole("img", { name: "Placeholder" })
+            within(tile).getByRole("img", { name: "Complete template" })
           ).toBeInTheDocument();
         } else {
           expect(
-            within(tile).queryByRole("img", { name: "Placeholder" })
+            within(tile).queryByRole("img", { name: "Complete template" })
           ).toBeNull();
         }
       }
