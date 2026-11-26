@@ -37,6 +37,7 @@
     "db:local:reset": "docker compose down -v && docker compose up -d && sleep 3 && drizzle-kit push --force",
     "db:studio": "drizzle-kit studio",
     "set-workspace-password": "tsx scripts/set-workspace-password.ts",
+    "standup-customer": "tsx scripts/standup-customer.ts",
     "seed-demo-reports": "tsx --env-file=.env --env-file=.env.local scripts/seed-demo-reports.ts",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
     "soak:pdf-ingest": "tsx --env-file=.env --env-file=.env.local scripts/soak-document-ingest.ts",

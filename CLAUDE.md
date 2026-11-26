@@ -20,6 +20,7 @@ pnpm retrieval-eval       # attachment retrieval gold cases (default --dry-run; 
 pnpm retrieval-eval:upload # laptop ADC only: write synthetic eval PDFs to RETRIEVAL_EVAL_GCS_BUCKET (CI never uploads)
 pnpm chat-eval            # chat quality floor (default --dry-run; --replay no LLM; --sync / --experiment push to Langfuse when keys exist)
 pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
+pnpm standup-customer -- status --slug ami  # new-tenant checklist (docs/whitelabel-vercel-deploy.md#add-a-customer)
 ```
 
 Every script lives in `package.json`; only the non-obvious invocations are listed here.
@@ -68,7 +69,7 @@ Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordEx
 
 ### Customer packs
 
-`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ, Convergent, 3xper, and Ami), export template, hidden sections, enabled document types, Word import, branding, `insightsEnabled` (demo-only Insights nav), and `documentTemplatesEnabled` (demo-only Templates gallery). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md` (Add a customer for a new pack). 3xper product notes: `docs/3xper-deployment.md`. Ami stand-up: `docs/ami-standup.md`.
+`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ, Convergent, 3xper, and Ami), export template, hidden sections, enabled document types, Word import, branding, `insightsEnabled` (demo-only Insights nav), and `documentTemplatesEnabled` (demo-only Templates gallery). Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md` (Add a customer — `pnpm standup-customer`). 3xper product notes: `docs/3xper-deployment.md`. Ami pack notes: `docs/ami-standup.md`.
 
 ## Environment variables
 

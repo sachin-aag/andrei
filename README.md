@@ -45,7 +45,7 @@ Which types and sections appear is a **customer pack** decision, not a feature f
 | `3xper` | `ANDREI_CUSTOMER=3xper` | 3xper Innoventure branding, vendor qualification only (QAD-SOP-MS-001-F04) |
 | `ami` | `ANDREI_CUSTOMER=ami` | Ami Lifesciences branding, investigation only (MJ-based DMAIC Word template, no conclusion) |
 
-Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Live projects and the stand-up checklist: [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md). 3xper product notes: [docs/3xper-deployment.md](docs/3xper-deployment.md). Ami stand-up: [docs/ami-standup.md](docs/ami-standup.md).
+Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Live projects and the stand-up checklist: [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md) (`pnpm standup-customer`). 3xper product notes: [docs/3xper-deployment.md](docs/3xper-deployment.md). Ami pack notes: [docs/ami-standup.md](docs/ami-standup.md).
 
 ---
 
@@ -198,7 +198,7 @@ Release-candidate manual cases: [docs/manual-test-cases.md](docs/manual-test-cas
 | [TESTING.md](TESTING.md) | How to run and catalog tests |
 | [docs/database-environments.md](docs/database-environments.md) | Local Docker vs Neon vs CI |
 | [docs/database-schema.md](docs/database-schema.md) | Tables and recovery |
-| [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md) | Live packs + **Add a customer** (the stand-up checklist) |
+| [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md) | Live packs + **Add a customer** (`pnpm standup-customer`) |
 | [docs/3xper-deployment.md](docs/3xper-deployment.md) | 3xper VQ product notes (not a second infra plan) |
 | [docs/email-deliverability.md](docs/email-deliverability.md) | Resend / magic-link deliverability |
 | [docs/pdf-evidence-deployment-checklist.md](docs/pdf-evidence-deployment-checklist.md) | Attachment ingest release gates |

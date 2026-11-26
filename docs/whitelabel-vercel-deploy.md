@@ -2,7 +2,7 @@
 
 One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER` packs, not in long-lived SHA pins or a second product branch.
 
-**Future stand-up:** follow [Add a customer](#add-a-customer). Do not copy a prior pack’s markdown file. Pack-only notes stay next to the pack (today: [3xper](./3xper-deployment.md)).
+**Future stand-up:** follow [Add a customer](#add-a-customer) (`pnpm standup-customer`). Do not copy a prior pack’s markdown file. Pack-only notes stay next to the pack (today: [3xper](./3xper-deployment.md), [Ami](./ami-standup.md)).
 
 | | MJ | Demo | Convergent | 3xper | Ami |
 |--|----|------|------------|-------|-----|
@@ -61,11 +61,13 @@ The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_UR
 
 ### Shared (team) vs per project
 
-Stop copying Vertex / AI Gateway / Resend / Langfuse / PostHog onto every new Vercel project. Create them once as [Shared Environment Variables](https://vercel.com/docs/environment-variables/shared-environment-variables) (team **Settings** → **Environment Variables**, Pro / Enterprise) and **link** every customer project. Updating the shared row updates every linked project; the next **new** deployment picks it up (live deploys keep the old value).
+Stop copying Vertex / AI Gateway / Resend / Langfuse onto every new Vercel project. Create them once as [Shared Environment Variables](https://vercel.com/docs/environment-variables/shared-environment-variables) (team **Settings** → **Environment Variables**, Pro / Enterprise) and **link** every customer project (`pnpm standup-customer -- link-shared`). Updating the shared row updates every linked project; the next **new** deployment picks it up (live deploys keep the old value).
 
 `vercel env add` only writes to the **linked** project. Shared vars are team-level (dashboard or `POST /v1/env?teamId=`). A project-level var with the same key + environment **overrides** the shared one — including empty secrets imported from `.env.example`. Delete those duplicates or a rotation never lands. Shared vars cannot be git-branch-specific (Neon preview URLs stay an integration inject).
 
-**Share:** `AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM` (if one From address), `AI_GATEWAY_API_KEY` (or OIDC), `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_VERTEX_PROJECT`, `GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`, Langfuse keys, `NEXT_PUBLIC_POSTHOG_KEY`. Use **Secret** for tokens.
+**Share:** `AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM` (if one From address), `AI_GATEWAY_API_KEY` (or OIDC), `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_VERTEX_PROJECT`, `GOOGLE_VERTEX_LOCATION`, `GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`, Langfuse keys. Use **Secret** for tokens.
+
+**Not on Shared today:** `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` are still **project-level** on the older packs. The Shared search box will not find them. Copy them onto the new project (or promote those two keys to Shared). `vercel env ls` also misses team Shared rows — use the Shared tab, or `pnpm standup-customer -- status --slug {slug}`.
 
 **Never share:** pack identity (`ANDREI_CUSTOMER`, `NEXT_PUBLIC_ANDREI_CUSTOMER`, `ANDREI_VERCEL_DEPLOY_SCOPE`), `DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`, `GCS_BUCKET`.
 
@@ -75,61 +77,57 @@ Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local` on Vercel.
 
 ## Add a customer
 
-Use this checklist for every new pack. Substitute `{slug}` (`3xper`, `acme`, …). Do not clone [3xper-deployment.md](./3xper-deployment.md) — that file is VQ/product notes only.
+Use this checklist for every new pack. Substitute `{slug}` (`ami`, `acme`, …). Do not clone [3xper-deployment.md](./3xper-deployment.md) or [ami-standup.md](./ami-standup.md) — those are pack/product notes only.
 
-Assume the pack already exists in `src/lib/customers/` and `ANDREI_VERCEL_DEPLOY_SCOPE` accepts `{slug}`.
+Assume the pack already exists in `src/lib/customers/` and `ANDREI_VERCEL_DEPLOY_SCOPE` accepts `{slug}`. **Land that pack on `main` before Production can serve** — otherwise `{slug}.andreihealth.com` is `404 DEPLOYMENT_NOT_FOUND` and `vercel:build` dies with `Invalid customer id "{slug}"`. Preview can ship from the pack branch.
 
 | Piece | Value |
 |-------|--------|
 | Vercel project | `andrei-{slug}` |
 | Pack env | `{slug}` (`ANDREI_CUSTOMER`, `NEXT_PUBLIC_ANDREI_CUSTOMER`, `ANDREI_VERCEL_DEPLOY_SCOPE`) |
-| Public host | `https://{slug}.andreihealth.com` (or the customer’s domain) |
+| Public host / `AUTH_URL` | `https://{slug}.andreihealth.com` (or the customer’s domain) |
 | Neon | Postgres 16 + pgvector, project `andrei-{slug}` |
 | GCS bucket | `andrei-493614-{slug}-attachments` |
 
-### 1. Vercel project
+The CLI writes project env, links team Shared rows, appends the new `prj_…` to the GCP WIF attribute condition, and seeds Andrei plus-alias users. Dashboard leftovers print from `status`.
 
-1. New project on the same GitHub repo. Production branch **`main`**. Ignored Build Step off (every ref builds).
-2. **Do not** import `.env.example` as Production secrets — empty `DATABASE_URL` / `AUTH_SECRET` / `GCS_BUCKET` placeholders block Neon inject, override shared Vertex rows, and fail `pnpm vercel:build` with `DATABASE_URL is not set`.
+```bash
+pnpm standup-customer -- status --slug {slug}
+pnpm standup-customer -- all --slug {slug}     # env + link-shared + wif (gcloud ADC)
+pnpm standup-customer -- users --slug {slug} --yes --database-url 'postgresql://…this neon…'
+```
 
-### 2. Pack identity (project-level)
+Do **not** import `.env.example` as Vercel secrets. Do **not** copy `AUTH_SECRET` / `DATABASE_URL` / `GCS_BUCKET` from another pack.
 
-Production, Preview, and Development — all three, same value. **Not** on the team shared list.
+### 1. Vercel project (dashboard)
 
-| Variable | Value |
-|----------|--------|
-| `ANDREI_CUSTOMER` | `{slug}` |
-| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `{slug}` |
-| `ANDREI_VERCEL_DEPLOY_SCOPE` | `{slug}` |
+1. New project on the same GitHub repo. Name `andrei-{slug}`. Production branch **`main`**. Ignored Build Step off (every ref builds). Node **24.x**. Enable OIDC / team issuer (needed for Vertex WIF).
+2. Skip the env-import wizard.
 
-Client chrome reads the public var. A shared `ANDREI_CUSTOMER` would paint every project this pack.
+### 2. Pack identity, auth, bucket (`pnpm standup-customer env`)
 
-### 3. Neon
+Sets Production + Preview + Development pack identity, a **new** `AUTH_SECRET`, `AUTH_URL=https://{slug}.andreihealth.com`, `GCS_BUCKET=andrei-493614-{slug}-attachments`, and attachment/extract defaults.
+
+Client chrome reads `NEXT_PUBLIC_ANDREI_CUSTOMER`. A shared `ANDREI_CUSTOMER` would paint every project this pack. Optional `SITE_ACCESS_PASSWORD` stays project-level (only if this pack should have `/unlock`). Not enforced by `src/proxy.ts`.
+
+### 3. Link shared env (`pnpm standup-customer link-shared`)
+
+Links the existing team rows (Vertex / WIF audience / AI Gateway / Gemini / Resend / Langfuse) onto `andrei-{slug}`. Do not paste values from `andrei-demo`. Redeploy after linking. `NEXT_PUBLIC_*` is inlined at build time.
+
+If Vertex is still missing, a project-level empty duplicate is overriding the shared row — delete it. Partial Vertex (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials`.
+
+**PostHog** is not a team Shared row. Copy `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` from `andrei-demo` as project vars, or promote those keys to Shared.
+
+### 4. Neon (dashboard) + code follow-up
 
 1. Create a Neon project (Postgres 16 + **pgvector**). Connect it (Vercel **Storage → Neon**) so Production `DATABASE_URL` is the **pooled** URL (no git-branch) and Preview injects `preview/<git-branch>`.
 2. Keep **Create a branch for each preview deployment** **on**. Do not hand-edit Neon-logo Preview rows.
 3. `pnpm vercel:build` runs `runPendingMigrations` (creates `workspace_users` on a fresh DB, then journal SQL one file at a time). Do **not** edit old journal files to “fix” a new customer. Do **not** run `pnpm db:ensure-workspace-users` against Neon HTTP from local Docker.
 4. Add `{slug}` and its Neon project id to `CUSTOMER_NEON_PREVIEW_PROJECTS` in `src/lib/db/neon-preview-projects.ts`. Optionally set GitHub Actions variable `NEON_PROJECT_ID_{SLUG}` as an override. Do not rely on that variable being present — unset vars used to skip 3xper cleanup.
 
-### 4. Auth
+### 5. GCS bucket (Terraform tenant)
 
-| Variable | Where | Notes |
-|----------|--------|--------|
-| `AUTH_SECRET` | Project | New `openssl rand -base64 32`. Do not reuse another pack. |
-| `AUTH_URL` | Project | Exact public origin (`https://{slug}.andreihealth.com`). Do **not** leave `https://andrei-{slug}.vercel.app`. |
-| `AUTH_RESEND_KEY` | **Shared** | Link the team row. |
-
-Optional `SITE_ACCESS_PASSWORD` is project-level (only if this pack should have `/unlock`). Not enforced by `src/proxy.ts`.
-
-### 5. Link shared env
-
-Team **Settings → Environment Variables** → link the existing Vertex / AI Gateway / Gemini / Resend / Langfuse / PostHog rows to `andrei-{slug}`. Do not paste values from `andrei-demo`. Redeploy after linking. `NEXT_PUBLIC_*` is inlined at build time.
-
-If Vertex is still missing, a project-level empty duplicate is overriding the shared row — delete it. Partial Vertex (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials`.
-
-### 6. GCS bucket (Terraform tenant)
-
-One private attachments bucket per new pack. Do **not** point `GCS_BUCKET` at `andrei-493614-attachments`. Do **not** add this pack’s Origin to the shared bucket. Retrieval-eval is unchanged.
+One private attachments bucket per new pack. Do **not** point `GCS_BUCKET` at `andrei-493614-attachments`. Do **not** add this pack’s Origin to the shared bucket. Retrieval-eval is unchanged. The env command already set `GCS_BUCKET`; Terraform still has to create the bucket.
 
 In `infra/gcs/terraform.tfvars` (see [`terraform.tfvars.example`](../infra/gcs/terraform.tfvars.example) and [`infra/gcs/README.md`](../infra/gcs/README.md)):
 
@@ -150,37 +148,42 @@ terraform plan    # create {slug} bucket + IAM; do not destroy `shared`
 terraform apply
 ```
 
-Set **project-level** Production and Preview:
-
-```bash
-printf '%s' "andrei-493614-{slug}-attachments" | vercel env add GCS_BUCKET preview
-printf '%s' "andrei-493614-{slug}-attachments" | vercel env add GCS_BUCKET production
-```
-
 GCS CORS is exact origins (no `*.vercel.app`). Terraform is the source of truth. Changing `bucket_name` on `shared` would replace the live MJ/demo/Convergent bucket — never do that.
 
-### 7. Domain
+### 6. Domain (dashboard + DNS)
 
-1. Vercel project → add `{slug}.andreihealth.com`.
+1. Vercel project → add `{slug}.andreihealth.com` (no git-branch restriction — that aliases Production).
 2. DNS **CNAME** to `cname.vercel-dns.com` (not `*.vercel.app`).
-3. `AUTH_URL` must match that host after it is live; redeploy.
+3. `AUTH_URL` is already the public host from step 2; redeploy after the domain verifies.
 4. If the pack embeds from another origin, add it to Auth.js trusted hosts (default is the `AUTH_URL` host only).
 
-### 8. First users
+### 7. WIF attribute condition (`pnpm standup-customer wif`)
+
+Linking `GCP_WIF_AUDIENCE` is not enough. Chat / ingest STS-exchange as the new Vercel project, and GCP rejects it until `prj_…` is in the workload identity provider **attribute condition**. Symptom: `400 unauthorized_client` / `The given credential is rejected by the attribute condition`.
 
 ```bash
-DATABASE_URL='postgresql://…this neon…?sslmode=require' \
-  pnpm set-workspace-password -- user@customer.com 'TempPass123!' --role engineer
+pnpm standup-customer -- wif --slug {slug}   # needs gcloud ADC + GCP_WIF_AUDIENCE in .env.local
+```
+
+`all` runs this too and continues if gcloud is missing.
+
+### 8. First users (`pnpm standup-customer users`)
+
+Seeds `sachin@` / `aditya@` (engineer) plus `+manager` / `+admin` at `andreihealth.com`. Pass **this** Neon, not `.env.local` demo/MJ.
+
+```bash
+pnpm standup-customer -- users --slug {slug} --yes \
+  --database-url 'postgresql://…this neon…?sslmode=require'
 ```
 
 Roles: `engineer | manager | admin | qa`. New accounts get `mustChangePassword`. Temporary passwords stay out of git.
 
 ### 9. Smoke
 
-1. `/login` shows this pack’s chrome (not Andrei/MJ).
+1. `/login` shows this pack’s chrome (not Andrei/MJ). Production host 404s until the pack is on `main` and a Production deploy is **READY**.
 2. Sign in, change password.
 3. Create the pack’s document type; export Word if the pack has a template.
-4. Upload a PDF to the vault, add it to a report, ask Agent to draft from it (needs Vertex + this `GCS_BUCKET`).
+4. Upload a PDF to the vault, add it to a report, ask Agent **hi** then draft from the PDF (needs Vertex **and** step 7 WIF, plus this `GCS_BUCKET`).
 5. Confirm Production deploy SHA matches the other packs.
 
 ### 10. Do not
@@ -234,7 +237,7 @@ Keep Neon **Create a branch for each preview deployment** on. Convergent `prompt
 
 ### andrei-ami (Production + Preview)
 
-Stood up with [Add a customer](#add-a-customer) (`slug=ami`). Manual dashboard steps: [ami-standup.md](./ami-standup.md). `promptVersion` is `ami-investigation-v1`. Investigation Report is the only enabled type.
+Stood up with [Add a customer](#add-a-customer) (`slug=ami`). Pack notes: [ami-standup.md](./ami-standup.md). `promptVersion` is `ami-investigation-v1`. Investigation Report is the only enabled type.
 
 | Variable | Value |
 |----------|--------|
@@ -368,6 +371,10 @@ Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporar
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
+| Chat/ingest `400 unauthorized_client` / `rejected by the attribute condition` | New Vercel `prj_…` is missing from the GCP WIF provider CEL. `pnpm standup-customer -- wif --slug {slug}` (gcloud ADC). Linking shared `GCP_WIF_AUDIENCE` is not enough. |
+| `vercel env ls` missing Vertex / Resend / Langfuse that other packs have | Those are team **Shared** rows. `vercel env ls` only lists project vars. Shared tab, or `pnpm standup-customer -- status`. |
+| PostHog empty on a new project; Shared search finds nothing | PostHog is still project-level on older packs. Copy `NEXT_PUBLIC_POSTHOG_KEY` / `HOST` from `andrei-demo`. |
+| Production custom domain `404` `DEPLOYMENT_NOT_FOUND` | No READY Production deploy. Merge the pack to `main` (older SHAs throw `Invalid customer id`) and wait for READY. |
 | Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com` / `https://3xper.andreihealth.com` / `https://ami.andreihealth.com`). Add that Origin to **that pack’s** GCS bucket CORS (`infra/gcs` `tenants` + `terraform apply`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
 | Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after setting `AUTH_URL`. |
 | `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |

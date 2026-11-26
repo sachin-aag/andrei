@@ -1,6 +1,6 @@
 # Neon + Vercel integration setup
 
-**Customer projects:** every pack Vercel app (`andrei-v2`, `andrei-demo`, `andrei-convergent`, `andrei-3xper`, `andrei-ami`, and each new `andrei-{slug}`) keeps **Create a branch for each preview deployment** **on**. Each git ref gets an isolated Neon `preview/<git-branch>` database. Production stays on the project's default Neon branch. New pack: [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer). Ami: [ami-standup.md](./ami-standup.md).
+**Customer projects:** every pack Vercel app (`andrei-v2`, `andrei-demo`, `andrei-convergent`, `andrei-3xper`, `andrei-ami`, and each new `andrei-{slug}`) keeps **Create a branch for each preview deployment** **on**. Each git ref gets an isolated Neon `preview/<git-branch>` database. Production stays on the project's default Neon branch. New pack: [Add a customer](./whitelabel-vercel-deploy.md#add-a-customer) (`pnpm standup-customer`). Ami pack notes: [ami-standup.md](./ami-standup.md).
 
 A leftover password from a deleted preview compute fails `vercel:build` with `28P01`. Delete that Neon `preview/…` branch and redeploy so Neon injects a fresh URL. Do not turn preview branching off, and do not hand-edit Neon-logo `DATABASE_URL` rows.
 
