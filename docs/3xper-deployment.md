@@ -1,6 +1,6 @@
 # 3xper Innoventure — pack notes
 
-Infra stand-up is **[Add a customer](./whitelabel-vercel-deploy.md#add-a-customer)** with `slug=3xper`. Do not copy this file for the next pack.
+Infra stand-up is **[Add a customer](./whitelabel-vercel-deploy.md#add-a-customer)** (`pnpm standup-customer -- … --slug 3xper`). Do not copy this file for the next pack.
 
 | Piece | Value |
 |-------|--------|

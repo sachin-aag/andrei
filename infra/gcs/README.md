@@ -9,6 +9,8 @@ Provisions **one private PDF evidence bucket per customer pack** (`GCS_BUCKET`):
 
 WIF trust (`GCP_WIF_AUDIENCE`, OIDC) is **not** managed here — that already exists for Vertex. This stack only grants the runtime SA access to the buckets.
 
+A **new Vercel project** still needs its `prj_…` added to the existing OIDC provider attribute condition, or chat/ingest fail with STS `rejected by the attribute condition`. That is `pnpm standup-customer -- wif --slug {slug}`, not this Terraform. Linking the shared `GCP_WIF_AUDIENCE` env var is not enough.
+
 `andrei-493614-retrieval-eval` is CI-only and is **not** in this stack.
 
 ## Tenants
@@ -19,7 +21,7 @@ WIF trust (`GCP_WIF_AUDIENCE`, OIDC) is **not** managed here — that already ex
 | `3xper` | `andrei-493614-3xper-attachments` | `andrei-3xper` |
 | `ami` | `andrei-493614-ami-attachments` | `andrei-ami` |
 
-A further customer is a new `tenants` map entry + `terraform apply` + that project's `GCS_BUCKET`. That is step 6 of [Add a customer](../../docs/whitelabel-vercel-deploy.md#add-a-customer). Do not add their Origin to the shared bucket.
+A further customer is a new `tenants` map entry + `terraform apply`. `pnpm standup-customer -- env` already sets that project's `GCS_BUCKET`. That is step 5 of [Add a customer](../../docs/whitelabel-vercel-deploy.md#add-a-customer). Do not add their Origin to the shared bucket.
 
 ## Prerequisites
 
@@ -41,16 +43,7 @@ terraform apply
 
 If `terraform.tfvars` still has the old `bucket_name` / `cors_origins` vars, replace them with the `tenants` map from the example. `moved` blocks keep the existing shared bucket in state (no destroy).
 
-Then set Vercel (after linking the **matching** project — never share `GCS_BUCKET` across packs):
-
-```bash
-terraform output -json bucket_names
-# 3xper:
-printf '%s' 'andrei-493614-3xper-attachments' | vercel env add GCS_BUCKET preview
-printf '%s' 'andrei-493614-3xper-attachments' | vercel env add GCS_BUCKET production
-```
-
-Redeploy that project after adding the env var.
+`pnpm standup-customer -- env --slug {slug}` sets `GCS_BUCKET` on the matching Vercel project (never share the bucket name across packs). Redeploy after Terraform creates the bucket.
 
 ### No local state, bucket already exists
 
@@ -66,7 +59,7 @@ The rest of stand-up (Vercel, Neon, auth, shared env, domain) is [Add a customer
 
 1. Add a key under `tenants` in `terraform.tfvars` (CORS = that pack's public host + `andrei-<name>.vercel.app` + localhost). Omit `bucket_name` unless the bucket already exists.
 2. `terraform apply` → bucket `andrei-493614-<key>-attachments`.
-3. Project-level `GCS_BUCKET` on that Vercel app (Production + Preview).
+3. `pnpm standup-customer -- env --slug {slug}` already set project-level `GCS_BUCKET` (Production + Preview) — confirm with `status` if you applied Terraform first.
 4. Redeploy.
 
 ## CORS

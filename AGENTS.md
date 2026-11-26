@@ -131,7 +131,7 @@ Neon HTTP cannot `db.transaction()` (ingest + folder moves).
 Local default is **demo** (Andrei branding, design verification, conclusion).
 Set both `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same
 value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set.
-See `docs/whitelabel-vercel-deploy.md` (new pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer); 3xper product notes: `docs/3xper-deployment.md`; Ami stand-up: `docs/ami-standup.md`).
+See `docs/whitelabel-vercel-deploy.md` (new pack: [Add a customer](docs/whitelabel-vercel-deploy.md#add-a-customer) — `pnpm standup-customer`; 3xper product notes: `docs/3xper-deployment.md`; Ami pack notes: `docs/ami-standup.md`).
 
 ```bash
 ANDREI_CUSTOMER=mj
